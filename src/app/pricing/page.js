@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
 import { motion } from "framer-motion";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { FaCheck, FaBolt } from "react-icons/fa";
+import { IconCheck, IconArrowUpRight } from "@/components/Icons";
+
+const EASE = [0.32, 0.72, 0, 1];
 
 const SUBSCRIPTIONS = [
   { id: "free", name: "Free", price: "$0", period: "forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 200+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
@@ -22,58 +23,87 @@ const PACKS = [
 
 export default function PricingPage() {
   return (
-    <div className="min-h-screen bg-surface">
+    <>
       <Navbar />
-      <div className="section pt-24">
-        <div className="section__head">
-          <div className="section__kicker">Pricing</div>
-          <h2>Pricing that <em>scales</em> with you.</h2>
-          <p className="section__sub">Monthly subscriptions or one-off packs. API costs covered — you just create.</p>
+      <div className="grain" aria-hidden="true" />
+
+      <div className="page">
+        <div className="page__head">
+          <div className="eyebrow mb-5">Pricing</div>
+          <h1 className="page__title">Pricing that <em>scales</em> with you.</h1>
+          <p className="page__sub">Monthly subscriptions or one-off packs. API costs covered, you just create.</p>
         </div>
 
-        <div className="mb-16">
-          <div className="text-center mb-8">
-            <div className="section__kicker justify-center"><FaCheck className="mr-1" /> Subscriptions</div>
-            <h3 className="text-2xl font-bold">Pick your <span className="text-brand">tier</span></h3>
-          </div>
+        {/* SUBSCRIPTIONS */}
+        <div className="mb-24">
+          <h2 className="text-3xl font-bold tracking-tight text-center mb-10">Monthly <em className="italic" style={{ color: "#FF1B6B" }}>subscriptions</em></h2>
           <div className="pricing-grid">
-            {SUBSCRIPTIONS.map((s) => (
-              <motion.div key={s.id} initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5 }} className={`pricing-card ${s.popular ? "pricing-card--popular" : ""}`}>
-                {s.popular && <div className="pricing-card__badge">Most Popular</div>}
-                <div className="pricing-card__name">{s.name}</div>
-                <div className="pricing-card__price">{s.price}<span>{s.period}</span></div>
-                <div className="pricing-card__credits">{s.credits}</div>
-                <p className="text-sm text-white/50 mb-4">{s.desc}</p>
-                <ul className="pricing-card__features">
-                  {s.features.map((f) => <li key={f}><FaCheck />{f}</li>)}
-                </ul>
-                <Link href="/login" className={`btn w-full justify-center ${s.popular ? "btn-primary" : "btn-secondary"}`}>{s.cta}</Link>
+            {SUBSCRIPTIONS.map((s, i) => (
+              <motion.div
+                key={s.id}
+                initial={{ opacity: 0, y: 40 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-40px" }}
+                transition={{ duration: 0.8, ease: EASE, delay: i * 0.08 }}
+                className={`bezel price ${s.popular ? "price--popular" : ""}`}
+              >
+                {s.popular && <div className="price__badge">Most Popular</div>}
+                <div className="price__core bezel__core">
+                  <div className="price__name">{s.name}</div>
+                  <div className="price__amount">
+                    <span className="price__num">{s.price}</span>
+                    <span className="price__period">{s.period}</span>
+                  </div>
+                  <div className="price__credits">{s.credits}</div>
+                  <p className="text-[13px] text-white/50 mb-4 leading-relaxed">{s.desc}</p>
+                  <ul className="price__features">
+                    {s.features.map((f) => (
+                      <li key={f}><IconCheck />{f}</li>
+                    ))}
+                  </ul>
+                  <Link href="/login" className={`btn ${s.popular ? "btn-primary" : "btn-secondary"}`}>
+                    {s.cta}
+                    <span className="btn__icon"><IconArrowUpRight /></span>
+                  </Link>
+                </div>
               </motion.div>
             ))}
           </div>
         </div>
 
+        {/* TOP-UP PACKS */}
         <div>
-          <div className="text-center mb-8">
-            <div className="section__kicker justify-center"><FaBolt className="mr-1" /> Top-up packs</div>
-            <h3 className="text-2xl font-bold">Or grab a <em className="font-normal italic">quick pack</em></h3>
-            <p className="text-sm text-white/40 mt-2">One-off purchases · no subscription · credits never expire</p>
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-bold tracking-tight">Or grab a <em className="italic" style={{ color: "#FF1B6B" }}>quick pack</em></h2>
+            <p className="text-sm text-white/40 mt-3">One-off purchases · no subscription · credits never expire</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {PACKS.map((p) => (
-              <motion.div key={p.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4 }} className={`pricing-card ${p.popular ? "pricing-card--popular" : ""}`}>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-bold text-white">{p.name}</span>
-                  <span className="text-2xl font-extrabold text-brand">{p.price}</span>
+          <div className="packs">
+            {PACKS.map((p, i) => (
+              <motion.div
+                key={p.id}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-30px" }}
+                transition={{ duration: 0.7, ease: EASE, delay: i * 0.07 }}
+                className={`bezel pack ${p.popular ? "price--popular" : ""}`}
+              >
+                <div className="pack__core bezel__core">
+                  <div className="pack__row">
+                    <span className="pack__name">{p.name}</span>
+                    <span className="pack__price">{p.price}</span>
+                  </div>
+                  <div className="pack__credits">{p.credits} credits</div>
+                  <p className="pack__desc">{p.desc}</p>
+                  <Link href="/login" className="btn btn-secondary">
+                    Buy
+                    <span className="btn__icon"><IconArrowUpRight /></span>
+                  </Link>
                 </div>
-                <div className="text-sm text-white/60 mb-1">{p.credits} credits</div>
-                <p className="text-xs text-white/40 mb-4">{p.desc}</p>
-                <Link href="/login" className="btn btn-secondary w-full justify-center text-sm">Buy</Link>
               </motion.div>
             ))}
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

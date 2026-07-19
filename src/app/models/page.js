@@ -4,7 +4,9 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
-import { FaSearch } from "react-icons/fa";
+import { IconSearch, IconArrowUpRight } from "@/components/Icons";
+
+const EASE = [0.32, 0.72, 0, 1];
 
 const MODELS = [
   { id: "flux-dev", name: "Flux Dev", type: "image", provider: "Black Forest Labs", category: "Text → Image" },
@@ -80,47 +82,75 @@ export default function ModelsPage() {
   }, [category, search]);
 
   return (
-    <div className="min-h-screen bg-surface">
+    <>
       <Navbar />
-      <div className="section pt-24">
-        <div className="section__head">
-          <div className="section__kicker">Model Catalog</div>
-          <h2><span className="text-brand">{MODELS.length}</span> models. <em>Always current.</em></h2>
-          <p className="section__sub">Every model powered by Helmies. One subscription, no rate limits, no watermarks.</p>
+      <div className="grain" aria-hidden="true" />
+
+      <div className="page">
+        <div className="page__head">
+          <div className="eyebrow mb-5">Model Catalog</div>
+          <h1 className="page__title"><em>{MODELS.length}</em> models. Always current.</h1>
+          <p className="page__sub">Every model powered by Helmies. One subscription, no rate limits, no watermarks.</p>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-6 justify-center">
           {CATEGORIES.map((c) => (
-            <button key={c.id} onClick={() => setCategory(c.id)} className={`badge cursor-pointer transition-all ${category === c.id ? "badge-brand" : "badge-outline hover:border-white/20"}`}>
-              {c.label} <span className="ml-1 opacity-60">{counts[c.id] ?? 0}</span>
+            <button
+              key={c.id}
+              onClick={() => setCategory(c.id)}
+              className={`pill ${category === c.id ? "pill--active" : ""}`}
+            >
+              {c.label}
+              <span className="pill__count">{counts[c.id] ?? 0}</span>
             </button>
           ))}
         </div>
 
-        <div className="flex items-center gap-2 max-w-md mx-auto mb-8 px-4 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.06]">
-          <FaSearch className="text-white/30 text-xs" />
-          <input type="text" placeholder="Search models or providers..." value={search} onChange={(e) => setSearch(e.target.value)} className="flex-1 bg-transparent border-none text-sm text-white outline-none placeholder:text-white/30" />
+        <div className="field max-w-md mx-auto mb-8">
+          <IconSearch className="field__icon" />
+          <input
+            type="text"
+            placeholder="Search models or providers..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
         </div>
 
-        <div className="text-center mb-6 text-sm text-white/40">
-          <strong className="text-white">{filtered.length}</strong> models {search && <span>matching &quot;{search}&quot;</span>}
+        <div className="text-center mb-8 text-sm text-white/40">
+          <strong className="text-white font-semibold">{filtered.length}</strong> models
+          {search && <span> matching &quot;{search}&quot;</span>}
         </div>
 
         <div className="models-grid">
           {filtered.map((m, i) => {
             const badge = TYPE_BADGE[m.type] || TYPE_BADGE.image;
             return (
-              <motion.div key={m.id} initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.3, delay: i * 0.03 }}>
-                <Link href={`/studio/${STUDIO_MAP[m.type]}`} className="model-card block">
-                  <span className="model-card__type" style={{ color: badge.color, background: `${badge.color}10`, border: `1px solid ${badge.color}30` }}>{badge.label}</span>
-                  <h3>{m.name}</h3>
-                  <div className="model-card__meta">{m.provider} · {m.id}</div>
+              <motion.div
+                key={m.id}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, margin: "-30px" }}
+                transition={{ duration: 0.6, ease: EASE, delay: (i % 4) * 0.05 }}
+              >
+                <Link href={`/studio/${STUDIO_MAP[m.type]}`} className="model-card bezel" style={{ color: badge.color }}>
+                  <div className="model-card__core bezel__core">
+                    <span className="model-card__type">{badge.label}</span>
+                    <h3 style={{ color: "#fff" }}>{m.name}</h3>
+                    <div className="model-card__meta">
+                      <span>{m.provider}</span>
+                      <span className="opacity-40">·</span>
+                      <span>{m.category}</span>
+                    </div>
+                    <div className="model-card__arrow">
+                      <span className="model-card__arrow-icon"><IconArrowUpRight style={{ color: "#fff" }} /></span>
+                    </div>
+                  </div>
                 </Link>
               </motion.div>
             );
           })}
         </div>
       </div>
-    </div>
+    </>
   );
 }
