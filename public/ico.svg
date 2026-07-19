@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60.94 63.47">
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="60.94" y2="63.47" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C41053"/>
+      <stop offset="0.5" stop-color="#FF1B6B"/>
+      <stop offset="1" stop-color="#FFC4DD"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="60.94" y1="0" x2="0" y2="63.47" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF1B6B"/>
+      <stop offset="0.5" stop-color="#FF4D8D"/>
+      <stop offset="1" stop-color="#FFC4DD"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="20" y1="20" x2="40" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C41053"/>
+      <stop offset="0.7" stop-color="#FF4D8D"/>
+      <stop offset="1" stop-color="#FFB4D4"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <path fill="url(#g1)" d="M30.47,41.75s-10,.14-10,10.01-10.01,10-10.01,10c0,0-10.01,0-10.01-10s6.12-10.01,6.12-10.01c0,0-6.12,0-6.12-10.01s5.6-10.01,5.6-10.01c0,0-5.6,0-5.6-10.01S10.46,1.71,10.46,1.71c0,0,9.81,0,10,9.71v20.32c0,5.53,4.48,10.01,10.01,10.01Z"/>
+    <path fill="url(#g2)" d="M54.9,41.75s5.6,0,5.6,10.01-10.01,10-10.01,10c0,0-10.01,0-10.01-10s-10.01-10.01-10.01-10.01c5.53,0,10.02-4.48,10.02-10.01V11.42c.2-9.56,10-9.71,10-9.71,0,0,10.01,0,10.01,10.01s-6.12,10.01-6.12,10.01c0,0,6.12,0,6.12,10.01s-5.6,10.01-5.6,10.01Z"/>
+  </g>
+  <circle fill="url(#g3)" cx="30.47" cy="31.73" r="9.16"/>
+</svg>
