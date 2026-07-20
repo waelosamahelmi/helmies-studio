@@ -110,7 +110,7 @@ export default function AudioStudio() {
           <label className="field-label">Model</label>
           <select className="field-select" value={model.id} onChange={(e) => { setModel(AUDIO_MODELS.find((m) => m.id === e.target.value)); setParams({}); }}>
             {AUDIO_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>{m.name} — {m.provider}</option>
+              <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
         </div>

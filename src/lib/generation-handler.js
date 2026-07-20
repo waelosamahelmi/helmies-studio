@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { resolveProvider, brandError, logProviderError } from "@/lib/providers";
 import { checkRateLimit } from "@/lib/security";
 import { logAudit } from "@/lib/security";
+import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
 
 export async function handleGeneration(req, tool, cost, apiFn) {
   try {
@@ -19,7 +20,10 @@ export async function handleGeneration(req, tool, cost, apiFn) {
 
     const body = await req.json();
     const model = body.model || body.endpoint || tool;
-    const prompt = body.prompt || "";
+    const rawPrompt = body.prompt || "";
+
+    const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
+    const expandedPrompt = shouldExpand(rawPrompt) ? await expandPrompt(rawPrompt, promptType, model) : rawPrompt;
 
     const provider = await resolveProvider(model);
 
@@ -37,7 +41,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         userId: user.id,
         tool,
         model,
-        prompt,
+        prompt: rawPrompt,
         params: body,
         status: "pending",
         creditsUsed: cost,
@@ -48,7 +52,12 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     await debitCredits(user.id, cost);
 
     try {
-      const result = await apiFn({ ...body, _provider: provider });
+      const paramsWithExpanded = { ...body, prompt: expandedPrompt };
+      if (!body.negative_prompt && promptType !== "audio") {
+        paramsWithExpanded.negative_prompt = getNegativePrompt(promptType);
+      }
+
+      const result = await apiFn({ ...paramsWithExpanded, _provider: provider });
       const outputUrl = result.url || result.outputs?.[0];
 
       await prisma.generation.update({
@@ -63,6 +72,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         creditsUsed: cost,
         remainingCredits: user.credits - cost,
         provider: provider.name,
+        expanded: expandedPrompt !== rawPrompt,
         ...(result.outputs ? { outputs: result.outputs } : {}),
       });
     } catch (genError) {

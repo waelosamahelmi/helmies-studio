@@ -64,7 +64,7 @@ export default function RecastStudio() {
         <div className="field-group">
           <label className="field-label">Model</label>
           <select className="field-select" value={model.id} onChange={(e) => { setModel(RECAST_MODELS.find((m) => m.id === e.target.value)); if (model.aspectRatios) setAspectRatio(model.aspectRatios[0]); }}>
-            {RECAST_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name} — {m.provider}</option>)}
+            {RECAST_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
         <div className="field-group">

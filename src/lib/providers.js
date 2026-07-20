@@ -49,13 +49,15 @@ const PROVIDERS = {
   atlas: {
     name: "Atlas Cloud",
     type: "image+video",
-    baseUrl: "https://api.atlas.cloud",
+    baseUrl: "https://api.atlascloud.ai",
     getKey: () => process.env.ATLAS_KEY,
   },
   alibaba: {
     name: "Alibaba Cloud (Qwen)",
     type: "image+video+llm",
-    baseUrl: "https://dashscope.aliyuncs.com",
+    baseUrl: process.env.ALIBABA_WORKSPACE_ID
+      ? `https://${process.env.ALIBABA_WORKSPACE_ID}.eu-central-1.maas.aliyuncs.com/compatible-mode/v1`
+      : "https://dashscope.aliyuncs.com",
     getKey: () => process.env.ALIBABA_KEY,
   },
   wavespeed: {

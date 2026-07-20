@@ -5,81 +5,41 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import { IconSearch, IconArrowUpRight } from "@/components/Icons";
+import { IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS, LIPSYNC_MODELS, RECAST_MODELS, AUDIO_MODELS } from "@/lib/models";
 
 const EASE = [0.32, 0.72, 0, 1];
 
-const MODELS = [
-  { id: "flux-dev", name: "Flux Dev", type: "image", provider: "Black Forest Labs", category: "Text → Image" },
-  { id: "flux-pro", name: "Flux Pro 1.1", type: "image", provider: "Black Forest Labs", category: "Text → Image" },
-  { id: "midjourney-v7", name: "Midjourney v7", type: "image", provider: "Midjourney", category: "Text → Image" },
-  { id: "gpt-4o-image", name: "GPT-4o Image", type: "image", provider: "OpenAI", category: "Text → Image" },
-  { id: "seedream-5", name: "Seedream 5.0", type: "image", provider: "ByteDance", category: "Text → Image" },
-  { id: "ideogram-v3", name: "Ideogram v3", type: "image", provider: "Ideogram", category: "Text → Image" },
-  { id: "recraft-v3", name: "Recraft v3", type: "image", provider: "Recraft", category: "Text → Image" },
-  { id: "imagen-3", name: "Imagen 3", type: "image", provider: "Google", category: "Text → Image" },
-  { id: "sora-2", name: "Sora 2", type: "video", provider: "OpenAI", category: "Text → Video" },
-  { id: "kling-v3", name: "Kling v3 Pro", type: "video", provider: "Kuaishou", category: "Text → Video" },
-  { id: "veo-3", name: "Veo 3", type: "video", provider: "Google", category: "Text → Video" },
-  { id: "runway-gen3", name: "Runway Gen-3", type: "video", provider: "Runway", category: "Text → Video" },
-  { id: "minimax-video", name: "MiniMax Video-01", type: "video", provider: "MiniMax", category: "Text → Video" },
-  { id: "luma-dream", name: "Luma Dream Machine", type: "video", provider: "Luma AI", category: "Text → Video" },
-  { id: "infinite-talk", name: "Infinite Talk", type: "lipsync", provider: "Helmies", category: "Lip Sync" },
-  { id: "wan-2-2", name: "Wan 2.2 Lip Sync", type: "lipsync", provider: "Alibaba", category: "Lip Sync" },
-  { id: "ltx-2-3", name: "LTX 2.3", type: "lipsync", provider: "Lightricks", category: "Lip Sync" },
-  { id: "latentsync", name: "LatentSync", type: "lipsync", provider: "Helmies", category: "Lip Sync" },
-  { id: "mmaudio-v2", name: "mmAudio v2", type: "audio", provider: "Helmies", category: "Audio" },
-  { id: "bark-voice", name: "Bark Voice Cloning", type: "audio", provider: "Suno", category: "Audio" },
-  { id: "musicgen", name: "MusicGen", type: "audio", provider: "Meta", category: "Audio" },
-  { id: "nano-banana-pro", name: "Nano Banana Pro", type: "image", provider: "Helmies", category: "Image → Image" },
-  { id: "seedream-edit", name: "Seedream 5.0 Edit", type: "image", provider: "ByteDance", category: "Image → Image" },
-  { id: "kling-motion", name: "Kling v3 Motion Control", type: "video", provider: "Kuaishou", category: "Video → Video" },
-  { id: "runway-act-two", name: "Runway Act-Two Recast", type: "recast", provider: "Runway", category: "Body Swap" },
+const ALL_MODELS = [IMAGE_MODELS.map((m) => ({ ...m, type: "image", category: "Text → Image" })),
+  ...I2I_MODELS.map((m) => ({ ...m, type: "i2i", category: "Image → Image" })),
+  ...VIDEO_MODELS.map((m) => ({ ...m, type: "video", category: "Text → Video" })),
+  ...I2V_MODELS.map((m) => ({ ...m, type: "i2v", category: "Image → Video" })),
+  ...V2V_MODELS.map((m) => ({ ...m, type: "v2v", category: "Video → Video" })),
+  ...LIPSYNC_MODELS.map((m) => ({ ...m, type: "lipsync", category: "Lip Sync" })),
+  ...RECAST_MODELS.map((m) => ({ ...m, type: "recast", category: "Body Swap" })),
+  ...AUDIO_MODELS.map((m) => ({ ...m, type: "audio", category: "Audio" })),
 ];
 
-const CATEGORIES = [
-  { id: "all", label: "All", types: null },
-  { id: "image", label: "Image", types: ["image"] },
-  { id: "video", label: "Video", types: ["video"] },
-  { id: "lipsync", label: "Lip Sync", types: ["lipsync"] },
-  { id: "audio", label: "Audio", types: ["audio"] },
-  { id: "recast", label: "Body Swap", types: ["recast"] },
-];
-
-const TYPE_BADGE = {
-  image: { label: "IMG", color: "#FF1B6B" },
-  video: { label: "VID", color: "#7C3AED" },
-  lipsync: { label: "LIP", color: "#00E5FF" },
-  audio: { label: "AUD", color: "#00E68A" },
-  recast: { label: "RCS", color: "#FFB800" },
-};
-
-const STUDIO_MAP = { image: "image", video: "video", lipsync: "lipsync", audio: "audio", recast: "body-swap" };
+const CATEGORIES = ["All", ...Array.from(new Set(ALL_MODELS.map((m) => m.category)))];
 
 export default function ModelsPage() {
-  const [category, setCategory] = useState("all");
   const [search, setSearch] = useState("");
-
-  const counts = useMemo(() => {
-    const c = { all: MODELS.length };
-    CATEGORIES.forEach((cat) => {
-      if (cat.id === "all") return;
-      c[cat.id] = MODELS.filter((m) => cat.types.includes(m.type)).length;
-    });
-    return c;
-  }, []);
+  const [category, setCategory] = useState("All");
 
   const filtered = useMemo(() => {
-    let models = MODELS;
-    if (category !== "all") {
-      const cat = CATEGORIES.find((c) => c.id === category);
-      if (cat?.types) models = models.filter((m) => cat.types.includes(m.type));
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      models = models.filter((m) => m.name.toLowerCase().includes(q) || m.provider.toLowerCase().includes(q) || m.id.toLowerCase().includes(q));
-    }
-    return models;
-  }, [category, search]);
+    return ALL_MODELS.filter((m) => {
+      if (category !== "All" && m.category !== category) return false;
+      if (search.trim()) {
+        const q = search.toLowerCase();
+        if (!m.name.toLowerCase().includes(q) && !m.id.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [search, category]);
+
+  const counts = ALL_MODELS.reduce((acc, m) => {
+    acc[m.category] = (acc[m.category] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <>
@@ -87,69 +47,94 @@ export default function ModelsPage() {
       <div className="grain" aria-hidden="true" />
 
       <div className="page">
-        <div className="page__head">
-          <div className="eyebrow mb-5">Model Catalog</div>
-          <h1 className="page__title"><em>{MODELS.length}</em> models. Always current.</h1>
-          <p className="page__sub">Every model powered by Helmies. One subscription, no rate limits, no watermarks.</p>
+        <div className="page__row">
+          <div>
+            <div className="eyebrow mb-4">Catalog</div>
+            <h1 className="page__title">{ALL_MODELS.length} AI Models</h1>
+            <p className="page__sub">Every model in the Helmies Studio catalog, across all studios.</p>
+          </div>
+          <Link href="/studio" className="btn btn-primary">
+            Start Creating
+            <span className="btn__icon"><IconArrowUpRight /></span>
+          </Link>
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-6 justify-center">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c.id}
-              onClick={() => setCategory(c.id)}
-              className={`pill ${category === c.id ? "pill--active" : ""}`}
-            >
-              {c.label}
-              <span className="pill__count">{counts[c.id] ?? 0}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className="field max-w-md mx-auto mb-8">
-          <IconSearch className="field__icon" />
-          <input
-            type="text"
-            placeholder="Search models or providers..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        <div className="text-center mb-8 text-sm text-white/40">
-          <strong className="text-white font-semibold">{filtered.length}</strong> models
-          {search && <span> matching &quot;{search}&quot;</span>}
+        <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
+          <div className="flex gap-2 flex-wrap">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                className={`pill ${category === c ? "pill--active" : ""}`}
+              >
+                {c}
+                {c !== "All" && <span className="pill__count">{counts[c]}</span>}
+              </button>
+            ))}
+          </div>
+          <div className="field w-full sm:w-64">
+            <IconSearch className="field__icon" />
+            <input
+              type="text"
+              placeholder="Search models..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="models-grid">
-          {filtered.map((m, i) => {
-            const badge = TYPE_BADGE[m.type] || TYPE_BADGE.image;
-            return (
-              <motion.div
-                key={m.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-30px" }}
-                transition={{ duration: 0.6, ease: EASE, delay: (i % 4) * 0.05 }}
-              >
-                <Link href={`/studio/${STUDIO_MAP[m.type]}`} className="model-card bezel" style={{ color: badge.color }}>
-                  <div className="model-card__core bezel__core">
-                    <span className="model-card__type">{badge.label}</span>
-                    <h3 style={{ color: "#fff" }}>{m.name}</h3>
-                    <div className="model-card__meta">
-                      <span>{m.provider}</span>
-                      <span className="opacity-40">·</span>
-                      <span>{m.category}</span>
-                    </div>
-                    <div className="model-card__arrow">
-                      <span className="model-card__arrow-icon"><IconArrowUpRight style={{ color: "#fff" }} /></span>
-                    </div>
+          {filtered.map((m, i) => (
+            <motion.div
+              key={m.id}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-30px" }}
+              transition={{ duration: 0.5, ease: EASE, delay: (i % 6) * 0.04 }}
+              className="model-card bezel"
+            >
+              <div className="bezel__core" style={{ padding: "1.25rem" }}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-white/40">{m.category}</span>
+                  <span className="pill pill--active" style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem" }}>{m.type}</span>
+                </div>
+                <h3 className="text-base font-bold mb-1">{m.name}</h3>
+                <p className="text-xs text-white/40 mb-3">{m.id}</p>
+                {m.aspectRatios && (
+                  <div className="flex flex-wrap gap-1">
+                    {m.aspectRatios.slice(0, 4).map((ar) => (
+                      <span key={ar} className="text-[10px] text-white/30 bg-white/5 px-1.5 py-0.5 rounded">{ar}</span>
+                    ))}
+                    {m.aspectRatios.length > 4 && <span className="text-[10px] text-white/30">+{m.aspectRatios.length - 4}</span>}
                   </div>
-                </Link>
-              </motion.div>
-            );
-          })}
+                )}
+                {m.durations && (
+                  <div className="flex flex-wrap gap-1">
+                    {m.durations.map((d) => (
+                      <span key={d} className="text-[10px] text-white/30 bg-white/5 px-1.5 py-0.5 rounded">{d}s</span>
+                    ))}
+                  </div>
+                )}
+                {m.resolutions && (
+                  <div className="flex flex-wrap gap-1">
+                    {m.resolutions.map((r) => (
+                      <span key={r} className="text-[10px] text-white/30 bg-white/5 px-1.5 py-0.5 rounded">{r}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ))}
         </div>
+
+        {filtered.length === 0 && (
+          <div className="bezel" style={{ padding: "4rem 2rem", textAlign: "center" }}>
+            <div className="bezel__core" style={{ padding: "3rem 2rem" }}>
+              <h3 className="text-xl font-bold mb-2">No models found</h3>
+              <p className="text-sm text-white/50">Try a different search or category.</p>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );

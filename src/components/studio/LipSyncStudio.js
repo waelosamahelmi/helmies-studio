@@ -84,7 +84,7 @@ export default function LipSyncStudio() {
           >
             {LIPSYNC_MODELS.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name} — {m.provider}
+                {m.name}
               </option>
             ))}
           </select>

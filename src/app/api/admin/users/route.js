@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/security";
+import { requireAdmin, logAudit } from "@/lib/security";
 import prisma from "@/lib/prisma";
 
 export async function GET() {
@@ -17,12 +17,23 @@ export async function GET() {
 
 export async function PATCH(req) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const { userId, credits, role } = await req.json();
     const data = {};
-    if (credits !== undefined) data.credits = credits;
-    if (role !== undefined) data.role = role;
+    if (credits !== undefined) {
+      if (typeof credits !== "number" || credits < 0) {
+        return NextResponse.json({ error: "Credits must be a non-negative number" }, { status: 400 });
+      }
+      data.credits = credits;
+    }
+    if (role !== undefined) {
+      if (!["user", "admin"].includes(role)) {
+        return NextResponse.json({ error: "Invalid role" }, { status: 400 });
+      }
+      data.role = role;
+    }
     await prisma.user.update({ where: { id: userId }, data });
+    await logAudit("admin_edit_user", "user", userId, { credits, role, adminId: admin.id });
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });

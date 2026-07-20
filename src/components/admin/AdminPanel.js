@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Navbar from "@/components/Navbar";
 import { IconBolt, IconUsers, IconStar } from "@/components/Icons";
 
-const TABS = ["Overview", "Users", "Models", "Pricing", "Providers", "Analytics", "Refunds", "Audit Logs", "Feature Flags"];
+const TABS = ["Overview", "Users", "Models", "Pricing", "Providers", "Analytics", "Margin", "Refunds", "Audit Logs", "Feature Flags"];
 
 export default function AdminPanel() {
   const [tab, setTab] = useState("Overview");
@@ -323,6 +323,62 @@ export default function AdminPanel() {
                 <div className="admin__stat"><span className="admin__stat-label">Completed</span><span className="admin__stat-value">{data.totals?.completed || 0}</span></div>
                 <div className="admin__stat"><span className="admin__stat-label">Failed</span><span className="admin__stat-value">{data.totals?.failed || 0}</span></div>
                 <div className="admin__stat"><span className="admin__stat-label">Provider Cost</span><span className="admin__stat-value">€{(data.totals?.providerCost || 0).toFixed(2)}</span></div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Margin Dashboard ── */}
+          {tab === "Margin" && (
+            <div className="admin__overview">
+              <div className="admin__stats">
+                <div className="admin__stat admin__stat--revenue"><span className="admin__stat-label">Retail Value</span><span className="admin__stat-value">€{(data.totals?.retailValue || 0).toFixed(2)}</span></div>
+                <div className="admin__stat"><span className="admin__stat-label">Provider Cost</span><span className="admin__stat-value">€{(data.totals?.providerCost || 0).toFixed(2)}</span></div>
+                <div className="admin__stat admin__stat--profit"><span className="admin__stat-label">Gross Margin</span><span className="admin__stat-value">€{(data.totals?.profit || 0).toFixed(2)}</span></div>
+                <div className="admin__stat"><span className="admin__stat-label">Margin %</span><span className="admin__stat-value">{data.totals?.marginPct || 0}%</span></div>
+                <div className="admin__stat"><span className="admin__stat-label">Credits Used</span><span className="admin__stat-value">{data.totals?.creditsUsed || 0}</span></div>
+              </div>
+
+              <div className="admin__chart">
+                <h3>Margin by Tool (30 days)</h3>
+                <div className="admin__table-wrap">
+                  <table className="admin__table">
+                    <thead><tr><th>Tool</th><th>Gens</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Margin %</th></tr></thead>
+                    <tbody>
+                      {(data.marginByTool || []).map((t) => (
+                        <tr key={t.tool}>
+                          <td>{t.tool}</td>
+                          <td>{t.generations}</td>
+                          <td>€{t.revenue.toFixed(2)}</td>
+                          <td>€{t.cost.toFixed(2)}</td>
+                          <td style={{ color: t.margin >= 0 ? "#00d68f" : "#ff3d71" }}>€{t.margin.toFixed(2)}</td>
+                          <td>{t.marginPct}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="admin__chart">
+                <h3>Top Models by Margin (30 days)</h3>
+                <div className="admin__table-wrap">
+                  <table className="admin__table">
+                    <thead><tr><th>Model</th><th>Gens</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Margin %</th></tr></thead>
+                    <tbody>
+                      {(data.modelMargins || []).map((m) => (
+                        <tr key={m.model}>
+                          <td>{m.model}</td>
+                          <td>{m.generations}</td>
+                          <td>€{m.revenue.toFixed(2)}</td>
+                          <td>€{m.cost.toFixed(2)}</td>
+                          <td style={{ color: m.margin >= 0 ? "#00d68f" : "#ff3d71" }}>€{m.margin.toFixed(2)}</td>
+                          <td>{m.marginPct}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {(!data.modelMargins || data.modelMargins.length === 0) && <p className="admin__empty">No generation data yet.</p>}
+                </div>
               </div>
             </div>
           )}

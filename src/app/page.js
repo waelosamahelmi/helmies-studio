@@ -58,7 +58,7 @@ const SECTIONS = [
     kicker: "Image Studio",
     title: (
       <>
-        55+ models.
+        32 models.
         <br />
         <em>One prompt.</em>
       </>
@@ -80,7 +80,7 @@ const SECTIONS = [
         <em>motion.</em>
       </>
     ),
-    desc: "Sora 2, Kling v3, Veo 3, Runway. 40+ video models. Text-to-video, image-to-video. 4K cinematic footage.",
+    desc: "Sora 2, Kling v3, Veo 3, Runway. 17 video models. Text-to-video, image-to-video. 4K cinematic footage.",
     pills: ["Sora 2", "Kling v3", "Veo 3", "Runway", "Wan 2.6"],
     accent: "#FF1B6B",
     bg: "/assets/warrior_girl_e29532086b-40.webp",

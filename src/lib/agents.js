@@ -1,4 +1,4 @@
-import { llmComplete } from "@/lib/providers";
+import { llmComplete, resolveProvider } from "@/lib/providers";
 import { estimateCredits, estimateAgentTask } from "@/lib/pricing-engine";
 import {
   generateImage, generateI2I, generateVideo, generateI2V,
@@ -165,27 +165,30 @@ export async function executeStep(step, previousOutputs = []) {
 
 async function executeImageStep(params) {
   const endpoint = params.endpoint || params.model;
+  const provider = await resolveProvider(params.model || endpoint);
   if (params.image_url || params.images_list?.length) {
-    const result = await generateI2I({ endpoint, ...params });
+    const result = await generateI2I({ endpoint, ...params, _provider: provider });
     return result.url || result.outputs?.[0];
   }
-  const result = await generateImage({ endpoint, ...params });
+  const result = await generateImage({ endpoint, ...params, _provider: provider });
   return result.url || result.outputs?.[0];
 }
 
 async function executeVideoStep(params) {
   const endpoint = params.endpoint || params.model;
+  const provider = await resolveProvider(params.model || endpoint);
   if (params.image_url) {
-    const result = await generateI2V({ endpoint, ...params });
+    const result = await generateI2V({ endpoint, ...params, _provider: provider });
     return result.url || result.outputs?.[0];
   }
-  const result = await generateVideo({ endpoint, ...params });
+  const result = await generateVideo({ endpoint, ...params, _provider: provider });
   return result.url || result.outputs?.[0];
 }
 
 async function executeAudioStep(params) {
   const endpoint = params.endpoint || params._modelId || params.model;
-  const result = await generateAudio({ endpoint, ...params });
+  const provider = await resolveProvider(params._modelId || params.model || endpoint);
+  const result = await generateAudio({ endpoint, ...params, _provider: provider });
   return result.url || result.outputs?.[0];
 }
 

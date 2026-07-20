@@ -28,9 +28,9 @@ const EASE = [0.32, 0.72, 0, 1];
 const TOOLS = [
   { id: "orchestrator", label: "Orchestrator", desc: "AI agent that plans & executes tasks", Icon: IconSparkle, color: "#FF1B6B", group: "AI Agents", badge: "New" },
   { id: "workflows", label: "Workflows", desc: "Multi-step AI pipelines", Icon: IconBolt, color: "#7C3AED", group: "AI Agents", badge: null },
-  { id: "image", label: "Image", desc: "Text-to-image & image-to-image", Icon: IconImage, color: "#FF1B6B", group: "Generate", badge: "55+" },
-  { id: "video", label: "Video", desc: "Text, image & video-to-video", Icon: IconVideo, color: "#7C3AED", group: "Generate", badge: "40+" },
-  { id: "audio", label: "Audio", desc: "Music, voice & sound effects", Icon: IconMusic, color: "#00E5FF", group: "Generate", badge: "20+" },
+  { id: "image", label: "Image", desc: "Text-to-image & image-to-image", Icon: IconImage, color: "#FF1B6B", group: "Generate", badge: "32" },
+  { id: "video", label: "Video", desc: "Text, image & video-to-video", Icon: IconVideo, color: "#7C3AED", group: "Generate", badge: "17" },
+  { id: "audio", label: "Audio", desc: "Music, voice & sound effects", Icon: IconMusic, color: "#00E5FF", group: "Generate", badge: "7" },
   { id: "cinema", label: "Cinema", desc: "Cinematic camera controls", Icon: IconCamera, color: "#FF6B35", group: "Cinematic", badge: null },
   { id: "vibe-motion", label: "Motion", desc: "Motion graphics & remix", Icon: IconFilm, color: "#FFD166", group: "Cinematic", badge: null },
   { id: "clipping", label: "Clipping", desc: "AI highlight extraction", Icon: IconCut, color: "#00E68A", group: "Cinematic", badge: null },

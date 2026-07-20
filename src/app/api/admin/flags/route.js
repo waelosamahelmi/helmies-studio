@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/security";
+import { requireAdmin, logAudit } from "@/lib/security";
 import prisma from "@/lib/prisma";
 
 export async function GET() {
@@ -21,6 +21,7 @@ export async function POST(req) {
       create: { key, name, description, enabled: enabled ?? false, config },
       update: { name, description, enabled, config },
     });
+    await logAudit("admin_toggle_flag", "feature_flag", key, { enabled });
     return NextResponse.json({ success: true });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });

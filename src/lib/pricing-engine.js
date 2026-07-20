@@ -52,9 +52,11 @@ export async function estimateAgentTask(steps) {
   let total = 0;
   const breakdown = [];
   for (const step of steps) {
-    const cost = await estimateCredits(step.tool, step.model, step.params || {});
+    const tool = step.tool || step.agent || "image";
+    const model = step.model || step.params?.model || tool;
+    const cost = await estimateCredits(tool, model, step.params || {});
     total += cost;
-    breakdown.push({ step: step.name || step.tool, tool: step.tool, model: step.model, credits: cost });
+    breakdown.push({ step: step.name || step.task || tool, tool, model, credits: cost });
   }
   return { total, breakdown };
 }

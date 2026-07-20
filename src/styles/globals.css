@@ -65,9 +65,12 @@
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
     text-rendering: optimizeLegibility;
-    -webkit-user-select: none;
-    user-select: none;
     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M4 4l7 18 3-8 8-3z' fill='%23FF1B6B' stroke='%230A0A0F' stroke-width='1.5'/%3E%3C/svg%3E") 4 4, auto;
+  }
+  /* Re-enable text selection on inputs, textareas, code, and content areas */
+  input, textarea, select, code, pre, .auth__legal, .settings__key-reveal code, .orchestrator__msg-content p, .studio-error, .rich-idle__tip {
+    -webkit-user-select: text;
+    user-select: text;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);

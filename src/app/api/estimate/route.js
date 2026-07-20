@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { estimateCredits } from "@/lib/pricing-engine";
+import prisma from "@/lib/prisma";
 
 export async function POST(req) {
   try {
@@ -9,7 +10,7 @@ export async function POST(req) {
 
     const { tool, model, params } = await req.json();
     const credits = await estimateCredits(tool, model, params || {});
-    const userRow = await import("@/lib/prisma").then((m) => m.default.user.findUnique({ where: { id: user.id }, select: { credits: true } }));
+    const userRow = await prisma.user.findUnique({ where: { id: user.id }, select: { credits: true } });
 
     return NextResponse.json({
       credits,

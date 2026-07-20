@@ -137,13 +137,25 @@ export async function regenerateStep(workflowId, userId, stepIndex, newParams = 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
   if (user.credits < stepCost) throw new Error("Insufficient credits");
 
-  await prisma.user.update({ where: { id: userId }, data: { credits: { decrement: stepCost } } });
+  // Fetch prior outputs from the most recent completed run
+  const lastRun = await prisma.workflowRun.findFirst({
+    where: { workflowId, status: "completed" },
+    orderBy: { createdAt: "desc" },
+  });
+  const priorOutputs = lastRun?.outputs?.outputs || [];
+
+  const result = await prisma.user.updateMany({
+    where: { id: userId, credits: { gte: stepCost } },
+    data: { credits: { decrement: stepCost } },
+  });
+  if (result.count === 0) throw new Error("Insufficient credits");
+
   await prisma.creditTransaction.create({
     data: { userId, amount: -stepCost, type: "workflow_regen", description: `Regenerate step ${stepIndex + 1}` },
   });
 
   try {
-    const output = await executeStep(step, []);
+    const output = await executeStep(step, priorOutputs);
     return { success: true, output, creditsUsed: stepCost };
   } catch (error) {
     await prisma.user.update({ where: { id: userId }, data: { credits: { increment: stepCost } } });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
@@ -8,20 +8,17 @@ import { IconSearch, IconExternal, IconDownload, IconArrowUpRight, IconImage } f
 
 const EASE = [0.32, 0.72, 0, 1];
 
-const MOCK_CREATIONS = [
-  { id: "1", imageUrl: "/assets/warrior_girl_e29532086b-40.webp", modelId: "flux-dev", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 3600000).toISOString(), creditsCost: 2 },
-  { id: "2", imageUrl: "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.webp", modelId: "sora-2", modelType: "video", status: "completed", createdAt: new Date(Date.now() - 7200000).toISOString(), creditsCost: 5 },
-  { id: "3", imageUrl: "/assets/photo-1506905925346-21bda4d32df4-6.webp", modelId: "midjourney-v7", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 86400000).toISOString(), creditsCost: 3 },
-  { id: "4", imageUrl: "/assets/photo-1547036967-23d11aacaee0-7.webp", modelId: "gpt-4o-image", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 172800000).toISOString(), creditsCost: 2 },
-  { id: "5", imageUrl: "/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.webp", modelId: "seedream-5", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 259200000).toISOString(), creditsCost: 2 },
-  { id: "6", imageUrl: "/assets/J6-BrUzggQUXdbktr9GcH_ZYLM1F22-13.webp", modelId: "ideogram-v3", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 345600000).toISOString(), creditsCost: 2 },
-];
-
 const TYPE_META = {
   image: { label: "Image", color: "#FF1B6B" },
   video: { label: "Video", color: "#7C3AED" },
   audio: { label: "Audio", color: "#00E68A" },
   lipsync: { label: "Lip Sync", color: "#00E5FF" },
+  i2i: { label: "Edit", color: "#FF1B6B" },
+  i2v: { label: "Video", color: "#7C3AED" },
+  recast: { label: "Recast", color: "#00E5FF" },
+  cinema: { label: "Cinema", color: "#FF6B35" },
+  marketing: { label: "Marketing", color: "#FF1B6B" },
+  influencer: { label: "Persona", color: "#FF6B35" },
 };
 
 function getTimeAgo(dateStr) {
@@ -36,30 +33,34 @@ function getTimeAgo(dateStr) {
 
 const FILTERS = [
   { id: "all", label: "All" },
-  { id: "completed", label: "Completed" },
-  { id: "processing", label: "Processing" },
-  { id: "failed", label: "Failed" },
+  { id: "image", label: "Images" },
+  { id: "video", label: "Videos" },
+  { id: "audio", label: "Audio" },
 ];
 
 export default function GalleryPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [creations, setCreations] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = MOCK_CREATIONS.filter((c) => {
-    if (filter !== "all" && c.status !== filter) return false;
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch(`/api/generations?tool=${filter}&limit=100`)
+      .then((r) => r.json())
+      .then((data) => { setCreations(data.generations || []); setLoading(false); })
+      .catch(() => { setCreations([]); setLoading(false); });
+  }, [filter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = creations.filter((c) => {
     if (search.trim()) {
       const q = search.toLowerCase();
-      if (!c.modelId.toLowerCase().includes(q) && !c.modelType.toLowerCase().includes(q)) return false;
+      if (!c.model?.toLowerCase().includes(q) && !c.tool?.toLowerCase().includes(q) && !c.prompt?.toLowerCase().includes(q)) return false;
     }
     return true;
   });
-
-  const counts = {
-    all: MOCK_CREATIONS.length,
-    completed: MOCK_CREATIONS.filter((c) => c.status === "completed").length,
-    processing: MOCK_CREATIONS.filter((c) => c.status === "processing").length,
-    failed: MOCK_CREATIONS.filter((c) => c.status === "failed").length,
-  };
 
   return (
     <>
@@ -71,7 +72,7 @@ export default function GalleryPage() {
           <div>
             <div className="eyebrow mb-4">Your Work</div>
             <h1 className="page__title">Gallery</h1>
-            <p className="page__sub">{MOCK_CREATIONS.length} creations across 4 studios.</p>
+            <p className="page__sub">{creations.length} creations.</p>
           </div>
           <Link href="/studio" className="btn btn-primary">
             New Generation
@@ -88,7 +89,6 @@ export default function GalleryPage() {
                 className={`pill ${filter === f.id ? "pill--active" : ""}`}
               >
                 {f.label}
-                <span className="pill__count">{counts[f.id] ?? 0}</span>
               </button>
             ))}
           </div>
@@ -103,20 +103,33 @@ export default function GalleryPage() {
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="bezel" style={{ padding: "4rem 2rem", textAlign: "center" }}>
+            <div className="bezel__core" style={{ padding: "3rem 2rem" }}>
+              <div className="studio-loading__spinner mx-auto mb-4" />
+              <p className="text-sm text-white/50">Loading your creations...</p>
+            </div>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="bezel" style={{ padding: "4rem 2rem", textAlign: "center" }}>
             <div className="bezel__core" style={{ padding: "3rem 2rem" }}>
               <div className="studio__empty-icon mx-auto mb-6" style={{ color: "#FF1B6B" }}>
                 <IconImage />
               </div>
               <h3 className="text-xl font-bold mb-2">No creations found</h3>
-              <p className="text-sm text-white/50">Try adjusting your filters or search query.</p>
+              <p className="text-sm text-white/50">Generate something in the studio to see it here.</p>
+              <Link href="/studio" className="btn btn-primary mt-4">
+                Go to Studio
+                <span className="btn__icon"><IconArrowUpRight /></span>
+              </Link>
             </div>
           </div>
         ) : (
           <div className="gallery-grid">
             {filtered.map((c, i) => {
-              const meta = TYPE_META[c.modelType] || TYPE_META.image;
+              const meta = TYPE_META[c.tool] || TYPE_META.image;
+              const isVideo = c.outputUrl?.match(/\.(mp4|webm|mov)$/i);
+              const isAudio = c.outputUrl?.match(/\.(mp3|wav|ogg|flac)$/i);
               return (
                 <motion.div
                   key={c.id}
@@ -127,26 +140,32 @@ export default function GalleryPage() {
                   className="gallery-card group"
                 >
                   <div className="gallery-card__media">
-                    <img src={c.imageUrl} alt={c.modelId} loading="lazy" />
+                    {isVideo ? (
+                      <video src={c.outputUrl} muted loop playsInline loading="lazy" />
+                    ) : isAudio ? (
+                      <div className="gallery-card__audio"><audio src={c.outputUrl} controls /></div>
+                    ) : (
+                      <img src={c.outputUrl} alt={c.model} loading="lazy" />
+                    )}
                   </div>
                   <div className="gallery-card__scrim" />
                   <span className="gallery-card__type" style={{ color: meta.color }}>{meta.label}</span>
                   <div className="gallery-card__meta">
-                    <span className="gallery-card__model">{c.modelId}</span>
+                    <span className="gallery-card__model">{c.model}</span>
                     <span className="gallery-card__time">{getTimeAgo(c.createdAt)}</span>
                   </div>
                   <div className="gallery-card__overlay">
                     <button
                       className="btn btn-sm btn-primary"
-                      onClick={() => window.open(c.imageUrl, "_blank")}
+                      onClick={() => window.open(c.outputUrl, "_blank")}
                     >
                       <IconExternal style={{ width: "0.85rem", height: "0.85rem" }} />
                       Open
                     </button>
-                    <button className="btn btn-sm btn-secondary">
+                    <a className="btn btn-sm btn-secondary" href={c.outputUrl} download>
                       <IconDownload style={{ width: "0.85rem", height: "0.85rem" }} />
                       Save
-                    </button>
+                    </a>
                   </div>
                 </motion.div>
               );

@@ -25,22 +25,41 @@ export async function POST(req) {
       case "checkout.session.completed": {
         const session = event.data.object;
         const userId = session.metadata?.userId;
-        const plan = session.metadata?.plan || PLAN_IDS[session.metadata?.priceId];
-        const credits = SUBSCRIPTION_CREDITS[plan] || 0;
 
-        if (userId && credits > 0) {
-          await prisma.user.update({
-            where: { id: userId },
-            data: { credits: { increment: credits } },
-          });
-          await prisma.creditTransaction.create({
-            data: {
-              userId,
-              amount: credits,
-              type: "subscription",
-              description: `${plan} plan subscription: ${credits} credits`,
-            },
-          });
+        if (session.metadata?.type === "credit_topup") {
+          const topupCredits = parseInt(session.metadata?.credits || "0");
+          if (userId && topupCredits > 0) {
+            await prisma.user.update({
+              where: { id: userId },
+              data: { credits: { increment: topupCredits } },
+            });
+            await prisma.creditTransaction.create({
+              data: {
+                userId,
+                amount: topupCredits,
+                type: "topup",
+                description: `Credit top-up: ${topupCredits} credits`,
+              },
+            });
+          }
+        } else {
+          const plan = session.metadata?.plan || PLAN_IDS[session.metadata?.priceId];
+          const credits = SUBSCRIPTION_CREDITS[plan] || 0;
+
+          if (userId && credits > 0) {
+            await prisma.user.update({
+              where: { id: userId },
+              data: { credits: { increment: credits } },
+            });
+            await prisma.creditTransaction.create({
+              data: {
+                userId,
+                amount: credits,
+                type: "subscription",
+                description: `${plan} plan subscription: ${credits} credits`,
+              },
+            });
+          }
         }
         break;
       }

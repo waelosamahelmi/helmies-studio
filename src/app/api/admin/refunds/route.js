@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/security";
+import { requireAdmin, logAudit } from "@/lib/security";
 import prisma from "@/lib/prisma";
 
 export async function GET() {
@@ -28,6 +28,7 @@ export async function POST(req) {
     await prisma.creditTransaction.create({
       data: { userId, amount, type: "admin_refund", description: reason || "Admin refund" },
     });
+    await logAudit("admin_refund", "user", userId, { amount, reason });
 
     return NextResponse.json({ success: true, refund });
   } catch (e) {

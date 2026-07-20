@@ -6,13 +6,14 @@ function getKey() {
   return key;
 }
 
-async function pollForResult(requestId, maxAttempts = 900, interval = 2000) {
-  const pollUrl = `${BASE_URL}/api/v1/predictions/${requestId}/result`;
+async function pollForResult(requestId, maxAttempts = 900, interval = 2000, baseUrl = BASE_URL, key = null) {
+  const apiKey = key || getKey();
+  const pollUrl = `${baseUrl}/api/v1/predictions/${requestId}/result`;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await new Promise((r) => setTimeout(r, interval));
     try {
       const res = await fetch(pollUrl, {
-        headers: { "Content-Type": "application/json", "x-api-key": getKey() },
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, Authorization: `Bearer ${apiKey}` },
       });
       if (!res.ok) {
         if (res.status >= 500) continue;
@@ -33,11 +34,15 @@ async function pollForResult(requestId, maxAttempts = 900, interval = 2000) {
 }
 
 async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
-  const url = `${BASE_URL}/api/v1/${endpoint}`;
+  const provider = payload._provider;
+  const baseUrl = provider?.baseUrl || BASE_URL;
+  const key = provider?.apiKey || provider?.getKey?.() || getKey();
+  const { _provider, ...rest } = payload;
+  const url = `${baseUrl}/api/v1/${endpoint}`;
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": getKey() },
-    body: JSON.stringify(payload),
+    headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+    body: JSON.stringify(rest),
   });
   if (!res.ok) {
     const txt = await res.text();
@@ -46,7 +51,7 @@ async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   const submitData = await res.json();
   const requestId = submitData.request_id || submitData.id;
   if (!requestId) return submitData;
-  const result = await pollForResult(requestId, maxAttempts);
+  const result = await pollForResult(requestId, maxAttempts, baseUrl, key);
   const outputUrl = result.outputs?.[0] || result.url || result.output?.url;
   return { ...result, url: outputUrl, requestId };
 }

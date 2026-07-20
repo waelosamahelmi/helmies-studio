@@ -87,7 +87,7 @@ export default function ImageStudio() {
           >
             {IMAGE_MODELS.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.name} — {m.provider}
+                {m.name}
               </option>
             ))}
           </select>
