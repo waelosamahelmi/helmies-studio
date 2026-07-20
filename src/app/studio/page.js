@@ -20,7 +20,7 @@ import ProjectMemory from "@/components/studio/ProjectMemory";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
-  IconSearch, IconStar, IconBolt, IconChevron, IconArrowUpRight, IconMenu, IconSparkle,
+  IconStar, IconBolt, IconArrowUpRight, IconMenu, IconClose, IconSparkle,
 } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
@@ -43,22 +43,22 @@ const TOOLS = [
 
 export default function StudioPage({ initialTool }) {
   const [activeTab, setActiveTab] = useState(initialTool || "image");
-  const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [hoveredGroup, setHoveredGroup] = useState(null);
+  const [pinnedGroup, setPinnedGroup] = useState(null);
 
   const activeTool = TOOLS.find((t) => t.id === activeTab) || TOOLS[0];
 
-  const filtered = search.trim()
-    ? TOOLS.filter((t) => t.label.toLowerCase().includes(search.toLowerCase()) || t.desc.toLowerCase().includes(search.toLowerCase()))
-    : TOOLS;
-
-  const grouped = filtered.reduce((acc, t) => {
-    acc[t.group] = acc[t.group] || [];
-    acc[t.group].push(t);
+  const grouped = TOOLS.reduce((acc, t) => {
+    acc[t.group] = acc[t.group] || { label: t.group, color: t.color, items: [] };
+    acc[t.group].items.push(t);
     return acc;
   }, {});
+
+  const GROUPS = Object.values(grouped);
+  const openGroup = pinnedGroup || hoveredGroup;
 
   const toggleFav = (id) => {
     setFavorites((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [id, ...prev].slice(0, 6)));
@@ -70,124 +70,79 @@ export default function StudioPage({ initialTool }) {
       <div className="grain" aria-hidden="true" />
 
       <div className="studio">
-        {/* Sidebar */}
-        <aside className={`studio__sidebar ${collapsed ? "studio__sidebar--collapsed" : ""} ${mobileNavOpen ? "studio__sidebar--open" : ""}`}>
-          <div className="studio__sidebar-head">
-            <Link href="/" className="flex items-center gap-2 min-w-0">
-              <img src="/ico.svg" alt="" className="studio__sidebar-mark" />
-              {!collapsed && <span className="studio__sidebar-brand">Studio</span>}
+        {/* Sidebar — icon rail with hover flyout */}
+        <aside className={`studio__rail ${mobileNavOpen ? "studio__rail--open" : ""}`} onMouseLeave={() => { setHoveredGroup(null); }}>
+          {/* Logo */}
+          <div className="studio__rail-logo">
+            <Link href="/" aria-label="Helmies Studio home">
+              <img src="/ico.svg" alt="" />
             </Link>
-            <button
-              onClick={() => setCollapsed(!collapsed)}
-              className="studio__collapse hidden md:flex"
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              <IconChevron />
-            </button>
-            <button
-              onClick={() => setMobileNavOpen(false)}
-              className="studio__collapse md:hidden"
-              aria-label="Close sidebar"
-              style={{ transform: "rotate(180deg)" }}
-            >
-              <IconChevron />
-            </button>
           </div>
 
-          {!collapsed && (
-            <div className="studio__search">
-              <div className="field">
-                <IconSearch className="field__icon" />
-                <input
-                  type="text"
-                  placeholder="Find a tool..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-            </div>
-          )}
+          {/* Group icons */}
+          <nav className="studio__rail-nav">
+            {GROUPS.map((group) => {
+              const GroupIcon = group.items[0].Icon;
+              const hasActive = group.items.some((t) => t.id === activeTab);
+              return (
+                <div
+                  key={group.label}
+                  className="studio__rail-item-wrap"
+                  onMouseEnter={() => setHoveredGroup(group.label)}
+                >
+                  <button
+                    className={`studio__rail-item ${hasActive ? "studio__rail-item--active" : ""}`}
+                    style={{ "--rail-color": group.color }}
+                    onClick={() => setPinnedGroup(pinnedGroup === group.label ? null : group.label)}
+                    title={group.label}
+                  >
+                    <GroupIcon />
+                  </button>
+                </div>
+              );
+            })}
+          </nav>
 
-          {!collapsed && favorites.length > 0 && !search && (
-            <div className="px-3 pb-3 border-b border-white/10">
-              <div className="studio__group-label flex items-center gap-1.5 !px-0 !pb-2">
-                <IconStar style={{ color: "#FFD166", width: "0.7rem", height: "0.7rem" }} />
-                Favorites
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {favorites.map((id) => {
-                  const t = TOOLS.find((x) => x.id === id);
-                  if (!t) return null;
-                  const FavIcon = t.Icon;
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => setActiveTab(id)}
-                      className={`pill ${activeTab === id ? "pill--active" : ""}`}
-                      style={!activeTab === id ? {} : { borderColor: t.color, color: t.color, background: `${t.color}15` }}
-                    >
-                      <FavIcon style={{ width: "0.75rem", height: "0.75rem" }} />
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* Footer — credits */}
+          <div className="studio__rail-foot">
+            <Link href="/settings" className="studio__rail-credits" title="Credits & Settings">
+              <IconBolt />
+            </Link>
+          </div>
 
-          <nav className="studio__nav">
-            {Object.entries(grouped).map(([group, tools]) => (
-              <div key={group} className="mb-1">
-                {!collapsed && <div className="studio__group-label">{group}</div>}
-                {tools.map((t) => {
+          {/* Flyout panel */}
+          {openGroup && (
+            <div className="studio__flyout" onMouseEnter={() => setHoveredGroup(openGroup)}>
+              <div className="studio__flyout-header">
+                <span className="studio__flyout-title">{openGroup}</span>
+                <button className="studio__flyout-close" onClick={() => setPinnedGroup(null)} aria-label="Close menu">
+                  <IconClose />
+                </button>
+              </div>
+              <div className="studio__flyout-list">
+                {grouped[openGroup].items.map((t) => {
                   const ToolIcon = t.Icon;
                   const isActive = activeTab === t.id;
-                  const isFav = favorites.includes(t.id);
                   return (
                     <button
                       key={t.id}
-                      onClick={() => { setActiveTab(t.id); setMobileNavOpen(false); }}
-                      className={`studio__item ${isActive ? "studio__item--active" : ""}`}
-                      title={collapsed ? t.label : undefined}
+                      onClick={() => { setActiveTab(t.id); setMobileNavOpen(false); setPinnedGroup(null); setHoveredGroup(null); }}
+                      className={`studio__flyout-item ${isActive ? "studio__flyout-item--active" : ""}`}
                     >
-                      <span className="studio__item-icon" style={{ color: t.color }}>
+                      <span className="studio__flyout-icon" style={{ color: t.color }}>
                         <ToolIcon />
                       </span>
-                      {!collapsed && (
-                        <>
-                          <span className="studio__item-label">{t.label}</span>
-                          {t.badge && <span className="studio__item-badge">{t.badge}</span>}
-                          <button
-                            type="button"
-                            className={`studio__fav ${isFav ? "studio__fav--on" : ""}`}
-                            onClick={(e) => { e.stopPropagation(); toggleFav(t.id); }}
-                            aria-label="Toggle favorite"
-                          >
-                            <IconStar />
-                          </button>
-                        </>
-                      )}
+                      <div className="studio__flyout-text">
+                        <span className="studio__flyout-label">{t.label}</span>
+                        <span className="studio__flyout-desc">{t.desc}</span>
+                      </div>
+                      {t.badge && <span className="studio__flyout-badge">{t.badge}</span>}
                     </button>
                   );
                 })}
               </div>
-            ))}
-          </nav>
-
-          <div className="studio__sidebar-foot">
-            <Link href="/pricing" className="studio__user">
-              <div className="studio__avatar">W</div>
-              {!collapsed && (
-                <div className="studio__user-meta">
-                  <div className="studio__user-name">Wael Helmi</div>
-                  <div className="studio__user-credits">
-                    <IconBolt />
-                    <span>100 credits</span>
-                  </div>
-                </div>
-              )}
-            </Link>
-          </div>
+            </div>
+          )}
         </aside>
 
         {/* Main */}
