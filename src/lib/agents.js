@@ -189,6 +189,30 @@ async function executeAudioStep(params) {
   return result.url || result.outputs?.[0];
 }
 
+// ── Fallback models per agent type ──
+const FALLBACKS = {
+  image: ["flux-dev", "flux-schnell", "sdxl-image"],
+  video: ["wan-2.6", "hailuo-02", "seedance-2.0"],
+  audio: ["suno-v4", "suno-v3.5", "music-gen"],
+};
+
+// ── Retry with fallback model ──
+async function executeStepWithRetry(step, previousOutputs, attempt = 0) {
+  try {
+    return await executeStep(step, previousOutputs);
+  } catch (error) {
+    const fallbacks = FALLBACKS[step.agent] || [];
+    if (attempt >= fallbacks.length || !fallbacks[attempt]) throw error;
+
+    const fallbackModel = fallbacks[attempt];
+    const retryStep = {
+      ...step,
+      params: { ...step.params, model: fallbackModel, endpoint: fallbackModel },
+    };
+    return executeStepWithRetry(retryStep, previousOutputs, attempt + 1);
+  }
+}
+
 async function executeWebsiteStep(params) {
   const messages = [
     { role: "system", content: AGENTS.website.systemPrompt },
@@ -253,9 +277,9 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
     for (let i = 0; i < plan.steps.length; i++) {
       const step = plan.steps[i];
       try {
-        const output = await executeStep(step, outputs);
+        const output = await executeStepWithRetry(step, outputs, 0);
         outputs.push(output);
-        stepResults.push({ step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output });
+        stepResults.push({ step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output, retried: false });
 
         if (step.agent === "image" || step.agent === "video" || step.agent === "audio" || step.agent === "marketing") {
           await prisma.generation.create({
@@ -277,16 +301,19 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
       }
     }
 
+    // ── Assemble outputs into a package ──
+    const assembled = assembleOutputs(outputs, plan.steps);
+
     await prisma.agentRun.update({
       where: { id: agentRun.id },
       data: {
         status: "completed",
         creditsUsed: plan.estimate.total,
-        result: { outputs, stepResults, summary: plan.summary },
+        result: { outputs, stepResults, summary: plan.summary, assembled },
       },
     });
 
-    return { success: true, outputs, stepResults, summary: plan.summary, creditsUsed: plan.estimate.total };
+    return { success: true, outputs, stepResults, assembled, summary: plan.summary, creditsUsed: plan.estimate.total };
   } catch (error) {
     const refundAmount = plan.estimate.total - (stepResults.filter(s => s.status === "completed").length * (plan.estimate.total / plan.steps.length));
     await creditUser(userId, Math.ceil(refundAmount), "agent_refund", `Refund for failed agent run`);
@@ -306,4 +333,30 @@ async function debitCredits(userId, amount, description) {
 async function creditUser(userId, amount, type, description) {
   await prisma.user.update({ where: { id: userId }, data: { credits: { increment: amount } } });
   await prisma.creditTransaction.create({ data: { userId, amount, type, description } });
+}
+
+// ── Assemble outputs into a coherent package ──
+function assembleOutputs(outputs, steps) {
+  const images = [];
+  const videos = [];
+  const audio = [];
+  const text = [];
+
+  outputs.forEach((output, i) => {
+    if (!output || typeof output !== "string") {
+      text.push({ step: i + 1, agent: steps[i]?.agent, content: typeof output === "string" ? output : JSON.stringify(output)?.slice(0, 500) });
+      return;
+    }
+    if (output.match(/\.(jpg|jpeg|png|webp|gif)$/i) || (output.includes("cloudfront") && !output.match(/\.(mp4|webm)$/i))) {
+      images.push({ step: i + 1, url: output });
+    } else if (output.match(/\.(mp4|webm|mov)$/i)) {
+      videos.push({ step: i + 1, url: output });
+    } else if (output.match(/\.(mp3|wav|ogg|flac)$/i)) {
+      audio.push({ step: i + 1, url: output });
+    } else {
+      text.push({ step: i + 1, content: output.slice(0, 2000) });
+    }
+  });
+
+  return { images, videos, audio, text, total: outputs.length };
 }

@@ -3,6 +3,8 @@
 import { useState, useRef } from "react";
 import { IMAGE_MODELS } from "@/lib/models";
 import { IconBolt, IconArrowUpRight, IconImage } from "@/components/Icons";
+import { useCreditCost } from "@/components/studio/useCreditCost";
+import RichIdle from "@/components/studio/RichIdle";
 
 export default function ImageStudio() {
   const [model, setModel] = useState(IMAGE_MODELS[0]);
@@ -13,6 +15,7 @@ export default function ImageStudio() {
   const [height, setHeight] = useState(1024);
   const [imageUrl, setImageUrl] = useState("");
   const [result, setResult] = useState(null);
+  const { cost, affordable } = useCreditCost("image", model.id, { aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef(null);
@@ -186,19 +189,22 @@ export default function ImageStudio() {
         <button
           className="btn btn-primary btn-lg w-full"
           onClick={handleSubmit}
-          disabled={loading || !prompt.trim()}
+          disabled={loading || !prompt.trim() || !affordable}
         >
           {loading ? (
             "Generating..."
           ) : (
             <>
-              Generate
+              Generate{cost ? ` — ${cost} credits` : ""}
               <span className="btn__icon">
                 <IconBolt />
               </span>
             </>
           )}
         </button>
+        {!affordable && cost && (
+          <p className="studio__cost-warning">Insufficient credits. Need {cost}, upgrade to continue.</p>
+        )}
       </div>
 
       <div className="studio-panel__right">
@@ -226,13 +232,7 @@ export default function ImageStudio() {
           </div>
         )}
         {!loading && !result && !error && (
-          <div className="studio-empty">
-            <div className="studio-empty__icon">
-              <IconImage />
-            </div>
-            <h3>Image Studio</h3>
-            <p>Enter a prompt and click Generate to create stunning AI images.</p>
-          </div>
+          <RichIdle tool="image" icon={IconImage} title="Image Studio" description="Enter a prompt and click Generate to create stunning AI images." />
         )}
       </div>
     </div>

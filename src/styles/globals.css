@@ -3478,6 +3478,79 @@
 .admin__models-count { font-size: 0.8rem; color: rgba(242, 242, 247, 0.5); margin-bottom: 0.75rem; }
 
 /* ============================================================ */
+/* RICH IDLE SCREENS                                             */
+/* ============================================================ */
+.rich-idle {
+  text-align: center;
+  padding: 2rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+.rich-idle__icon {
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 27, 107, 0.06);
+  border: 1px solid rgba(255, 27, 107, 0.12);
+  border-radius: 1.25rem;
+  color: #FF1B6B;
+}
+.rich-idle__icon svg { width: 32px; height: 32px; }
+.rich-idle h3 { font-family: var(--font-display); font-size: 1.4rem; font-weight: 700; }
+.rich-idle > p { color: rgba(242, 242, 247, 0.5); font-size: 0.85rem; max-width: 320px; }
+.rich-idle__tip {
+  margin-top: 0.5rem;
+  padding: 0.625rem 1rem;
+  background: rgba(255, 27, 107, 0.05);
+  border: 1px solid rgba(255, 27, 107, 0.1);
+  border-radius: 0.75rem;
+  font-size: 0.8rem;
+  color: rgba(242, 242, 247, 0.6);
+  max-width: 360px;
+}
+.studio__cost-warning {
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #ff6b6b;
+  text-align: center;
+}
+
+/* ============================================================ */
+/* SETTINGS PAGE                                                 */
+/* ============================================================ */
+.settings { max-width: 720px; }
+.settings__header h1 { font-family: var(--font-display); font-size: 2rem; font-weight: 800; }
+.settings__header p { color: rgba(242, 242, 247, 0.5); font-size: 0.875rem; }
+.settings__section { margin-top: 2rem; padding: 1.5rem; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 1.25rem; }
+.settings__section h3 { font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+.settings__hint { font-size: 0.8rem; color: rgba(242, 242, 247, 0.4); margin-bottom: 1rem; }
+.settings__credits { display: flex; gap: 1rem; }
+.settings__credits-card { flex: 1; padding: 1rem; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 0.75rem; text-align: center; }
+.settings__credits-value { display: flex; align-items: center; justify-content: center; gap: 0.25rem; font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; color: #FF1B6B; }
+.settings__credits-value svg { width: 1rem; height: 1rem; }
+.settings__credits-label { font-size: 0.7rem; color: rgba(242, 242, 247, 0.4); text-transform: uppercase; letter-spacing: 0.05em; }
+.settings__add-key { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+.settings__add-key .field-input { flex: 1; }
+.settings__key-reveal { padding: 1rem; background: rgba(0, 230, 138, 0.05); border: 1px solid rgba(0, 230, 138, 0.2); border-radius: 0.75rem; margin-bottom: 1rem; }
+.settings__key-reveal p { font-size: 0.75rem; color: #00E68A; margin-bottom: 0.5rem; }
+.settings__key-reveal code { display: block; padding: 0.625rem; background: rgba(0, 0, 0, 0.3); border-radius: 0.5rem; font-size: 0.8rem; word-break: break-all; margin-bottom: 0.5rem; }
+.settings__keys-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.settings__key { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 0.75rem; }
+.settings__key strong { font-size: 0.85rem; }
+.settings__key-prefix { font-size: 0.7rem; color: rgba(242, 242, 247, 0.3); margin-left: 0.5rem; font-family: monospace; }
+.settings__key-meta { display: flex; gap: 0.75rem; font-size: 0.7rem; color: rgba(242, 242, 247, 0.4); }
+
+@media (max-width: 768px) {
+  .settings__credits { flex-direction: column; }
+  .settings__key { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .settings__key-meta { flex-wrap: wrap; }
+}
+
+/* ============================================================ */
 /* PROJECT MEMORY PANEL                                         */
 /* ============================================================ */
 .memory-panel {

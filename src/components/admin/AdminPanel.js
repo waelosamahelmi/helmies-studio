@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Navbar from "@/components/Navbar";
 import { IconBolt, IconUsers, IconStar } from "@/components/Icons";
 
-const TABS = ["Overview", "Users", "Models", "Pricing", "Providers", "Analytics", "Refunds", "Feature Flags"];
+const TABS = ["Overview", "Users", "Models", "Pricing", "Providers", "Analytics", "Refunds", "Audit Logs", "Feature Flags"];
 
 export default function AdminPanel() {
   const [tab, setTab] = useState("Overview");
@@ -16,6 +16,7 @@ export default function AdminPanel() {
   const [flags, setFlags] = useState([]);
   const [models, setModels] = useState([]);
   const [modelFilter, setModelFilter] = useState("all");
+  const [auditLogs, setAuditLogs] = useState([]);
   const [editingUser, setEditingUser] = useState(null);
   const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "MuAPI", providerCost: 0, creditsCost: 1 });
   const [newProvider, setNewProvider] = useState({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true });
@@ -45,6 +46,9 @@ export default function AdminPanel() {
   const loadModels = useCallback(() => {
     fetch("/api/admin/models").then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
   }, []);
+  const loadAudit = useCallback(() => {
+    fetch("/api/admin/audit").then((r) => r.json()).then(setAuditLogs).catch(() => {});
+  }, []);
 
   useEffect(() => { loadOverview(); }, [loadOverview]);
   useEffect(() => {
@@ -54,6 +58,7 @@ export default function AdminPanel() {
     if (tab === "Refunds") loadRefunds();
     if (tab === "Feature Flags") loadFlags();
     if (tab === "Models") loadModels();
+    if (tab === "Audit Logs") loadAudit();
   }, [tab, loadUsers, loadPricing, loadProviders, loadRefunds, loadFlags]);
 
   // ── User editing ──
@@ -345,6 +350,27 @@ export default function AdminPanel() {
                 ))}
                 {refunds.length === 0 && <p className="admin__empty">No refunds yet.</p>}
               </div>
+            </div>
+          )}
+
+          {/* ── Audit Logs ── */}
+          {tab === "Audit Logs" && (
+            <div className="admin__table-wrap">
+              <table className="admin__table">
+                <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Details</th></tr></thead>
+                <tbody>
+                  {auditLogs.map((log) => (
+                    <tr key={log.id}>
+                      <td style={{ fontSize: "0.7rem" }}>{new Date(log.createdAt).toLocaleString()}</td>
+                      <td>{log.user?.email || "—"}</td>
+                      <td><span className="admin__badge">{log.action}</span></td>
+                      <td>{log.resource || "—"}</td>
+                      <td style={{ fontSize: "0.7rem", color: "rgba(242,242,247,0.4)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.metadata ? JSON.stringify(log.metadata).slice(0, 100) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {auditLogs.length === 0 && <p className="admin__empty">No audit logs yet.</p>}
             </div>
           )}
 
