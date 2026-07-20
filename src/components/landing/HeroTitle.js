@@ -11,7 +11,7 @@ const TRAIL_LENGTH = 50;
 const BRUSH_SIZE = 50;
 const FADE_MS = 3000;
 
-export default function HeroTitle({ image, line1, line2, accent, line1Accent, small }) {
+export default function HeroTitle({ image, line1, line2, accent, line1Accent, line1AccentImg, small }) {
   const wrapRef = useRef(null);
   const paintRef = useRef(null);
   const [mask, setMask] = useState("radial-gradient(circle 1px at -9999px -9999px, transparent 0%, transparent 100%)");
@@ -80,7 +80,11 @@ export default function HeroTitle({ image, line1, line2, accent, line1Accent, sm
     <div ref={wrapRef} className="hero-title-wrap">
       <h1 className={`hero-title hero-title--base${small ? " hero-title--small" : ""}`}>
         <span className="hero-title__line">
-          {line1Accent && <span className="hero-title__accent">{line1Accent}</span>}
+          {line1AccentImg ? (
+            <img src={line1AccentImg} alt="" className="hero-title__accent-img" />
+          ) : line1Accent ? (
+            <span className="hero-title__accent">{line1Accent}</span>
+          ) : null}
           {line1}
         </span>
         {line2 && (
@@ -100,7 +104,11 @@ export default function HeroTitle({ image, line1, line2, accent, line1Accent, sm
         aria-hidden="true"
       >
         <span className="hero-title__line">
-          {line1Accent && <span className="hero-title__paint-accent">{line1Accent}</span>}
+          {line1AccentImg ? (
+            <img src={line1AccentImg} alt="" className="hero-title__accent-img" />
+          ) : line1Accent ? (
+            <span className="hero-title__paint-accent">{line1Accent}</span>
+          ) : null}
           {line1}
         </span>
         {line2 && (

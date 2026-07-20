@@ -157,7 +157,7 @@ function HeroSection() {
           image="/assets/warrior_girl_e29532086b-40.webp"
           line1=" models."
           line2="studio."
-          line1Accent="200+"
+          line1AccentImg="/assets/200.png"
           accent="One "
         />
 

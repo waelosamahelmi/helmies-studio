@@ -2043,7 +2043,7 @@
   font-weight: 800;
   font-size: clamp(4rem, 10vw, 9rem);
   letter-spacing: -0.04em;
-  line-height: 1;
+  line-height: 0.9;
 }
 .hero-title--small {
   font-size: clamp(1.5rem, 3.5vw, 2.5rem);
@@ -2070,6 +2070,13 @@
 }
 .hero-title__line { display: block; }
 .hero-title__accent { color: var(--color-brand); }
+.hero-title__accent-img {
+  display: inline-block;
+  height: 1em;
+  width: auto;
+  vertical-align: middle;
+  margin-right: -0.15em;
+}
 .hero-title__paint-accent {
   -webkit-text-fill-color: transparent;
   color: transparent;
