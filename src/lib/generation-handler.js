@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserWithCredits, debitCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
-import { getCreditCost } from "@/lib/credits";
 import { resolveProvider, brandError, logProviderError } from "@/lib/providers";
+import { checkRateLimit } from "@/lib/security";
+import { logAudit } from "@/lib/security";
 
 export async function handleGeneration(req, tool, cost, apiFn) {
   try {
@@ -11,14 +12,17 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const rl = await checkRateLimit(user.id, `/api/generate/${tool}`);
+    if (!rl.allowed) {
+      return NextResponse.json({ error: "Rate limited", retryAfter: rl.retryAfter }, { status: 429 });
+    }
+
     const body = await req.json();
     const model = body.model || body.endpoint || tool;
     const prompt = body.prompt || "";
 
-    // ── Resolve provider for this model ──
     const provider = await resolveProvider(model);
 
-    // ── Check DB pricing for actual cost ──
     const dbPricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
     if (dbPricing?.creditsCost) cost = dbPricing.creditsCost;
 
@@ -75,7 +79,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       await prisma.creditTransaction.create({
         data: { userId: user.id, amount: cost, type: "refund", description: `Refund: ${brandedMsg.slice(0, 100)}` },
       });
-      return NextResponse.json({ error: brandedMsg, providerError: genError.message }, { status: 500 });
+      return NextResponse.json({ error: brandedMsg }, { status: 500 });
     }
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });

@@ -1,24 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import Link from "next/link";
+import { useState, Suspense } from "react";
+import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
-import { IconGoogle, IconEye, IconEyeOff, IconArrowUpRight, IconBolt, IconMail } from "@/components/Icons";
+import { IconGoogle, IconArrowUpRight } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
 
-export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+function LoginContent() {
   const [loading, setLoading] = useState(false);
 
-  const submit = (e) => {
-    e.preventDefault();
+  const handleGoogle = async () => {
     setLoading(true);
-    setTimeout(() => setLoading(false), 1200);
+    await signIn("google", { callbackUrl: "/studio" });
   };
 
   return (
@@ -44,68 +39,22 @@ export default function LoginPage() {
               <span className="auth__brand-text">Studio</span>
             </div>
 
-            <h1 className="auth__title">{isLogin ? "Welcome back" : "Create your studio"}</h1>
+            <h1 className="auth__title">Welcome to Helmies Studio</h1>
             <p className="auth__lead">
-              {isLogin ? "Sign in to continue creating with 200+ AI models." : "Start free with 10 credits. No card required."}
+              Sign in to create with 200+ AI models. Start free with 100 credits.
             </p>
 
-            <button className="btn btn-secondary w-full justify-center" disabled={loading}>
-              <IconGoogle className="auth__google" />
-              Continue with Google
+            <button className="btn btn-primary w-full justify-center" onClick={handleGoogle} disabled={loading}>
+              {loading ? (
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <IconGoogle className="auth__google" />
+                  Continue with Google
+                  <span className="btn__icon"><IconArrowUpRight /></span>
+                </>
+              )}
             </button>
-
-            <div className="auth__divider">or</div>
-
-            <form className="auth__form" onSubmit={submit}>
-              <div className="field">
-                <IconMail className="field__icon" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  required
-                  disabled={loading}
-                />
-              </div>
-              <div className="field">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isLogin ? "Enter your password" : "At least 8 characters"}
-                  required
-                  minLength={8}
-                  disabled={loading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="auth__eye"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? <IconEyeOff /> : <IconEye />}
-                </button>
-              </div>
-
-              <button type="submit" className="btn btn-primary w-full justify-center mt-2" disabled={loading}>
-                {loading ? (
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : (
-                  <>
-                    {isLogin ? "Sign in" : "Create account"}
-                    <span className="btn__icon"><IconArrowUpRight /></span>
-                  </>
-                )}
-              </button>
-            </form>
-
-            <div className="auth__toggle">
-              <span>{isLogin ? "New to Helmies?" : "Already have an account?"}</span>
-              <button onClick={() => setIsLogin(!isLogin)} type="button">
-                {isLogin ? "Create an account" : "Sign in"}
-              </button>
-            </div>
 
             <p className="auth__legal">
               By continuing, you agree to our Terms of Service and Privacy Policy.<br />
@@ -115,5 +64,13 @@ export default function LoginPage() {
         </motion.div>
       </section>
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -18,18 +18,11 @@ export async function getCurrentUserWithCredits() {
 }
 
 export async function debitCredits(userId, amount) {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { credits: true },
-  });
-  if (!user) throw new Error("User not found");
-  if (user.credits < amount) {
-    throw new Error("Insufficient credits");
-  }
-  await prisma.user.update({
-    where: { id: userId },
+  const result = await prisma.user.updateMany({
+    where: { id: userId, credits: { gte: amount } },
     data: { credits: { decrement: amount } },
   });
+  if (result.count === 0) throw new Error("Insufficient credits");
   await prisma.creditTransaction.create({
     data: {
       userId,

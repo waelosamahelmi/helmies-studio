@@ -65,7 +65,7 @@ model VerificationToken {
 
 model Subscription {
   id                    String    @id @default(cuid())
-  userId                String
+  userId                String    @unique
   stripeCustomerId      String?   @unique
   stripeSubscriptionId  String?   @unique
   stripePriceId         String?
