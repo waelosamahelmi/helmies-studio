@@ -1,14 +1,18 @@
 import sharp from 'sharp';
+import { readFileSync } from 'fs';
 import { join } from 'path';
 
 const heroBg = join(process.cwd(), 'public', 'assets', 'warrior_girl_e29532086b-40.webp');
+const iconSvg = readFileSync(join(process.cwd(), 'public', 'ico.svg'));
 
-// 1200x630 OG image
-const heroResized = await sharp(heroBg)
-  .resize(1200, 630, { fit: 'cover', position: 'center' })
-  .toBuffer();
+// Render icon to PNG buffer at 80x80
+const iconPng = await sharp(iconSvg).resize(80, 80).png().toBuffer();
+const iconPngSm = await sharp(iconSvg).resize(60, 60).png().toBuffer();
 
-const overlaySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+// 1200x630 OG
+const hero = await sharp(heroBg).resize(1200, 630, { fit: 'cover', position: 'center' }).toBuffer();
+
+const overlay1200 = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
   <defs>
     <linearGradient id="side" x1="0" y1="0" x2="0.4" y2="0">
       <stop offset="0" stop-color="#0A0A0F" stop-opacity="0.95"/>
@@ -26,24 +30,24 @@ const overlaySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height=
   </defs>
   <rect width="1200" height="630" fill="url(#side)"/>
   <rect width="1200" height="630" fill="url(#bottom)"/>
-  <rect x="80" y="440" width="120" height="3" fill="url(#accent)"/>
-  <text x="80" y="490" font-family="system-ui, -apple-system, Helvetica Neue, sans-serif" font-size="72" font-weight="800" fill="#F2F2F7" letter-spacing="-3">Helmies</text>
-  <text x="80" y="540" font-family="system-ui, -apple-system, Helvetica Neue, sans-serif" font-size="72" font-weight="800" fill="#FF1B6B" letter-spacing="-3">Studio</text>
-  <text x="80" y="580" font-family="system-ui, -apple-system, Helvetica Neue, sans-serif" font-size="20" fill="#F2F2F7" opacity="0.6" letter-spacing="4">200+ AI MODELS · IMAGE · VIDEO · LIP-SYNC</text>
+  <rect x="80" y="455" width="100" height="3" fill="url(#accent)"/>
+  <text x="175" y="498" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="68" font-weight="700" fill="#F2F2F7" letter-spacing="-1">Studio</text>
+  <text x="80" y="555" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="18" fill="#F2F2F7" opacity="0.55" letter-spacing="5" font-weight="400">200+ AI MODELS · IMAGE · VIDEO · LIP-SYNC</text>
 </svg>`;
 
-await sharp(heroResized)
-  .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
+await sharp(hero)
+  .composite([
+    { input: iconPng, top: 395, left: 80 },
+    { input: Buffer.from(overlay1200), top: 0, left: 0 },
+  ])
   .png()
   .toFile(join(process.cwd(), 'public', 'og-image.png'));
 console.log('Created og-image.png (1200x630)');
 
-// Twitter 800x418
-const heroTw = await sharp(heroBg)
-  .resize(800, 418, { fit: 'cover', position: 'center' })
-  .toBuffer();
+// 800x418 Twitter
+const heroTw = await sharp(heroBg).resize(800, 418, { fit: 'cover', position: 'center' }).toBuffer();
 
-const twSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="418" viewBox="0 0 800 418">
+const overlay800 = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="418" viewBox="0 0 800 418">
   <defs>
     <linearGradient id="side" x1="0" y1="0" x2="0.4" y2="0">
       <stop offset="0" stop-color="#0A0A0F" stop-opacity="0.95"/>
@@ -61,14 +65,16 @@ const twSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="418" 
   </defs>
   <rect width="800" height="418" fill="url(#side)"/>
   <rect width="800" height="418" fill="url(#bottom)"/>
-  <rect x="50" y="290" width="80" height="3" fill="url(#accent)"/>
-  <text x="50" y="330" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="800" fill="#F2F2F7" letter-spacing="-2">Helmies</text>
-  <text x="50" y="370" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="800" fill="#FF1B6B" letter-spacing="-2">Studio</text>
-  <text x="50" y="400" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#F2F2F7" opacity="0.6" letter-spacing="3">200+ AI MODELS · IMAGE · VIDEO · LIP-SYNC</text>
+  <rect x="50" y="300" width="80" height="3" fill="url(#accent)"/>
+  <text x="120" y="340" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="50" font-weight="700" fill="#F2F2F7" letter-spacing="-1">Studio</text>
+  <text x="50" y="380" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="14" fill="#F2F2F7" opacity="0.55" letter-spacing="4" font-weight="400">200+ AI MODELS · IMAGE · VIDEO · LIP-SYNC</text>
 </svg>`;
 
 await sharp(heroTw)
-  .composite([{ input: Buffer.from(twSvg), top: 0, left: 0 }])
+  .composite([
+    { input: iconPngSm, top: 272, left: 50 },
+    { input: Buffer.from(overlay800), top: 0, left: 0 },
+  ])
   .png()
   .toFile(join(process.cwd(), 'public', 'og-image-twitter.png'));
 console.log('Created og-image-twitter.png (800x418)');
