@@ -48,6 +48,7 @@ export default function StudioPage({ initialTool }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [hoveredGroup, setHoveredGroup] = useState(null);
   const [pinnedGroup, setPinnedGroup] = useState(null);
+  const [railOffset, setRailOffset] = useState(0);
 
   const activeTool = TOOLS.find((t) => t.id === activeTab) || TOOLS[0];
 
@@ -81,19 +82,19 @@ export default function StudioPage({ initialTool }) {
 
           {/* Group icons */}
           <nav className="studio__rail-nav">
-            {GROUPS.map((group) => {
+            {GROUPS.map((group, gi) => {
               const GroupIcon = group.items[0].Icon;
               const hasActive = group.items.some((t) => t.id === activeTab);
               return (
                 <div
                   key={group.label}
                   className="studio__rail-item-wrap"
-                  onMouseEnter={() => setHoveredGroup(group.label)}
+                  onMouseEnter={(e) => { setHoveredGroup(group.label); setRailOffset(e.currentTarget.offsetTop); }}
                 >
                   <button
                     className={`studio__rail-item ${hasActive ? "studio__rail-item--active" : ""}`}
                     style={{ "--rail-color": group.color }}
-                    onClick={() => setPinnedGroup(pinnedGroup === group.label ? null : group.label)}
+                    onClick={(e) => { setPinnedGroup(pinnedGroup === group.label ? null : group.label); setRailOffset(e.currentTarget.parentElement.offsetTop); }}
                     title={group.label}
                   >
                     <GroupIcon />
@@ -112,7 +113,7 @@ export default function StudioPage({ initialTool }) {
 
           {/* Flyout panel */}
           {openGroup && (
-            <div className="studio__flyout" onMouseEnter={() => setHoveredGroup(openGroup)}>
+            <div className="studio__flyout" style={{ "--rail-offset": `${railOffset}px` }} onMouseEnter={() => setHoveredGroup(openGroup)}>
               <div className="studio__flyout-header">
                 <span className="studio__flyout-title">{openGroup}</span>
                 <button className="studio__flyout-close" onClick={() => setPinnedGroup(null)} aria-label="Close menu">
