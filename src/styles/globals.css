@@ -1581,6 +1581,66 @@
 .pricing-wrap {
   position: relative;
 }
+.pricing-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+.pricing-toggle__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.3s;
+}
+.pricing-toggle__label--active {
+  color: var(--color-text);
+}
+.pricing-toggle__badge {
+  display: inline-flex;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: var(--color-brand);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 0.25rem;
+}
+.pricing-toggle__switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--color-hairline);
+  cursor: pointer;
+  transition: background 0.3s;
+  padding: 0;
+}
+.pricing-toggle__switch--on {
+  background: var(--color-brand);
+  border-color: var(--color-brand);
+}
+.pricing-toggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.pricing-toggle__switch--on .pricing-toggle__knob {
+  transform: translateX(20px);
+}
+.pricing-scroll-track {
+  position: relative;
+}
 .pricing-cards {
   padding: 1rem 0;
   margin: -1rem 0;
@@ -1689,6 +1749,12 @@
   font-size: 0.85rem;
   font-weight: 400;
   color: var(--color-text-dim);
+}
+.pricing-card__billed {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+  margin-top: -0.25rem;
 }
 .pricing-card__credits {
   font-family: var(--font-mono);

@@ -24,11 +24,18 @@ const HEADSHOTS = [
   "/assets/photo-1551434678-e076c223a692-10.jpg",
 ];
 
-const PRICING = [
-  { name: "Free", price: "$0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 200+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
-  { name: "Starter", price: "$9", period: "/mo", credits: "200 credits/mo", desc: "For testing the waters.", features: ["200 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
-  { name: "Studio", price: "$29", period: "/mo", credits: "800 credits/mo", desc: "For regular creators who ship.", features: ["800 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
-  { name: "Pro", price: "$99", period: "/mo", credits: "3000 credits/mo", desc: "Power users and small teams.", features: ["3000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
+const PRICING_MONTHLY = [
+  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 200+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
+  { name: "Starter", price: "€24", period: "/mo", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
+  { name: "Studio", price: "€49", period: "/mo", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
+  { name: "Pro", price: "€99", period: "/mo", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
+];
+
+const PRICING_YEARLY = [
+  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 200+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
+  { name: "Starter", price: "€19", period: "/mo", billed: "Billed €228/yr", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
+  { name: "Studio", price: "€39", period: "/mo", billed: "Billed €468/yr", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
+  { name: "Pro", price: "€79", period: "/mo", billed: "Billed €948/yr", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
 ];
 
 const VIDEOS = [
@@ -181,6 +188,8 @@ function ServiceSection({ section, index }) {
   const visible = useInView(ref, "-80px");
   const layoutReverse = section.reverse ?? (index % 2 !== 0);
   const [scrollState, setScrollState] = useState({ atStart: true, atEnd: false });
+  const [yearly, setYearly] = useState(false);
+  const pricing = yearly ? PRICING_YEARLY : PRICING_MONTHLY;
 
   const checkScroll = () => {
     const el = cardsRef.current;
@@ -300,17 +309,26 @@ function ServiceSection({ section, index }) {
           <div className="svc-media">
             {section.isPricing ? (
               <div className={`pricing-wrap ${!scrollState.atEnd ? "pricing-wrap--has-more" : ""} ${!scrollState.atStart ? "pricing-wrap--scrolled" : ""} ${scrollState.atEnd ? "pricing-wrap--at-end" : ""}`}>
-                {!scrollState.atStart && (
-                  <button className="pricing-scroll-btn pricing-scroll-btn--left" onClick={() => scrollCards(-1)}>
-                    <IconArrowRight style={{ transform: "scaleX(-1)" }} />
+                <div className="pricing-toggle">
+                  <span className={`pricing-toggle__label ${!yearly ? "pricing-toggle__label--active" : ""}`}>Monthly</span>
+                  <button className={`pricing-toggle__switch ${yearly ? "pricing-toggle__switch--on" : ""}`} onClick={() => setYearly(!yearly)}>
+                    <span className="pricing-toggle__knob" />
                   </button>
-                )}
-                <div className="pricing-cards" ref={cardsRef}>
-                  {PRICING.map((plan) => (
+                  <span className={`pricing-toggle__label ${yearly ? "pricing-toggle__label--active" : ""}`}>Yearly <span className="pricing-toggle__badge">-20%</span></span>
+                </div>
+                <div className="pricing-scroll-track">
+                  {!scrollState.atStart && (
+                    <button className="pricing-scroll-btn pricing-scroll-btn--left" onClick={() => scrollCards(-1)}>
+                      <IconArrowRight style={{ transform: "scaleX(-1)" }} />
+                    </button>
+                  )}
+                  <div className="pricing-cards" ref={cardsRef}>
+                    {pricing.map((plan) => (
                     <div key={plan.name} className={`pricing-card ${plan.popular ? "pricing-card--popular" : ""}`}>
                       {plan.popular && <div className="pricing-card__badge">Most popular</div>}
                       <div className="pricing-card__name">{plan.name}</div>
                       <div className="pricing-card__price">{plan.price}<span className="pricing-card__period">{plan.period}</span></div>
+                      {plan.billed && <div className="pricing-card__billed">{plan.billed}</div>}
                       <div className="pricing-card__credits">{plan.credits}</div>
                       <div className="pricing-card__desc">{plan.desc}</div>
                       <ul className="pricing-card__features">
@@ -330,6 +348,7 @@ function ServiceSection({ section, index }) {
                     <IconArrowRight />
                   </button>
                 )}
+                </div>
               </div>
             ) : (
               <>
@@ -406,24 +425,10 @@ function FooterSection() {
   );
 }
 
-/* ── ANNOUNCEMENT BAR ── */
-function AnnouncementBar() {
-  return (
-    <div className="announce-bar">
-      <span className="announce-bar__text">
-        <span className="announce-bar__badge">LIMITED</span>
-        Launch week: 50% off all plans. Use code <strong>LAUNCH50</strong> at checkout.
-        <span className="announce-bar__arrow">→</span>
-      </span>
-    </div>
-  );
-}
-
 /* ── MAIN ── */
 export default function LandingPage() {
   return (
     <>
-      <AnnouncementBar />
       <Navbar />
       <div className="grain" aria-hidden="true" />
       <div className="snap-container">

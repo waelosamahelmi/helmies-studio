@@ -1,7 +1,8 @@
 import "@/styles/globals.css";
+import AnnouncementBar from "@/components/AnnouncementBar";
 
 export const metadata = {
-  metadataBase: new URL("https://helmies.fi"),
+  metadataBase: new URL("https://studio.helmies.fi"),
   title: {
     default: "Helmies Studio, 200+ AI Models for Image, Video & Lip-Sync",
     template: "%s · Helmies Studio",
@@ -11,7 +12,7 @@ export const metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://helmies.fi",
+              url: "https://studio.helmies.fi",
     siteName: "Helmies Studio",
     title: "Helmies Studio, 200+ AI Models for Image, Video & Lip-Sync",
     description: "Generate images with Flux & Midjourney. Animate with Sora 2 & Kling. 200+ AI models, one subscription, no filters.",
@@ -40,7 +41,7 @@ export default function RootLayout({ children }) {
               "@context": "https://schema.org",
               "@type": "SoftwareApplication",
               name: "Helmies Studio",
-              url: "https://helmies.fi",
+    url: "https://studio.helmies.fi",
               applicationCategory: "MultimediaApplication",
               operatingSystem: "Web",
               description: "AI creative suite with 200+ models for image generation, video creation, and lip-sync.",
@@ -51,6 +52,7 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body className="min-h-screen w-full antialiased" style={{ background: "#0A0A0F", color: "#F2F2F7" }}>
+        <AnnouncementBar />
         {children}
       </body>
     </html>
