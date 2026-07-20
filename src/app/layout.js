@@ -50,7 +50,7 @@ export const metadata = {
     title: "Helmies Studio — 200+ AI Models",
     description:
       "Flux, Midjourney, Sora 2, Kling, Veo, 200+ AI models in one creative studio. No filters. Start free.",
-    images: ["/og-image.png"],
+    images: ["/og-image-twitter.png"],
     creator: "@helmies",
   },
   icons: {
