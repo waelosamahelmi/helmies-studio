@@ -155,13 +155,6 @@ export default function StudioPage({ initialTool }) {
             >
               <IconMenu />
             </button>
-            <span className="studio__header-icon" style={{ color: activeTool.color }}>
-              <activeTool.Icon />
-            </span>
-            <div>
-              <h1>{activeTool.label} Studio</h1>
-              <p>{activeTool.desc}</p>
-            </div>
           </div>
           <div className="studio__body">
             <AnimatePresence mode="wait">

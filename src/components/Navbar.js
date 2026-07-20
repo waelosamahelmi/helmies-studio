@@ -73,10 +73,12 @@ export default function Navbar() {
     <>
       <nav className={`nav ${scrolled ? "nav--scrolled" : ""}`} ref={megaRef}>
         <div className="nav__inner">
-          <Link href="/" className="nav__logo" aria-label="Helmies Studio home">
-            <img src="/ico.svg" alt="" className="nav__logo-mark" />
-            <span className="nav__logo-text">Studio</span>
-          </Link>
+          {!pathname?.startsWith("/studio") && (
+            <Link href="/" className="nav__logo" aria-label="Helmies Studio home">
+              <img src="/ico.svg" alt="" className="nav__logo-mark" />
+              <span className="nav__logo-text">Studio</span>
+            </Link>
+          )}
 
           <div className="nav__links">
             <div className="relative" onMouseEnter={() => setMegaOpen(true)}>
