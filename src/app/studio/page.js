@@ -156,6 +156,7 @@ export default function StudioPage({ initialTool }) {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.5, ease: EASE }}
+                style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
               >
                 {activeTab === "orchestrator" && <OrchestratorChat />}
                 {activeTab === "workflows" && <WorkflowBuilder />}
