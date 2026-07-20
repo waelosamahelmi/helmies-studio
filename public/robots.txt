@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
+Disallow: /api/
 
-Sitemap: https://helmies.fi/sitemap.xml
+Sitemap: https://studio.helmies.fi/sitemap.xml
