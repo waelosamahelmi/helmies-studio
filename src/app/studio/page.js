@@ -25,8 +25,8 @@ const TOOLS = [
   { id: "influencer", label: "Influencer", desc: "Build AI personas", Icon: IconCrown, color: "#FF6B35", group: "Character", badge: null },
 ];
 
-export default function StudioPage() {
-  const [activeTab, setActiveTab] = useState("image");
+export default function StudioPage({ initialTool }) {
+  const [activeTab, setActiveTab] = useState(initialTool || "image");
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState([]);
