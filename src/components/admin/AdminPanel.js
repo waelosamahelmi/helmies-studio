@@ -59,7 +59,7 @@ export default function AdminPanel() {
     if (tab === "Feature Flags") loadFlags();
     if (tab === "Models") loadModels();
     if (tab === "Audit Logs") loadAudit();
-  }, [tab, loadUsers, loadPricing, loadProviders, loadRefunds, loadFlags]);
+  }, [tab, loadUsers, loadPricing, loadProviders, loadRefunds, loadFlags, loadModels, loadAudit]);
 
   // ── User editing ──
   const saveUser = async () => {

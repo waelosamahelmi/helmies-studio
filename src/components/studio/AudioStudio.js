@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { AUDIO_MODELS } from "@/lib/models";
+import RichModelPicker from "@/components/studio/RichModelPicker";
 import { IconBolt, IconArrowUpRight, IconMusic } from "@/components/Icons";
 
 export default function AudioStudio() {
@@ -106,14 +107,13 @@ export default function AudioStudio() {
   return (
     <div className="studio-panel">
       <div className="studio-panel__left">
-        <div className="field-group">
-          <label className="field-label">Model</label>
-          <select className="field-select" value={model.id} onChange={(e) => { setModel(AUDIO_MODELS.find((m) => m.id === e.target.value)); setParams({}); }}>
-            {AUDIO_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
-        </div>
+        <RichModelPicker
+          models={AUDIO_MODELS}
+          selected={model}
+          onSelect={(m) => { setModel(m); setParams({}); }}
+          tool="audio"
+          label="Model"
+        />
         {model.inputs && Object.entries(model.inputs).map(([key, field]) => (
           <div className="field-group" key={key}>
             <label className="field-label">{field.title}</label>

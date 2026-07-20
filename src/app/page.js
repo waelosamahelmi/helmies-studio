@@ -425,10 +425,22 @@ function FooterSection() {
   );
 }
 
+/* ── ANNOUNCEMENT BAR ── */
+function AnnouncementBar() {
+  return (
+    <div className="announcement-bar">
+      <div className="announcement-bar__inner">
+        <span>New: 200+ models now live. Sora 2, Kling v3, and more.</span>
+      </div>
+    </div>
+  );
+}
+
 /* ── MAIN ── */
 export default function LandingPage() {
   return (
     <>
+      <AnnouncementBar />
       <Navbar />
       <div className="grain" aria-hidden="true" />
       <div className="snap-container">
@@ -436,7 +448,9 @@ export default function LandingPage() {
         {SECTIONS.map((s, i) => (
           <ServiceSection key={s.id} section={s} index={i} />
         ))}
+        <StatsSection />
       </div>
+      <FooterSection />
       <LogoTicker />
     </>
   );

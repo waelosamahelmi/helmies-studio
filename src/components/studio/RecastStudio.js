@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { RECAST_MODELS } from "@/lib/models";
+import RichModelPicker from "@/components/studio/RichModelPicker";
 import { IconBolt, IconArrowUpRight, IconUsers } from "@/components/Icons";
 
 export default function RecastStudio() {
@@ -61,12 +62,13 @@ export default function RecastStudio() {
   return (
     <div className="studio-panel">
       <div className="studio-panel__left">
-        <div className="field-group">
-          <label className="field-label">Model</label>
-          <select className="field-select" value={model.id} onChange={(e) => { setModel(RECAST_MODELS.find((m) => m.id === e.target.value)); if (model.aspectRatios) setAspectRatio(model.aspectRatios[0]); }}>
-            {RECAST_MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        </div>
+        <RichModelPicker
+          models={RECAST_MODELS}
+          selected={model}
+          onSelect={(m) => { setModel(m); if (m.aspectRatios) setAspectRatio(m.aspectRatios[0]); }}
+          tool="recast"
+          label="Model"
+        />
         <div className="field-group">
           <label className="field-label">Source Video</label>
           <input ref={vidRef} type="file" accept="video/*" onChange={(e) => handleUpload(e, setVideoUrl)} style={{ display: "none" }} />

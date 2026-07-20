@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { LIPSYNC_MODELS } from "@/lib/models";
+import RichModelPicker from "@/components/studio/RichModelPicker";
 import { IconBolt, IconArrowUpRight, IconMic } from "@/components/Icons";
 
 export default function LipSyncStudio() {
@@ -71,24 +72,13 @@ export default function LipSyncStudio() {
   return (
     <div className="studio-panel">
       <div className="studio-panel__left">
-        <div className="field-group">
-          <label className="field-label">Model</label>
-          <select
-            className="field-select"
-            value={model.id}
-            onChange={(e) => {
-              const m = LIPSYNC_MODELS.find((x) => x.id === e.target.value);
-              setModel(m);
-              if (m.resolutions) setResolution(m.resolutions[0]);
-            }}
-          >
-            {LIPSYNC_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <RichModelPicker
+          models={LIPSYNC_MODELS}
+          selected={model}
+          onSelect={(m) => { setModel(m); if (m.resolutions) setResolution(m.resolutions[0]); }}
+          tool="lipsync"
+          label="Model"
+        />
 
         {!isVideoMode ? (
           <div className="field-group">
@@ -138,16 +128,7 @@ export default function LipSyncStudio() {
           onClick={handleSubmit}
           disabled={loading || !audioUrl || (!imageUrl && !videoUrl)}
         >
-          {loading ? (
-            "Processing lip sync..."
-          ) : (
-            <>
-              Generate Lip Sync
-              <span className="btn__icon">
-                <IconBolt />
-              </span>
-            </>
-          )}
+          {loading ? "Processing lip sync..." : <>Generate Lip Sync <span className="btn__icon"><IconBolt /></span></>}
         </button>
       </div>
 

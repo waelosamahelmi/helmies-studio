@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { IconBolt, IconArrowUpRight, IconFilm, IconImage, IconVideo, IconMusic, IconCrown } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
@@ -41,6 +41,32 @@ const TEMPLATES = [
   },
 ];
 
+function AnimatedLine({ index, total }) {
+  if (index >= total - 1) return null;
+  return (
+    <div className="workflow-line">
+      <svg width="2" height="40" viewBox="0 0 2 40">
+        <motion.line
+          x1="1" y1="0" x2="1" y2="40"
+          stroke="#FF1B6B"
+          strokeWidth="2"
+          strokeDasharray="4 4"
+          initial={{ pathLength: 0, opacity: 0 }}
+          animate={{ pathLength: 1, opacity: 0.4 }}
+          transition={{ duration: 0.6, ease: EASE, delay: index * 0.15 }}
+        />
+        <motion.circle
+          cx="1" cy="0" r="2"
+          fill="#FF1B6B"
+          initial={{ cy: 0 }}
+          animate={{ cy: [0, 40] }}
+          transition={{ duration: 1.5, repeat: Infinity, ease: "linear", delay: index * 0.3 }}
+        />
+      </svg>
+    </div>
+  );
+}
+
 export default function WorkflowBuilder() {
   const [workflows, setWorkflows] = useState([]);
   const [templates] = useState(TEMPLATES);
@@ -56,7 +82,7 @@ export default function WorkflowBuilder() {
   useEffect(() => { loadWorkflows(); }, []);
 
   const addStep = (agentId) => {
-    setSteps((s) => [...s, { agent: agentId, task: "", params: { model: "", prompt: "" } }]);
+    setSteps((s) => [...s, { id: `step-${Date.now()}`, agent: agentId, task: "", params: { model: "", prompt: "" } }]);
   };
 
   const updateStep = (idx, field, value) => {
@@ -85,7 +111,7 @@ export default function WorkflowBuilder() {
 
   const loadTemplate = (tmpl) => {
     setName(tmpl.name);
-    setSteps(tmpl.steps);
+    setSteps(tmpl.steps.map((s, i) => ({ ...s, id: `tmpl-${Date.now()}-${i}` })));
   };
 
   const execute = async (wfId) => {
@@ -141,24 +167,30 @@ export default function WorkflowBuilder() {
           <input className="field-input" placeholder="Workflow name" value={name} onChange={(e) => setName(e.target.value)} />
 
           <div className="workflow-steps">
-            {steps.map((step, i) => {
-              const Icon = AGENT_OPTIONS.find((a) => a.id === step.agent)?.icon || IconBolt;
-              return (
-                <div key={i} className="workflow-step">
-                  <div className="workflow-step__header">
-                    <span className="workflow-step__num">{i + 1}</span>
-                    <span className="workflow-step__icon"><Icon /></span>
-                    <span className="workflow-step__agent">{step.agent}</span>
-                    <button className="btn-ghost" onClick={() => removeStep(i)}>Remove</button>
-                  </div>
-                  <input className="field-input" placeholder="Task description" value={step.task} onChange={(e) => updateStep(i, "task", e.target.value)} />
-                  <div className="workflow-step__params">
-                    <input className="field-input" placeholder="model (e.g. flux-dev)" value={step.params.model || ""} onChange={(e) => updateStepParam(i, "model", e.target.value)} />
-                    <textarea className="field-textarea" placeholder="prompt (use $INPUT_x or $STEP_N_OUTPUT)" value={step.params.prompt || ""} onChange={(e) => updateStepParam(i, "prompt", e.target.value)} rows={2} />
-                  </div>
-                </div>
-              );
-            })}
+            <Reorder.Group axis="y" values={steps} onReorder={setSteps} style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {steps.map((step, i) => {
+                const Icon = AGENT_OPTIONS.find((a) => a.id === step.agent)?.icon || IconBolt;
+                return (
+                  <Reorder.Item key={step.id} value={step} style={{ listStyle: "none" }}>
+                    <div className="workflow-step">
+                      <div className="workflow-step__header">
+                        <span className="workflow-step__drag" style={{ cursor: "grab", opacity: 0.4, marginRight: 8 }}>⠿</span>
+                        <span className="workflow-step__num">{i + 1}</span>
+                        <span className="workflow-step__icon"><Icon /></span>
+                        <span className="workflow-step__agent">{step.agent}</span>
+                        <button className="btn-ghost" onClick={() => removeStep(i)}>Remove</button>
+                      </div>
+                      <input className="field-input" placeholder="Task description" value={step.task} onChange={(e) => updateStep(i, "task", e.target.value)} />
+                      <div className="workflow-step__params">
+                        <input className="field-input" placeholder="model (e.g. flux-dev)" value={step.params.model || ""} onChange={(e) => updateStepParam(i, "model", e.target.value)} />
+                        <textarea className="field-textarea" placeholder="prompt (use $INPUT_x or $STEP_N_OUTPUT)" value={step.params.prompt || ""} onChange={(e) => updateStepParam(i, "prompt", e.target.value)} rows={2} />
+                      </div>
+                    </div>
+                    <AnimatedLine index={i} total={steps.length} />
+                  </Reorder.Item>
+                );
+              })}
+            </Reorder.Group>
           </div>
 
           <div className="workflow-builder__agents">

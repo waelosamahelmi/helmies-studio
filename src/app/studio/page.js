@@ -161,6 +161,22 @@ export default function StudioPage({ initialTool }) {
 
         {/* Main */}
         <main className="studio__main">
+          <div className="studio__prompt-bar">
+            <input
+              className="studio__prompt-input"
+              placeholder="Describe what you want to create..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && e.target.value.trim()) {
+                  const toolMap = { image: "image", video: "video", audio: "audio", lipsync: "lipsync", cinema: "image", "vibe-motion": "video", clipping: "video", marketing: "video", "body-swap": "lipsync", influencer: "image" };
+                  const tool = toolMap[activeTab] || "image";
+                  window.dispatchEvent(new CustomEvent("helmies-prompt", { detail: { prompt: e.target.value, tool, studio: activeTab } }));
+                  e.target.value = "";
+                }
+              }}
+            />
+            <span className="studio__prompt-hint">Enter ↵</span>
+          </div>
+
           <div className="studio__body">
             <AnimatePresence mode="wait">
               <motion.div
