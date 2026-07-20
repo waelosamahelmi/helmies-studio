@@ -276,6 +276,11 @@
   letter-spacing: -0.02em;
   transition: opacity 0.4s cubic-bezier(0.32, 0.72, 0, 1);
 }
+.nav__logo-spacer {
+  display: inline-block;
+  width: 6.5rem;
+  flex-shrink: 0;
+}
 .nav__logo:hover { opacity: 0.85; }
 .nav__logo-mark {
   width: 1.5rem;
