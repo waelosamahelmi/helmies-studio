@@ -2,10 +2,12 @@
 
 import { useState, useRef } from "react";
 import { IconBolt, IconArrowUpRight, IconCut } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
 
 const ASPECT_RATIOS = ["9:16", "16:9", "1:1", "4:3", "3:4"];
 
 export default function ClippingStudio() {
+  const { notifyGeneration } = useToast();
   const [videoUrl, setVideoUrl] = useState("");
   const [numHighlights, setNumHighlights] = useState(3);
   const [aspectRatio, setAspectRatio] = useState("9:16");
@@ -42,7 +44,7 @@ export default function ClippingStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Clipping failed");
-      else setResult(data);
+      else { setResult(data); notifyGeneration("clip", data.url); }
     } catch (e) {
       setError(e.message);
     } finally {

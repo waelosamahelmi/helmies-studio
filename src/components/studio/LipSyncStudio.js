@@ -4,8 +4,10 @@ import { useState, useRef } from "react";
 import { LIPSYNC_MODELS } from "@/lib/models";
 import RichModelPicker from "@/components/studio/RichModelPicker";
 import { IconBolt, IconArrowUpRight, IconMic } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
 
 export default function LipSyncStudio() {
+  const { notifyGeneration } = useToast();
   const [model, setModel] = useState(LIPSYNC_MODELS[0]);
   const [imageUrl, setImageUrl] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
@@ -61,6 +63,7 @@ export default function LipSyncStudio() {
         setError(data.error || "Lip sync failed");
       } else {
         setResult(data);
+        notifyGeneration("lip sync", data.url);
       }
     } catch (e) {
       setError(e.message);

@@ -20,9 +20,13 @@ export async function GET(req) {
       return NextResponse.json({ error: "Invalid protocol" }, { status: 400 });
     }
 
+    const range = req.headers.get("range");
+    const upstreamHeaders = { "User-Agent": "HelmiesStudio/1.0" };
+    if (range) upstreamHeaders["Range"] = range;
+
     const res = await fetch(url, {
       signal: AbortSignal.timeout(30000),
-      headers: { "User-Agent": "HelmiesStudio/1.0" },
+      headers: upstreamHeaders,
     });
 
     if (!res.ok) {
@@ -31,15 +35,18 @@ export async function GET(req) {
 
     const contentType = res.headers.get("content-type") || "application/octet-stream";
     const contentLength = res.headers.get("content-length");
+    const contentRange = res.headers.get("content-range");
 
     const headers = {
       "Content-Type": contentType,
       "Cache-Control": "public, max-age=31536000, immutable",
       "Access-Control-Allow-Origin": "*",
+      "Accept-Ranges": "bytes",
     };
     if (contentLength) headers["Content-Length"] = contentLength;
+    if (contentRange) headers["Content-Range"] = contentRange;
 
-    return new Response(res.body, { status: 200, headers });
+    return new Response(res.body, { status: res.status, headers });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

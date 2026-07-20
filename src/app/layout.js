@@ -5,11 +5,11 @@ import Providers from "@/components/Providers";
 export const metadata = {
   metadataBase: new URL("https://studio.helmies.fi"),
   title: {
-    default: "Helmies Studio — 200+ AI Models for Image, Video & Lip-Sync",
+    default: "Helmies Studio — 70+ AI Models for Image, Video & Lip-Sync",
     template: "%s | Helmies Studio",
   },
   description:
-    "Generate images with Flux & Midjourney. Animate with Sora 2 & Kling. 200+ AI models, one subscription, no content filters. Start free.",
+    "Generate images with Flux & Midjourney. Animate with Sora 2 & Kling. 70+ AI models, one subscription, no content filters. Start free.",
   keywords: [
     "AI image generator",
     "AI video generator",
@@ -33,24 +33,24 @@ export const metadata = {
     locale: "en_US",
     url: "https://studio.helmies.fi",
     siteName: "Helmies Studio",
-    title: "Helmies Studio — 200+ AI Models for Image, Video & Lip-Sync",
+    title: "Helmies Studio — 70+ AI Models for Image, Video & Lip-Sync",
     description:
-      "Generate images with Flux & Midjourney. Animate with Sora 2 & Kling. 200+ AI models, one subscription, no filters.",
+      "Generate images with Flux & Midjourney. Animate with Sora 2 & Kling. 70+ AI models, one subscription, no filters.",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Helmies Studio — 200+ AI Models",
+        alt: "Helmies Studio — 70+ AI Models",
         type: "image/png",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Helmies Studio — 200+ AI Models",
+    title: "Helmies Studio — 70+ AI Models",
     description:
-      "Flux, Midjourney, Sora 2, Kling, Veo, 200+ AI models in one creative studio. No filters. Start free.",
+      "Flux, Midjourney, Sora 2, Kling, Veo, 70+ AI models in one creative studio. No filters. Start free.",
     images: ["/og-image-twitter.png"],
     creator: "@helmies",
   },
@@ -110,7 +110,7 @@ export default function RootLayout({ children }) {
               applicationCategory: "MultimediaApplication",
               operatingSystem: "Web",
               description:
-                "AI creative suite with 200+ models for image generation, video creation, and lip-sync.",
+                "AI creative suite with 70+ models for image generation, video creation, and lip-sync.",
               offers: {
                 "@type": "AggregateOffer",
                 lowPrice: "0",

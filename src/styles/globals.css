@@ -1077,7 +1077,7 @@
   position: relative;
   z-index: 2;
   display: flex;
-  min-height: 100dvh;
+  height: 100dvh;
   padding-top: 5rem;
   overflow: hidden;
 }
@@ -1320,7 +1320,8 @@
 .studio__body {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -2336,7 +2337,8 @@
   display: flex;
   gap: 0.75rem;
 }
-.field-row .field-group {
+.field-row .field-group,
+.field-row .model-picker {
   flex: 1;
 }
 .field-label {
@@ -2357,6 +2359,10 @@
   font-size: 0.875rem;
   font-family: inherit;
   transition: border-color 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.field-select option {
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 .field-select:focus,
 .field-input:focus {
@@ -4266,38 +4272,6 @@
   height: 100%;
   background: linear-gradient(90deg, var(--accent), #7C3AED);
   border-radius: 2px;
-}
-
-/* ── Prompt Bar (hero) ── */
-.studio__prompt-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 50;
-  padding: 0.75rem 1rem;
-  background: rgba(20, 20, 26, 0.85);
-  backdrop-filter: blur(24px) saturate(180%);
-  border-top: 1px solid rgba(242, 242, 247, 0.06);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.studio__prompt-input {
-  flex: 1;
-  background: rgba(242, 242, 247, 0.04);
-  border: 1px solid rgba(242, 242, 247, 0.1);
-  border-radius: 12px;
-  padding: 0.6rem 0.8rem;
-  color: var(--text);
-  font-size: 0.85rem;
-  outline: none;
-  font-family: inherit;
-}
-.studio__prompt-input:focus { border-color: rgba(255, 27, 107, 0.3); }
-.studio__prompt-input::placeholder { color: rgba(242, 242, 247, 0.3); }
-.studio__prompt-hint {
-  font-size: 0.65rem;
-  color: rgba(242, 242, 247, 0.25);
-  white-space: nowrap;
 }
 
 /* ── Workflow animated lines ── */

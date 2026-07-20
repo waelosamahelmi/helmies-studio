@@ -4,8 +4,10 @@ import { useState, useRef } from "react";
 import { RECAST_MODELS } from "@/lib/models";
 import RichModelPicker from "@/components/studio/RichModelPicker";
 import { IconBolt, IconArrowUpRight, IconUsers } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
 
 export default function RecastStudio() {
+  const { notifyGeneration } = useToast();
   const [model, setModel] = useState(RECAST_MODELS[0]);
   const [videoUrl, setVideoUrl] = useState("");
   const [imageUrl, setImageUrl] = useState("");
@@ -51,7 +53,7 @@ export default function RecastStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Recast failed");
-      else setResult(data);
+      else { setResult(data); notifyGeneration("recast", data.url); }
     } catch (e) {
       setError(e.message);
     } finally {

@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { INFLUENCER_TABS } from "@/lib/models";
 import { IconBolt, IconArrowUpRight, IconCrown } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
 
 const ASPECT_RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
 
 export default function AiInfluencerStudio() {
+  const { notifyGeneration } = useToast();
   const [activeTab, setActiveTab] = useState(INFLUENCER_TABS[0].id);
   const [selections, setSelections] = useState({});
   const [customPrompt, setCustomPrompt] = useState("");
@@ -34,7 +36,7 @@ export default function AiInfluencerStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Generation failed");
-      else setResult(data);
+      else { setResult(data); notifyGeneration("influencer image", data.url); }
     } catch (e) {
       setError(e.message);
     } finally {

@@ -6,8 +6,10 @@ import { IconBolt, IconArrowUpRight, IconVideo } from "@/components/Icons";
 import RichModelPicker from "@/components/studio/RichModelPicker";
 import StagedProgress from "@/components/studio/StagedProgress";
 import RichIdle from "@/components/studio/RichIdle";
+import { useToast } from "@/components/ToastProvider";
 
 export default function VideoStudio() {
+  const { notifyGeneration } = useToast();
   const [model, setModel] = useState(VIDEO_MODELS[0]);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
@@ -51,7 +53,7 @@ export default function VideoStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Generation failed");
-      else setResult(data);
+      else { setResult(data); notifyGeneration("video", data.url); }
     } catch (e) {
       setError(e.message);
     } finally {

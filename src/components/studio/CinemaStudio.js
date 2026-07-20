@@ -3,11 +3,14 @@
 import { useState, useRef } from "react";
 import { CINEMA_CAMERAS, CINEMA_LENS, CINEMA_FOCAL, CINEMA_APERTURE } from "@/lib/models";
 import { IconBolt, IconArrowUpRight, IconCamera } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
+import RichSelect from "@/components/studio/RichSelect";
 
 const ASPECT_RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"];
 const RESOLUTIONS = ["1k", "2k", "4k"];
 
 export default function CinemaStudio() {
+  const { notifyGeneration } = useToast();
   const [camera, setCamera] = useState(CINEMA_CAMERAS[0]);
   const [lens, setLens] = useState(CINEMA_LENS[0]);
   const [focal, setFocal] = useState(CINEMA_FOCAL[0]);
@@ -47,7 +50,7 @@ export default function CinemaStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Generation failed");
-      else setResult(data);
+      else { setResult(data); notifyGeneration("cinematic shot", data.url); }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -72,35 +75,15 @@ export default function CinemaStudio() {
   return (
     <div className="studio-panel">
       <div className="studio-panel__left">
+        <RichSelect label="Camera" options={CINEMA_CAMERAS} selected={camera} onSelect={setCamera} />
+        <RichSelect label="Lens" options={CINEMA_LENS} selected={lens} onSelect={setLens} />
+        <div className="field-row">
+          <RichSelect label="Focal Length" options={CINEMA_FOCAL} selected={focal} onSelect={setFocal} />
+          <RichSelect label="Aperture" options={CINEMA_APERTURE} selected={aperture} onSelect={setAperture} />
+        </div>
         <div className="field-group">
           <label className="field-label">Scene Description</label>
           <textarea className="field-textarea" placeholder="A lone figure walking through a neon-lit alley in the rain..." value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3} />
-        </div>
-        <div className="field-group">
-          <label className="field-label">Camera</label>
-          <select className="field-select" value={camera.id} onChange={(e) => setCamera(CINEMA_CAMERAS.find((c) => c.id === e.target.value))}>
-            {CINEMA_CAMERAS.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-        <div className="field-group">
-          <label className="field-label">Lens</label>
-          <select className="field-select" value={lens.id} onChange={(e) => setLens(CINEMA_LENS.find((l) => l.id === e.target.value))}>
-            {CINEMA_LENS.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-        </div>
-        <div className="field-row">
-          <div className="field-group">
-            <label className="field-label">Focal Length</label>
-            <select className="field-select" value={focal.id} onChange={(e) => setFocal(CINEMA_FOCAL.find((f) => f.id === e.target.value))}>
-              {CINEMA_FOCAL.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-          </div>
-          <div className="field-group">
-            <label className="field-label">Aperture</label>
-            <select className="field-select" value={aperture.id} onChange={(e) => setAperture(CINEMA_APERTURE.find((a) => a.id === e.target.value))}>
-              {CINEMA_APERTURE.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          </div>
         </div>
         <div className="field-group">
           <label className="field-label">Aspect Ratio</label>

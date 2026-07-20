@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { IconBolt, IconArrowUpRight, IconFilm } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
 
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const DURATIONS = [3, 6, 10, 15];
 
 export default function VibeMotionStudio() {
+  const { notifyGeneration } = useToast();
   const [mode, setMode] = useState("generate");
   const [prompt, setPrompt] = useState("");
   const [editPrompt, setEditPrompt] = useState("");
@@ -34,7 +36,7 @@ export default function VibeMotionStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Generation failed");
-      else { setResult(data); if (data.requestId) setRequestId(data.requestId); }
+      else { setResult(data); notifyGeneration("motion graphic", data.url); if (data.requestId) setRequestId(data.requestId); }
     } catch (e) {
       setError(e.message);
     } finally {

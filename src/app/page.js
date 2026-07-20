@@ -25,14 +25,14 @@ const HEADSHOTS = [
 ];
 
 const PRICING_MONTHLY = [
-  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 200+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
+  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
   { name: "Starter", price: "€24", period: "/mo", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
   { name: "Studio", price: "€49", period: "/mo", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
   { name: "Pro", price: "€99", period: "/mo", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
 ];
 
 const PRICING_YEARLY = [
-  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 200+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
+  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
   { name: "Starter", price: "€19", period: "/mo", billed: "Billed €228/yr", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
   { name: "Studio", price: "€39", period: "/mo", billed: "Billed €468/yr", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
   { name: "Pro", price: "€79", period: "/mo", billed: "Billed €948/yr", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
@@ -162,7 +162,7 @@ function HeroSection() {
         />
 
         <p className="hero__sub">
-          Generate images, videos, audio, and lip sync with 200+ state-of-the-art models.
+          Generate images, videos, audio, and lip sync with 70+ state-of-the-art models.
           Flux, Midjourney, Sora 2, Kling, Veo 3. One subscription, zero filters.
         </p>
 
@@ -376,7 +376,7 @@ function ServiceSection({ section, index }) {
 
 /* ── STATS ── */
 const STATS = [
-  { n: "200+", l: "AI models" },
+  { n: "70+", l: "AI models" },
   { n: "10", l: "studios" },
   { n: "1", l: "subscription" },
   { n: "0", l: "content filters" },
@@ -430,7 +430,7 @@ function AnnouncementBar() {
   return (
     <div className="announcement-bar">
       <div className="announcement-bar__inner">
-        <span>New: 200+ models now live. Sora 2, Kling v3, and more.</span>
+        <span>New: 70+ models now live. Sora 2, Kling v3, and more.</span>
       </div>
     </div>
   );

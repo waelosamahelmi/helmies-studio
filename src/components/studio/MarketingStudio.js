@@ -3,12 +3,14 @@
 import { useState, useRef } from "react";
 import { MARKETING_AVATARS } from "@/lib/models";
 import { IconBolt, IconArrowUpRight, IconMegaphone } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
 
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1"];
 const DURATIONS = [5, 10, 15];
 const RESOLUTIONS = ["720p", "1080p"];
 
 export default function MarketingStudio() {
+  const { notifyGeneration } = useToast();
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [duration, setDuration] = useState(5);
@@ -52,7 +54,7 @@ export default function MarketingStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Generation failed");
-      else setResult(data);
+      else { setResult(data); notifyGeneration("marketing content", data.url); }
     } catch (e) {
       setError(e.message);
     } finally {

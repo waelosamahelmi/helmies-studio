@@ -4,8 +4,10 @@ import { useState, useRef } from "react";
 import { AUDIO_MODELS } from "@/lib/models";
 import RichModelPicker from "@/components/studio/RichModelPicker";
 import { IconBolt, IconArrowUpRight, IconMusic } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
 
 export default function AudioStudio() {
+  const { notifyGeneration } = useToast();
   const [model, setModel] = useState(AUDIO_MODELS[0]);
   const [params, setParams] = useState({});
   const [result, setResult] = useState(null);
@@ -25,7 +27,7 @@ export default function AudioStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Generation failed");
-      else setResult(data);
+      else { setResult(data); notifyGeneration("audio", data.url); }
     } catch (e) {
       setError(e.message);
     } finally {

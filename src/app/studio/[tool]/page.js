@@ -3,17 +3,17 @@ import StudioPage from "../page";
 const TOOLS = {
   image: {
     title: "AI Image Generator",
-    description: "Generate stunning images with Flux, Midjourney & 55+ AI models. Text-to-image, image-to-image, no content filters.",
+    description: "Generate stunning images with Flux, Midjourney & 20+ AI models. Text-to-image, image-to-image, no content filters.",
     keywords: ["AI image generator", "Flux AI", "Midjourney", "text to image", "image generation", "AI art"],
   },
   video: {
     title: "AI Video Generator",
-    description: "Create videos from text, images, or existing footage with Sora 2, Kling, Veo & 40+ AI video models.",
+    description: "Create videos from text, images, or existing footage with Sora 2, Kling, Veo & other leading AI video models.",
     keywords: ["AI video generator", "Sora 2", "Kling AI", "Veo 3", "text to video", "AI video"],
   },
   audio: {
     title: "AI Audio & Music Generator",
-    description: "Generate music, voice, and sound effects with 20+ AI audio models. One subscription, no filters.",
+    description: "Generate music, voice, and sound effects with Suno, MusicGen & more. One subscription, no filters.",
     keywords: ["AI music generator", "AI voice", "AI sound effects", "audio generation"],
   },
   cinema: {
@@ -38,7 +38,7 @@ const TOOLS = {
   },
   lipsync: {
     title: "AI Lip Sync Studio",
-    description: "Sync audio to portraits or video with 9+ AI lip sync models. Perfect mouth movement every time.",
+    description: "Sync audio to portraits or video with 8 AI lip sync models. Perfect mouth movement every time.",
     keywords: ["AI lip sync", "lip sync AI", "face sync", "audio to face"],
   },
   "body-swap": {

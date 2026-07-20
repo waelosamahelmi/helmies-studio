@@ -5,6 +5,7 @@ import {
   processLipSync, generateAudio, processRecast,
   runClipping, runMotionGraphics, generateMarketingAd,
 } from "@/lib/muapi";
+import { detectAbuse } from "@/lib/security";
 import prisma from "@/lib/prisma";
 
 // ── Agent definitions ──
@@ -249,6 +250,11 @@ async function executeCodingStep(params) {
 
 // ── Execute full agent run with credit management ──
 export async function executeAgentRun(userId, userMessage, context = {}) {
+  const abuse = await detectAbuse(userId);
+  if (abuse.flagged) {
+    return { success: false, error: `Request blocked: ${abuse.reason}` };
+  }
+
   const plan = await planTask(userMessage, context);
 
   const agentRun = await prisma.agentRun.create({
@@ -285,6 +291,7 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
         stepResults.push({ step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output, retried: false });
 
         if (step.agent === "image" || step.agent === "video" || step.agent === "audio" || step.agent === "marketing") {
+          const proxiedOutput = typeof output === "string" ? `/api/media/proxy?url=${encodeURIComponent(output)}` : null;
           await prisma.generation.create({
             data: {
               userId,
@@ -292,7 +299,7 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
               model: step.params?.model || step.agent,
               prompt: step.params?.prompt || step.task || "",
               params: step.params,
-              outputUrl: typeof output === "string" ? output : null,
+              outputUrl: proxiedOutput,
               status: "completed",
               creditsUsed: plan.estimate.breakdown[i]?.credits || 0,
             },
@@ -329,7 +336,11 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
 }
 
 async function debitCredits(userId, amount, description) {
-  await prisma.user.update({ where: { id: userId }, data: { credits: { decrement: amount } } });
+  const result = await prisma.user.updateMany({
+    where: { id: userId, credits: { gte: amount } },
+    data: { credits: { decrement: amount } },
+  });
+  if (result.count === 0) throw new Error("Insufficient credits");
   await prisma.creditTransaction.create({ data: { userId, amount: -amount, type: "agent_run", description } });
 }
 

@@ -9,14 +9,14 @@ import { IconCheck, IconArrowUpRight, IconBolt } from "@/components/Icons";
 const EASE = [0.32, 0.72, 0, 1];
 
 const SUBSCRIPTIONS_MONTHLY = [
-  { id: "free", name: "Free", price: "€0", period: "forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 200+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
+  { id: "free", name: "Free", price: "€0", period: "forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
   { id: "starter", name: "Starter", price: "€24", period: "/mo", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime", "Email support"], cta: "Subscribe", popular: false },
   { id: "studio", name: "Studio", price: "€49", period: "/mo", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Generation archive", "Priority queue", "Email support"], cta: "Subscribe", popular: true },
   { id: "pro", name: "Pro", price: "€99", period: "/mo", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access", "Dedicated support"], cta: "Subscribe", popular: false },
 ];
 
 const SUBSCRIPTIONS_YEARLY = [
-  { id: "free", name: "Free", price: "€0", period: "forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 200+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
+  { id: "free", name: "Free", price: "€0", period: "forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
   { id: "starter", name: "Starter", price: "€19", period: "/mo", billed: "Billed €228/yr", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime", "Email support"], cta: "Subscribe", popular: false },
   { id: "studio", name: "Studio", price: "€39", period: "/mo", billed: "Billed €468/yr", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Generation archive", "Priority queue", "Email support"], cta: "Subscribe", popular: true },
   { id: "pro", name: "Pro", price: "€79", period: "/mo", billed: "Billed €948/yr", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access", "Dedicated support"], cta: "Subscribe", popular: false },

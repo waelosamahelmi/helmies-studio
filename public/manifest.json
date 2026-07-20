@@ -1,7 +1,7 @@
 {
   "name": "Helmies Studio",
   "short_name": "Helmies",
-  "description": "200+ AI models for image, video & lip-sync. Flux, Midjourney, Sora 2, Kling, Veo. One subscription, no content filters.",
+  "description": "70+ AI models for image, video & lip-sync. Flux, Midjourney, Sora 2, Kling, Veo. One subscription, no content filters.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0A0A0F",

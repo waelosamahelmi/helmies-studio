@@ -41,7 +41,7 @@ function LoginContent() {
 
             <h1 className="auth__title">Welcome to Helmies Studio</h1>
             <p className="auth__lead">
-              Sign in to create with 200+ AI models. Start free with 100 credits.
+              Sign in to create with 70+ AI models. Start free with 100 credits.
             </p>
 
             <button className="btn btn-primary w-full justify-center" onClick={handleGoogle} disabled={loading}>

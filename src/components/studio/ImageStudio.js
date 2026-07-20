@@ -7,8 +7,11 @@ import { useCreditCost } from "@/components/studio/useCreditCost";
 import RichIdle from "@/components/studio/RichIdle";
 import RichModelPicker from "@/components/studio/RichModelPicker";
 import StagedProgress from "@/components/studio/StagedProgress";
+import BeforeAfterSlider from "@/components/studio/BeforeAfterSlider";
+import { useToast } from "@/components/ToastProvider";
 
 export default function ImageStudio() {
+  const { notifyGeneration } = useToast();
   const [model, setModel] = useState(IMAGE_MODELS[0]);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("1:1");
@@ -57,7 +60,7 @@ export default function ImageStudio() {
       });
       const data = await res.json();
       if (!res.ok) setError(data.error || "Generation failed");
-      else setResult(data);
+      else { setResult(data); notifyGeneration("image", data.url); }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -161,7 +164,11 @@ export default function ImageStudio() {
         {loading && <StagedProgress tool="image" elapsed={elapsed} />}
         {result && result.url && (
           <div className="studio-result">
-            <img src={result.url} alt="Generated" className="studio-result__img" />
+            {imageUrl ? (
+              <BeforeAfterSlider beforeSrc={imageUrl} afterSrc={result.url} beforeLabel="Reference" afterLabel="Generated" />
+            ) : (
+              <img src={result.url} alt="Generated" className="studio-result__img" />
+            )}
             <div className="studio-result__meta">
               <a href={result.url} download className="btn btn-secondary btn-sm">
                 Download<span className="btn__icon"><IconArrowUpRight /></span>

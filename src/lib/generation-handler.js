@@ -6,10 +6,14 @@ import { checkRateLimit, logAudit } from "@/lib/security";
 import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
 import { applyMemoryToPrompt } from "@/lib/memory";
 import { validateGenerationOutput, logQualityGate } from "@/lib/quality-gate";
+import { authenticateApiKey } from "@/lib/api-key-auth";
 
 export async function handleGeneration(req, tool, cost, apiFn) {
   try {
-    const user = await getCurrentUserWithCredits();
+    let user = await authenticateApiKey(req);
+    if (!user) {
+      user = await getCurrentUserWithCredits();
+    }
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -71,11 +75,13 @@ export async function handleGeneration(req, tool, cost, apiFn) {
 
       let result;
       let lastError;
+      let successfulProvider = provider;
       const providers = await resolveProviderWithFallback(model);
 
       for (const prov of providers) {
         try {
           result = await apiFn({ ...paramsWithPrompt, _provider: prov });
+          successfulProvider = prov;
           break;
         } catch (e) {
           lastError = e;
@@ -108,20 +114,22 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         return NextResponse.json({ error: quality.reason }, { status: 500 });
       }
 
+      const proxiedUrl = outputUrl ? `/api/media/proxy?url=${encodeURIComponent(outputUrl)}` : outputUrl;
+
       await prisma.generation.update({
         where: { id: generation.id },
-        data: { status: "completed", outputUrl },
+        data: { status: "completed", outputUrl: proxiedUrl },
       });
 
-      await logAudit("generation_complete", tool, generation.id, { model, provider: provider.name });
+      await logAudit("generation_complete", tool, generation.id, { model, provider: successfulProvider.name });
 
       return NextResponse.json({
         success: true,
-        url: outputUrl,
+        url: proxiedUrl,
         requestId: result.requestId,
         creditsUsed: cost,
         remainingCredits: user.credits - cost,
-        provider: provider.name,
+        provider: successfulProvider.name,
         expanded: finalPrompt !== rawPrompt,
         ...(result.outputs ? { outputs: result.outputs } : {}),
       });

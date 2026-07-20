@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { executeStep } from "@/lib/agents";
 import { estimateAgentTask } from "@/lib/pricing-engine";
+import { detectAbuse } from "@/lib/security";
 
 // ── Create workflow ──
 export async function createWorkflow(userId, name, description, steps) {
@@ -50,21 +51,22 @@ export async function deleteWorkflow(workflowId, userId) {
 
 // ── Execute workflow ──
 export async function executeWorkflow(workflowId, userId, inputs = {}) {
+  const abuse = await detectAbuse(userId);
+  if (abuse.flagged) {
+    return { success: false, error: `Request blocked: ${abuse.reason}` };
+  }
+
   const workflow = await prisma.workflow.findUnique({ where: { id: workflowId } });
   if (!workflow) throw new Error("Workflow not found");
 
   const steps = workflow.steps;
   const estimate = await estimateAgentTask(steps);
 
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
-  if (user.credits < estimate.total) {
-    throw new Error("Insufficient credits");
-  }
-
-  await prisma.user.update({
-    where: { id: userId },
+  const result = await prisma.user.updateMany({
+    where: { id: userId, credits: { gte: estimate.total } },
     data: { credits: { decrement: estimate.total } },
   });
+  if (result.count === 0) throw new Error("Insufficient credits");
   await prisma.creditTransaction.create({
     data: { userId, amount: -estimate.total, type: "workflow", description: `Workflow: ${workflow.name}` },
   });
