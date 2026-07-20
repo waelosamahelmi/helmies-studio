@@ -1,0 +1,28 @@
+import { NextResponse } from "next/server";
+import { requireAdmin } from "@/lib/security";
+import prisma from "@/lib/prisma";
+
+export async function GET() {
+  try {
+    await requireAdmin();
+    const flags = await prisma.featureFlag.findMany({ orderBy: { key: "asc" } });
+    return NextResponse.json(flags);
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: 401 });
+  }
+}
+
+export async function POST(req) {
+  try {
+    await requireAdmin();
+    const { key, name, description, enabled, config } = await req.json();
+    await prisma.featureFlag.upsert({
+      where: { key },
+      create: { key, name, description, enabled: enabled ?? false, config },
+      update: { name, description, enabled, config },
+    });
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}

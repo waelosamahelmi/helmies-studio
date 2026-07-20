@@ -17,12 +17,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (session.user) {
         session.user.id = user.id;
         session.user.credits = user.credits;
+        session.user.role = user.role;
       }
       return session;
     },
   },
   events: {
     async createUser({ user }) {
+      const userCount = await prisma.user.count();
+      const role = userCount === 1 ? "admin" : "user";
+      await prisma.user.update({ where: { id: user.id }, data: { role } });
       await prisma.subscription.create({
         data: { userId: user.id, plan: "free", status: "active" },
       });

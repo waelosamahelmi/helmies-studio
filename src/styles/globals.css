@@ -2931,3 +2931,511 @@
     cursor: pointer !important;
   }
 }
+
+/* ============================================================ */
+/* ORCHESTRATOR CHAT                                             */
+/* ============================================================ */
+.orchestrator {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 600px;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.orchestrator__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.orchestrator__icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 27, 107, 0.08);
+  border: 1px solid rgba(255, 27, 107, 0.2);
+  border-radius: 1rem;
+  color: #FF1B6B;
+}
+.orchestrator__icon svg { width: 24px; height: 24px; }
+.orchestrator__header h2 { font-size: 1.25rem; font-weight: 700; }
+.orchestrator__header p { font-size: 0.85rem; color: rgba(242, 242, 247, 0.5); }
+.orchestrator__chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.orchestrator__empty {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: rgba(242, 242, 247, 0.5);
+}
+.orchestrator__empty svg { width: 32px; height: 32px; margin-bottom: 1rem; color: #FF1B6B; }
+.orchestrator__empty p { margin-bottom: 1.5rem; }
+.orchestrator__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+.orchestrator__suggestions button {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  color: rgba(242, 242, 247, 0.7);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.orchestrator__suggestions button:hover {
+  border-color: #FF1B6B;
+  color: #FF1B6B;
+}
+.orchestrator__msg {
+  display: flex;
+  gap: 0.75rem;
+  max-width: 85%;
+}
+.orchestrator__msg--user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.orchestrator__msg--assistant {
+  align-self: flex-start;
+}
+.orchestrator__msg-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 27, 107, 0.08);
+  border-radius: 0.5rem;
+  color: #FF1B6B;
+}
+.orchestrator__msg-icon svg { width: 16px; height: 16px; }
+.orchestrator__msg-content {
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.orchestrator__msg--user .orchestrator__msg-content {
+  background: rgba(255, 27, 107, 0.08);
+  border-color: rgba(255, 27, 107, 0.15);
+}
+.orchestrator__msg-content p { font-size: 0.875rem; line-height: 1.5; }
+.orchestrator__plan {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+}
+.orchestrator__plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.orchestrator__plan-cost {
+  color: #FF1B6B;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.orchestrator__plan-cost svg { width: 12px; height: 12px; }
+.orchestrator__plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.orchestrator__step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0.5rem;
+}
+.orchestrator__step-num {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(255, 27, 107, 0.15);
+  border-radius: 50%;
+  color: #FF1B6B;
+}
+.orchestrator__step-icon svg { width: 14px; height: 14px; color: rgba(242, 242, 247, 0.7); }
+.orchestrator__step-agent { font-size: 0.75rem; font-weight: 600; text-transform: capitalize; }
+.orchestrator__step-task { font-size: 0.7rem; color: rgba(242, 242, 247, 0.5); }
+.orchestrator__step-cost { margin-left: auto; font-size: 0.7rem; color: #FF1B6B; display: flex; align-items: center; gap: 0.25rem; }
+.orchestrator__step-cost svg { width: 10px; height: 10px; }
+.orchestrator__results {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.orchestrator__result {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.7rem;
+  border-radius: 0.375rem;
+  background: rgba(255, 255, 255, 0.02);
+}
+.orchestrator__result.completed { color: #00E68A; }
+.orchestrator__result.failed { color: #ff6b6b; }
+.orchestrator__outputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+}
+.orchestrator__output {
+  max-width: 200px;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.orchestrator__output-text {
+  width: 100%;
+  max-height: 300px;
+  overflow: auto;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.75rem;
+}
+.orchestrator__output-text pre {
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.orchestrator__input {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.orchestrator__input textarea {
+  flex: 1;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  color: #F2F2F7;
+  font-size: 0.875rem;
+  font-family: inherit;
+  resize: none;
+}
+.orchestrator__input textarea:focus {
+  outline: none;
+  border-color: #FF1B6B;
+}
+
+/* ============================================================ */
+/* WORKFLOW BUILDER                                              */
+/* ============================================================ */
+.workflow-builder {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 1.5rem;
+  min-height: 600px;
+}
+.workflow-builder__left {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.workflow-builder__left h3 {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(242, 242, 247, 0.5);
+}
+.workflow-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.workflow-template {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.875rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.workflow-template:hover {
+  border-color: #FF1B6B;
+}
+.workflow-template strong { font-size: 0.85rem; }
+.workflow-template span { font-size: 0.7rem; color: rgba(242, 242, 247, 0.5); }
+.workflow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.workflow-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+}
+.workflow-item strong { font-size: 0.8rem; }
+.workflow-item span { font-size: 0.7rem; color: rgba(242, 242, 247, 0.5); }
+.workflow-builder__right {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.workflow-builder__form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1.25rem;
+}
+.workflow-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.workflow-step {
+  padding: 0.875rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.workflow-step__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.workflow-step__num {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgba(255, 27, 107, 0.15);
+  border-radius: 50%;
+  color: #FF1B6B;
+}
+.workflow-step__icon svg { width: 14px; height: 14px; color: rgba(242, 242, 247, 0.7); }
+.workflow-step__agent { font-size: 0.75rem; font-weight: 600; text-transform: capitalize; }
+.workflow-step__params {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.workflow-builder__agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+.workflow-builder__agent-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
+  color: rgba(242, 242, 247, 0.7);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.workflow-builder__agent-btn:hover {
+  border-color: #FF1B6B;
+  color: #FF1B6B;
+}
+.workflow-builder__agent-btn svg { width: 14px; height: 14px; }
+.workflow-result {
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+}
+.workflow-result h4 { font-size: 0.85rem; margin-bottom: 0.25rem; }
+.workflow-result p { font-size: 0.75rem; color: #FF1B6B; margin-bottom: 0.75rem; }
+
+/* ============================================================ */
+/* ADMIN PANEL                                                   */
+/* ============================================================ */
+.admin {
+  padding: 7rem 2rem 4rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.admin__header h1 { font-family: var(--font-display); font-size: 2rem; font-weight: 800; }
+.admin__header p { color: rgba(242, 242, 247, 0.5); font-size: 0.875rem; }
+.admin__tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin: 1.5rem 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.admin__tabs::-webkit-scrollbar { display: none; }
+.admin__tab {
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.5rem;
+  color: rgba(242, 242, 247, 0.6);
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.admin__tab--active {
+  background: rgba(255, 27, 107, 0.08);
+  border-color: rgba(255, 27, 107, 0.2);
+  color: #FF1B6B;
+}
+.admin__body { min-height: 400px; }
+.admin__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.admin__stat {
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1rem;
+}
+.admin__stat-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(242, 242, 247, 0.5);
+  margin-bottom: 0.5rem;
+}
+.admin__stat-value {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+.admin__stat--revenue .admin__stat-value { color: #00E68A; }
+.admin__stat--profit .admin__stat-value { color: #FF1B6B; }
+.admin__chart {
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1rem;
+}
+.admin__chart h3 { font-size: 0.875rem; margin-bottom: 1rem; }
+.admin__bars { display: flex; flex-direction: column; gap: 0.5rem; }
+.admin__bar {
+  display: grid;
+  grid-template-columns: 80px 1fr 40px;
+  align-items: center;
+  gap: 0.75rem;
+}
+.admin__bar-label { font-size: 0.75rem; text-transform: capitalize; }
+.admin__bar-track { height: 6px; background: rgba(255, 255, 255, 0.06); border-radius: 3px; overflow: hidden; }
+.admin__bar-fill { display: block; height: 100%; background: #FF1B6B; border-radius: 3px; transition: width 0.5s cubic-bezier(0.32, 0.72, 0, 1); }
+.admin__bar-count { font-size: 0.75rem; text-align: right; }
+.admin__table-wrap { overflow-x: auto; }
+.admin__table { width: 100%; border-collapse: collapse; }
+.admin__table th, .admin__table td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 0.8rem;
+}
+.admin__table th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(242, 242, 247, 0.5); }
+.admin__pricing-list, .admin__providers, .admin__refunds, .admin__flags {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.admin__pricing-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 1fr 80px 60px 60px;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+}
+.admin__provider, .admin__refund, .admin__flag {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+}
+.admin__badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.06);
+}
+.admin__badge.enabled { background: rgba(0, 230, 138, 0.15); color: #00E68A; }
+.admin__badge.completed { background: rgba(0, 230, 138, 0.15); color: #00E68A; }
+.admin__badge.disabled { background: rgba(255, 255, 255, 0.06); color: rgba(242, 242, 247, 0.4); }
+.admin__badge.pending { background: rgba(255, 209, 102, 0.15); color: #FFD166; }
+.admin__empty { color: rgba(242, 242, 247, 0.4); font-size: 0.875rem; padding: 2rem; text-align: center; }
+
+/* ── Mobile: Orchestrator + Workflow + Admin ── */
+@media (max-width: 768px) {
+  .orchestrator { min-height: 500px; }
+  .orchestrator__header { padding: 1rem; gap: 0.75rem; }
+  .orchestrator__header h2 { font-size: 1.1rem; }
+  .orchestrator__header p { font-size: 0.75rem; }
+  .orchestrator__msg { max-width: 95%; }
+  .orchestrator__input { flex-direction: column; gap: 0.5rem; }
+  .orchestrator__input .btn { width: 100%; justify-content: center; }
+  .workflow-builder { grid-template-columns: 1fr; }
+  .admin { padding: 5rem 1.25rem 3rem; }
+  .admin__stats { grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+  .admin__stat { padding: 1rem; }
+  .admin__stat-value { font-size: 1.4rem; }
+  .admin__pricing-row { grid-template-columns: 1fr; gap: 0.25rem; }
+}

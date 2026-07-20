@@ -14,6 +14,8 @@ import ClippingStudio from "@/components/studio/ClippingStudio";
 import MarketingStudio from "@/components/studio/MarketingStudio";
 import RecastStudio from "@/components/studio/RecastStudio";
 import AiInfluencerStudio from "@/components/studio/AiInfluencerStudio";
+import OrchestratorChat from "@/components/studio/OrchestratorChat";
+import WorkflowBuilder from "@/components/studio/WorkflowBuilder";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
@@ -23,6 +25,8 @@ import {
 const EASE = [0.32, 0.72, 0, 1];
 
 const TOOLS = [
+  { id: "orchestrator", label: "Orchestrator", desc: "AI agent that plans & executes tasks", Icon: IconSparkle, color: "#FF1B6B", group: "AI Agents", badge: "New" },
+  { id: "workflows", label: "Workflows", desc: "Multi-step AI pipelines", Icon: IconBolt, color: "#7C3AED", group: "AI Agents", badge: null },
   { id: "image", label: "Image", desc: "Text-to-image & image-to-image", Icon: IconImage, color: "#FF1B6B", group: "Generate", badge: "55+" },
   { id: "video", label: "Video", desc: "Text, image & video-to-video", Icon: IconVideo, color: "#7C3AED", group: "Generate", badge: "40+" },
   { id: "audio", label: "Audio", desc: "Music, voice & sound effects", Icon: IconMusic, color: "#00E5FF", group: "Generate", badge: "20+" },
@@ -211,6 +215,8 @@ export default function StudioPage({ initialTool }) {
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.5, ease: EASE }}
               >
+                {activeTab === "orchestrator" && <OrchestratorChat />}
+                {activeTab === "workflows" && <WorkflowBuilder />}
                 {activeTab === "image" && <ImageStudio />}
                 {activeTab === "video" && <VideoStudio />}
                 {activeTab === "lipsync" && <LipSyncStudio />}
@@ -221,7 +227,7 @@ export default function StudioPage({ initialTool }) {
                 {activeTab === "marketing" && <MarketingStudio />}
                 {activeTab === "body-swap" && <RecastStudio />}
                 {activeTab === "influencer" && <AiInfluencerStudio />}
-                {activeTab !== "image" && activeTab !== "video" && activeTab !== "lipsync" && activeTab !== "audio" && activeTab !== "cinema" && activeTab !== "vibe-motion" && activeTab !== "clipping" && activeTab !== "marketing" && activeTab !== "body-swap" && activeTab !== "influencer" && (
+                {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "image" && activeTab !== "video" && activeTab !== "lipsync" && activeTab !== "audio" && activeTab !== "cinema" && activeTab !== "vibe-motion" && activeTab !== "clipping" && activeTab !== "marketing" && activeTab !== "body-swap" && activeTab !== "influencer" && (
                   <div className="bezel" style={{ color: activeTool.color }}>
                     <div className="bezel__core">
                       <div className="studio__empty">

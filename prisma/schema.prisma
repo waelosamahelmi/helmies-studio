@@ -12,6 +12,7 @@ model User {
   email         String             @unique
   emailVerified DateTime?
   image         String?
+  role          String             @default("user")
   credits       Int                @default(100)
   createdAt     DateTime           @default(now())
   updatedAt     DateTime           @updatedAt
@@ -20,6 +21,12 @@ model User {
   subscriptions Subscription[]
   generations   Generation[]
   transactions  CreditTransaction[]
+  agentRuns     AgentRun[]
+  workflows     Workflow[]
+  memories      ProjectMemory[]
+  auditLogs     AuditLog[]
+  apiKeys       ApiKey[]
+  rateLimits    RateLimit[]
 }
 
 model Account {
@@ -80,7 +87,10 @@ model Generation {
   outputUrl   String?   @db.Text
   status      String    @default("pending")
   creditsUsed Int       @default(1)
+  providerCost Float?   @default(0)
   error       String?   @db.Text
+  workflowId  String?
+  workflowStepId String?
   createdAt   DateTime  @default(now())
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -93,4 +103,152 @@ model CreditTransaction {
   description String?
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── AI Agents ──
+model AgentRun {
+  id          String   @id @default(cuid())
+  userId      String
+  agentType   String
+  task        String   @db.Text
+  status      String   @default("pending")
+  creditsEstimated Int  @default(0)
+  creditsUsed Int      @default(0)
+  steps       Json?
+  result      Json?
+  error       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Workflows ──
+model Workflow {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  steps       Json
+  status      String   @default("draft")
+  isTemplate  Boolean  @default(false)
+  isPublic    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs        WorkflowRun[]
+}
+
+model WorkflowRun {
+  id          String   @id @default(cuid())
+  workflowId  String
+  userId      String
+  status      String   @default("pending")
+  inputs      Json?
+  outputs     Json?
+  error       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+}
+
+// ── Project Memory ──
+model ProjectMemory {
+  id          String   @id @default(cuid())
+  userId      String
+  type        String
+  name        String
+  data        Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Admin: Provider config ──
+model ProviderConfig {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  type        String
+  apiKey      String   @db.Text
+  baseUrl     String?
+  isActive    Boolean  @default(true)
+  markup      Float    @default(2.5)
+  config      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Admin: Model pricing ──
+model ModelPricing {
+  id          String   @id @default(cuid())
+  modelId     String   @unique
+  modelType   String
+  providerName String
+  providerCost Float
+  creditsCost Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Admin: Feature flags ──
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  enabled     Boolean  @default(false)
+  config      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ── Admin: API Keys (user-facing) ──
+model ApiKey {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  keyHash     String   @unique
+  keyPrefix   String
+  lastUsedAt  DateTime?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ── Security: Audit logs ──
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  resource    String?
+  resourceId   String?
+  ip          String?
+  userAgent   String?  @db.Text
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+// ── Security: Rate limiting ──
+model RateLimit {
+  id          String   @id @default(cuid())
+  userId      String
+  endpoint    String
+  count       Int      @default(1)
+  windowStart DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, endpoint])
+}
+
+// ── Admin: Refunds ──
+model Refund {
+  id          String   @id @default(cuid())
+  userId      String
+  generationId String?
+  amount      Int
+  reason      String?
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
 }
