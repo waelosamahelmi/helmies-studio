@@ -15,13 +15,13 @@ import {
 
 const HEADSHOTS = [
   "/assets/warrior_girl_e29532086b-40.webp",
-  "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.png",
-  "/assets/photo-1506905925346-21bda4d32df4-6.jpg",
-  "/assets/photo-1547036967-23d11aacaee0-7.jpg",
-  "/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.jpg",
-  "/assets/J6-BrUzggQUXdbktr9GcH_ZYLM1F22-13.jpg",
-  "/assets/d7f593c3-3bff-421a-88e7-8ff612fa314b-B4E9QSSceGpBz3t8BFFNDQ-output_ff-16.jpg",
-  "/assets/photo-1551434678-e076c223a692-10.jpg",
+  "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.webp",
+  "/assets/photo-1506905925346-21bda4d32df4-6.webp",
+  "/assets/photo-1547036967-23d11aacaee0-7.webp",
+  "/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.webp",
+  "/assets/J6-BrUzggQUXdbktr9GcH_ZYLM1F22-13.webp",
+  "/assets/d7f593c3-3bff-421a-88e7-8ff612fa314b-B4E9QSSceGpBz3t8BFFNDQ-output_ff-16.webp",
+  "/assets/photo-1551434678-e076c223a692-10.webp",
 ];
 
 const PRICING_MONTHLY = [
@@ -39,11 +39,11 @@ const PRICING_YEARLY = [
 ];
 
 const VIDEOS = [
-  "/assets/2962-1080-36.mp4",
-  "/assets/2948-1080-28.mp4",
-  "/assets/12709382_1920_1080_30fps-39.mp4",
-  "/assets/2963-1080-37.mp4",
-  "/assets/44047-1080-38.mp4",
+  "/assets/2962-1080-36.webm",
+  "/assets/2948-1080-28.webm",
+  "/assets/12709382_1920_1080_30fps-39.webm",
+  "/assets/2963-1080-37.webm",
+  "/assets/44047-1080-38.webm",
 ];
 
 function makeColumns(urls) {
@@ -66,7 +66,7 @@ const SECTIONS = [
     desc: "Flux, Midjourney, GPT-4o, Seedream. From a single line of text, a portrait emerges. Photorealistic, artistic, editorial.",
     pills: ["Flux", "Midjourney", "GPT-4o", "Seedream", "SDXL"],
     accent: "#FF1B6B",
-    bg: "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.png",
+    bg: "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.webp",
     bgClass: "svc-section__bg--flip",
     hasReels: true,
   },
@@ -101,7 +101,7 @@ const SECTIONS = [
     desc: "9 lip-sync models. Upload a portrait, add audio. Talking videos in seconds.",
     pills: ["Infinite Talk", "Wan 2.2", "LTX 2.3", "LatentSync"],
     accent: "#FF1B6B",
-    bg: "/assets/photo-1620121692029-d088224ddc74-11.jpg",
+    bg: "/assets/photo-1620121692029-d088224ddc74-11.webp",
     bgClass: "svc-section__bg--dark",
     hasYouTube: true,
     youtubeId: "_PJ78LYq-FA",
@@ -118,7 +118,7 @@ const SECTIONS = [
     ),
     desc: "Monthly subscriptions or one-off credits. Start free, scale when you're ready.",
     accent: "#FF1B6B",
-    bgVideo: "/assets/o1j748qoxsqdhvrksh5qw2twaoyr-25.mp4",
+    bgVideo: "/assets/o1j748qoxsqdhvrksh5qw2twaoyr-25.webm",
     reverse: false,
     isPricing: true,
   },
@@ -146,8 +146,8 @@ function HeroSection() {
     <section className="hero">
       <div className="hero__bg">
         <video
-          src="/assets/12709382_1920_1080_30fps-39.mp4"
-          poster="/assets/photo-1506905925346-21bda4d32df4-6.jpg"
+          src="/assets/12709382_1920_1080_30fps-39.webm"
+          poster="/assets/photo-1506905925346-21bda4d32df4-6.webp"
           muted loop playsInline autoPlay
         />
       </div>
@@ -157,7 +157,7 @@ function HeroSection() {
           image="/assets/warrior_girl_e29532086b-40.webp"
           line1=" models."
           line2="studio."
-          line1AccentImg="/assets/200.png"
+          line1AccentImg="/assets/200.webp"
           accent="One "
         />
 

@@ -10,11 +10,11 @@ const EASE = [0.32, 0.72, 0, 1];
 
 const MOCK_CREATIONS = [
   { id: "1", imageUrl: "/assets/warrior_girl_e29532086b-40.webp", modelId: "flux-dev", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 3600000).toISOString(), creditsCost: 2 },
-  { id: "2", imageUrl: "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.png", modelId: "sora-2", modelType: "video", status: "completed", createdAt: new Date(Date.now() - 7200000).toISOString(), creditsCost: 5 },
-  { id: "3", imageUrl: "/assets/photo-1506905925346-21bda4d32df4-6.jpg", modelId: "midjourney-v7", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 86400000).toISOString(), creditsCost: 3 },
-  { id: "4", imageUrl: "/assets/photo-1547036967-23d11aacaee0-7.jpg", modelId: "gpt-4o-image", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 172800000).toISOString(), creditsCost: 2 },
-  { id: "5", imageUrl: "/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.jpg", modelId: "seedream-5", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 259200000).toISOString(), creditsCost: 2 },
-  { id: "6", imageUrl: "/assets/J6-BrUzggQUXdbktr9GcH_ZYLM1F22-13.jpg", modelId: "ideogram-v3", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 345600000).toISOString(), creditsCost: 2 },
+  { id: "2", imageUrl: "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.webp", modelId: "sora-2", modelType: "video", status: "completed", createdAt: new Date(Date.now() - 7200000).toISOString(), creditsCost: 5 },
+  { id: "3", imageUrl: "/assets/photo-1506905925346-21bda4d32df4-6.webp", modelId: "midjourney-v7", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 86400000).toISOString(), creditsCost: 3 },
+  { id: "4", imageUrl: "/assets/photo-1547036967-23d11aacaee0-7.webp", modelId: "gpt-4o-image", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 172800000).toISOString(), creditsCost: 2 },
+  { id: "5", imageUrl: "/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.webp", modelId: "seedream-5", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 259200000).toISOString(), creditsCost: 2 },
+  { id: "6", imageUrl: "/assets/J6-BrUzggQUXdbktr9GcH_ZYLM1F22-13.webp", modelId: "ideogram-v3", modelType: "image", status: "completed", createdAt: new Date(Date.now() - 345600000).toISOString(), creditsCost: 2 },
 ];
 
 const TYPE_META = {

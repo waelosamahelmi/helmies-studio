@@ -28,7 +28,7 @@ export default function LoginPage() {
 
       <section className="auth">
         <div className="auth__bg">
-          <video src="/assets/12709382_1920_1080_30fps-39.mp4" poster="/assets/photo-1506905925346-21bda4d32df4-6.jpg" muted loop playsInline autoPlay />
+          <video src="/assets/12709382_1920_1080_30fps-39.webm" poster="/assets/photo-1506905925346-21bda4d32df4-6.webp" muted loop playsInline autoPlay />
         </div>
         <div className="auth__scrim" />
 
