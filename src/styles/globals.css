@@ -261,14 +261,13 @@
   box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
 }
 .nav__inner {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 1rem;
   padding: 0.375rem 0.625rem 0.375rem 1.125rem;
 }
 .nav__logo {
-  justify-self: start;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -289,7 +288,6 @@
   color: #fff;
 }
 .nav__links {
-  justify-self: center;
   display: flex;
   align-items: center;
   gap: 0.125rem;
@@ -304,7 +302,7 @@
 }
 .nav__link:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
 .nav__link--active { color: #fff; background: rgba(255, 27, 107, 0.12); }
-.nav__actions { display: flex; align-items: center; gap: 0.5rem; justify-self: end; }
+.nav__actions { display: flex; align-items: center; gap: 0.5rem; }
 .nav__burger {
   display: none;
   width: 2.25rem; height: 2.25rem;
@@ -1113,17 +1111,18 @@
 
 /* ── Flyout panel ── */
 .studio__flyout {
-  position: absolute; left: 64px; top: 60px; bottom: 60px; width: 280px;
+  position: absolute; left: 64px; top: 50%; transform: translateY(-50%); width: 280px;
+  max-height: 70vh;
   background: rgba(10, 10, 15, 0.95);
   backdrop-filter: blur(40px); -webkit-backdrop-filter: blur(40px);
-  border-right: 1px solid var(--color-hairline);
-  border-radius: 0 1.25rem 1.25rem 0;
+  border: 1px solid var(--color-hairline);
+  border-radius: 1.25rem;
   box-shadow: 8px 0 40px rgba(0, 0, 0, 0.5);
   display: flex; flex-direction: column;
   animation: flyoutIn 0.35s cubic-bezier(0.32, 0.72, 0, 1);
   z-index: 25;
 }
-@keyframes flyoutIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes flyoutIn { from { opacity: 0; transform: translate(-12px, -50%); } to { opacity: 1; transform: translate(0, -50%); } }
 .studio__flyout-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.25rem 1rem; border-bottom: 1px solid var(--color-hairline); }
 .studio__flyout-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-dim); }
 .studio__flyout-close { width: 24px; height: 24px; border-radius: 0.5rem; border: none; background: rgba(255, 255, 255, 0.04); color: rgba(242, 242, 247, 0.5); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.32, 0.72, 0, 1); }
@@ -1354,8 +1353,11 @@
     left: 64px;
     top: 0;
     bottom: 0;
+    transform: none;
+    max-height: none;
     border-radius: 0;
   }
+  @keyframes flyoutIn { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: translateX(0); } }
   .studio__header { padding: 1rem 1.25rem; }
   .studio__body { padding: 1.25rem; }
 }
