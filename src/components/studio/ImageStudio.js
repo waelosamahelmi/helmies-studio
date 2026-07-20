@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { IMAGE_MODELS } from "@/lib/models";
 import { IconBolt, IconArrowUpRight, IconImage } from "@/components/Icons";
 import { useCreditCost } from "@/components/studio/useCreditCost";
 import RichIdle from "@/components/studio/RichIdle";
+import RichModelPicker from "@/components/studio/RichModelPicker";
+import StagedProgress from "@/components/studio/StagedProgress";
 
 export default function ImageStudio() {
   const [model, setModel] = useState(IMAGE_MODELS[0]);
@@ -18,13 +20,22 @@ export default function ImageStudio() {
   const { cost, affordable } = useCreditCost("image", model.id, { aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [elapsed, setElapsed] = useState(0);
   const fileRef = useRef(null);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [loading]);
 
   const handleSubmit = async () => {
-    if (!prompt.trim()) {
-      setError("Please enter a prompt");
-      return;
-    }
+    if (!prompt.trim()) { setError("Please enter a prompt"); return; }
     setLoading(true);
     setError("");
     setResult(null);
@@ -45,11 +56,8 @@ export default function ImageStudio() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Generation failed");
-      } else {
-        setResult(data);
-      }
+      if (!res.ok) setError(data.error || "Generation failed");
+      else setResult(data);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -74,24 +82,12 @@ export default function ImageStudio() {
   return (
     <div className="studio-panel">
       <div className="studio-panel__left">
-        <div className="field-group">
-          <label className="field-label">Model</label>
-          <select
-            className="field-select"
-            value={model.id}
-            onChange={(e) => {
-              const m = IMAGE_MODELS.find((x) => x.id === e.target.value);
-              setModel(m);
-              if (m.aspectRatios) setAspectRatio(m.aspectRatios[0]);
-            }}
-          >
-            {IMAGE_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <RichModelPicker
+          models={IMAGE_MODELS}
+          selected={model}
+          onSelect={(m) => { setModel(m); if (m.aspectRatios) setAspectRatio(m.aspectRatios[0]); }}
+          tool="image"
+        />
 
         <div className="field-group">
           <label className="field-label">Prompt</label>
@@ -109,13 +105,7 @@ export default function ImageStudio() {
             <label className="field-label">Aspect Ratio</label>
             <div className="field-pills">
               {model.aspectRatios.map((ar) => (
-                <button
-                  key={ar}
-                  className={`pill ${aspectRatio === ar ? "pill--active" : ""}`}
-                  onClick={() => setAspectRatio(ar)}
-                >
-                  {ar}
-                </button>
+                <button key={ar} className={`pill ${aspectRatio === ar ? "pill--active" : ""}`} onClick={() => setAspectRatio(ar)}>{ar}</button>
               ))}
             </div>
           </div>
@@ -126,13 +116,7 @@ export default function ImageStudio() {
             <label className="field-label">Resolution</label>
             <div className="field-pills">
               {model.resolutions.map((r) => (
-                <button
-                  key={r}
-                  className={`pill ${resolution === r ? "pill--active" : ""}`}
-                  onClick={() => setResolution(r)}
-                >
-                  {r}
-                </button>
+                <button key={r} className={`pill ${resolution === r ? "pill--active" : ""}`} onClick={() => setResolution(r)}>{r}</button>
               ))}
             </div>
           </div>
@@ -142,48 +126,22 @@ export default function ImageStudio() {
           <div className="field-row">
             <div className="field-group">
               <label className="field-label">Width</label>
-              <input
-                className="field-input"
-                type="number"
-                value={width}
-                onChange={(e) => setWidth(parseInt(e.target.value) || 1024)}
-                step={64}
-                min={128}
-                max={2048}
-              />
+              <input className="field-input" type="number" value={width} onChange={(e) => setWidth(parseInt(e.target.value) || 1024)} step={64} min={128} max={2048} />
             </div>
             <div className="field-group">
               <label className="field-label">Height</label>
-              <input
-                className="field-input"
-                type="number"
-                value={height}
-                onChange={(e) => setHeight(parseInt(e.target.value) || 1024)}
-                step={64}
-                min={128}
-                max={2048}
-              />
+              <input className="field-input" type="number" value={height} onChange={(e) => setHeight(parseInt(e.target.value) || 1024)} step={64} min={128} max={2048} />
             </div>
           </div>
         )}
 
         <div className="field-group">
           <label className="field-label">Reference Image (optional)</label>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            onChange={handleUpload}
-            style={{ display: "none" }}
-          />
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: "none" }} />
           <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}>
             {imageUrl ? "Image loaded ✓" : "Upload image"}
           </button>
-          {imageUrl && (
-            <button className="btn btn-ghost" onClick={() => setImageUrl("")}>
-              Remove
-            </button>
-          )}
+          {imageUrl && <button className="btn btn-ghost" onClick={() => setImageUrl("")}>Remove</button>}
         </div>
 
         <button
@@ -191,43 +149,24 @@ export default function ImageStudio() {
           onClick={handleSubmit}
           disabled={loading || !prompt.trim() || !affordable}
         >
-          {loading ? (
-            "Generating..."
-          ) : (
-            <>
-              Generate{cost ? ` — ${cost} credits` : ""}
-              <span className="btn__icon">
-                <IconBolt />
-              </span>
-            </>
+          {loading ? "Generating..." : (
+            <>Generate{cost ? ` — ${cost} credits` : ""}<span className="btn__icon"><IconBolt /></span></>
           )}
         </button>
-        {!affordable && cost && (
-          <p className="studio__cost-warning">Insufficient credits. Need {cost}, upgrade to continue.</p>
-        )}
+        {!affordable && cost && <p className="studio__cost-warning">Insufficient credits. Need {cost}.</p>}
       </div>
 
       <div className="studio-panel__right">
         {error && <div className="studio-error">{error}</div>}
-        {loading && (
-          <div className="studio-loading">
-            <div className="studio-loading__spinner" />
-            <p>Generating your image...</p>
-          </div>
-        )}
+        {loading && <StagedProgress tool="image" elapsed={elapsed} />}
         {result && result.url && (
           <div className="studio-result">
             <img src={result.url} alt="Generated" className="studio-result__img" />
             <div className="studio-result__meta">
               <a href={result.url} download className="btn btn-secondary btn-sm">
-                Download
-                <span className="btn__icon">
-                  <IconArrowUpRight />
-                </span>
+                Download<span className="btn__icon"><IconArrowUpRight /></span>
               </a>
-              <span className="studio-result__credits">
-                <IconBolt /> {result.creditsUsed} credits
-              </span>
+              <span className="studio-result__credits"><IconBolt /> {result.creditsUsed} credits</span>
             </div>
           </div>
         )}

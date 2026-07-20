@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { VIDEO_MODELS } from "@/lib/models";
 import { IconBolt, IconArrowUpRight, IconVideo } from "@/components/Icons";
+import RichModelPicker from "@/components/studio/RichModelPicker";
+import StagedProgress from "@/components/studio/StagedProgress";
+import RichIdle from "@/components/studio/RichIdle";
 
 export default function VideoStudio() {
   const [model, setModel] = useState(VIDEO_MODELS[0]);
@@ -13,13 +16,22 @@ export default function VideoStudio() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [elapsed, setElapsed] = useState(0);
   const fileRef = useRef(null);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    if (loading) {
+      setElapsed(0);
+      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
+    } else {
+      clearInterval(timerRef.current);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [loading]);
 
   const handleSubmit = async () => {
-    if (!prompt.trim() && !imageUrl) {
-      setError("Please enter a prompt or upload an image");
-      return;
-    }
+    if (!prompt.trim() && !imageUrl) { setError("Please enter a prompt or upload an image"); return; }
     setLoading(true);
     setError("");
     setResult(null);
@@ -38,11 +50,8 @@ export default function VideoStudio() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Generation failed");
-      } else {
-        setResult(data);
-      }
+      if (!res.ok) setError(data.error || "Generation failed");
+      else setResult(data);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -67,25 +76,12 @@ export default function VideoStudio() {
   return (
     <div className="studio-panel">
       <div className="studio-panel__left">
-        <div className="field-group">
-          <label className="field-label">Model</label>
-          <select
-            className="field-select"
-            value={model.id}
-            onChange={(e) => {
-              const m = VIDEO_MODELS.find((x) => x.id === e.target.value);
-              setModel(m);
-              if (m.aspectRatios) setAspectRatio(m.aspectRatios[0]);
-              if (m.durations) setDuration(m.durations[0]);
-            }}
-          >
-            {VIDEO_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <RichModelPicker
+          models={VIDEO_MODELS}
+          selected={model}
+          onSelect={(m) => { setModel(m); if (m.aspectRatios) setAspectRatio(m.aspectRatios[0]); if (m.durations) setDuration(m.durations[0]); }}
+          tool="video"
+        />
 
         <div className="field-group">
           <label className="field-label">Prompt</label>
@@ -103,13 +99,7 @@ export default function VideoStudio() {
             <label className="field-label">Aspect Ratio</label>
             <div className="field-pills">
               {model.aspectRatios.map((ar) => (
-                <button
-                  key={ar}
-                  className={`pill ${aspectRatio === ar ? "pill--active" : ""}`}
-                  onClick={() => setAspectRatio(ar)}
-                >
-                  {ar}
-                </button>
+                <button key={ar} className={`pill ${aspectRatio === ar ? "pill--active" : ""}`} onClick={() => setAspectRatio(ar)}>{ar}</button>
               ))}
             </div>
           </div>
@@ -117,16 +107,10 @@ export default function VideoStudio() {
 
         {model.durations && (
           <div className="field-group">
-            <label className="field-label">Duration (seconds)</label>
+            <label className="field-label">Duration</label>
             <div className="field-pills">
               {model.durations.map((d) => (
-                <button
-                  key={d}
-                  className={`pill ${duration === d ? "pill--active" : ""}`}
-                  onClick={() => setDuration(d)}
-                >
-                  {d}s
-                </button>
+                <button key={d} className={`pill ${duration === d ? "pill--active" : ""}`} onClick={() => setDuration(d)}>{d}s</button>
               ))}
             </div>
           </div>
@@ -134,21 +118,11 @@ export default function VideoStudio() {
 
         <div className="field-group">
           <label className="field-label">Start Frame (optional)</label>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            onChange={handleUpload}
-            style={{ display: "none" }}
-          />
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: "none" }} />
           <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}>
             {imageUrl ? "Image loaded ✓" : "Upload start frame"}
           </button>
-          {imageUrl && (
-            <button className="btn btn-ghost" onClick={() => setImageUrl("")}>
-              Remove
-            </button>
-          )}
+          {imageUrl && <button className="btn btn-ghost" onClick={() => setImageUrl("")}>Remove</button>}
         </div>
 
         <button
@@ -156,51 +130,28 @@ export default function VideoStudio() {
           onClick={handleSubmit}
           disabled={loading || (!prompt.trim() && !imageUrl)}
         >
-          {loading ? (
-            "Generating video..."
-          ) : (
-            <>
-              Generate Video
-              <span className="btn__icon">
-                <IconBolt />
-              </span>
-            </>
+          {loading ? "Generating video..." : (
+            <>Generate Video<span className="btn__icon"><IconBolt /></span></>
           )}
         </button>
       </div>
 
       <div className="studio-panel__right">
         {error && <div className="studio-error">{error}</div>}
-        {loading && (
-          <div className="studio-loading">
-            <div className="studio-loading__spinner" />
-            <p>Generating your video... This may take a few minutes.</p>
-          </div>
-        )}
+        {loading && <StagedProgress tool="video" elapsed={elapsed} />}
         {result && result.url && (
           <div className="studio-result">
             <video src={result.url} controls autoPlay loop className="studio-result__video" />
             <div className="studio-result__meta">
               <a href={result.url} download className="btn btn-secondary btn-sm">
-                Download
-                <span className="btn__icon">
-                  <IconArrowUpRight />
-                </span>
+                Download<span className="btn__icon"><IconArrowUpRight /></span>
               </a>
-              <span className="studio-result__credits">
-                <IconBolt /> {result.creditsUsed} credits
-              </span>
+              <span className="studio-result__credits"><IconBolt /> {result.creditsUsed} credits</span>
             </div>
           </div>
         )}
         {!loading && !result && !error && (
-          <div className="studio-empty">
-            <div className="studio-empty__icon">
-              <IconVideo />
-            </div>
-            <h3>Video Studio</h3>
-            <p>Enter a prompt to generate AI video clips.</p>
-          </div>
+          <RichIdle tool="video" icon={IconVideo} title="Video Studio" description="Enter a prompt to generate AI video clips." />
         )}
       </div>
     </div>

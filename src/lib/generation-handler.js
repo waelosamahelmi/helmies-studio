@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserWithCredits, debitCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
-import { resolveProvider, brandError, logProviderError } from "@/lib/providers";
+import { resolveProvider, resolveProviderWithFallback, brandError, logProviderError, submitAndPoll } from "@/lib/providers";
 import { checkRateLimit, logAudit } from "@/lib/security";
 import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
 import { applyMemoryToPrompt } from "@/lib/memory";
@@ -69,7 +69,25 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         paramsWithPrompt.negative_prompt = getNegativePrompt(promptType);
       }
 
-      const result = await apiFn({ ...paramsWithPrompt, _provider: provider });
+      let result;
+      let lastError;
+      const providers = await resolveProviderWithFallback(model);
+
+      for (const prov of providers) {
+        try {
+          result = await apiFn({ ...paramsWithPrompt, _provider: prov });
+          break;
+        } catch (e) {
+          lastError = e;
+          await logProviderError(prov.name, tool, e.message, user.id).catch(() => {});
+          continue;
+        }
+      }
+
+      if (!result) {
+        throw lastError || new Error("All providers failed");
+      }
+
       const outputUrl = result.url || result.outputs?.[0];
 
       const quality = await validateGenerationOutput(outputUrl, tool);

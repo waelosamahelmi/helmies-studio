@@ -165,6 +165,7 @@ export default function StudioPage({ initialTool }) {
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab}
+                layoutId="studio-content"
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -12 }}

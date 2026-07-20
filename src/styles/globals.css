@@ -4154,6 +4154,45 @@
   backdrop-filter: blur(4px);
 }
 .masonry__download svg { width: 14px; height: 14px; }
+.masonry__info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.5rem 0.6rem;
+  background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.masonry__item:hover .masonry__info { opacity: 1; }
+.masonry__model { font-size: 0.65rem; color: rgba(242, 242, 247, 0.6); }
+.masonry__time { font-size: 0.6rem; color: rgba(242, 242, 247, 0.35); }
+.masonry__audio-wrap {
+  padding: 2rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(242, 242, 247, 0.03);
+  min-height: 100px;
+}
+.masonry__audio { width: 100%; height: 36px; }
+.masonry__actions { display: flex; gap: 6px; }
+.masonry__action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  text-decoration: none;
+  backdrop-filter: blur(4px);
+}
+.masonry__action-btn svg { width: 14px; height: 14px; }
 @media (max-width: 768px) { .masonry { columns: 2; } }
 @media (max-width: 480px) { .masonry { columns: 1; } }
 

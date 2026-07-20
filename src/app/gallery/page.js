@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
-import { IconSearch, IconExternal, IconDownload, IconArrowUpRight, IconImage } from "@/components/Icons";
+import { IconSearch, IconArrowUpRight, IconImage, IconBolt, IconClose } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -37,6 +37,71 @@ const FILTERS = [
   { id: "video", label: "Videos" },
   { id: "audio", label: "Audio" },
 ];
+
+function GalleryCard({ item, index }) {
+  const [hovered, setHovered] = useState(false);
+  const videoRef = useRef(null);
+  const meta = TYPE_META[item.tool] || TYPE_META.image;
+  const isVideo = item.outputUrl?.match(/\.(mp4|webm|mov)$/i);
+  const isAudio = item.outputUrl?.match(/\.(mp3|wav|ogg|flac)$/i);
+
+  return (
+    <motion.div
+      className="masonry__item"
+      initial={{ opacity: 0, y: 20, filter: "blur(8px)" }}
+      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      transition={{ delay: index * 0.05, duration: 0.5, ease: EASE }}
+      onMouseEnter={() => {
+        setHovered(true);
+        if (videoRef.current) videoRef.current.play().catch(() => {});
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+        if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; }
+      }}
+    >
+      {isVideo ? (
+        <video
+          ref={videoRef}
+          src={item.outputUrl}
+          className="masonry__media"
+          muted
+          loop
+          playsInline
+          preload="metadata"
+        />
+      ) : isAudio ? (
+        <div className="masonry__audio-wrap">
+          <audio src={item.outputUrl} controls className="masonry__audio" />
+        </div>
+      ) : (
+        <img src={item.outputUrl} alt={item.model || ""} className="masonry__media" loading="lazy" />
+      )}
+
+      <div className={`masonry__overlay ${hovered ? "masonry__overlay--visible" : ""}`}>
+        <div className="masonry__overlay-top">
+          <span className="masonry__badge" style={{ color: meta.color }}>{meta.label}</span>
+          {item.creditsUsed > 0 && (
+            <span className="masonry__cost"><IconBolt /> {item.creditsUsed}</span>
+          )}
+        </div>
+        <div className="masonry__overlay-bottom">
+          {item.prompt && <p className="masonry__prompt">{item.prompt.slice(0, 80)}{item.prompt.length > 80 ? "..." : ""}</p>}
+          <div className="masonry__actions">
+            <a href={item.outputUrl} target="_blank" rel="noopener noreferrer" className="masonry__action-btn">
+              <IconArrowUpRight />
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div className="masonry__info">
+        <span className="masonry__model">{item.model}</span>
+        <span className="masonry__time">{getTimeAgo(item.createdAt)}</span>
+      </div>
+    </motion.div>
+  );
+}
 
 export default function GalleryPage() {
   const [search, setSearch] = useState("");
@@ -75,31 +140,21 @@ export default function GalleryPage() {
             <p className="page__sub">{creations.length} creations.</p>
           </div>
           <Link href="/studio" className="btn btn-primary">
-            New Generation
-            <span className="btn__icon"><IconArrowUpRight /></span>
+            New Generation<span className="btn__icon"><IconArrowUpRight /></span>
           </Link>
         </div>
 
         <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
           <div className="flex gap-2 flex-wrap">
             {FILTERS.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id)}
-                className={`pill ${filter === f.id ? "pill--active" : ""}`}
-              >
+              <button key={f.id} onClick={() => setFilter(f.id)} className={`pill ${filter === f.id ? "pill--active" : ""}`}>
                 {f.label}
               </button>
             ))}
           </div>
           <div className="field w-full sm:w-64">
             <IconSearch className="field__icon" />
-            <input
-              type="text"
-              placeholder="Search creations..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <input type="text" placeholder="Search creations..." value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
         </div>
 
@@ -107,7 +162,7 @@ export default function GalleryPage() {
           <div className="bezel" style={{ padding: "4rem 2rem", textAlign: "center" }}>
             <div className="bezel__core" style={{ padding: "3rem 2rem" }}>
               <div className="studio-loading__spinner mx-auto mb-4" />
-              <p className="text-sm text-white/50">Loading your creations...</p>
+              <p className="text-sm" style={{ color: "rgba(242,242,247,0.5)" }}>Loading your creations...</p>
             </div>
           </div>
         ) : filtered.length === 0 ? (
@@ -116,60 +171,18 @@ export default function GalleryPage() {
               <div className="studio__empty-icon mx-auto mb-6" style={{ color: "#FF1B6B" }}>
                 <IconImage />
               </div>
-              <h3 className="text-xl font-bold mb-2">No creations found</h3>
-              <p className="text-sm text-white/50">Generate something in the studio to see it here.</p>
-              <Link href="/studio" className="btn btn-primary mt-4">
-                Go to Studio
-                <span className="btn__icon"><IconArrowUpRight /></span>
+              <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "0.5rem" }}>No creations found</h3>
+              <p style={{ fontSize: "0.85rem", color: "rgba(242,242,247,0.5)" }}>Generate something in the studio to see it here.</p>
+              <Link href="/studio" className="btn btn-primary" style={{ marginTop: "1rem", display: "inline-flex" }}>
+                Go to Studio<span className="btn__icon"><IconArrowUpRight /></span>
               </Link>
             </div>
           </div>
         ) : (
-          <div className="gallery-grid">
-            {filtered.map((c, i) => {
-              const meta = TYPE_META[c.tool] || TYPE_META.image;
-              const isVideo = c.outputUrl?.match(/\.(mp4|webm|mov)$/i);
-              const isAudio = c.outputUrl?.match(/\.(mp3|wav|ogg|flac)$/i);
-              return (
-                <motion.div
-                  key={c.id}
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-30px" }}
-                  transition={{ duration: 0.7, ease: EASE, delay: (i % 4) * 0.06 }}
-                  className="gallery-card group"
-                >
-                  <div className="gallery-card__media">
-                    {isVideo ? (
-                      <video src={c.outputUrl} muted loop playsInline loading="lazy" />
-                    ) : isAudio ? (
-                      <div className="gallery-card__audio"><audio src={c.outputUrl} controls /></div>
-                    ) : (
-                      <img src={c.outputUrl} alt={c.model} loading="lazy" />
-                    )}
-                  </div>
-                  <div className="gallery-card__scrim" />
-                  <span className="gallery-card__type" style={{ color: meta.color }}>{meta.label}</span>
-                  <div className="gallery-card__meta">
-                    <span className="gallery-card__model">{c.model}</span>
-                    <span className="gallery-card__time">{getTimeAgo(c.createdAt)}</span>
-                  </div>
-                  <div className="gallery-card__overlay">
-                    <button
-                      className="btn btn-sm btn-primary"
-                      onClick={() => window.open(c.outputUrl, "_blank")}
-                    >
-                      <IconExternal style={{ width: "0.85rem", height: "0.85rem" }} />
-                      Open
-                    </button>
-                    <a className="btn btn-sm btn-secondary" href={c.outputUrl} download>
-                      <IconDownload style={{ width: "0.85rem", height: "0.85rem" }} />
-                      Save
-                    </a>
-                  </div>
-                </motion.div>
-              );
-            })}
+          <div className="masonry">
+            {filtered.map((c, i) => (
+              <GalleryCard key={c.id} item={c} index={i} />
+            ))}
           </div>
         )}
       </div>

@@ -180,3 +180,46 @@ export async function llmComplete(messages, options = {}) {
   const data = await res.json();
   return data.choices?.[0]?.message?.content || "";
 }
+
+// ── LLM streaming (OpenRouter) ──
+export async function llmStream(messages, options = {}) {
+  const provider = getProvider("openrouter");
+  const key = provider.getKey();
+  if (!key) throw new Error("LLM provider not configured");
+
+  const res = await fetch(`${provider.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+      "HTTP-Referer": process.env.NEXTAUTH_URL || "https://studio.helmies.fi",
+      "X-Title": "Helmies Studio",
+    },
+    body: JSON.stringify({
+      model: options.model || "qwen/qwen-2.5-72b-instruct",
+      messages,
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxTokens ?? 2000,
+      stream: true,
+    }),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(brandError(txt));
+  }
+
+  return res.body;
+}
+
+// ── Provider-level fallback chain ──
+const FALLBACK_CHAIN = ["muapi", "wavespeed", "atlas"];
+
+export async function resolveProviderWithFallback(modelId) {
+  const primary = await resolveProvider(modelId);
+  const chain = [primary.name, ...FALLBACK_CHAIN.filter((n) => n !== primary.name)];
+  return chain.map((name) => {
+    const p = PROVIDERS[name];
+    return p ? { name, ...p } : null;
+  }).filter(Boolean);
+}

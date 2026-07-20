@@ -11,8 +11,32 @@ export async function POST(req) {
     const rl = await checkRateLimit(user.id, "/api/agent");
     if (!rl.allowed) return NextResponse.json({ error: "Rate limited", retryAfter: rl.retryAfter }, { status: 429 });
 
-    const { message, context } = await req.json();
+    const { message, context, stream } = await req.json();
     if (!message) return NextResponse.json({ error: "Message required" }, { status: 400 });
+
+    if (stream) {
+      const encoder = new TextEncoder();
+      const readable = new ReadableStream({
+        async start(controller) {
+          try {
+            const plan = await planTask(message, context || {});
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(plan)}\n\n`));
+            controller.close();
+          } catch (e) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: e.message })}\n\n`));
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
 
     const plan = await planTask(message, context || {});
     return NextResponse.json({ success: true, ...plan });
