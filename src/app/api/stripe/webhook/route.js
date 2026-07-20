@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import prisma from "@/lib/prisma";
 import { SUBSCRIPTION_CREDITS, PLAN_IDS } from "@/lib/credits";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-12-18.acacia" });
 
 export async function POST(req) {
   const sig = req.headers.get("stripe-signature");

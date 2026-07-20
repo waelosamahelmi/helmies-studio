@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { IconBolt, IconArrowUpRight, IconSparkle, IconImage, IconVideo, IconMusic, IconCrown } from "@/components/Icons";
+import { IconBolt, IconArrowUpRight, IconSparkle, IconImage, IconVideo, IconMusic, IconCrown, IconClose } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -15,24 +15,128 @@ const STEP_LABELS = {
   coding: { icon: IconBolt, label: "Writing code", color: "#00E68A" },
 };
 
+const STAGE_LABELS = {
+  image: ["Queued", "Rendering", "Finalizing"],
+  video: ["Queued", "Rendering", "Upscaling", "Finalizing"],
+  audio: ["Queued", "Composing", "Mastering"],
+};
+
+function ThinkingIndicator() {
+  return (
+    <div className="orchestrator__thinking">
+      <div className="orchestrator__thinking-dots">
+        {[0, 1, 2].map((i) => (
+          <motion.span
+            key={i}
+            className="orchestrator__thinking-dot"
+            animate={{ opacity: [0.3, 1, 0.3], scale: [0.8, 1.2, 0.8] }}
+            transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2, ease: "easeInOut" }}
+          />
+        ))}
+      </div>
+      <span className="orchestrator__thinking-text">Thinking...</span>
+    </div>
+  );
+}
+
+function StepCard({ step, index, status, output }) {
+  const meta = STEP_LABELS[step.agent] || STEP_LABELS.image;
+  const Icon = meta.icon;
+  const stages = STAGE_LABELS[step.agent] || STAGE_LABELS.image;
+  const [stageIdx, setStageIdx] = useState(0);
+
+  useEffect(() => {
+    if (status !== "running") return;
+    const timer = setInterval(() => {
+      setStageIdx((i) => Math.min(i + 1, stages.length - 1));
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [status, stages.length]);
+
+  const isVideo = output?.match(/\.(mp4|webm)$/i);
+  const isImage = output?.match(/\.(jpg|jpeg|png|webp|gif)$/i);
+
+  return (
+    <motion.div
+      className={`step-card step-card--${status}`}
+      initial={{ opacity: 0, y: 16, filter: "blur(4px)" }}
+      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      transition={{ delay: index * 0.12, duration: 0.5, ease: EASE }}
+    >
+      <div className="step-card__header">
+        <span className="step-card__num">{index + 1}</span>
+        <span className="step-card__icon" style={{ color: meta.color }}>
+          {status === "running" ? (
+            <motion.span
+              animate={{ rotate: 360 }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+              style={{ display: "inline-flex" }}
+            >
+              <Icon />
+            </motion.span>
+          ) : status === "completed" ? (
+            <span className="step-card__check">✓</span>
+          ) : status === "failed" ? (
+            <span className="step-card__x">✕</span>
+          ) : (
+            <Icon />
+          )}
+        </span>
+        <div className="step-card__info">
+          <span className="step-card__agent">{step.agent}</span>
+          <span className="step-card__task">{step.task}</span>
+        </div>
+        <div className="step-card__right">
+          {status === "running" && (
+            <span className="step-card__stage">{stages[stageIdx]}</span>
+          )}
+          {status === "completed" && (
+            <span className="step-card__status step-card__status--done">Done</span>
+          )}
+          {status === "failed" && (
+            <span className="step-card__status step-card__status--fail">Failed</span>
+          )}
+        </div>
+      </div>
+
+      {output && (
+        <motion.div
+          className="step-card__output"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          transition={{ duration: 0.4, ease: EASE }}
+        >
+          {isImage && <img src={output} alt={`Step ${index + 1}`} className="step-card__thumb" />}
+          {isVideo && <video src={output} controls className="step-card__thumb" />}
+          {!isImage && !isVideo && (
+            <pre className="step-card__text-output">{typeof output === "string" ? output.slice(0, 500) : JSON.stringify(output)?.slice(0, 500)}</pre>
+          )}
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
 export default function OrchestratorChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [plan, setPlan] = useState(null);
   const [executing, setExecuting] = useState(false);
-  const [liveSteps, setLiveSteps] = useState([]);
-  const [results, setResults] = useState([]);
+  const [thinking, setThinking] = useState(false);
+  const [stepCards, setStepCards] = useState([]);
+  const [streamingText, setStreamingText] = useState("");
   const scrollRef = useRef(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, liveSteps]);
+  }, [messages, stepCards, streamingText, thinking]);
 
   const handlePlan = async () => {
     if (!input.trim()) return;
     const userMsg = input;
     setMessages((m) => [...m, { role: "user", content: userMsg }]);
-    setExecuting(true);
+    setThinking(true);
+    setInput("");
 
     try {
       const res = await fetch("/api/agent/plan", {
@@ -55,40 +159,42 @@ export default function OrchestratorChat() {
     } catch (e) {
       setMessages((m) => [...m, { role: "assistant", content: e.message }]);
     } finally {
-      setExecuting(false);
+      setThinking(false);
     }
   };
 
   const handleExecute = async () => {
     if (!plan) return;
     setExecuting(true);
-    setLiveSteps(plan.steps.map((s, i) => ({ index: i, agent: s.agent, status: "pending" })));
-    setMessages((m) => [...m, {
-      role: "assistant",
-      content: `Executing ${plan.steps.length} steps... ${plan.estimate.total} credits will be used.`,
-    }]);
+    setStepCards(plan.steps.map((s, i) => ({ ...s, index: i, status: "pending", output: null })));
 
     try {
       const res = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: input }),
+        body: JSON.stringify({ message: input || messages[messages.length - 1]?.content || "" }),
       });
       const data = await res.json();
 
-      if (data.success) {
-        setResults(data.outputs || []);
-        setLiveSteps(data.stepResults.map((sr) => ({ ...sr, status: sr.status })));
+      if (data.success && data.stepResults) {
+        const updated = plan.steps.map((s, i) => {
+          const sr = data.stepResults[i];
+          return {
+            ...s,
+            index: i,
+            status: sr?.status || "failed",
+            output: data.outputs?.[i] || null,
+          };
+        });
+        setStepCards(updated);
         setMessages((m) => [...m, {
           role: "assistant",
           content: `Done! ${data.stepResults.filter((s) => s.status === "completed").length}/${data.stepResults.length} steps completed. ${data.creditsUsed} credits used.`,
-          stepResults: data.stepResults,
         }]);
       } else {
         setMessages((m) => [...m, { role: "assistant", content: `Failed: ${data.error}` }]);
       }
       setPlan(null);
-      setInput("");
     } catch (e) {
       setMessages((m) => [...m, { role: "assistant", content: e.message }]);
     } finally {
@@ -107,7 +213,7 @@ export default function OrchestratorChat() {
       </div>
 
       <div className="orchestrator__chat" ref={scrollRef}>
-        {messages.length === 0 && (
+        {messages.length === 0 && !executing && (
           <div className="orchestrator__empty">
             <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.5, ease: EASE }}>
               <IconSparkle />
@@ -131,8 +237,8 @@ export default function OrchestratorChat() {
           <motion.div
             key={i}
             className={`orchestrator__msg orchestrator__msg--${msg.role}`}
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: EASE }}
           >
             {msg.role === "assistant" && (
@@ -156,11 +262,11 @@ export default function OrchestratorChat() {
                   <div className="orchestrator__plan-steps">
                     {msg.plan.steps.map((step, j) => {
                       const meta = STEP_LABELS[step.agent] || STEP_LABELS.image;
-                      const Icon = meta.icon;
+                      const StepIcon = meta.icon;
                       return (
                         <div key={j} className="orchestrator__step">
                           <span className="orchestrator__step-num">{j + 1}</span>
-                          <span className="orchestrator__step-icon" style={{ color: meta.color }}><Icon /></span>
+                          <span className="orchestrator__step-icon" style={{ color: meta.color }}><StepIcon /></span>
                           <div>
                             <div className="orchestrator__step-agent">{step.agent}</div>
                             <div className="orchestrator__step-task">{step.task}</div>
@@ -172,93 +278,20 @@ export default function OrchestratorChat() {
                   </div>
                 </motion.div>
               )}
-
-              {/* Live execution steps */}
-              {msg.stepResults && (
-                <div className="orchestrator__results">
-                  {msg.stepResults.map((sr, j) => {
-                    const meta = STEP_LABELS[sr.agent] || STEP_LABELS.image;
-                    const Icon = meta.icon;
-                    return (
-                      <motion.div
-                        key={j}
-                        className={`orchestrator__result orchestrator__result--${sr.status}`}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: j * 0.1, duration: 0.4, ease: EASE }}
-                      >
-                        <span className="orchestrator__result-icon"><Icon /></span>
-                        <span>Step {sr.step}: {meta.label}</span>
-                        <span className="orchestrator__result-status">{sr.status === "completed" ? "Done" : "Failed"}</span>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
           </motion.div>
         ))}
 
-        {/* Live executing indicator */}
-        {executing && liveSteps.length > 0 && (
-          <div className="orchestrator__live">
-            {liveSteps.map((step, i) => {
-              const meta = STEP_LABELS[step.agent] || STEP_LABELS.image;
-              const Icon = meta.icon;
-              return (
-                <motion.div
-                  key={i}
-                  className={`orchestrator__live-step ${step.status}`}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: i * 0.15, duration: 0.4, ease: EASE }}
-                >
-                  <span className="orchestrator__live-icon" style={{ color: meta.color }}>
-                    {step.status === "pending" ? (
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        style={{ width: 14, height: 14, border: "2px solid currentColor", borderTopColor: "transparent", borderRadius: "50%" }}
-                      />
-                    ) : (
-                      <Icon />
-                    )}
-                  </span>
-                  <span>{meta.label}...</span>
-                </motion.div>
-              );
-            })}
+        {thinking && <ThinkingIndicator />}
+
+        {stepCards.length > 0 && (
+          <div className="orchestrator__step-cards">
+            {stepCards.map((step, i) => (
+              <StepCard key={i} step={step} index={step.index} status={step.status} output={step.output} />
+            ))}
           </div>
         )}
       </div>
-
-      {/* Results gallery */}
-      {results.length > 0 && (
-        <div className="orchestrator__outputs">
-          {results.map((url, i) => {
-            if (!url) return null;
-            const isVideo = url.match(/\.(mp4|webm)$/i);
-            const isImage = url.match(/\.(jpg|jpeg|png|webp|gif)$/i);
-            if (isVideo) return (
-              <motion.video key={i} src={url} controls autoPlay loop className="orchestrator__output"
-                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1, duration: 0.5, ease: EASE }}
-              />
-            );
-            if (isImage) return (
-              <motion.img key={i} src={url} alt={`Output ${i + 1}`} className="orchestrator__output"
-                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1, duration: 0.5, ease: EASE }}
-              />
-            );
-            return (
-              <motion.div key={i} className="orchestrator__output-text"
-                initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.1, duration: 0.5, ease: EASE }}
-              >
-                <pre>{typeof url === "string" ? url.slice(0, 5000) : JSON.stringify(url, null, 2)}</pre>
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
 
       <div className="orchestrator__input">
         <textarea
@@ -266,15 +299,15 @@ export default function OrchestratorChat() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           rows={2}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handlePlan(); } }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); plan ? handleExecute() : handlePlan(); } }}
         />
         {plan ? (
           <button className="btn btn-primary" onClick={handleExecute} disabled={executing}>
             {executing ? "Executing..." : <>Confirm & Execute <span className="btn__icon"><IconBolt /></span></>}
           </button>
         ) : (
-          <button className="btn btn-primary" onClick={handlePlan} disabled={executing || !input.trim()}>
-            {executing ? "Planning..." : <>Plan Task <span className="btn__icon"><IconSparkle /></span></>}
+          <button className="btn btn-primary" onClick={handlePlan} disabled={executing || thinking || !input.trim()}>
+            {thinking ? "Planning..." : <>Plan Task <span className="btn__icon"><IconSparkle /></span></>}
           </button>
         )}
       </div>

@@ -3,7 +3,7 @@ import Stripe from "stripe";
 import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-12-18.acacia" });
 
 const PRICE_MAP = {
   starter: process.env.STRIPE_PRICE_STARTER,

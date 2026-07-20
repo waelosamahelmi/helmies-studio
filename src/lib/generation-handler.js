@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { getCurrentUserWithCredits, debitCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
 import { resolveProvider, brandError, logProviderError } from "@/lib/providers";
-import { checkRateLimit } from "@/lib/security";
-import { logAudit } from "@/lib/security";
+import { checkRateLimit, logAudit } from "@/lib/security";
 import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
+import { applyMemoryToPrompt } from "@/lib/memory";
+import { validateGenerationOutput, logQualityGate } from "@/lib/quality-gate";
 
 export async function handleGeneration(req, tool, cost, apiFn) {
   try {
@@ -23,7 +24,18 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     const rawPrompt = body.prompt || "";
 
     const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
-    const expandedPrompt = shouldExpand(rawPrompt) ? await expandPrompt(rawPrompt, promptType, model) : rawPrompt;
+
+    let finalPrompt = rawPrompt;
+    if (body.characterId || body.styleId) {
+      finalPrompt = await applyMemoryToPrompt(user.id, finalPrompt, {
+        characterId: body.characterId,
+        styleId: body.styleId,
+      });
+    }
+
+    if (shouldExpand(finalPrompt)) {
+      finalPrompt = await expandPrompt(finalPrompt, promptType, model);
+    }
 
     const provider = await resolveProvider(model);
 
@@ -52,18 +64,38 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     await debitCredits(user.id, cost);
 
     try {
-      const paramsWithExpanded = { ...body, prompt: expandedPrompt };
+      const paramsWithPrompt = { ...body, prompt: finalPrompt };
       if (!body.negative_prompt && promptType !== "audio") {
-        paramsWithExpanded.negative_prompt = getNegativePrompt(promptType);
+        paramsWithPrompt.negative_prompt = getNegativePrompt(promptType);
       }
 
-      const result = await apiFn({ ...paramsWithExpanded, _provider: provider });
+      const result = await apiFn({ ...paramsWithPrompt, _provider: provider });
       const outputUrl = result.url || result.outputs?.[0];
+
+      const quality = await validateGenerationOutput(outputUrl, tool);
+      await logQualityGate(user.id, generation.id, tool, quality);
+
+      if (!quality.valid) {
+        await prisma.generation.update({
+          where: { id: generation.id },
+          data: { status: "failed", error: quality.reason },
+        });
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { credits: { increment: cost } },
+        });
+        await prisma.creditTransaction.create({
+          data: { userId: user.id, amount: cost, type: "refund", description: `Quality gate refund: ${quality.reason}` },
+        });
+        return NextResponse.json({ error: quality.reason }, { status: 500 });
+      }
 
       await prisma.generation.update({
         where: { id: generation.id },
         data: { status: "completed", outputUrl },
       });
+
+      await logAudit("generation_complete", tool, generation.id, { model, provider: provider.name });
 
       return NextResponse.json({
         success: true,
@@ -72,7 +104,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         creditsUsed: cost,
         remainingCredits: user.credits - cost,
         provider: provider.name,
-        expanded: expandedPrompt !== rawPrompt,
+        expanded: finalPrompt !== rawPrompt,
         ...(result.outputs ? { outputs: result.outputs } : {}),
       });
     } catch (genError) {

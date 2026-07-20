@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
+import CommandPalette from "@/components/studio/CommandPalette";
 import ImageStudio from "@/components/studio/ImageStudio";
 import VideoStudio from "@/components/studio/VideoStudio";
 import LipSyncStudio from "@/components/studio/LipSyncStudio";
@@ -49,6 +50,18 @@ export default function StudioPage({ initialTool }) {
   const [hoveredGroup, setHoveredGroup] = useState(null);
   const [pinnedGroup, setPinnedGroup] = useState(null);
   const [railOffset, setRailOffset] = useState(0);
+  const [cmdOpen, setCmdOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCmdOpen((o) => !o);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   const activeTool = TOOLS.find((t) => t.id === activeTab) || TOOLS[0];
 
@@ -199,6 +212,15 @@ export default function StudioPage({ initialTool }) {
           </div>
         </main>
       </div>
+
+      <AnimatePresence>
+        {cmdOpen && (
+          <CommandPalette
+            onSelect={(id) => { setActiveTab(id); setCmdOpen(false); }}
+            onClose={() => setCmdOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

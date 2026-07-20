@@ -1,0 +1,12 @@
+{
+  "name": "Helmies Studio",
+  "short_name": "Helmies",
+  "description": "AI Operating System for creators — image, video, audio, lip sync, and more.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0A0F",
+  "theme_color": "#FF1B6B",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
