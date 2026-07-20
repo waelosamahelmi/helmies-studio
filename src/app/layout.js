@@ -69,13 +69,6 @@ export const metadata = {
     ],
   },
   manifest: "/manifest.json",
-  themeColor: "#FF1B6B",
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-    maximumScale: 5,
-    themeColor: "#FF1B6B",
-  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -86,6 +79,13 @@ export const metadata = {
     "msapplication-TileColor": "#FF1B6B",
     "msapplication-config": "none",
   },
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: "#FF1B6B",
 };
 
 export default function RootLayout({ children }) {

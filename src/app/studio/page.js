@@ -4,6 +4,9 @@ import { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
+import ImageStudio from "@/components/studio/ImageStudio";
+import VideoStudio from "@/components/studio/VideoStudio";
+import LipSyncStudio from "@/components/studio/LipSyncStudio";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
@@ -201,27 +204,32 @@ export default function StudioPage({ initialTool }) {
                 exit={{ opacity: 0, y: -12 }}
                 transition={{ duration: 0.5, ease: EASE }}
               >
-                <div className="bezel" style={{ color: activeTool.color }}>
-                  <div className="bezel__core">
-                    <div className="studio__empty">
-                      <div className="studio__empty-icon">
-                        <activeTool.Icon />
-                      </div>
-                      <h3>{activeTool.label} Studio</h3>
-                      <p>
-                        The {activeTool.label.toLowerCase()} studio is ready. Connect your API key to start generating.
-                        <br />
-                        {activeTool.desc}
-                      </p>
-                      <div className="studio__empty-cta">
-                        <Link href="/models" className="btn btn-secondary">
-                          Browse {activeTool.label.toLowerCase()} models
-                          <span className="btn__icon"><IconArrowUpRight /></span>
-                        </Link>
+                {activeTab === "image" && <ImageStudio />}
+                {activeTab === "video" && <VideoStudio />}
+                {activeTab === "lipsync" && <LipSyncStudio />}
+                {activeTab !== "image" && activeTab !== "video" && activeTab !== "lipsync" && (
+                  <div className="bezel" style={{ color: activeTool.color }}>
+                    <div className="bezel__core">
+                      <div className="studio__empty">
+                        <div className="studio__empty-icon">
+                          <activeTool.Icon />
+                        </div>
+                        <h3>{activeTool.label} Studio</h3>
+                        <p>
+                          The {activeTool.label.toLowerCase()} studio is coming soon.
+                          <br />
+                          {activeTool.desc}
+                        </p>
+                        <div className="studio__empty-cta">
+                          <Link href="/pricing" className="btn btn-secondary">
+                            Upgrade for early access
+                            <span className="btn__icon"><IconArrowUpRight /></span>
+                          </Link>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                )}
               </motion.div>
             </AnimatePresence>
           </div>

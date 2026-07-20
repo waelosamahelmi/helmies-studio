@@ -1,0 +1,47 @@
+export const IMAGE_MODELS = [
+  { id: "nano-banana", name: "Nano Banana", endpoint: "nano-banana", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"] },
+  { id: "nano-banana-pro", name: "Nano Banana Pro", endpoint: "nano-banana-pro", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"], resolutions: ["1k", "2k", "4k"] },
+  { id: "flux-dev", name: "Flux Dev", endpoint: "flux-dev-image", provider: "Black Forest Labs", hasDimensions: true },
+  { id: "flux-schnell", name: "Flux Schnell", endpoint: "flux-schnell-image", provider: "Black Forest Labs", hasDimensions: true },
+  { id: "flux-2-dev", name: "Flux 2 Dev", provider: "Black Forest Labs", hasDimensions: true },
+  { id: "flux-kontext-dev-t2i", name: "Flux Kontext Dev", provider: "Black Forest Labs", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"] },
+  { id: "flux-kontext-pro-t2i", name: "Flux Kontext Pro", provider: "Black Forest Labs", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "16:21"] },
+  { id: "midjourney-v7-text-to-image", name: "Midjourney v7", provider: "Midjourney", aspectRatios: ["1:1", "16:9", "9:16", "3:4", "4:3", "1:2", "2:1", "2:3", "3:2", "5:6", "6:5"], hasSpeed: true },
+  { id: "gpt4o-text-to-image", name: "GPT-4o", provider: "OpenAI", aspectRatios: ["1:1", "2:3", "3:2"] },
+  { id: "google-imagen4", name: "Imagen 4", provider: "Google", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
+  { id: "google-imagen4-ultra", name: "Imagen 4 Ultra", provider: "Google", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
+  { id: "bytedance-seedream-v4", name: "Seedream v4", provider: "ByteDance", aspectRatios: ["1:1", "16:9", "9:16", "3:4", "4:3", "2:3", "3:2", "21:9"], resolutions: ["1K", "2K", "4K"] },
+  { id: "bytedance-seedream-v3", name: "Seedream v3", provider: "ByteDance", aspectRatios: ["1:1", "16:9", "9:16", "3:4", "4:3"] },
+  { id: "qwen-image", name: "Qwen Image", provider: "Alibaba", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "9:21", "3:2", "2:3"] },
+  { id: "sdxl-image", name: "SDXL", provider: "Stability AI", hasDimensions: true },
+  { id: "ideogram-v3-t2i", name: "Ideogram v3", provider: "Ideogram", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"] },
+  { id: "grok-imagine-text-to-image", name: "Grok Imagine", provider: "xAI", aspectRatios: ["9:16", "16:9", "2:3", "3:2", "1:1"] },
+  { id: "hunyuan-image-3.0", name: "Hunyuan 3.0", provider: "Hunyuan", hasDimensions: true },
+  { id: "wan2.5-text-to-image", name: "Wan 2.5", provider: "Alibaba", hasDimensions: true },
+  { id: "kling-o1-text-to-image", name: "Kling O1", provider: "Kling AI", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "2:3", "3:2", "21:9"], resolutions: ["1k", "2k"] },
+  { id: "leonardoai-phoenix-1.0", name: "Phoenix 1.0", provider: "Leonardo AI", aspectRatios: ["1:1", "16:9", "9:16", "3:4", "4:3", "4:5", "5:4", "2:3", "3:2"] },
+];
+
+export const VIDEO_MODELS = [
+  { id: "kling-v3", name: "Kling v3", endpoint: "kling-v3", provider: "Kling AI", aspectRatios: ["16:9", "9:16", "1:1"], durations: [5, 10] },
+  { id: "sora-2", name: "Sora 2", endpoint: "sora-2", provider: "OpenAI", aspectRatios: ["16:9", "9:16", "1:1"], durations: [5, 10, 15] },
+  { id: "veo-3", name: "Veo 3", endpoint: "veo-3", provider: "Google", aspectRatios: ["16:9", "9:16"], durations: [5, 8] },
+  { id: "wan-2.6", name: "Wan 2.6", endpoint: "wan-2.6-t2v", provider: "Alibaba", aspectRatios: ["16:9", "9:16", "1:1"], durations: [5, 10] },
+  { id: "seedance-2.0", name: "Seedance 2.0", endpoint: "seedance-2.0", provider: "ByteDance", aspectRatios: ["16:9", "9:16", "4:3", "3:4"], durations: [5, 10, 15] },
+  { id: "hailuo-02", name: "Hailuo 02", endpoint: "hailuo-02-standard", provider: "MiniMax", aspectRatios: ["16:9", "9:16", "1:1"], durations: [6, 10] },
+  { id: "runway-gen-3", name: "Runway Gen-3", endpoint: "runway-gen-3-t2v", provider: "Runway", aspectRatios: ["16:9", "9:16"], durations: [5, 10] },
+  { id: "veo-3-fast", name: "Veo 3 Fast", endpoint: "veo-3-fast", provider: "Google", aspectRatios: ["16:9", "9:16"], durations: [5, 8] },
+  { id: "kling-v2.1-i2v", name: "Kling v2.1 I2V", endpoint: "kling-v2.1-i2v", provider: "Kling AI", aspectRatios: ["16:9", "9:16", "1:1"], durations: [5, 10], isI2V: true },
+  { id: "seedance-2.0-i2v", name: "Seedance 2.0 I2V", endpoint: "seedance-2.0-i2v", provider: "ByteDance", aspectRatios: ["16:9", "9:16", "4:3", "3:4"], durations: [5, 10, 15], isI2V: true },
+];
+
+export const LIPSYNC_MODELS = [
+  { id: "infinitetalk-image-to-video", name: "Infinite Talk", endpoint: "infinitetalk-image-to-video", provider: "MuAPI", resolutions: ["480p", "720p"], mode: "image" },
+  { id: "wan2.2-speech-to-video", name: "Wan 2.2 Speech", endpoint: "wan2.2-speech-to-video", provider: "Alibaba", resolutions: ["480p", "720p"], mode: "image" },
+  { id: "ltx-2.3-lipsync", name: "LTX 2.3 Lipsync", endpoint: "ltx-2.3-lipsync", provider: "LTX", resolutions: ["480p", "720p", "1080p"], mode: "image" },
+  { id: "ltx-2-19b-lipsync", name: "LTX 2 19B", endpoint: "ltx-2-19b-lipsync", provider: "LTX", resolutions: ["480p", "720p", "1080p"], mode: "image" },
+  { id: "sync-lipsync", name: "Sync Lipsync", endpoint: "sync-lipsync", provider: "Sync", mode: "video" },
+  { id: "latentsync-video", name: "LatentSync", endpoint: "latentsync-video", provider: "LatentSync", mode: "video" },
+  { id: "creatify-lipsync", name: "Creatify", endpoint: "creatify-lipsync", provider: "Creatify", mode: "video" },
+  { id: "veed-lipsync", name: "Veed Lipsync", endpoint: "veed-lipsync", provider: "Veed", mode: "video" },
+];
