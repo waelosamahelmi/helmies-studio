@@ -79,23 +79,58 @@ export function getAgentList() {
 
 // ── Plan a task (orchestrator) ──
 export async function planTask(userMessage, context = {}) {
+  const hasLLM = process.env.OPENROUTER_KEY;
+
+  if (!hasLLM) {
+    const plan = buildHeuristicPlan(userMessage, context);
+    const estimate = await estimateAgentTask(plan.steps || []);
+    return { ...plan, estimate };
+  }
+
   const messages = [
     { role: "system", content: AGENTS.orchestrator.systemPrompt },
     { role: "user", content: `Context: ${JSON.stringify(context)}\n\nRequest: ${userMessage}` },
   ];
 
-  const response = await llmComplete(messages, { maxTokens: 2000, temperature: 0.3 });
   try {
+    const response = await llmComplete(messages, { maxTokens: 2000, temperature: 0.3 });
     const json = JSON.parse(response.replace(/```json\n?/g, "").replace(/```/g, "").trim());
     const estimate = await estimateAgentTask(json.steps || []);
     return { ...json, estimate };
   } catch {
-    return {
-      steps: [{ agent: "image", task: userMessage, params: { model: "flux-dev", prompt: userMessage, aspect_ratio: "1:1" } }],
-      summary: "Direct generation",
-      estimate: { total: 2, breakdown: [{ tool: "image", model: "flux-dev", credits: 2 }] },
-    };
+    const plan = buildHeuristicPlan(userMessage, context);
+    const estimate = await estimateAgentTask(plan.steps || []);
+    return { ...plan, estimate };
   }
+}
+
+// ── Heuristic plan when no LLM available ──
+function buildHeuristicPlan(userMessage, context = {}) {
+  const lower = userMessage.toLowerCase();
+  const steps = [];
+
+  const hasVideo = lower.match(/video|animate|motion|clip|movie|film/);
+  const hasAudio = lower.match(/audio|music|voice|sound|song|singing/);
+  const hasWebsite = lower.match(/website|landing page|web page|html|site/);
+  const hasMarketing = lower.match(/marketing|ad|campaign|social|ugc|brand/);
+  const hasCode = lower.match(/code|function|component|api|script|debug/);
+
+  if (hasWebsite) {
+    steps.push({ agent: "website", task: userMessage, params: { prompt: userMessage } });
+  } else if (hasCode) {
+    steps.push({ agent: "coding", task: userMessage, params: { prompt: userMessage } });
+  } else if (hasMarketing) {
+    steps.push({ agent: "marketing", task: userMessage, params: { prompt: userMessage } });
+  } else if (hasAudio) {
+    steps.push({ agent: "audio", task: userMessage, params: { _modelId: "suno-v4.5", endpoint: "suno-v4.5", prompt: userMessage, duration: 30 } });
+  } else {
+    steps.push({ agent: "image", task: userMessage, params: { model: "flux-dev", endpoint: "flux-dev-image", prompt: userMessage, aspect_ratio: "1:1" } });
+    if (hasVideo) {
+      steps.push({ agent: "video", task: "Animate the generated image", params: { model: "kling-v2.1-i2v", endpoint: "kling-v2.1-i2v", image_url: "$STEP_1_OUTPUT", prompt: userMessage, duration: 5 } });
+    }
+  }
+
+  return { steps, summary: `Heuristic plan: ${steps.length} step(s)` };
 }
 
 // ── Execute a single step ──

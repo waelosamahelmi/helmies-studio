@@ -36,6 +36,7 @@ export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [megaOpen, setMegaOpen] = useState(false);
+  const [session, setSession] = useState(null);
   const megaRef = useRef(null);
 
   useEffect(() => {
@@ -44,6 +45,13 @@ export default function Navbar() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
+
+  useEffect(() => {
+    fetch("/api/auth/session").then((r) => r.json()).then(setSession).catch(() => {});
+  }, [pathname]);
+
+  const isAdmin = session?.user?.role === "admin";
+  const isAuthed = !!session?.user;
 
   useEffect(() => {
     const handler = (e) => { if (megaRef.current && !megaRef.current.contains(e.target)) setMegaOpen(false); };
@@ -135,11 +143,25 @@ export default function Navbar() {
           </div>
 
           <div className="nav__actions">
-            <Link href="/login" className="nav__link hidden md:inline-flex">Sign In</Link>
-            <Link href="/login" className="btn btn-sm btn-primary hidden md:inline-flex">
-              Start free
-              <span className="btn__icon"><IconBolt /></span>
-            </Link>
+            {isAdmin && (
+              <Link href="/admin" className="nav__link hidden md:inline-flex" style={{ color: "#FF1B6B" }}>
+                Admin
+              </Link>
+            )}
+            {isAuthed ? (
+              <Link href="/studio" className="btn btn-sm btn-primary hidden md:inline-flex">
+                Studio
+                <span className="btn__icon"><IconBolt /></span>
+              </Link>
+            ) : (
+              <>
+                <Link href="/login" className="nav__link hidden md:inline-flex">Sign In</Link>
+                <Link href="/login" className="btn btn-sm btn-primary hidden md:inline-flex">
+                  Start free
+                  <span className="btn__icon"><IconBolt /></span>
+                </Link>
+              </>
+            )}
             <button
               className="nav__burger md:hidden"
               onClick={() => setMobileOpen(true)}

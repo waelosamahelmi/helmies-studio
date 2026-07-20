@@ -82,11 +82,32 @@ export function getActiveProviders() {
   });
 }
 
+// ── Resolve which provider to use for a given model ──
+// Checks DB ModelPricing → ProviderConfig, falls back to MuAPI
+export async function resolveProvider(modelId) {
+  try {
+    const pricing = await prisma.modelPricing.findUnique({ where: { modelId } });
+    if (pricing?.providerName) {
+      const dbProvider = await prisma.providerConfig.findFirst({ where: { name: pricing.providerName, isActive: true } });
+      if (dbProvider) {
+        const envProvider = PROVIDERS[dbProvider.name.toLowerCase()];
+        if (envProvider) return { name: dbProvider.name.toLowerCase(), ...envProvider, apiKey: dbProvider.apiKey, baseUrl: dbProvider.baseUrl || envProvider.baseUrl, markup: dbProvider.markup };
+      }
+    }
+  } catch {}
+  return { name: "muapi", ...PROVIDERS.muapi };
+}
+
 // ── Universal submit+poll ──
 export async function submitAndPoll(providerName, endpoint, payload, maxAttempts = 900, interval = 2000) {
-  const provider = getProvider(providerName);
+  let provider;
+  if (typeof providerName === "object" && providerName.name) {
+    provider = providerName;
+  } else {
+    provider = getProvider(providerName);
+  }
   const url = `${provider.baseUrl}/api/v1/${endpoint}`;
-  const key = provider.getKey();
+  const key = provider.apiKey || provider.getKey();
 
   const res = await fetch(url, {
     method: "POST",
