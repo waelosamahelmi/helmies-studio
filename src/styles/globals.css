@@ -1077,8 +1077,8 @@
   position: relative;
   z-index: 2;
   display: flex;
-  height: 100dvh;
-  padding-top: 5rem;
+  height: calc(100dvh - 36px);
+  margin-top: 36px;
   overflow: hidden;
 }
 /* ── Icon Rail ── */
@@ -1351,10 +1351,10 @@
 .studio__empty-cta { margin-top: 2rem; }
 
 @media (max-width: 768px) {
-  .studio { flex-direction: column; padding-top: 4.5rem; }
+  .studio { flex-direction: column; height: calc(100dvh - 36px); }
   .studio__rail {
     position: fixed;
-    left: 0; top: 4.5rem; bottom: 0;
+    left: 0; top: 36px; bottom: 0;
     z-index: 50;
     transform: translateX(-100%);
     transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
@@ -2796,12 +2796,12 @@
 @media (max-width: 768px) {
   .studio {
     flex-direction: column;
-    padding-top: 5rem;
+    height: calc(100dvh - 36px);
   }
   .studio__sidebar {
     position: fixed;
     left: 0;
-    top: 5rem;
+    top: 36px;
     bottom: 0;
     z-index: 60;
     width: 280px;
