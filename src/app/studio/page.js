@@ -7,6 +7,13 @@ import Navbar from "@/components/Navbar";
 import ImageStudio from "@/components/studio/ImageStudio";
 import VideoStudio from "@/components/studio/VideoStudio";
 import LipSyncStudio from "@/components/studio/LipSyncStudio";
+import AudioStudio from "@/components/studio/AudioStudio";
+import CinemaStudio from "@/components/studio/CinemaStudio";
+import VibeMotionStudio from "@/components/studio/VibeMotionStudio";
+import ClippingStudio from "@/components/studio/ClippingStudio";
+import MarketingStudio from "@/components/studio/MarketingStudio";
+import RecastStudio from "@/components/studio/RecastStudio";
+import AiInfluencerStudio from "@/components/studio/AiInfluencerStudio";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
@@ -207,7 +214,14 @@ export default function StudioPage({ initialTool }) {
                 {activeTab === "image" && <ImageStudio />}
                 {activeTab === "video" && <VideoStudio />}
                 {activeTab === "lipsync" && <LipSyncStudio />}
-                {activeTab !== "image" && activeTab !== "video" && activeTab !== "lipsync" && (
+                {activeTab === "audio" && <AudioStudio />}
+                {activeTab === "cinema" && <CinemaStudio />}
+                {activeTab === "vibe-motion" && <VibeMotionStudio />}
+                {activeTab === "clipping" && <ClippingStudio />}
+                {activeTab === "marketing" && <MarketingStudio />}
+                {activeTab === "body-swap" && <RecastStudio />}
+                {activeTab === "influencer" && <AiInfluencerStudio />}
+                {activeTab !== "image" && activeTab !== "video" && activeTab !== "lipsync" && activeTab !== "audio" && activeTab !== "cinema" && activeTab !== "vibe-motion" && activeTab !== "clipping" && activeTab !== "marketing" && activeTab !== "body-swap" && activeTab !== "influencer" && (
                   <div className="bezel" style={{ color: activeTool.color }}>
                     <div className="bezel__core">
                       <div className="studio__empty">
