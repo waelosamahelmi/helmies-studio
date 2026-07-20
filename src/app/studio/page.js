@@ -148,15 +148,7 @@ export default function StudioPage({ initialTool }) {
 
         {/* Main */}
         <main className="studio__main">
-          <div className="studio__header">
-            <button
-              className="studio__collapse md:hidden"
-              onClick={() => setMobileNavOpen(true)}
-              aria-label="Open tools"
-            >
-              <IconMenu />
-            </button>
-          </div>
+          <div className="studio__header" />
           <div className="studio__body">
             <AnimatePresence mode="wait">
               <motion.div
