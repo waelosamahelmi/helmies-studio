@@ -3475,6 +3475,7 @@
   transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
 }
 .admin__toggle--on .admin__toggle-knob { transform: translateX(20px); }
+.admin__models-count { font-size: 0.8rem; color: rgba(242, 242, 247, 0.5); margin-bottom: 0.75rem; }
 
 /* ============================================================ */
 /* PROJECT MEMORY PANEL                                         */

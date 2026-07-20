@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Navbar from "@/components/Navbar";
 import { IconBolt, IconUsers, IconStar } from "@/components/Icons";
 
-const TABS = ["Overview", "Users", "Pricing", "Providers", "Analytics", "Refunds", "Feature Flags"];
+const TABS = ["Overview", "Users", "Models", "Pricing", "Providers", "Analytics", "Refunds", "Feature Flags"];
 
 export default function AdminPanel() {
   const [tab, setTab] = useState("Overview");
@@ -14,6 +14,8 @@ export default function AdminPanel() {
   const [providers, setProviders] = useState([]);
   const [refunds, setRefunds] = useState([]);
   const [flags, setFlags] = useState([]);
+  const [models, setModels] = useState([]);
+  const [modelFilter, setModelFilter] = useState("all");
   const [editingUser, setEditingUser] = useState(null);
   const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "MuAPI", providerCost: 0, creditsCost: 1 });
   const [newProvider, setNewProvider] = useState({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true });
@@ -40,6 +42,9 @@ export default function AdminPanel() {
   const loadFlags = useCallback(() => {
     fetch("/api/admin/flags").then((r) => r.json()).then(setFlags).catch(() => {});
   }, []);
+  const loadModels = useCallback(() => {
+    fetch("/api/admin/models").then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
+  }, []);
 
   useEffect(() => { loadOverview(); }, [loadOverview]);
   useEffect(() => {
@@ -48,6 +53,7 @@ export default function AdminPanel() {
     if (tab === "Providers") loadProviders();
     if (tab === "Refunds") loadRefunds();
     if (tab === "Feature Flags") loadFlags();
+    if (tab === "Models") loadModels();
   }, [tab, loadUsers, loadPricing, loadProviders, loadRefunds, loadFlags]);
 
   // ── User editing ──
@@ -197,6 +203,53 @@ export default function AdminPanel() {
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── Models ── */}
+          {tab === "Models" && (
+            <div>
+              <div className="admin__add-form">
+                <div className="admin__edit-row">
+                  {["all", "image", "i2i", "video", "i2v", "v2v", "lipsync", "recast", "audio"].map((c) => (
+                    <button key={c} className={`pill ${modelFilter === c ? "pill--active" : ""}`} onClick={() => setModelFilter(c)}>{c}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="admin__models-count">
+                {models.filter((m) => modelFilter === "all" || m.category === modelFilter).length} models
+              </div>
+              <div className="admin__table-wrap">
+                <table className="admin__table">
+                  <thead><tr><th>Model</th><th>Provider</th><th>Category</th><th>Credits</th><th>Cost</th><th>Status</th><th></th></tr></thead>
+                  <tbody>
+                    {models.filter((m) => modelFilter === "all" || m.category === modelFilter).map((m) => (
+                      <tr key={m.id}>
+                        <td><strong>{m.name}</strong><br /><span style={{ fontSize: "0.65rem", color: "rgba(242,242,247,0.3)" }}>{m.id}</span></td>
+                        <td>{m.provider}</td>
+                        <td><span className="admin__badge">{m.category}</span></td>
+                        <td>{m.creditsCost ? <><IconBolt /> {m.creditsCost}</> : "default"}</td>
+                        <td>{m.providerCost ? `€${m.providerCost.toFixed(4)}` : "—"}</td>
+                        <td><span className={`admin__badge ${m.isActive ? "enabled" : "disabled"}`}>{m.isActive ? "Active" : "Off"}</span></td>
+                        <td>
+                          <button
+                            className="btn btn-sm btn-secondary"
+                            onClick={async () => {
+                              await fetch("/api/admin/models", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ modelId: m.id, modelType: m.category, providerName: m.provider, isActive: !m.isActive }),
+                              });
+                              showToast("Model toggled");
+                              loadModels();
+                            }}
+                          >{m.isActive ? "Disable" : "Enable"}</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
