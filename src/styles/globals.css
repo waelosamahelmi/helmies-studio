@@ -2457,3 +2457,477 @@
 .btn-ghost:hover {
   color: #ff6b6b;
 }
+
+/* ============================================================ */
+/* MOBILE OPTIMIZATION                                           */
+/* ============================================================ */
+
+/* ── Announcement bar ── */
+@media (max-width: 640px) {
+  .announcement-bar {
+    font-size: 11px;
+    padding: 0.4rem 0.75rem;
+    gap: 0.25rem;
+  }
+  .announcement-bar__text {
+    max-width: 100%;
+  }
+  .announcement-bar__code {
+    font-size: 10px;
+    padding: 0.1rem 0.35rem;
+  }
+}
+
+/* ── Navbar ── */
+@media (max-width: 768px) {
+  .nav__inner {
+    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
+  }
+  .nav {
+    top: 0.5rem;
+    width: calc(100vw - 1rem);
+  }
+  .nav__logo-mark {
+    width: 24px;
+    height: 24px;
+  }
+  .nav__logo-text {
+    font-size: 0.95rem;
+  }
+  .nav__actions {
+    gap: 0.375rem;
+  }
+  .nav__overlay {
+    padding: 1.5rem 1.25rem;
+  }
+  .nav__overlay-link {
+    font-size: 1.75rem;
+  }
+  .nav__mega {
+    display: none;
+  }
+}
+
+/* ── Hero ── */
+@media (max-width: 768px) {
+  .hero {
+    min-height: 100dvh;
+    padding: 5rem 1.25rem 3rem;
+  }
+  .hero__sub {
+    font-size: 1rem;
+    margin-bottom: 2rem;
+    line-height: 1.55;
+  }
+  .hero__cta {
+    flex-direction: column;
+    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+    gap: 0.625rem;
+  }
+  .hero__cta .btn {
+    width: 100%;
+    justify-content: center;
+  }
+  .hero-title {
+    font-size: clamp(2.75rem, 14vw, 5rem);
+    line-height: 0.88;
+  }
+  .hero h1 {
+    margin-bottom: 1.25rem;
+  }
+}
+
+/* ── Scroll snap: disable mandatory on mobile, use proximity ── */
+@media (max-width: 768px) {
+  .snap-container {
+    scroll-snap-type: y proximity;
+    scroll-behavior: smooth;
+  }
+  .svc-section {
+    min-height: auto;
+    scroll-snap-align: start;
+    padding-bottom: 4rem;
+  }
+  .svc-section__inner {
+    min-height: auto;
+    padding: 5rem 1.25rem 3rem;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── Service layout on mobile ── */
+@media (max-width: 768px) {
+  .svc-layout {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+  .svc-title {
+    font-size: clamp(2rem, 8vw, 3.5rem);
+    line-height: 1.05;
+  }
+  .svc-desc {
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+  .svc-pills {
+    flex-wrap: wrap;
+    gap: 0.375rem;
+  }
+  .svc-pills .pill {
+    font-size: 0.7rem;
+    padding: 0.3rem 0.6rem;
+  }
+  .svc-cta {
+    flex-direction: column;
+    width: 100%;
+    gap: 0.625rem;
+  }
+  .svc-cta .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* ── Pricing section (inside service section) ── */
+@media (max-width: 768px) {
+  .pricing-cards {
+    gap: 0.75rem;
+    padding-bottom: 0.5rem;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+  }
+  .pricing-card {
+    min-width: 240px;
+    flex: 0 0 240px;
+    scroll-snap-align: center;
+    padding: 1.25rem;
+    gap: 0.625rem;
+  }
+  .pricing-card__price {
+    font-size: 1.75rem;
+  }
+  .pricing-toggle {
+    margin-bottom: 1rem;
+  }
+  .pricing-toggle__label {
+    font-size: 11px;
+  }
+  .pricing-arrows {
+    display: none;
+  }
+}
+
+/* ── Logo ticker ── */
+@media (max-width: 768px) {
+  .logo-ticker {
+    height: 28px;
+    padding: 0.35rem 0;
+  }
+  .logo-ticker__item {
+    height: 16px;
+    padding: 0 0.75rem;
+    font-size: 9px;
+    gap: 0.25rem;
+  }
+  .logo-ticker__dot {
+    width: 4px;
+    height: 4px;
+  }
+}
+
+/* ── Reel slider ── */
+@media (max-width: 768px) {
+  .reel-slider {
+    gap: 0.5rem;
+  }
+  .reel-slider__item {
+    width: 160px;
+    height: 240px;
+  }
+  .reel-slider__item img,
+  .reel-slider__item video {
+    border-radius: 0.75rem;
+  }
+}
+
+/* ── YouTube embed ── */
+@media (max-width: 768px) {
+  .yt-embed {
+    border-radius: 0.75rem;
+  }
+}
+
+/* ── Bento grid ── */
+@media (max-width: 640px) {
+  .bento {
+    gap: 0.75rem;
+  }
+  .bento__item {
+    border-radius: 1rem;
+  }
+}
+
+/* ── Buttons ── */
+@media (max-width: 640px) {
+  .btn-lg {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.95rem;
+  }
+  .btn {
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+  }
+  .btn-sm {
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8rem;
+  }
+}
+
+/* ── Studio ── */
+@media (max-width: 768px) {
+  .studio {
+    flex-direction: column;
+    padding-top: 5rem;
+  }
+  .studio__sidebar {
+    position: fixed;
+    left: 0;
+    top: 5rem;
+    bottom: 0;
+    z-index: 60;
+    width: 280px;
+    min-width: 280px;
+    transform: translateX(-100%);
+    transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+    box-shadow: 4px 0 40px rgba(0, 0, 0, 0.5);
+  }
+  .studio__sidebar--open {
+    transform: translateX(0);
+  }
+  .studio__main {
+    width: 100%;
+  }
+  .studio__header {
+    padding: 1rem 1.25rem;
+    gap: 0.5rem;
+  }
+  .studio__header h1 {
+    font-size: 1.25rem;
+  }
+  .studio__header p {
+    font-size: 0.8rem;
+  }
+  .studio__body {
+    padding: 1rem 1.25rem 2rem;
+  }
+  .studio__collapse {
+    display: flex;
+  }
+}
+
+/* ── Studio panel (generation UI) ── */
+@media (max-width: 900px) {
+  .studio-panel {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    min-height: auto;
+  }
+  .studio-panel__left {
+    padding: 1.25rem;
+    gap: 1rem;
+    order: 1;
+  }
+  .studio-panel__right {
+    order: 2;
+    min-height: 300px;
+    padding: 1.25rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .studio-panel__left {
+    padding: 1rem;
+    gap: 0.875rem;
+  }
+  .field-label {
+    font-size: 0.65rem;
+  }
+  .field-select,
+  .field-input {
+    padding: 0.5rem 0.625rem;
+    font-size: 0.8rem;
+    border-radius: 0.5rem;
+  }
+  .field-textarea {
+    padding: 0.625rem 0.625rem;
+    font-size: 0.8rem;
+    min-height: 70px;
+    border-radius: 0.5rem;
+  }
+  .field-pills {
+    gap: 0.25rem;
+  }
+  .field-pills .pill {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.7rem;
+  }
+  .field-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  .studio-empty__icon {
+    width: 48px;
+    height: 48px;
+  }
+  .studio-empty__icon svg {
+    width: 22px;
+    height: 22px;
+  }
+  .studio-empty h3 {
+    font-size: 1.25rem;
+  }
+  .studio-empty p {
+    font-size: 0.8rem;
+  }
+  .studio-result__img,
+  .studio-result__video {
+    border-radius: 0.75rem;
+  }
+  .marketing-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 0.5rem;
+  }
+}
+
+/* ── Gallery ── */
+@media (max-width: 768px) {
+  .gallery-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+  .gallery-card {
+    border-radius: 1rem;
+  }
+  .gallery-card__img {
+    aspect-ratio: 1;
+  }
+  .gallery-filters {
+    gap: 0.375rem;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 0.5rem;
+    scrollbar-width: none;
+  }
+  .gallery-filters::-webkit-scrollbar {
+    display: none;
+  }
+  .gallery-filters .pill {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .gallery-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Login / Auth ── */
+@media (max-width: 768px) {
+  .auth {
+    padding: 6rem 1.25rem 3rem;
+  }
+  .auth__card {
+    max-width: 100%;
+    padding: 1.5rem 1.25rem;
+    border-radius: 1.25rem;
+  }
+  .auth__video-bg {
+    opacity: 0.15;
+  }
+}
+
+/* ── Models page ── */
+@media (max-width: 768px) {
+  .models-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+  .model-card {
+    padding: 1rem;
+    border-radius: 1rem;
+  }
+  .models-hero h1 {
+    font-size: 2rem;
+  }
+}
+
+/* ── Pricing page ── */
+@media (max-width: 768px) {
+  .pricing-page-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .pricing-page-card {
+    padding: 1.5rem 1.25rem;
+    border-radius: 1.25rem;
+  }
+  .pricing-page-card__price {
+    font-size: 2rem;
+  }
+}
+
+/* ── Footer / mini-footer ── */
+@media (max-width: 768px) {
+  .footer__cols {
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+  .footer__bottom {
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: center;
+  }
+}
+
+/* ── Section padding ── */
+@media (max-width: 768px) {
+  .section {
+    padding: 4rem 1.25rem 3rem;
+  }
+  .page {
+    padding: 6rem 1.25rem 4rem;
+  }
+}
+
+/* ── Prevent horizontal overflow globally ── */
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+  .snap-container {
+    overflow-x: hidden;
+  }
+  .svc-section {
+    overflow-x: clip;
+  }
+}
+
+/* ── Touch device cursor disable ── */
+@media (hover: none) and (pointer: coarse) {
+  * {
+    cursor: auto !important;
+  }
+  .btn,
+  .pill,
+  button,
+  a,
+  [role="button"] {
+    cursor: pointer !important;
+  }
+}
