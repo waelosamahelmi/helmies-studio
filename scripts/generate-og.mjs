@@ -30,14 +30,14 @@ const overlay1200 = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height
   </defs>
   <rect width="1200" height="630" fill="url(#side)"/>
   <rect width="1200" height="630" fill="url(#bottom)"/>
-  <rect x="80" y="455" width="100" height="3" fill="url(#accent)"/>
-  <text x="175" y="498" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="68" font-weight="700" fill="#F2F2F7" letter-spacing="-1">Studio</text>
+  <text x="175" y="500" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="68" font-weight="700" fill="#F2F2F7" letter-spacing="-1">Studio</text>
+  <rect x="80" y="515" width="100" height="3" fill="url(#accent)"/>
   <text x="80" y="555" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="18" fill="#F2F2F7" opacity="0.55" letter-spacing="5" font-weight="400">200+ AI MODELS · IMAGE · VIDEO · LIP-SYNC</text>
 </svg>`;
 
 await sharp(hero)
   .composite([
-    { input: iconPng, top: 395, left: 80 },
+    { input: iconPng, top: 412, left: 80 },
     { input: Buffer.from(overlay1200), top: 0, left: 0 },
   ])
   .png()
@@ -65,14 +65,14 @@ const overlay800 = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="
   </defs>
   <rect width="800" height="418" fill="url(#side)"/>
   <rect width="800" height="418" fill="url(#bottom)"/>
-  <rect x="50" y="300" width="80" height="3" fill="url(#accent)"/>
   <text x="120" y="340" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="50" font-weight="700" fill="#F2F2F7" letter-spacing="-1">Studio</text>
+  <rect x="50" y="350" width="80" height="3" fill="url(#accent)"/>
   <text x="50" y="380" font-family="Inter, Helvetica Neue, Arial, sans-serif" font-size="14" fill="#F2F2F7" opacity="0.55" letter-spacing="4" font-weight="400">200+ AI MODELS · IMAGE · VIDEO · LIP-SYNC</text>
 </svg>`;
 
 await sharp(heroTw)
   .composite([
-    { input: iconPngSm, top: 272, left: 50 },
+    { input: iconPngSm, top: 280, left: 50 },
     { input: Buffer.from(overlay800), top: 0, left: 0 },
   ])
   .png()
