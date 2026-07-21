@@ -1,5 +1,5 @@
 import { handleGeneration } from "@/lib/generation-handler";
-import { processLipSync } from "@/lib/muapi";
+import { processLipSync } from "@/lib/generation";
 import { getCreditCost } from "@/lib/credits";
 
 export async function POST(req) {

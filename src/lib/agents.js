@@ -4,7 +4,7 @@ import {
   generateImage, generateI2I, generateVideo, generateI2V,
   processLipSync, generateAudio, processRecast,
   runClipping, runMotionGraphics, generateMarketingAd,
-} from "@/lib/muapi";
+} from "@/lib/generation";
 import { detectAbuse } from "@/lib/security";
 import prisma from "@/lib/prisma";
 

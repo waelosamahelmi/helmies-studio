@@ -18,7 +18,7 @@ export default function AdminPanel() {
   const [modelFilter, setModelFilter] = useState("all");
   const [auditLogs, setAuditLogs] = useState([]);
   const [editingUser, setEditingUser] = useState(null);
-  const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "MuAPI", providerCost: 0, creditsCost: 1 });
+  const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "WaveSpeed", providerCost: 0, creditsCost: 1 });
   const [newProvider, setNewProvider] = useState({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true });
   const [newRefund, setNewRefund] = useState({ userId: "", amount: 0, reason: "" });
   const [toast, setToast] = useState(null);
@@ -83,7 +83,7 @@ export default function AdminPanel() {
         creditsCost: parseInt(newPricing.creditsCost),
       }),
     });
-    if (res.ok) { showToast("Pricing set"); setNewPricing({ modelId: "", modelType: "image", providerName: "MuAPI", providerCost: 0, creditsCost: 1 }); loadPricing(); }
+    if (res.ok) { showToast("Pricing set"); setNewPricing({ modelId: "", modelType: "image", providerName: "WaveSpeed", providerCost: 0, creditsCost: 1 }); loadPricing(); }
   };
 
   // ── Providers ──
@@ -310,7 +310,7 @@ export default function AdminPanel() {
                     <span className={`admin__badge ${p.isActive ? "enabled" : "disabled"}`}>{p.isActive ? "Active" : "Inactive"}</span>
                   </div>
                 ))}
-                {providers.length === 0 && <p className="admin__empty">No providers configured in DB. Using MuAPI default (key from .env).</p>}
+                {providers.length === 0 && <p className="admin__empty">No providers configured in DB. Using WaveSpeed default (key from .env).</p>}
               </div>
             </div>
           )}

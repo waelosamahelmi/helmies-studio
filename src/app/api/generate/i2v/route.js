@@ -1,5 +1,5 @@
 import { handleGeneration } from "@/lib/generation-handler";
-import { generateI2V } from "@/lib/muapi";
+import { generateI2V } from "@/lib/generation";
 import { getCreditCost } from "@/lib/credits";
 
 export async function POST(req) {

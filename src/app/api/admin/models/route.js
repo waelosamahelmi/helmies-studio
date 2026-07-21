@@ -47,7 +47,7 @@ export async function POST(req) {
 
     await prisma.modelPricing.upsert({
       where: { modelId },
-      create: { modelId, modelType, providerName: providerName || "MuAPI", providerCost: providerCost || 0, creditsCost: creditsCost || 1, isActive: isActive ?? true },
+      create: { modelId, modelType, providerName: providerName || "WaveSpeed", providerCost: providerCost || 0, creditsCost: creditsCost || 1, isActive: isActive ?? true },
       update: { providerCost, creditsCost, isActive },
     });
 

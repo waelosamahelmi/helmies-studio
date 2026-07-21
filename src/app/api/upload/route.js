@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { uploadFile } from "@/lib/muapi";
+import { uploadFile } from "@/lib/generation";
 
 export async function POST(req) {
   try {

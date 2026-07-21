@@ -1,6 +1,6 @@
 // Each model can optionally specify provider-specific endpoint overrides.
 // If not set, the default `endpoint` field is used for all providers.
-// Example: { endpoints: { muapi: "flux-dev-image", wavespeed: "flux-2-dev/text-to-image" } }
+// Example: { endpoints: { wavespeed: "flux-2-dev/text-to-image", atlas: "flux-dev-image" } }
 export const IMAGE_MODELS = [
   { id: "nano-banana", name: "Nano Banana", endpoint: "nano-banana", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"] },
   { id: "nano-banana-pro", name: "Nano Banana Pro", endpoint: "nano-banana-pro", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"], resolutions: ["1k", "2k", "4k"] },
@@ -35,8 +35,8 @@ export const I2I_MODELS = [
   { id: "kling-o1-edit-image", name: "Kling O1 Edit", endpoint: "kling-o1-edit-image", provider: "Kling AI", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "2:3", "3:2", "21:9"], maxImages: 10 },
   { id: "flux-redux", name: "Flux Redux", endpoint: "flux-redux", provider: "Black Forest Labs", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"] },
   { id: "seededit-v3", name: "SeedEdit v3", endpoint: "seededit-v3", provider: "ByteDance" },
-  { id: "image-upscaler", name: "Upscaler", endpoint: "image-upscaler", provider: "MuAPI" },
-  { id: "background-remover", name: "Background Remover", endpoint: "background-remover", provider: "MuAPI" },
+  { id: "image-upscaler", name: "Upscaler", endpoint: "image-upscaler", provider: "Helmies" },
+  { id: "background-remover", name: "Background Remover", endpoint: "background-remover", provider: "Helmies" },
 ];
 
 export const VIDEO_MODELS = [
@@ -65,12 +65,12 @@ export const I2V_MODELS = [
 export const V2V_MODELS = [
   { id: "kling-v3-motion-control", name: "Kling Motion Control", endpoint: "kling-v3.0-pro-motion-control", provider: "Kling AI", aspectRatios: ["16:9", "9:16", "1:1"] },
   { id: "kling-v2.1-motion-control", name: "Kling v2.1 Motion Control", endpoint: "kling-v2.1-pro-motion-control", provider: "Kling AI", aspectRatios: ["16:9", "9:16", "1:1"] },
-  { id: "watermark-remover", name: "Watermark Remover", endpoint: "watermark-remover", provider: "MuAPI" },
-  { id: "video-upscaler", name: "Video Upscaler", endpoint: "video-upscaler", provider: "MuAPI" },
+  { id: "watermark-remover", name: "Watermark Remover", endpoint: "watermark-remover", provider: "Helmies" },
+  { id: "video-upscaler", name: "Video Upscaler", endpoint: "video-upscaler", provider: "Helmies" },
 ];
 
 export const LIPSYNC_MODELS = [
-  { id: "infinitetalk-image-to-video", name: "Infinite Talk", endpoint: "infinitetalk-image-to-video", provider: "MuAPI", resolutions: ["480p", "720p"], mode: "image" },
+  { id: "infinitetalk-image-to-video", name: "Infinite Talk", endpoint: "infinitetalk-image-to-video", provider: "Helmies", resolutions: ["480p", "720p"], mode: "image" },
   { id: "wan2.2-speech-to-video", name: "Wan 2.2 Speech", endpoint: "wan2.2-speech-to-video", provider: "Alibaba", resolutions: ["480p", "720p"], mode: "image" },
   { id: "ltx-2.3-lipsync", name: "LTX 2.3 Lipsync", endpoint: "ltx-2.3-lipsync", provider: "LTX", resolutions: ["480p", "720p", "1080p"], mode: "image" },
   { id: "ltx-2-19b-lipsync", name: "LTX 2 19B", endpoint: "ltx-2-19b-lipsync", provider: "LTX", resolutions: ["480p", "720p", "1080p"], mode: "image" },
@@ -92,7 +92,7 @@ export const AUDIO_MODELS = [
   { id: "music-gen", name: "Music Gen", endpoint: "music-gen", provider: "Meta", inputs: { prompt: { type: "string", title: "Prompt" }, duration: { type: "int", title: "Duration (sec)", default: 30, minValue: 5, maxValue: 120 } } },
   { id: "audio-ldm2", name: "Audio LDM 2", endpoint: "audio-ldm2", provider: "Meta", inputs: { prompt: { type: "string", title: "Prompt" }, duration: { type: "int", title: "Duration (sec)", default: 10, minValue: 1, maxValue: 60 } } },
   { id: "bark-tts", name: "Bark TTS", endpoint: "bark-tts", provider: "Suno", inputs: { prompt: { type: "string", title: "Text" }, voice: { type: "enum", title: "Voice", enum: ["v2/en_speaker_0", "v2/en_speaker_1", "v2/en_speaker_2", "v2/en_speaker_3"], default: "v2/en_speaker_0" } } },
-  { id: "voice-clone", name: "Voice Clone", endpoint: "voice-clone", provider: "MuAPI", inputs: { audio_url: { type: "file", title: "Reference Audio", accept: "audio/*" }, text: { type: "string", title: "Text to Speak" } } },
+  { id: "voice-clone", name: "Voice Clone", endpoint: "voice-clone", provider: "Helmies", inputs: { audio_url: { type: "file", title: "Reference Audio", accept: "audio/*" }, text: { type: "string", title: "Text to Speak" } } },
 ];
 
 export const CINEMA_CAMERAS = [

@@ -40,11 +40,11 @@ export async function logProviderError(provider, endpoint, originalError, userId
 
 // ── Provider registry ──
 const PROVIDERS = {
-  muapi: {
-    name: "MuAPI",
+  wavespeed: {
+    name: "WaveSpeed",
     type: "image+video+audio+lipsync",
-    baseUrl: "https://api.muapi.ai",
-    getKey: () => process.env.MUAPI_KEY,
+    baseUrl: "https://api.wavespeed.ai",
+    getKey: () => process.env.WAVESPEED_KEY,
     buildUrl: (endpoint) => `/api/v1/${endpoint}`,
     buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
     isSync: false,
@@ -69,15 +69,6 @@ const PROVIDERS = {
     buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
     isSync: false,
   },
-  wavespeed: {
-    name: "WaveSpeed",
-    type: "image+video",
-    baseUrl: "https://api.wavespeed.ai",
-    getKey: () => process.env.WAVESPEED_KEY,
-    buildUrl: (endpoint) => `/api/v1/${endpoint}`,
-    buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
-    isSync: false,
-  },
   openrouter: {
     name: "OpenRouter",
     type: "llm",
@@ -89,8 +80,10 @@ const PROVIDERS = {
   },
 };
 
+const DEFAULT_PROVIDER = "wavespeed";
+
 export function getProvider(name) {
-  return PROVIDERS[name] || PROVIDERS.muapi;
+  return PROVIDERS[name] || PROVIDERS[DEFAULT_PROVIDER];
 }
 
 export function getActiveProviders() {
@@ -100,7 +93,7 @@ export function getActiveProviders() {
 }
 
 // ── Resolve which provider to use for a given model ──
-// Checks DB ModelPricing → ProviderConfig, falls back to MuAPI
+// Checks DB ModelPricing → ProviderConfig, falls back to WaveSpeed
 export async function resolveProvider(modelId) {
   try {
     const pricing = await prisma.modelPricing.findUnique({ where: { modelId } });
@@ -112,7 +105,7 @@ export async function resolveProvider(modelId) {
       }
     }
   } catch {}
-  return { name: "muapi", ...PROVIDERS.muapi };
+  return { name: DEFAULT_PROVIDER, ...PROVIDERS[DEFAULT_PROVIDER] };
 }
 
 // Resolve the correct endpoint slug for a model on a given provider.
@@ -241,7 +234,7 @@ export async function llmStream(messages, options = {}) {
 }
 
 // ── Provider-level fallback chain ──
-const FALLBACK_CHAIN = ["muapi", "wavespeed", "atlas"];
+const FALLBACK_CHAIN = ["wavespeed", "atlas", "alibaba"];
 
 export async function resolveProviderWithFallback(modelId) {
   const primary = await resolveProvider(modelId);

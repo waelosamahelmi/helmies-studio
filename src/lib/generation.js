@@ -1,5 +1,7 @@
 import { getProvider, brandError } from "@/lib/providers";
 
+const DEFAULT_PROVIDER = "wavespeed";
+
 function getKey(provider) {
   const key = provider?.apiKey || provider?.getKey?.();
   if (!key) throw new Error("Provider API key is not set");
@@ -38,8 +40,8 @@ async function pollForResult(requestId, maxAttempts = 900, interval = 2000, prov
 
 async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   const provider = payload._provider;
-  const baseUrl = provider?.baseUrl || getProvider("muapi").baseUrl;
-  const key = provider?.apiKey || provider?.getKey?.() || getProvider("muapi").getKey();
+  const baseUrl = provider?.baseUrl || getProvider(DEFAULT_PROVIDER).baseUrl;
+  const key = provider?.apiKey || provider?.getKey?.() || getProvider(DEFAULT_PROVIDER).getKey();
   const { _provider, ...rest } = payload;
   const path = provider?.buildUrl ? provider.buildUrl(endpoint) : `/api/v1/${endpoint}`;
   const url = `${baseUrl}${path}`;
@@ -56,7 +58,7 @@ async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   const submitData = await res.json();
   const requestId = submitData.request_id || submitData.id;
   if (!requestId) return submitData;
-  const result = await pollForResult(requestId, maxAttempts, 2000, provider || getProvider("muapi"));
+  const result = await pollForResult(requestId, maxAttempts, 2000, provider || getProvider(DEFAULT_PROVIDER));
   const outputUrl = result.outputs?.[0] || result.url || result.output?.url;
   return { ...result, url: outputUrl, requestId };
 }
@@ -214,7 +216,7 @@ export async function generateMarketingAd(params) {
 }
 
 export async function uploadFile(file) {
-  const provider = getProvider("muapi");
+  const provider = getProvider(DEFAULT_PROVIDER);
   const key = getKey(provider);
   const url = `${provider.baseUrl}/api/v1/upload_file`;
   const formData = new FormData();

@@ -1,5 +1,5 @@
 import { handleGeneration } from "@/lib/generation-handler";
-import { processRecast } from "@/lib/muapi";
+import { processRecast } from "@/lib/generation";
 import { getCreditCost } from "@/lib/credits";
 
 export async function POST(req) {

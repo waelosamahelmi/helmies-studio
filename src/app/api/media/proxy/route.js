@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const PROVIDER_DOMAINS = [
-  "cdn.muapi.ai", "cdn.wavespeed.ai", "cdn.atlascloud.ai",
+  "cdn.wavespeed.ai", "cdn.atlascloud.ai",
   "dashscope.aliyuncs.com", "openrouter.ai",
 ];
 

@@ -1,5 +1,5 @@
 import { handleGeneration } from "@/lib/generation-handler";
-import { runMotionGraphics, runMotionGraphicsEdit } from "@/lib/muapi";
+import { runMotionGraphics, runMotionGraphicsEdit } from "@/lib/generation";
 import { getCreditCost } from "@/lib/credits";
 
 export async function POST(req) {
