@@ -19,6 +19,7 @@ export default function ImageStudio() {
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
   const [imageUrl, setImageUrl] = useState("");
+  const [seed, setSeed] = useState(-1);
   const [result, setResult] = useState(null);
   const { cost, affordable } = useCreditCost("image", model.id, { aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl });
   const [loading, setLoading] = useState(false);
@@ -56,6 +57,7 @@ export default function ImageStudio() {
           width,
           height,
           image_url: imageUrl || undefined,
+          seed: seed !== -1 ? seed : undefined,
         }),
       });
       const data = await res.json();
@@ -137,6 +139,14 @@ export default function ImageStudio() {
             </div>
           </div>
         )}
+
+        <details className="field-group" style={{ marginTop: "0.5rem" }}>
+          <summary className="field-label" style={{ cursor: "pointer", opacity: 0.6, fontSize: "0.75rem" }}>Advanced</summary>
+          <div className="field-group" style={{ marginTop: "0.5rem" }}>
+            <label className="field-label">Seed (-1 = random)</label>
+            <input className="field-input" type="number" value={seed} onChange={(e) => setSeed(parseInt(e.target.value) || -1)} min={-1} />
+          </div>
+        </details>
 
         <div className="field-group">
           <label className="field-label">Reference Image (optional)</label>

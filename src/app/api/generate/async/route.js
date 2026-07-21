@@ -2,6 +2,23 @@ import { NextResponse } from "next/server";
 import { getCurrentUserWithCredits, debitCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
 import { resolveProvider, brandError } from "@/lib/providers";
+import { generateImage, generateVideo, generateAudio, processLipSync, processRecast, runClipping, runMotionGraphics, generateMarketingAd, generateI2I, generateI2V, processV2V } from "@/lib/generation";
+
+const GENERATORS = {
+  image: generateImage,
+  i2i: generateI2I,
+  video: generateVideo,
+  i2v: generateI2V,
+  v2v: processV2V,
+  lipsync: processLipSync,
+  audio: generateAudio,
+  recast: processRecast,
+  clipping: runClipping,
+  motion: runMotionGraphics,
+  marketing: generateMarketingAd,
+  cinema: generateImage,
+  influencer: generateImage,
+};
 
 export async function POST(req) {
   try {
@@ -36,6 +53,27 @@ export async function POST(req) {
     });
 
     await debitCredits(user.id, cost);
+
+    const generator = GENERATORS[tool] || GENERATORS.image;
+
+    generator({ ...params, model, prompt, endpoint: model, _provider: provider })
+      .then(async (result) => {
+        const outputUrl = result.url || result.outputs?.[0];
+        await prisma.generation.update({
+          where: { id: generation.id },
+          data: { status: "completed", outputUrl, requestId: result.requestId },
+        });
+      })
+      .catch(async (err) => {
+        await prisma.generation.update({
+          where: { id: generation.id },
+          data: { status: "failed", error: err.message?.slice(0, 500) },
+        });
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { credits: { increment: cost } },
+        });
+      });
 
     return NextResponse.json({
       success: true,

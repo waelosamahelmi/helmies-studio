@@ -193,14 +193,26 @@ async function executeAudioStep(params) {
   return result.url || result.outputs?.[0];
 }
 
-// ── Fallback models per agent type ──
+// ── Fallback models per agent type (model + provider pairs) ──
 const FALLBACKS = {
-  image: ["flux-dev", "flux-schnell", "sdxl-image"],
-  video: ["wan-2.6", "hailuo-02", "seedance-2.0"],
-  audio: ["suno-v4", "suno-v3.5", "music-gen"],
+  image: [
+    { model: "flux-dev", provider: "wavespeed" },
+    { model: "flux-schnell", provider: "wavespeed" },
+    { model: "sdxl-image", provider: "atlas" },
+  ],
+  video: [
+    { model: "wan-2.6", provider: "wavespeed" },
+    { model: "hailuo-02", provider: "wavespeed" },
+    { model: "seedance-2.0", provider: "atlas" },
+  ],
+  audio: [
+    { model: "suno-v4", provider: "wavespeed" },
+    { model: "suno-v3.5", provider: "wavespeed" },
+    { model: "music-gen", provider: "atlas" },
+  ],
 };
 
-// ── Retry with fallback model ──
+// ── Retry with fallback model + provider ──
 async function executeStepWithRetry(step, previousOutputs, attempt = 0) {
   try {
     return await executeStep(step, previousOutputs);
@@ -208,10 +220,10 @@ async function executeStepWithRetry(step, previousOutputs, attempt = 0) {
     const fallbacks = FALLBACKS[step.agent] || [];
     if (attempt >= fallbacks.length || !fallbacks[attempt]) throw error;
 
-    const fallbackModel = fallbacks[attempt];
+    const fb = fallbacks[attempt];
     const retryStep = {
       ...step,
-      params: { ...step.params, model: fallbackModel, endpoint: fallbackModel },
+      params: { ...step.params, model: fb.model, endpoint: fb.model, _provider: fb.provider },
     };
     return executeStepWithRetry(retryStep, previousOutputs, attempt + 1);
   }
