@@ -45,12 +45,18 @@ const PROVIDERS = {
     type: "image+video+audio+lipsync",
     baseUrl: "https://api.muapi.ai",
     getKey: () => process.env.MUAPI_KEY,
+    buildUrl: (endpoint) => `/api/v1/${endpoint}`,
+    buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
+    isSync: false,
   },
   atlas: {
     name: "Atlas Cloud",
     type: "image+video",
     baseUrl: "https://api.atlascloud.ai",
     getKey: () => process.env.ATLAS_KEY,
+    buildUrl: (endpoint) => `/api/v1/${endpoint}`,
+    buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
+    isSync: false,
   },
   alibaba: {
     name: "Alibaba Cloud (Qwen)",
@@ -59,18 +65,27 @@ const PROVIDERS = {
       ? `https://${process.env.ALIBABA_WORKSPACE_ID}.eu-central-1.maas.aliyuncs.com/compatible-mode/v1`
       : "https://dashscope.aliyuncs.com",
     getKey: () => process.env.ALIBABA_KEY,
+    buildUrl: (endpoint) => `/api/v1/${endpoint}`,
+    buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
+    isSync: false,
   },
   wavespeed: {
     name: "WaveSpeed",
     type: "image+video",
     baseUrl: "https://api.wavespeed.ai",
     getKey: () => process.env.WAVESPEED_KEY,
+    buildUrl: (endpoint) => `/api/v1/${endpoint}`,
+    buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
+    isSync: false,
   },
   openrouter: {
     name: "OpenRouter",
     type: "llm",
     baseUrl: "https://openrouter.ai/api/v1",
     getKey: () => process.env.OPENROUTER_KEY,
+    buildUrl: (endpoint) => `/chat/completions`,
+    buildPollUrl: () => null,
+    isSync: true,
   },
 };
 
@@ -100,6 +115,15 @@ export async function resolveProvider(modelId) {
   return { name: "muapi", ...PROVIDERS.muapi };
 }
 
+// Resolve the correct endpoint slug for a model on a given provider.
+// Falls back to the model's default `endpoint` field if no provider-specific override exists.
+export function resolveEndpoint(model, providerName) {
+  if (model.endpoints && model.endpoints[providerName]) {
+    return model.endpoints[providerName];
+  }
+  return model.endpoint || model.id;
+}
+
 // ── Universal submit+poll ──
 export async function submitAndPoll(providerName, endpoint, payload, maxAttempts = 900, interval = 2000) {
   let provider;
@@ -108,8 +132,9 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
   } else {
     provider = getProvider(providerName);
   }
-  const url = `${provider.baseUrl}/api/v1/${endpoint}`;
   const key = provider.apiKey || provider.getKey();
+  const path = provider.buildUrl ? provider.buildUrl(endpoint) : `/api/v1/${endpoint}`;
+  const url = `${provider.baseUrl}${path}`;
 
   const res = await fetch(url, {
     method: "POST",
@@ -127,7 +152,10 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
   const requestId = submitData.request_id || submitData.id;
   if (!requestId) return submitData;
 
-  const pollUrl = `${provider.baseUrl}/api/v1/predictions/${requestId}/result`;
+  const pollUrl = provider.buildPollUrl
+    ? provider.buildPollUrl(provider.baseUrl, requestId)
+    : `${provider.baseUrl}/api/v1/predictions/${requestId}/result`;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await new Promise((r) => setTimeout(r, interval));
     try {

@@ -1,3 +1,6 @@
+// Each model can optionally specify provider-specific endpoint overrides.
+// If not set, the default `endpoint` field is used for all providers.
+// Example: { endpoints: { muapi: "flux-dev-image", wavespeed: "flux-2-dev/text-to-image" } }
 export const IMAGE_MODELS = [
   { id: "nano-banana", name: "Nano Banana", endpoint: "nano-banana", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"] },
   { id: "nano-banana-pro", name: "Nano Banana Pro", endpoint: "nano-banana-pro", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"], resolutions: ["1k", "2k", "4k"] },

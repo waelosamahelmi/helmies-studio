@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { IconBolt, IconArrowUpRight, IconSparkle, IconImage, IconVideo, IconMusic, IconCrown, IconClose } from "@/components/Icons";
+import { useToast } from "@/components/ToastProvider";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -125,7 +126,9 @@ export default function OrchestratorChat() {
   const [thinking, setThinking] = useState(false);
   const [stepCards, setStepCards] = useState([]);
   const [streamingText, setStreamingText] = useState("");
+  const [hoveredMsg, setHoveredMsg] = useState(null);
   const scrollRef = useRef(null);
+  const { notify } = useToast();
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -236,16 +239,42 @@ export default function OrchestratorChat() {
         {messages.map((msg, i) => (
           <motion.div
             key={i}
-            className={`orchestrator__msg orchestrator__msg--${msg.role}`}
+            className={`orchestrator__msg orchestrator__msg--${msg.role} group`}
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: EASE }}
+            onMouseEnter={() => setHoveredMsg(i)}
+            onMouseLeave={() => setHoveredMsg(null)}
           >
             {msg.role === "assistant" && (
               <div className="orchestrator__msg-icon"><IconSparkle /></div>
             )}
             <div className="orchestrator__msg-content">
               <p>{msg.content}</p>
+              {hoveredMsg === i && (
+                <motion.div
+                  className="orchestrator__msg-actions"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.15, ease: EASE }}
+                >
+                  <button
+                    className="orchestrator__msg-action-btn"
+                    onClick={() => { navigator.clipboard.writeText(msg.content); notify("Copied to clipboard"); }}
+                    title="Copy"
+                  >
+                    Copy
+                  </button>
+                  <button
+                    className="orchestrator__msg-action-btn"
+                    onClick={() => { setInput(msg.content); }}
+                    title="Edit & resend"
+                  >
+                    Edit
+                  </button>
+                </motion.div>
+              )}
               {msg.plan && (
                 <motion.div
                   className="orchestrator__plan"

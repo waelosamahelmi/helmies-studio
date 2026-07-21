@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+const PROVIDER_DOMAINS = [
+  "cdn.muapi.ai", "cdn.wavespeed.ai", "cdn.atlascloud.ai",
+  "dashscope.aliyuncs.com", "openrouter.ai",
+];
+
 export async function GET(req) {
   try {
     const { searchParams } = new URL(req.url);
@@ -42,6 +47,8 @@ export async function GET(req) {
       "Cache-Control": "public, max-age=31536000, immutable",
       "Access-Control-Allow-Origin": "*",
       "Accept-Ranges": "bytes",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
     };
     if (contentLength) headers["Content-Length"] = contentLength;
     if (contentRange) headers["Content-Range"] = contentRange;

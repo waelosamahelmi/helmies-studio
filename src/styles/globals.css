@@ -68,7 +68,11 @@
     cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M4 4l7 18 3-8 8-3z' fill='%23FF1B6B' stroke='%230A0A0F' stroke-width='1.5'/%3E%3C/svg%3E") 4 4, auto;
   }
   /* Re-enable text selection on inputs, textareas, code, and content areas */
-  input, textarea, select, code, pre, .auth__legal, .settings__key-reveal code, .orchestrator__msg-content p, .studio-error, .rich-idle__tip {
+  input, textarea, select, [contenteditable], .field-input, .field-textarea, .field-select,
+  code, pre, .auth__legal, .settings__key-reveal code, .orchestrator__msg-content p,
+  .studio-error, .rich-idle__tip, .step-card__text-output, .admin__table td, .admin__table th,
+  .studio-result__meta, .settings__credits-value, .settings__key-prefix, .pricing-card__features li,
+  .price__features li, .pack__credits, .pack__desc, .pack__price, .pack__name {
     -webkit-user-select: text;
     user-select: text;
   }
@@ -3139,6 +3143,27 @@
   border-color: rgba(255, 27, 107, 0.15);
 }
 .orchestrator__msg-content p { font-size: 0.875rem; line-height: 1.5; }
+.orchestrator__msg-actions {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+.orchestrator__msg-action-btn {
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgba(242, 242, 247, 0.5);
+  background: rgba(242, 242, 247, 0.04);
+  border: 1px solid rgba(242, 242, 247, 0.06);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.orchestrator__msg-action-btn:hover {
+  color: #fff;
+  background: rgba(242, 242, 247, 0.08);
+  border-color: rgba(242, 242, 247, 0.12);
+}
 .orchestrator__plan {
   margin-top: 0.75rem;
   padding: 1rem;

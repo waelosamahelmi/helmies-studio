@@ -1,31 +1,34 @@
-const BASE_URL = "https://api.muapi.ai";
+import { getProvider, brandError } from "@/lib/providers";
 
-function getKey() {
-  const key = process.env.MUAPI_KEY;
-  if (!key) throw new Error("MUAPI_KEY is not set");
+function getKey(provider) {
+  const key = provider?.apiKey || provider?.getKey?.();
+  if (!key) throw new Error("Provider API key is not set");
   return key;
 }
 
-async function pollForResult(requestId, maxAttempts = 900, interval = 2000, baseUrl = BASE_URL, key = null) {
-  const apiKey = key || getKey();
-  const pollUrl = `${baseUrl}/api/v1/predictions/${requestId}/result`;
+async function pollForResult(requestId, maxAttempts = 900, interval = 2000, provider) {
+  const key = getKey(provider);
+  const pollUrl = provider.buildPollUrl
+    ? provider.buildPollUrl(provider.baseUrl, requestId)
+    : `${provider.baseUrl}/api/v1/predictions/${requestId}/result`;
+
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await new Promise((r) => setTimeout(r, interval));
     try {
       const res = await fetch(pollUrl, {
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey, Authorization: `Bearer ${apiKey}` },
+        headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
       });
       if (!res.ok) {
         if (res.status >= 500) continue;
         const txt = await res.text();
-        throw new Error(`Poll failed: ${res.status} - ${txt.slice(0, 200)}`);
+        throw new Error(brandError(txt));
       }
       const data = await res.json();
       const status = data.status?.toLowerCase();
       if (status === "completed" || status === "succeeded" || status === "success")
         return data;
       if (status === "failed" || status === "error")
-        throw new Error(`Generation failed: ${data.error || "Unknown"}`);
+        throw new Error(brandError(data.error || ""));
     } catch (e) {
       if (attempt === maxAttempts) throw e;
     }
@@ -35,10 +38,12 @@ async function pollForResult(requestId, maxAttempts = 900, interval = 2000, base
 
 async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   const provider = payload._provider;
-  const baseUrl = provider?.baseUrl || BASE_URL;
-  const key = provider?.apiKey || provider?.getKey?.() || getKey();
+  const baseUrl = provider?.baseUrl || getProvider("muapi").baseUrl;
+  const key = provider?.apiKey || provider?.getKey?.() || getProvider("muapi").getKey();
   const { _provider, ...rest } = payload;
-  const url = `${baseUrl}/api/v1/${endpoint}`;
+  const path = provider?.buildUrl ? provider.buildUrl(endpoint) : `/api/v1/${endpoint}`;
+  const url = `${baseUrl}${path}`;
+
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
@@ -46,12 +51,12 @@ async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   });
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`API request failed: ${res.status} ${res.statusText} - ${txt.slice(0, 200)}`);
+    throw new Error(brandError(txt));
   }
   const submitData = await res.json();
   const requestId = submitData.request_id || submitData.id;
   if (!requestId) return submitData;
-  const result = await pollForResult(requestId, maxAttempts, baseUrl, key);
+  const result = await pollForResult(requestId, maxAttempts, 2000, provider || getProvider("muapi"));
   const outputUrl = result.outputs?.[0] || result.url || result.output?.url;
   return { ...result, url: outputUrl, requestId };
 }
@@ -209,17 +214,19 @@ export async function generateMarketingAd(params) {
 }
 
 export async function uploadFile(file) {
-  const url = `${BASE_URL}/api/v1/upload_file`;
+  const provider = getProvider("muapi");
+  const key = getKey(provider);
+  const url = `${provider.baseUrl}/api/v1/upload_file`;
   const formData = new FormData();
   formData.append("file", file);
   const res = await fetch(url, {
     method: "POST",
-    headers: { "x-api-key": getKey() },
+    headers: { "x-api-key": key },
     body: formData,
   });
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`Upload failed: ${res.status} - ${txt.slice(0, 200)}`);
+    throw new Error(brandError(txt));
   }
   const data = await res.json();
   return data.url || data.file_url || data.data?.url;
