@@ -7,6 +7,7 @@ import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expa
 import { applyMemoryToPrompt } from "@/lib/memory";
 import { validateGenerationOutput, logQualityGate } from "@/lib/quality-gate";
 import { authenticateApiKey } from "@/lib/api-key-auth";
+import { storeMedia } from "@/lib/media-storage";
 
 export async function handleGeneration(req, tool, cost, apiFn) {
   try {
@@ -96,6 +97,15 @@ export async function handleGeneration(req, tool, cost, apiFn) {
 
       const outputUrl = result.url || result.outputs?.[0];
 
+      let storedUrl = outputUrl;
+      if (outputUrl) {
+        try {
+          storedUrl = await storeMedia(outputUrl);
+        } catch {
+          storedUrl = `/api/media/proxy?url=${encodeURIComponent(outputUrl)}`;
+        }
+      }
+
       const quality = await validateGenerationOutput(outputUrl, tool);
       await logQualityGate(user.id, generation.id, tool, quality);
 
@@ -114,7 +124,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         return NextResponse.json({ error: quality.reason }, { status: 500 });
       }
 
-      const proxiedUrl = outputUrl ? `/api/media/proxy?url=${encodeURIComponent(outputUrl)}` : outputUrl;
+      const proxiedUrl = storedUrl;
 
       await prisma.generation.update({
         where: { id: generation.id },
