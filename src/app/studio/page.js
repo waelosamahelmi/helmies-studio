@@ -18,6 +18,7 @@ import AiInfluencerStudio from "@/components/studio/AiInfluencerStudio";
 import OrchestratorChat from "@/components/studio/OrchestratorChat";
 import WorkflowBuilder from "@/components/studio/WorkflowBuilder";
 import ProjectMemory from "@/components/studio/ProjectMemory";
+import PromptBar from "@/components/studio/PromptBar";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
@@ -211,6 +212,10 @@ export default function StudioPage({ initialTool }) {
               </motion.div>
             </AnimatePresence>
           </div>
+
+          {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && (
+            <PromptBar activeTab={activeTab} />
+          )}
         </main>
       </div>
 

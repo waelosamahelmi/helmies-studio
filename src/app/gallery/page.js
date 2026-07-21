@@ -38,23 +38,37 @@ const FILTERS = [
   { id: "audio", label: "Audio" },
 ];
 
-function GalleryCard({ item, index }) {
+function GalleryCard({ item, index, isVisible }) {
   const [hovered, setHovered] = useState(false);
   const videoRef = useRef(null);
+  const containerRef = useRef(null);
   const meta = TYPE_META[item.tool] || TYPE_META.image;
   const isVideo = item.outputUrl?.match(/\.(mp4|webm|mov)$/i);
   const isAudio = item.outputUrl?.match(/\.(mp3|wav|ogg|flac)$/i);
 
+  const handleMouseMove = (e) => {
+    if (!isVideo || !videoRef.current) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = (e.clientX - rect.left) / rect.width;
+    const duration = videoRef.current.duration;
+    if (duration && isFinite(duration)) {
+      videoRef.current.currentTime = x * duration;
+    }
+  };
+
   return (
     <motion.div
+      ref={containerRef}
       className="masonry__item"
       initial={{ opacity: 0, y: 20, filter: "blur(8px)" }}
-      animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+      animate={isVisible ? { opacity: 1, y: 0, filter: "blur(0px)" } : {}}
       transition={{ delay: index * 0.05, duration: 0.5, ease: EASE }}
       onMouseEnter={() => {
         setHovered(true);
-        if (videoRef.current) videoRef.current.play().catch(() => {});
+        if (videoRef.current) { videoRef.current.currentTime = 0; videoRef.current.play().catch(() => {}); }
       }}
+      onMouseMove={handleMouseMove}
       onMouseLeave={() => {
         setHovered(false);
         if (videoRef.current) { videoRef.current.pause(); videoRef.current.currentTime = 0; }
@@ -108,6 +122,8 @@ export default function GalleryPage() {
   const [filter, setFilter] = useState("all");
   const [creations, setCreations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(20);
+  const sentinelRef = useRef(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -119,6 +135,21 @@ export default function GalleryPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisibleCount((c) => Math.min(c + 20, creations.length));
+        }
+      },
+      { rootMargin: "200px" }
+    );
+    obs.observe(sentinel);
+    return () => obs.disconnect();
+  }, [creations.length]);
+
   const filtered = creations.filter((c) => {
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -126,6 +157,8 @@ export default function GalleryPage() {
     }
     return true;
   });
+
+  const visible = filtered.slice(0, visibleCount);
 
   return (
     <>
@@ -180,9 +213,12 @@ export default function GalleryPage() {
           </div>
         ) : (
           <div className="masonry">
-            {filtered.map((c, i) => (
-              <GalleryCard key={c.id} item={c} index={i} />
+            {visible.map((c, i) => (
+              <GalleryCard key={c.id} item={c} index={i} isVisible={true} />
             ))}
+            {visibleCount < filtered.length && (
+              <div ref={sentinelRef} style={{ height: 1, width: "100%" }} />
+            )}
           </div>
         )}
       </div>

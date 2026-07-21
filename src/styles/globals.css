@@ -4314,6 +4314,52 @@
   position: relative;
 }
 
+/* ── Prompt Bar (sticky bottom) ── */
+.studio__prompt-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 50;
+  padding: 0.75rem 1rem;
+  background: rgba(20, 20, 26, 0.85);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border-top: 1px solid rgba(242, 242, 247, 0.06);
+  transition: padding 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.studio__prompt-bar--focused {
+  padding: 1rem 1rem;
+  border-top-color: rgba(255, 27, 107, 0.15);
+}
+.studio__prompt-bar-inner {
+  max-width: 800px;
+  margin: 0 auto;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.studio__prompt-input {
+  flex: 1;
+  background: rgba(242, 242, 247, 0.04);
+  border: 1px solid rgba(242, 242, 247, 0.1);
+  border-radius: 12px;
+  padding: 0.6rem 0.8rem;
+  color: var(--text);
+  font-size: 0.85rem;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.3s ease, background 0.3s ease;
+}
+.studio__prompt-input:focus {
+  border-color: rgba(255, 27, 107, 0.3);
+  background: rgba(242, 242, 247, 0.06);
+}
+.studio__prompt-input::placeholder { color: rgba(242, 242, 247, 0.3); }
+.studio__prompt-hint {
+  font-size: 0.65rem;
+  color: rgba(242, 242, 247, 0.25);
+  white-space: nowrap;
+}
+
 /* ── Mobile: new components ── */
 @media (max-width: 768px) {
   .command-palette__overlay { padding-top: 5vh; }
