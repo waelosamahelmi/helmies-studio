@@ -61,7 +61,7 @@ export function generateMetadata({ params }) {
     return { title: "Studio | Helmies Studio" };
   }
   const t = TOOLS[tool];
-  const url = `https://studio.helmies.fi/studio/${tool}`;
+  const url = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/studio/${tool}`;
 
   return {
     title: `${t.title} | Helmies Studio`,

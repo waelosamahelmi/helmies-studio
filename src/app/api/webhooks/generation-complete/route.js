@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { creditUser } from "@/lib/session";
 
 export async function POST(req) {
   try {
+    const secret = process.env.WEBHOOK_SECRET || process.env.CRON_SECRET;
+    if (secret) {
+      const authHeader = req.headers.get("authorization");
+      if (authHeader !== `Bearer ${secret}`) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    }
+
     const body = await req.json();
     const { request_id, status, outputs, error } = body;
 
@@ -28,6 +37,9 @@ export async function POST(req) {
         where: { id: generation.id },
         data: { status: "failed", error: error || "Generation failed" },
       });
+      if (generation.creditsUsed > 0) {
+        await creditUser(generation.userId, generation.creditsUsed, "webhook_refund", `Refund: ${error || "Failed generation"}`);
+      }
     }
 
     return NextResponse.json({ success: true });

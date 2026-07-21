@@ -10,7 +10,7 @@ import ReelSlider from "@/components/landing/ReelSlider";
 import YouTubeEmbed from "@/components/landing/YouTubeEmbed";
 import LogoTicker from "@/components/landing/LogoTicker";
 import {
-  IconArrowUpRight, IconArrowRight, IconPlay, IconPause, IconCheck, IconMail,
+  IconArrowUpRight, IconArrowRight, IconCheck, IconMail,
 } from "@/components/Icons";
 
 const HEADSHOTS = [

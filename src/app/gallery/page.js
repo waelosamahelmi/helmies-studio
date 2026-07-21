@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
-import { IconSearch, IconArrowUpRight, IconImage, IconBolt, IconClose } from "@/components/Icons";
+import { IconSearch, IconArrowUpRight, IconImage, IconBolt } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
 

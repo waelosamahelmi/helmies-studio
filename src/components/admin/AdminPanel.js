@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Navbar from "@/components/Navbar";
-import { IconBolt, IconUsers, IconStar } from "@/components/Icons";
+import { IconBolt } from "@/components/Icons";
 
 const TABS = ["Overview", "Users", "Models", "Pricing", "Providers", "Analytics", "Margin", "Refunds", "Audit Logs", "Feature Flags"];
 

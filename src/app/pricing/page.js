@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { IconCheck, IconArrowUpRight, IconBolt } from "@/components/Icons";
+import { CREDIT_PACKS, getCreditPackPriceId } from "@/lib/credit-packs";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -22,12 +23,7 @@ const SUBSCRIPTIONS_YEARLY = [
   { id: "pro", name: "Pro", price: "€79", period: "/mo", billed: "Billed €948/yr", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access", "Dedicated support"], cta: "Subscribe", popular: false },
 ];
 
-const PACKS = [
-  { id: "500", name: "500 Credits", price: "€9", credits: 500, pricePerCredit: "€0.018/credit" },
-  { id: "1000", name: "1000 Credits", price: "€16", credits: 1000, pricePerCredit: "€0.016/credit", popular: true },
-  { id: "2500", name: "2500 Credits", price: "€35", credits: 2500, pricePerCredit: "€0.014/credit" },
-  { id: "5000", name: "5000 Credits", price: "€60", credits: 5000, pricePerCredit: "€0.012/credit" },
-];
+const PACKS = CREDIT_PACKS;
 
 export default function PricingPage() {
   const [yearly, setYearly] = useState(false);
@@ -43,18 +39,12 @@ export default function PricingPage() {
       const data = await res.json();
       if (data.url) window.location.href = data.url;
     } catch (e) {
-      console.error("Checkout failed:", e);
+      // silently fail — user will see Stripe error page
     }
   };
 
   const handleTopup = async (packId) => {
-    const priceMap = {
-      "500": process.env.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_500,
-      "1000": process.env.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_1000,
-      "2500": process.env.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_2500,
-      "5000": process.env.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_5000,
-    };
-    const priceId = priceMap[packId];
+    const priceId = getCreditPackPriceId(packId);
     if (!priceId) { alert("Credit pack not configured yet."); return; }
     try {
       const res = await fetch("/api/stripe/topup", {
@@ -65,7 +55,7 @@ export default function PricingPage() {
       const data = await res.json();
       if (data.url) window.location.href = data.url;
     } catch (e) {
-      console.error("Top-up failed:", e);
+      // silently fail — user will see Stripe error page
     }
   };
 

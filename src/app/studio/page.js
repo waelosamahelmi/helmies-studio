@@ -21,7 +21,7 @@ import ProjectMemory from "@/components/studio/ProjectMemory";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
-  IconStar, IconBolt, IconArrowUpRight, IconMenu, IconClose, IconSparkle,
+  IconStar, IconBolt, IconArrowUpRight, IconClose, IconSparkle,
 } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];

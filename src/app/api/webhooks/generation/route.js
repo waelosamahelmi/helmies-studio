@@ -4,6 +4,14 @@ import { creditUser } from "@/lib/session";
 
 export async function POST(req) {
   try {
+    const secret = process.env.WEBHOOK_SECRET || process.env.CRON_SECRET;
+    if (secret) {
+      const authHeader = req.headers.get("authorization");
+      if (authHeader !== `Bearer ${secret}`) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+    }
+
     const body = await req.json();
     const { request_id, status, output_url, error } = body;
 
@@ -27,7 +35,6 @@ export async function POST(req) {
 
     return handleUpdate(generation, status, output_url, error);
   } catch (e) {
-    console.error("[Webhook] Error:", e);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
   }
 }

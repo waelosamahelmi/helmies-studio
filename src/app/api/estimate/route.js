@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { estimateCredits } from "@/lib/pricing-engine";
+import { CREDIT_PACKS } from "@/lib/credit-packs";
 import prisma from "@/lib/prisma";
 
 export async function POST(req) {
@@ -21,12 +22,7 @@ export async function POST(req) {
       remaining: remaining - credits,
       shortfall,
       topUpNeeded: !affordable,
-      topUpPacks: !affordable ? [
-        { id: "500", name: "500 Credits", price: "€9", credits: 500 },
-        { id: "1000", name: "1000 Credits", price: "€16", credits: 1000 },
-        { id: "2500", name: "2500 Credits", price: "€35", credits: 2500 },
-        { id: "5000", name: "5000 Credits", price: "€60", credits: 5000 },
-      ] : [],
+      topUpPacks: !affordable ? CREDIT_PACKS : [],
     });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });

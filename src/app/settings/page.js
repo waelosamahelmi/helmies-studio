@@ -5,15 +5,9 @@ import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import CreditTickDown from "@/components/CreditTickDown";
 import { IconBolt, IconArrowUpRight } from "@/components/Icons";
+import { CREDIT_PACKS, getCreditPackPriceId } from "@/lib/credit-packs";
 
 const EASE = [0.32, 0.72, 0, 1];
-
-const CREDIT_PACKS = [
-  { id: "500", name: "500 Credits", price: "€9", credits: 500 },
-  { id: "1000", name: "1000 Credits", price: "€16", credits: 1000 },
-  { id: "2500", name: "2500 Credits", price: "€35", credits: 2500 },
-  { id: "5000", name: "5000 Credits", price: "€60", credits: 5000 },
-];
 
 export default function SettingsPage() {
   const [keys, setKeys] = useState([]);
@@ -61,13 +55,7 @@ export default function SettingsPage() {
   };
 
   const handleTopup = async (packId) => {
-    const priceMap = {
-      "500": process.env.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_500,
-      "1000": process.env.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_1000,
-      "2500": process.env.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_2500,
-      "5000": process.env.NEXT_PUBLIC_STRIPE_PRICE_CREDITS_5000,
-    };
-    const priceId = priceMap[packId];
+    const priceId = getCreditPackPriceId(packId);
     if (!priceId) { alert("Credit pack not configured yet."); return; }
     try {
       const res = await fetch("/api/stripe/topup", {
@@ -78,7 +66,7 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.url) window.location.href = data.url;
     } catch (e) {
-      console.error("Top-up failed:", e);
+      // silently fail — user will see Stripe error page
     }
   };
 
