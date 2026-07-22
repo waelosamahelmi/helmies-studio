@@ -346,7 +346,7 @@
 .nav__overlay {
   position: fixed;
   inset: 0;
-  z-index: 99;
+  z-index: 200;
   background: rgba(5, 5, 5, 0.92);
   backdrop-filter: blur(40px);
   -webkit-backdrop-filter: blur(40px);
@@ -2638,7 +2638,7 @@
     gap: 0.5rem;
   }
   .nav {
-    top: 0.5rem;
+    top: 3.5rem;
     width: calc(100vw - 1rem);
   }
   .nav__logo-mark {
@@ -2698,14 +2698,18 @@
   .snap-container {
     scroll-snap-type: y proximity;
     scroll-behavior: smooth;
+    overscroll-behavior: contain;
   }
   .svc-section {
-    min-height: auto;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
     scroll-snap-align: start;
+    scroll-snap-stop: always;
     padding-bottom: 4rem;
   }
   .svc-section__inner {
-    min-height: auto;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
     padding: 5rem 1.25rem 3rem;
     opacity: 1;
     transform: none;
