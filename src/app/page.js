@@ -111,9 +111,7 @@ const SECTIONS = [
     kicker: "Pricing",
     title: (
       <>
-        Create more.
-        <br />
-        <em>Pay less.</em>
+        Create more. <em>Pay less.</em>
       </>
     ),
     desc: "Monthly subscriptions or one-off credits. Start free, scale when you're ready.",
@@ -142,13 +140,18 @@ function useInView(ref, margin = "-100px") {
 
 /* ── HERO ── */
 function HeroSection() {
+  const [playing, setPlaying] = useState(false);
   return (
     <section className="hero">
       <div className="hero__bg">
+        <img src="/assets/hero-video-poster.webp" alt="" className="hero__bg-poster" style={{ opacity: playing ? 0 : 1 }} />
         <video
-          src="/assets/12709382_1920_1080_30fps-39.webm"
-          poster="/assets/photo-1506905925346-21bda4d32df4-6.webp"
+          src="/assets/12709382_1920_1080_30fps-39.mp4"
           muted loop playsInline autoPlay
+          preload="auto"
+          onPlaying={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          style={{ opacity: playing ? 1 : 0 }}
         />
       </div>
 
@@ -186,6 +189,7 @@ function ServiceSection({ section, index }) {
   const ref = useRef(null);
   const cardsRef = useRef(null);
   const visible = useInView(ref, "-80px");
+  const [vidPlaying, setVidPlaying] = useState(false);
   const layoutReverse = section.reverse ?? (index % 2 !== 0);
   const [scrollState, setScrollState] = useState({ atStart: true, atEnd: false });
   const [yearly, setYearly] = useState(false);
@@ -214,7 +218,7 @@ function ServiceSection({ section, index }) {
 
   handlersRef.current.onDragMove = (e) => {
     if (!dragRef.current.isDragging) return;
-    e.preventDefault();
+    if (e.cancelable) e.preventDefault();
     const el = cardsRef.current;
     if (!el) return;
     const x = (e.touches ? e.touches[0].clientX : e.clientX) - el.offsetLeft;
@@ -271,7 +275,17 @@ function ServiceSection({ section, index }) {
       {/* Background */}
       <div className={`svc-section__bg ${section.bgClass || ""}`}>
         {section.bgVideo ? (
-          <video src={section.bgVideo} muted loop playsInline autoPlay />
+          <>
+            <img src="/assets/pricing-video-poster.webp" alt="" className="svc-section__bg-poster" style={{ opacity: vidPlaying ? 0 : 1 }} />
+            <video
+              src={section.bgVideo.replace(/\.webm$/, ".mp4")}
+              muted loop playsInline autoPlay
+              preload="auto"
+              onPlaying={() => setVidPlaying(true)}
+              onPause={() => setVidPlaying(false)}
+              style={{ opacity: vidPlaying ? 1 : 0 }}
+            />
+          </>
         ) : (
           <img src={section.bg} alt="" />
         )}
@@ -283,7 +297,7 @@ function ServiceSection({ section, index }) {
           <div className={`svc-layout ${layoutReverse ? "svc-layout--reverse" : ""}`}>
           {/* Text */}
           <div className="svc-text">
-            <div className="svc-kicker" style={{ color: section.accent }}>
+            <div className="svc-kicker" style={{ color: section.accent, display: section.isPricing ? "none" : undefined }}>
               {section.kicker}
             </div>
             <StrokeTitle className="svc-title-wrap" bgImage={section.bg}>
@@ -310,11 +324,14 @@ function ServiceSection({ section, index }) {
             {section.isPricing ? (
               <div className={`pricing-wrap ${!scrollState.atEnd ? "pricing-wrap--has-more" : ""} ${!scrollState.atStart ? "pricing-wrap--scrolled" : ""} ${scrollState.atEnd ? "pricing-wrap--at-end" : ""}`}>
                 <div className="pricing-toggle">
-                  <span className={`pricing-toggle__label ${!yearly ? "pricing-toggle__label--active" : ""}`}>Monthly</span>
-                  <button className={`pricing-toggle__switch ${yearly ? "pricing-toggle__switch--on" : ""}`} onClick={() => setYearly(!yearly)}>
-                    <span className="pricing-toggle__knob" />
-                  </button>
-                  <span className={`pricing-toggle__label ${yearly ? "pricing-toggle__label--active" : ""}`}>Yearly <span className="pricing-toggle__badge">-20%</span></span>
+                  <span className={`pricing-toggle__label ${!yearly ? "pricing-toggle__label--active" : ""}`} onClick={() => setYearly(false)}>Monthly</span>
+                  <label className="pricing-toggle__switch-wrap">
+                    <input type="checkbox" checked={yearly} onChange={(e) => setYearly(e.target.checked)} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", margin: 0, cursor: "pointer" }} />
+                    <span className={`pricing-toggle__switch ${yearly ? "pricing-toggle__switch--on" : ""}`}>
+                      <span className="pricing-toggle__knob" />
+                    </span>
+                  </label>
+                  <span className={`pricing-toggle__label ${yearly ? "pricing-toggle__label--active" : ""}`} onClick={() => setYearly(true)}>Yearly <span className="pricing-toggle__badge">-20%</span></span>
                 </div>
                 <div className="pricing-scroll-track">
                   {!scrollState.atStart && (
@@ -374,70 +391,43 @@ function ServiceSection({ section, index }) {
   );
 }
 
-/* ── STATS ── */
-const STATS = [
-  { n: "70+", l: "AI models" },
-  { n: "10", l: "studios" },
-  { n: "1", l: "subscription" },
-  { n: "0", l: "content filters" },
-];
-
-function StatsSection() {
-  const ref = useRef(null);
-  const visible = useInView(ref);
-  return (
-    <section ref={ref} className={`stats ${visible ? "stats--visible" : ""}`}>
-      {STATS.map((s, i) => (
-        <div key={s.l} className="stat" style={{ transitionDelay: `${i * 0.08}s` }}>
-          <div className="stat__num">{s.n}</div>
-          <div className="stat__label">{s.l}</div>
-        </div>
-      ))}
-    </section>
-  );
-}
-
-/* ── FOOTER ── */
-function FooterSection() {
-  return (
-    <footer className="footer">
-      <div className="footer__giant">HELMIES</div>
-      <h2>Ready to <em>dive in?</em></h2>
-      <div className="footer__cta">
-        <Link href="/login" className="btn btn-primary btn-lg">
-          Start free
-          <span className="btn__icon"><IconArrowUpRight /></span>
-        </Link>
-        <a href="mailto:info@helmies.fi" className="btn btn-secondary btn-lg">
-          <IconMail />
-          info@helmies.fi
-        </a>
-      </div>
-      <div className="footer__links">
-        <Link href="/studio">Studio</Link>
-        <Link href="/models">Models</Link>
-        <Link href="/gallery">Gallery</Link>
-        <Link href="/pricing">Pricing</Link>
-        <Link href="/login">Sign in</Link>
-      </div>
-      <div className="footer__bottom">© 2026 Helmies Oy · Lahti, Finland</div>
-    </footer>
-  );
-}
-
 /* ── ANNOUNCEMENT BAR ── */
 function AnnouncementBar() {
   return (
     <div className="announcement-bar">
       <div className="announcement-bar__inner">
-        <span>New: 70+ models now live. Sora 2, Kling v3, and more.</span>
+        <span className="announcement-bar__dot" />
+        <span>70+ models live — Sora 2, Kling v3</span>
       </div>
     </div>
   );
 }
 
 /* ── MAIN ── */
+/* ── Kickstart videos on first user interaction (iOS workaround) ── */
+function useKickstartVideos() {
+  useEffect(() => {
+    const playAll = () => {
+      document.querySelectorAll("video").forEach((v) => {
+        const p = v.play();
+        if (p && p.catch) p.catch(() => {});
+      });
+    };
+    playAll();
+    const kick = () => { playAll(); };
+    document.addEventListener("touchstart", kick, { once: true, passive: true });
+    document.addEventListener("click", kick, { once: true });
+    document.addEventListener("scroll", kick, { once: true, passive: true });
+    return () => {
+      document.removeEventListener("touchstart", kick);
+      document.removeEventListener("click", kick);
+      document.removeEventListener("scroll", kick);
+    };
+  }, []);
+}
+
 export default function LandingPage() {
+  useKickstartVideos();
   return (
     <>
       <AnnouncementBar />
@@ -448,9 +438,7 @@ export default function LandingPage() {
         {SECTIONS.map((s, i) => (
           <ServiceSection key={s.id} section={s} index={i} />
         ))}
-        <StatsSection />
       </div>
-      <FooterSection />
       <LogoTicker />
     </>
   );

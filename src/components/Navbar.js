@@ -177,76 +177,70 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* Full-screen overlay with staggered mask reveal (§5A) */}
+      {/* Mobile slide-up sheet */}
       <AnimatePresence>
         {mobileOpen && (
-          <motion.div
-            className="nav__overlay md:hidden"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4, ease: EASE }}
-            onClick={() => setMobileOpen(false)}
-          >
-            <button
-              className="absolute top-4 right-4 w-12 h-12 rounded-full flex items-center justify-center bg-white/10 border border-white/20 text-white"
-              onClick={(e) => { e.stopPropagation(); setMobileOpen(false); }}
-              onTouchEnd={(e) => { e.stopPropagation(); setMobileOpen(false); }}
-              aria-label="Close menu"
+          <>
+            <motion.div
+              className="nav__backdrop md:hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+              onClick={() => setMobileOpen(false)}
+            />
+            <motion.div
+              className="nav__sheet md:hidden"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ duration: 0.45, ease: EASE }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <IconClose />
-            </button>
-            <div className="flex flex-col gap-2 max-w-md w-full mx-auto" onClick={(e) => e.stopPropagation()}>
-              {NAV_LINKS.map((l, i) => (
-                <motion.div
-                  key={l.name}
-                  initial={{ opacity: 0, y: 40 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 40 }}
-                  transition={{ duration: 0.6, ease: EASE, delay: 0.08 * i + 0.1 }}
-                >
-                  <Link href={l.href} className="nav__overlay-link">{l.name}</Link>
-                </motion.div>
-              ))}
-              {/* Studio tools (mobile only) */}
-              <motion.div
-                initial={{ opacity: 0, y: 40 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 40 }}
-                transition={{ duration: 0.6, ease: EASE, delay: 0.08 * NAV_LINKS.length + 0.1 }}
-                className="mt-2 pt-4 border-t border-white/10"
-              >
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3 px-1">Studios</p>
-                <div className="grid grid-cols-2 gap-1">
-                  {TOOLS.map(({ id, label, Icon, color }) => (
-                    <Link
-                      key={id}
-                      href={`/studio/${id}`}
-                      className="flex items-center gap-2 p-2 rounded-xl hover:bg-white/[0.04] transition-colors duration-300"
-                      onClick={() => setMobileOpen(false)}
-                    >
-                      <span className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: `${color}15`, color }}>
-                        <Icon />
-                      </span>
-                      <span className="text-[12px] font-medium text-white/80 truncate">{label}</span>
+              <div className="nav__sheet-handle" />
+              <div className="nav__sheet-close" onClick={() => setMobileOpen(false)}>
+                <IconClose />
+              </div>
+              <div className="nav__sheet-content">
+                {NAV_LINKS.map((l, i) => (
+                  <motion.div
+                    key={l.name}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.4, ease: EASE, delay: 0.05 * i + 0.15 }}
+                  >
+                    <Link href={l.href} className="nav__sheet-link" onClick={() => setMobileOpen(false)}>
+                      {l.name}
+                      <IconArrowUpRight />
                     </Link>
-                  ))}
+                  </motion.div>
+                ))}
+                <div className="nav__sheet-divider" />
+                <div className="nav__sheet-studios">
+                  <p className="nav__sheet-label">Studios</p>
+                  <div className="nav__sheet-grid">
+                    {TOOLS.map(({ id, label, Icon, color }) => (
+                      <Link
+                        key={id}
+                        href={`/studio/${id}`}
+                        className="nav__studio-chip"
+                        onClick={() => setMobileOpen(false)}
+                      >
+                        <span className="nav__studio-icon" style={{ background: `${color}18`, color }}>
+                          <Icon />
+                        </span>
+                        <span>{label}</span>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
-              </motion.div>
-              <motion.div
-                initial={{ opacity: 0, y: 40 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 40 }}
-                transition={{ duration: 0.6, ease: EASE, delay: 0.08 * NAV_LINKS.length + 0.1 }}
-                className="mt-8"
-              >
-                <Link href="/login" className="btn btn-primary btn-lg w-full justify-center">
+                <Link href="/login" className="btn btn-primary btn-lg w-full justify-center mt-6" onClick={() => setMobileOpen(false)}>
                   Start free
                   <span className="btn__icon"><IconBolt /></span>
                 </Link>
-              </motion.div>
-            </div>
-          </motion.div>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </>

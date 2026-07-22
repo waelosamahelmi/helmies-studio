@@ -85,7 +85,8 @@ export const metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 5,
+  maximumScale: 1,
+  userScalable: false,
   themeColor: "#FF1B6B",
 };
 
@@ -99,6 +100,21 @@ export default function RootLayout({ children }) {
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#FF1B6B" />
         <meta name="msapplication-TileColor" content="#FF1B6B" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+        <script dangerouslySetInnerHTML={{ __html: `
+          document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+          document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+          document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+          var lastTouchEnd = 0;
+          document.addEventListener('touchend', function(e) {
+            var now = Date.now();
+            if (now - lastTouchEnd <= 300) e.preventDefault();
+            lastTouchEnd = now;
+          }, { passive: false });
+          document.addEventListener('touchmove', function(e) {
+            if (e.scale && e.scale !== 1) e.preventDefault();
+          }, { passive: false });
+        `}} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
