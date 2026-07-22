@@ -186,15 +186,17 @@ export default function Navbar() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.4, ease: EASE }}
+            onClick={() => setMobileOpen(false)}
           >
             <button
-              className="absolute top-6 right-6 w-11 h-11 rounded-full flex items-center justify-center bg-white/5 border border-white/10"
-              onClick={() => setMobileOpen(false)}
+              className="absolute top-4 right-4 w-12 h-12 rounded-full flex items-center justify-center bg-white/10 border border-white/20 text-white"
+              onClick={(e) => { e.stopPropagation(); setMobileOpen(false); }}
+              onTouchEnd={(e) => { e.stopPropagation(); setMobileOpen(false); }}
               aria-label="Close menu"
             >
               <IconClose />
             </button>
-            <div className="flex flex-col gap-2 max-w-md w-full mx-auto">
+            <div className="flex flex-col gap-2 max-w-md w-full mx-auto" onClick={(e) => e.stopPropagation()}>
               {NAV_LINKS.map((l, i) => (
                 <motion.div
                   key={l.name}
