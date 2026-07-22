@@ -1,23 +1,12 @@
+import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { cookies } from "next/headers";
 
 async function resolveSession() {
   try {
-    const store = await cookies();
-    const token = store.get("next-auth.session-token")?.value || store.get("__Secure-next-auth.session-token")?.value;
-    if (!token) return null;
-
-    const dbSession = await prisma.session.findUnique({
-      where: { sessionToken: token },
-      include: { user: true },
-    });
-
-    if (dbSession && dbSession.expires > new Date()) {
-      return { user: dbSession.user };
-    }
-  } catch {}
-
-  return null;
+    const session = await auth();
+    if (!session?.user?.id) return null;
+    return session;
+  } catch { return null; }
 }
 
 export async function getCurrentUser() {

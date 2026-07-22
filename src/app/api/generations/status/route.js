@@ -4,7 +4,7 @@ import { getCurrentUserWithCredits } from "@/lib/session";
 
 export async function GET(req) {
   try {
-    const user = await getCurrentUserWithCredits(req);
+    const user = await getCurrentUserWithCredits();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
