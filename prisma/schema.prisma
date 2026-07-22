@@ -4,6 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  schemas = ["public", "auth"]
 }
 
 model User {
@@ -27,6 +28,8 @@ model User {
   auditLogs     AuditLog[]
   apiKeys       ApiKey[]
   rateLimits    RateLimit[]
+
+  @@schema("public")
 }
 
 model Account {
@@ -45,6 +48,7 @@ model Account {
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@schema("public")
 }
 
 model Session {
@@ -53,6 +57,8 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 model VerificationToken {
@@ -61,6 +67,7 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+  @@schema("public")
 }
 
 model Subscription {
@@ -75,6 +82,8 @@ model Subscription {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 model Generation {
@@ -94,6 +103,8 @@ model Generation {
   workflowStepId String?
   createdAt   DateTime  @default(now())
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 model CreditTransaction {
@@ -104,6 +115,8 @@ model CreditTransaction {
   description String?
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 // ── AI Agents ──
@@ -121,6 +134,8 @@ model AgentRun {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 // ── Workflows ──
@@ -137,6 +152,8 @@ model Workflow {
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   runs        WorkflowRun[]
+
+  @@schema("public")
 }
 
 model WorkflowRun {
@@ -150,6 +167,8 @@ model WorkflowRun {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 // ── Project Memory ──
@@ -162,6 +181,8 @@ model ProjectMemory {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 // ── Admin: Provider config ──
@@ -176,6 +197,8 @@ model ProviderConfig {
   config      Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@schema("public")
 }
 
 // ── Admin: Model pricing ──
@@ -189,6 +212,8 @@ model ModelPricing {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@schema("public")
 }
 
 // ── Admin: Feature flags ──
@@ -201,6 +226,8 @@ model FeatureFlag {
   config      Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@schema("public")
 }
 
 // ── Admin: API Keys (user-facing) ──
@@ -214,6 +241,8 @@ model ApiKey {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
 }
 
 // ── Security: Audit logs ──
@@ -228,6 +257,8 @@ model AuditLog {
   metadata    Json?
   createdAt   DateTime @default(now())
   user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@schema("public")
 }
 
 // ── Security: Rate limiting ──
@@ -240,6 +271,7 @@ model RateLimit {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, endpoint])
+  @@schema("public")
 }
 
 // ── Admin: Refunds ──
@@ -252,4 +284,6 @@ model Refund {
   status      String   @default("pending")
   createdAt   DateTime @default(now())
   processedAt DateTime?
+
+  @@schema("public")
 }
