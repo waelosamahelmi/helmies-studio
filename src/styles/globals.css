@@ -2516,12 +2516,18 @@
   max-width: 600px;
   border-radius: 1rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: resultReveal 0.6s cubic-bezier(0.32, 0.72, 0, 1) both;
 }
 .studio-result__video {
   width: 100%;
   max-width: 800px;
   border-radius: 1rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: resultReveal 0.6s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+@keyframes resultReveal {
+  from { opacity: 0; filter: blur(12px); transform: scale(0.96); }
+  to { opacity: 1; filter: blur(0); transform: scale(1); }
 }
 .studio-result__meta {
   display: flex;
@@ -3708,6 +3714,50 @@
   color: #ff6b6b;
   text-align: center;
 }
+.studio__topup-packs {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── Gallery skeleton shimmer ── */
+.gallery-skeleton {
+  border-radius: 1.25rem;
+  overflow: hidden;
+  aspect-ratio: 1;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--color-hairline);
+  animation: skeletonPulse 1.8s ease-in-out infinite;
+}
+.gallery-skeleton__inner {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.03) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: skeletonShimmer 1.8s ease-in-out infinite;
+}
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+@keyframes skeletonShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Magnetic hover on primary buttons ── */
+.btn-primary {
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1), box-shadow 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(255, 27, 107, 0.25);
+}
+.btn-primary:active {
+  transform: scale(0.97);
+}
 
 /* ============================================================ */
 /* SETTINGS PAGE                                                 */
@@ -4466,6 +4516,50 @@
   background: rgba(0,0,0,0.5);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+}
+
+/* ── Auth Modal ── */
+.auth-modal__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 1rem;
+}
+.auth-modal__card {
+  width: 100%;
+  max-width: 420px;
+  padding: 0.75rem;
+}
+.auth-modal__close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.3s ease;
+}
+.auth-modal__close:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.auth-modal__close svg {
+  width: 1rem;
+  height: 1rem;
 }
 
 /* ── Mobile: new components ── */

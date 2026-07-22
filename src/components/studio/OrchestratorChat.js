@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { IconBolt, IconArrowUpRight, IconSparkle, IconImage, IconVideo, IconMusic, IconCrown, IconClose } from "@/components/Icons";
 import { useToast } from "@/components/ToastProvider";
+import { apiFetch } from "@/lib/client-fetch";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -143,7 +144,7 @@ export default function OrchestratorChat() {
     setInput("");
 
     try {
-      const res = await fetch("/api/agent/plan", {
+      const res = await apiFetch("/api/agent/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: userMsg, stream: true }),
@@ -222,30 +223,68 @@ export default function OrchestratorChat() {
     setStepCards(plan.steps.map((s, i) => ({ ...s, index: i, status: "pending", output: null })));
 
     try {
-      const res = await fetch("/api/agent/run", {
+      const res = await apiFetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: input || messages[messages.length - 1]?.content || "" }),
+        body: JSON.stringify({ message: input || messages[messages.length - 1]?.content || "", stream: true }),
       });
-      const data = await res.json();
 
-      if (data.success && data.stepResults) {
-        const updated = plan.steps.map((s, i) => {
-          const sr = data.stepResults[i];
-          return {
-            ...s,
-            index: i,
-            status: sr?.status || "failed",
-            output: data.outputs?.[i] || null,
-          };
-        });
-        setStepCards(updated);
-        setMessages((m) => [...m, {
-          role: "assistant",
-          content: `Done! ${data.stepResults.filter((s) => s.status === "completed").length}/${data.stepResults.length} steps completed. ${data.creditsUsed} credits used.`,
-        }]);
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("text/event-stream")) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let finalResult = null;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n").filter(l => l.startsWith("data: "));
+
+          for (const line of lines) {
+            const data = line.slice(6).trim();
+            if (!data) continue;
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.type === "step_start") {
+                setStepCards((prev) => prev.map((s) =>
+                  s.index === parsed.step - 1 ? { ...s, status: "running" } : s
+                ));
+              } else if (parsed.type === "step_complete") {
+                setStepCards((prev) => prev.map((s) =>
+                  s.index === parsed.step - 1 ? { ...s, status: parsed.status, output: parsed.output } : s
+                ));
+              } else if (parsed.type === "run_complete") {
+                finalResult = parsed;
+              }
+            } catch {}
+          }
+        }
+
+        if (finalResult?.success) {
+          setMessages((m) => [...m, {
+            role: "assistant",
+            content: `Done! ${finalResult.stepResults.filter((s) => s.status === "completed").length}/${finalResult.stepResults.length} steps completed. ${finalResult.creditsUsed} credits used.`,
+          }]);
+        } else if (finalResult) {
+          setMessages((m) => [...m, { role: "assistant", content: `Failed: ${finalResult.error}` }]);
+        }
       } else {
-        setMessages((m) => [...m, { role: "assistant", content: `Failed: ${data.error}` }]);
+        const data = await res.json();
+        if (data.success && data.stepResults) {
+          const updated = plan.steps.map((s, i) => {
+            const sr = data.stepResults[i];
+            return { ...s, index: i, status: sr?.status || "failed", output: data.outputs?.[i] || null };
+          });
+          setStepCards(updated);
+          setMessages((m) => [...m, {
+            role: "assistant",
+            content: `Done! ${data.stepResults.filter((s) => s.status === "completed").length}/${data.stepResults.length} steps completed. ${data.creditsUsed} credits used.`,
+          }]);
+        } else {
+          setMessages((m) => [...m, { role: "assistant", content: `Failed: ${data.error}` }]);
+        }
       }
       setPlan(null);
     } catch (e) {

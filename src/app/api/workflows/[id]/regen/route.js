@@ -4,7 +4,7 @@ import { regenerateStep } from "@/lib/workflows";
 
 export async function POST(req, { params }) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { stepIndex, newParams } = await req.json();

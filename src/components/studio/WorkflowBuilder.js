@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { IconBolt, IconArrowUpRight, IconFilm, IconImage, IconVideo, IconMusic, IconCrown } from "@/components/Icons";
+import { apiFetch } from "@/lib/client-fetch";
 
 const EASE = [0.32, 0.72, 0, 1];
 const AGENT_OPTIONS = [
@@ -121,7 +122,7 @@ export default function WorkflowBuilder() {
     setResult(null);
     setAssembledUrl(null);
     try {
-      const res = await fetch(`/api/workflows/${wfId}/run`, {
+      const res = await apiFetch(`/api/workflows/${wfId}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inputs: {} }),
@@ -141,7 +142,7 @@ export default function WorkflowBuilder() {
     if (videoUrls.length === 0) return;
     setAssembling(true);
     try {
-      const res = await fetch("/api/assemble", {
+      const res = await apiFetch("/api/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ urls: videoUrls }),

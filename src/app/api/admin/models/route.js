@@ -14,9 +14,9 @@ const ALL_MODELS = [
   ...AUDIO_MODELS.map((m) => ({ ...m, category: "audio" })),
 ];
 
-export async function GET() {
+export async function GET(req) {
   try {
-    await requireAdmin();
+    await requireAdmin(req);
     const pricing = await prisma.modelPricing.findMany();
     const pricingMap = new Map(pricing.map((p) => [p.modelId, p]));
 
@@ -42,7 +42,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    await requireAdmin();
+    await requireAdmin(req);
     const { modelId, modelType, providerName, providerCost, creditsCost, isActive } = await req.json();
 
     await prisma.modelPricing.upsert({
@@ -59,7 +59,7 @@ export async function POST(req) {
 
 export async function DELETE(req) {
   try {
-    await requireAdmin();
+    await requireAdmin(req);
     const { modelId } = await req.json();
     await prisma.modelPricing.delete({ where: { modelId } }).catch(() => {});
     return NextResponse.json({ success: true });

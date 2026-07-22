@@ -5,6 +5,7 @@ import { CINEMA_CAMERAS, CINEMA_LENS, CINEMA_FOCAL, CINEMA_APERTURE } from "@/li
 import { IconBolt, IconArrowUpRight, IconCamera } from "@/components/Icons";
 import RichSelect from "@/components/studio/RichSelect";
 import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
+import { apiFetch } from "@/lib/client-fetch";
 
 const ASPECT_RATIOS = ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"];
 const RESOLUTIONS = ["1k", "2k", "4k"];
@@ -34,7 +35,7 @@ export default function CinemaStudio() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.url) setImageUrl(data.url);
     } catch {}

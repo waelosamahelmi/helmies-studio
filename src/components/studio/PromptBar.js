@@ -26,32 +26,40 @@ export default function PromptBar({ activeTab }) {
   };
 
   return (
-    <div className={`studio__prompt-bar ${focused ? "studio__prompt-bar--focused" : ""}`}>
+    <motion.div
+      className={`studio__prompt-bar ${focused ? "studio__prompt-bar--focused" : ""}`}
+      layout
+      transition={{ duration: 0.35, ease: EASE }}
+    >
       <div className="studio__prompt-bar-inner">
-        <input
+        <motion.input
           className="studio__prompt-input"
           placeholder={`Describe what you want to create in ${activeTab}...`}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               handleSubmit();
             }
           }}
+          layout
+          transition={{ duration: 0.35, ease: EASE }}
         />
         <AnimatePresence>
           {focused && (
             <motion.button
               className="btn btn-primary btn-sm"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              transition={{ duration: 0.2, ease: EASE }}
+              initial={{ opacity: 0, scale: 0.9, x: 8 }}
+              animate={{ opacity: 1, scale: 1, x: 0 }}
+              exit={{ opacity: 0, scale: 0.9, x: 8 }}
+              transition={{ duration: 0.25, ease: EASE }}
               onClick={handleSubmit}
               disabled={!prompt.trim()}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
             >
               Generate
               <span className="btn__icon"><IconBolt /></span>
@@ -62,6 +70,6 @@ export default function PromptBar({ activeTab }) {
           <span className="studio__prompt-hint">Enter ↵</span>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

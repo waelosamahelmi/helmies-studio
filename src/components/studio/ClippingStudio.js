@@ -3,6 +3,7 @@
 import { useState, useRef } from "react";
 import { IconBolt, IconArrowUpRight, IconCut } from "@/components/Icons";
 import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
+import { apiFetch } from "@/lib/client-fetch";
 
 const ASPECT_RATIOS = ["9:16", "16:9", "1:1", "4:3", "3:4"];
 
@@ -20,7 +21,7 @@ export default function ClippingStudio() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.url) setVideoUrl(data.url);
     } catch {}

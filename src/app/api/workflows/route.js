@@ -4,7 +4,7 @@ import { getUserWorkflows, createWorkflow, getTemplateWorkflows, getPublishedWor
 
 export async function GET(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
@@ -21,7 +21,7 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { name, description, steps } = await req.json();

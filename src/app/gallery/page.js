@@ -192,11 +192,12 @@ export default function GalleryPage() {
         </div>
 
         {loading ? (
-          <div className="bezel" style={{ padding: "4rem 2rem", textAlign: "center" }}>
-            <div className="bezel__core" style={{ padding: "3rem 2rem" }}>
-              <div className="studio-loading__spinner mx-auto mb-4" />
-              <p className="text-sm" style={{ color: "rgba(242,242,247,0.5)" }}>Loading your creations...</p>
-            </div>
+          <div className="masonry">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="gallery-skeleton" style={{ animationDelay: `${i * 0.08}s` }}>
+                <div className="gallery-skeleton__inner" />
+              </div>
+            ))}
           </div>
         ) : filtered.length === 0 ? (
           <div className="bezel" style={{ padding: "4rem 2rem", textAlign: "center" }}>

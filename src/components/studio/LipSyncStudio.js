@@ -5,6 +5,7 @@ import { LIPSYNC_MODELS } from "@/lib/models";
 import RichModelPicker from "@/components/studio/RichModelPicker";
 import { IconBolt, IconArrowUpRight, IconMic } from "@/components/Icons";
 import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
+import { apiFetch } from "@/lib/client-fetch";
 
 export default function LipSyncStudio() {
   const [model, setModel] = useState(LIPSYNC_MODELS[0]);
@@ -25,7 +26,7 @@ export default function LipSyncStudio() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.url) setter(data.url);
     } catch {}

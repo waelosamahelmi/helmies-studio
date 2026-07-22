@@ -4,7 +4,7 @@ import { getMemories, createMemory, deleteMemory } from "@/lib/memory";
 
 export async function GET(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(req.url);
@@ -17,7 +17,7 @@ export async function GET(req) {
 
 export async function POST(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { type, name, data } = await req.json();
@@ -32,7 +32,7 @@ export async function POST(req) {
 
 export async function DELETE(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id } = await req.json();

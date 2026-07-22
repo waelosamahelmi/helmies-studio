@@ -7,6 +7,7 @@ import RichModelPicker from "@/components/studio/RichModelPicker";
 import StagedProgress from "@/components/studio/StagedProgress";
 import RichIdle from "@/components/studio/RichIdle";
 import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
+import { apiFetch } from "@/lib/client-fetch";
 
 export default function VideoStudio() {
   const [model, setModel] = useState(VIDEO_MODELS[0]);
@@ -34,7 +35,7 @@ export default function VideoStudio() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.url) setImageUrl(data.url);
     } catch {}

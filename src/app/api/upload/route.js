@@ -4,7 +4,7 @@ import { uploadFile } from "@/lib/generation";
 
 export async function POST(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

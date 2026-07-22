@@ -4,7 +4,7 @@ import { executeWorkflow, deleteWorkflow, updateWorkflow, publishWorkflow } from
 
 export async function POST(req, { params }) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { inputs } = await req.json();
@@ -17,7 +17,7 @@ export async function POST(req, { params }) {
 
 export async function DELETE(req, { params }) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     await deleteWorkflow(params.id, user.id);
@@ -29,7 +29,7 @@ export async function DELETE(req, { params }) {
 
 export async function PATCH(req, { params }) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();

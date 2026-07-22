@@ -13,7 +13,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
   try {
     let user = await authenticateApiKey(req);
     if (!user) {
-      user = await getCurrentUserWithCredits();
+      user = await getCurrentUserWithCredits(req);
     }
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -132,7 +132,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         data: { status: "completed", outputUrl: proxiedUrl, requestId: result.requestId || null },
       });
 
-      await logAudit("generation_complete", tool, generation.id, { model, provider: successfulProvider.name });
+      await logAudit("generation_complete", tool, generation.id, { model, provider: successfulProvider.name }, req);
 
       return NextResponse.json({
         success: true,

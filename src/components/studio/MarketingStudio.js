@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { MARKETING_AVATARS } from "@/lib/models";
 import { IconBolt, IconArrowUpRight, IconMegaphone } from "@/components/Icons";
 import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
+import { apiFetch } from "@/lib/client-fetch";
 
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1"];
 const DURATIONS = [5, 10, 15];
@@ -26,7 +27,7 @@ export default function MarketingStudio() {
       const formData = new FormData();
       formData.append("file", file);
       try {
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const res = await apiFetch("/api/upload", { method: "POST", body: formData });
         const data = await res.json();
         if (data.url) uploaded.push(data.url);
       } catch {}

@@ -16,7 +16,7 @@ const PRICE_MAP = {
 
 export async function POST(req) {
   try {
-    const user = await getCurrentUserWithCredits();
+    const user = await getCurrentUserWithCredits(req);
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

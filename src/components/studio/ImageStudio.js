@@ -9,6 +9,8 @@ import RichModelPicker from "@/components/studio/RichModelPicker";
 import StagedProgress from "@/components/studio/StagedProgress";
 import BeforeAfterSlider from "@/components/studio/BeforeAfterSlider";
 import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
+import Link from "next/link";
+import { apiFetch } from "@/lib/client-fetch";
 
 export default function ImageStudio() {
   const [model, setModel] = useState(IMAGE_MODELS[0]);
@@ -19,7 +21,7 @@ export default function ImageStudio() {
   const [height, setHeight] = useState(1024);
   const [imageUrl, setImageUrl] = useState("");
   const [seed, setSeed] = useState(-1);
-  const { cost, affordable } = useCreditCost("image", model.id, { aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl });
+  const { cost, affordable, shortfall, topUpPacks } = useCreditCost("image", model.id, { aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl });
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
   const fileRef = useRef(null);
 
@@ -43,7 +45,7 @@ export default function ImageStudio() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.url) setImageUrl(data.url);
     } catch {}
@@ -131,7 +133,20 @@ export default function ImageStudio() {
             <>Generate{cost ? ` — ${cost} credits` : ""}<span className="btn__icon"><IconBolt /></span></>
           )}
         </button>
-        {!affordable && cost && <p className="studio__cost-warning">Insufficient credits. Need {cost}.</p>}
+        {!affordable && cost && (
+          <div className="studio__cost-warning">
+            <p>Insufficient credits. Need {cost} (shortfall: {shortfall}).</p>
+            {topUpPacks.length > 0 && (
+              <div className="studio__topup-packs">
+                {topUpPacks.slice(0, 2).map((p) => (
+                  <Link key={p.id} href={`/pricing?pack=${p.id}`} className="btn btn-sm btn-secondary">
+                    Top up {p.credits} credits — {p.price}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="studio-panel__right">

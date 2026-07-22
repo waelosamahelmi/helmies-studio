@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import CommandPalette from "@/components/studio/CommandPalette";
+import { apiFetch } from "@/lib/client-fetch";
 import ImageStudio from "@/components/studio/ImageStudio";
 import VideoStudio from "@/components/studio/VideoStudio";
 import LipSyncStudio from "@/components/studio/LipSyncStudio";
@@ -68,7 +69,7 @@ export default function StudioPage({ initialTool }) {
   useEffect(() => {
     const poll = async () => {
       try {
-        const res = await fetch("/api/generations/status?limit=50");
+        const res = await apiFetch("/api/generations/status?limit=50");
         const data = await res.json();
         if (data.generations) {
           setPendingCount(data.generations.filter((g) => g.status === "pending").length);

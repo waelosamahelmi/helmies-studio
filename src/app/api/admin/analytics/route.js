@@ -3,9 +3,9 @@ import { requireAdmin } from "@/lib/security";
 import { CREDIT_TO_EUR } from "@/lib/pricing-engine";
 import prisma from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req) {
   try {
-    await requireAdmin();
+    await requireAdmin(req);
     const [totalUsers, totalGenerations, completedGen, failedGen, totalCreditsUsed, totalRevenue, totalProviderCost] = await Promise.all([
       prisma.user.count(),
       prisma.generation.count(),

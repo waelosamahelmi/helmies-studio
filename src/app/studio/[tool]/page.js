@@ -55,8 +55,8 @@ const TOOLS = {
 
 const VALID_TOOLS = Object.keys(TOOLS);
 
-export function generateMetadata({ params }) {
-  const { tool } = params;
+export async function generateMetadata({ params }) {
+  const { tool } = await params;
   if (!VALID_TOOLS.includes(tool)) {
     return { title: "Studio | Helmies Studio" };
   }
@@ -86,8 +86,8 @@ export function generateMetadata({ params }) {
   };
 }
 
-export default function StudioToolPage({ params }) {
-  const { tool } = params;
+export default async function StudioToolPage({ params }) {
+  const { tool } = await params;
   const initialTool = VALID_TOOLS.includes(tool) ? tool : "image";
   return <StudioPage initialTool={initialTool} />;
 }

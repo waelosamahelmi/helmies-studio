@@ -3,9 +3,9 @@ import { getCurrentUser } from "@/lib/session";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
 
-export async function GET() {
+export async function GET(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const keys = await prisma.apiKey.findMany({
@@ -21,7 +21,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { name } = await req.json();
@@ -43,7 +43,7 @@ export async function POST(req) {
 
 export async function DELETE(req) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { id } = await req.json();

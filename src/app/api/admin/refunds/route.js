@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
 import prisma from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req) {
   try {
-    await requireAdmin();
+    await requireAdmin(req);
     const refunds = await prisma.refund.findMany({
       orderBy: { createdAt: "desc" },
       take: 100,
@@ -17,7 +17,7 @@ export async function GET() {
 
 export async function POST(req) {
   try {
-    await requireAdmin();
+    await requireAdmin(req);
     const { userId, generationId, amount, reason } = await req.json();
 
     const refund = await prisma.refund.create({
@@ -28,7 +28,7 @@ export async function POST(req) {
     await prisma.creditTransaction.create({
       data: { userId, amount, type: "admin_refund", description: reason || "Admin refund" },
     });
-    await logAudit("admin_refund", "user", userId, { amount, reason });
+    await logAudit("admin_refund", "user", userId, { amount, reason }, req);
 
     return NextResponse.json({ success: true, refund });
   } catch (e) {

@@ -12,8 +12,8 @@ const RATE_LIMITS = {
 };
 
 // ── RBAC ──
-export async function requireAdmin() {
-  const user = await getCurrentUser();
+export async function requireAdmin(req) {
+  const user = await getCurrentUser(req);
   if (!user) throw new Error("Unauthorized");
   const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true } });
   if (dbUser?.role !== "admin") throw new Error("Forbidden: admin access required");
@@ -76,9 +76,8 @@ export function validateImageUrl(url) {
 }
 
 // ── Audit logging ──
-export async function logAudit(action, resource, resourceId, metadata = {}) {
-  const user = await getCurrentUser().catch(() => null);
-  const req = typeof window !== "undefined" ? null : null;
+export async function logAudit(action, resource, resourceId, metadata = {}, req) {
+  const user = await (req ? getCurrentUser(req) : getCurrentUser()).catch(() => null);
   await prisma.auditLog.create({
     data: {
       userId: user?.id || null,

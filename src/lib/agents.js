@@ -338,7 +338,85 @@ async function executeCodingStep(params) {
   return code;
 }
 
-// ── Execute full agent run with credit management ──
+// ── Execute full agent run with SSE streaming ──
+export async function executeAgentRunStream(userId, userMessage, context = {}) {
+  const abuse = await detectAbuse(userId);
+  if (abuse.flagged) {
+    return { stream: null, error: `Request blocked: ${abuse.reason}` };
+  }
+
+  const plan = await planTask(userMessage, context);
+
+  const agentRun = await prisma.agentRun.create({
+    data: {
+      userId,
+      agentType: "orchestrator",
+      task: userMessage,
+      status: "executing",
+      creditsEstimated: plan.estimate?.total || 0,
+      steps: plan.steps,
+    },
+  });
+
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
+  if (user.credits < plan.estimate.total) {
+    await prisma.agentRun.update({
+      where: { id: agentRun.id },
+      data: { status: "failed", error: "Insufficient credits" },
+    });
+    return { stream: null, error: "Insufficient credits", creditsNeeded: plan.estimate.total, creditsAvailable: user.credits };
+  }
+
+  await debitCredits(userId, plan.estimate.total, `Agent run: ${plan.summary}`);
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const outputs = [];
+      const stepResults = [];
+      let totalCreditsUsed = plan.estimate.total;
+
+      try {
+        for (let i = 0; i < plan.steps.length; i++) {
+          const step = plan.steps[i];
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "step_start", step: i + 1, agent: step.agent, task: step.task })}\n\n`));
+
+          try {
+            const output = await executeStepWithRetry(step, outputs, 0);
+            outputs.push(output);
+            const stepResult = { step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output, retried: false };
+            stepResults.push(stepResult);
+
+            if (step.agent === "image" || step.agent === "video" || step.agent === "audio" || step.agent === "marketing") {
+              const proxiedOutput = typeof output === "string" ? `/api/media/proxy?url=${encodeURIComponent(output)}` : null;
+              await prisma.generation.create({
+                data: { userId, tool: step.agent, model: step.params?.model || step.agent, prompt: step.params?.prompt || step.task || "", params: step.params, outputUrl: proxiedOutput, status: "completed", creditsUsed: plan.estimate.breakdown[i]?.credits || 0 },
+              });
+            }
+
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "step_complete", step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output : null, creditsUsed: plan.estimate.breakdown[i]?.credits || 0 })}\n\n`));
+          } catch (stepError) {
+            stepResults.push({ step: i + 1, agent: step.agent, status: "failed", error: stepError.message });
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "step_complete", step: i + 1, agent: step.agent, status: "failed", error: stepError.message })}\n\n`));
+            if (i === 0) throw stepError;
+          }
+        }
+
+        const assembled = assembleOutputs(outputs, plan.steps);
+        await prisma.agentRun.update({ where: { id: agentRun.id }, data: { status: "completed", creditsUsed: totalCreditsUsed, result: { outputs, stepResults, summary: plan.summary, assembled } } });
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "run_complete", success: true, outputs, stepResults, assembled, summary: plan.summary, creditsUsed: totalCreditsUsed })}\n\n`));
+      } catch (error) {
+        const refundAmount = plan.estimate.total - (stepResults.filter(s => s.status === "completed").length * (plan.estimate.total / plan.steps.length));
+        await creditUser(userId, Math.ceil(refundAmount), "agent_refund", `Refund for failed agent run`);
+        await prisma.agentRun.update({ where: { id: agentRun.id }, data: { status: "failed", error: error.message, result: { stepResults } } });
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "run_complete", success: false, error: error.message, stepResults })}\n\n`));
+      }
+      controller.close();
+    },
+  });
+
+  return { stream, plan };
+}
 export async function executeAgentRun(userId, userMessage, context = {}) {
   const abuse = await detectAbuse(userId);
   if (abuse.flagged) {

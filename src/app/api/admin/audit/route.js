@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/security";
 import prisma from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req) {
   try {
-    await requireAdmin();
+    await requireAdmin(req);
     const logs = await prisma.auditLog.findMany({
       take: 200,
       orderBy: { createdAt: "desc" },

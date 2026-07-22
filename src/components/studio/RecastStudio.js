@@ -5,6 +5,7 @@ import { RECAST_MODELS } from "@/lib/models";
 import RichModelPicker from "@/components/studio/RichModelPicker";
 import { IconBolt, IconArrowUpRight, IconUsers } from "@/components/Icons";
 import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
+import { apiFetch } from "@/lib/client-fetch";
 
 export default function RecastStudio() {
   const [model, setModel] = useState(RECAST_MODELS[0]);
@@ -22,7 +23,7 @@ export default function RecastStudio() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.url) setter(data.url);
     } catch {}

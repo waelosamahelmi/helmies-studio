@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useToast } from "@/components/ToastProvider";
+import { apiFetch } from "@/lib/client-fetch";
 
 export function useAsyncGeneration() {
   const { notifyGeneration } = useToast();
@@ -29,7 +30,7 @@ export function useAsyncGeneration() {
     startTimer();
 
     try {
-      const res = await fetch("/api/generate/async", {
+      const res = await apiFetch("/api/generate/async", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tool, model, ...params }),
@@ -46,7 +47,7 @@ export function useAsyncGeneration() {
       const pollUrl = data.pollUrl;
       const poll = async () => {
         try {
-          const statusRes = await fetch(pollUrl);
+          const statusRes = await apiFetch(pollUrl);
           const statusData = await statusRes.json();
 
           if (statusData.status === "completed") {
