@@ -3,7 +3,15 @@ import Stripe from "stripe";
 import prisma from "@/lib/prisma";
 import { SUBSCRIPTION_CREDITS, PLAN_IDS } from "@/lib/credits";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-12-18.acacia" });
+let stripe;
+function getStripe() {
+  if (!stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error("Stripe not configured");
+    stripe = new Stripe(key, { apiVersion: "2024-12-18.acacia" });
+  }
+  return stripe;
+}
 
 export async function POST(req) {
   const sig = req.headers.get("stripe-signature");
@@ -11,7 +19,7 @@ export async function POST(req) {
 
   let event;
   try {
-    event = stripe.webhooks.constructEvent(
+    event = getStripe().webhooks.constructEvent(
       body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
@@ -68,7 +76,7 @@ export async function POST(req) {
         const invoice = event.data.object;
         const subscriptionId = invoice.subscription;
         if (subscriptionId) {
-          const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+          const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
           const userId = subscription.metadata?.userId;
           const plan = subscription.metadata?.plan || PLAN_IDS[subscription.items?.data?.[0]?.price?.id];
           const credits = SUBSCRIPTION_CREDITS[plan] || 0;

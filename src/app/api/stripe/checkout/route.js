@@ -3,16 +3,24 @@ import Stripe from "stripe";
 import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-12-18.acacia" });
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("Stripe not configured");
+  return new Stripe(key, { apiVersion: "2024-12-18.acacia" });
+}
 
-const PRICE_MAP = {
-  starter: process.env.STRIPE_PRICE_STARTER,
-  starter_yearly: process.env.STRIPE_PRICE_STARTER_YEARLY,
-  studio: process.env.STRIPE_PRICE_STUDIO,
-  studio_yearly: process.env.STRIPE_PRICE_STUDIO_YEARLY,
-  pro: process.env.STRIPE_PRICE_PRO,
-  pro_yearly: process.env.STRIPE_PRICE_PRO_YEARLY,
-};
+function getPriceId(plan, yearly) {
+  const key = yearly ? `${plan}_yearly` : plan;
+  const prices = {
+    starter: process.env.STRIPE_PRICE_STARTER,
+    starter_yearly: process.env.STRIPE_PRICE_STARTER_YEARLY,
+    studio: process.env.STRIPE_PRICE_STUDIO,
+    studio_yearly: process.env.STRIPE_PRICE_STUDIO_YEARLY,
+    pro: process.env.STRIPE_PRICE_PRO,
+    pro_yearly: process.env.STRIPE_PRICE_PRO_YEARLY,
+  };
+  return prices[key];
+}
 
 export async function POST(req) {
   try {
@@ -22,11 +30,12 @@ export async function POST(req) {
     }
 
     const { plan, yearly } = await req.json();
-    const priceKey = yearly ? `${plan}_yearly` : plan;
-    const priceId = PRICE_MAP[priceKey];
+    const priceId = getPriceId(plan, yearly);
     if (!priceId) {
       return NextResponse.json({ error: "Invalid plan or not configured" }, { status: 400 });
     }
+
+    const stripe = getStripe();
 
     let subscription = await prisma.subscription.findFirst({
       where: { userId: user.id },

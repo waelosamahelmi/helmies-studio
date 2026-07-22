@@ -4,7 +4,15 @@ import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-12-18.acacia" });
+let stripe;
+function getStripe() {
+  if (!stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error("Stripe not configured");
+    stripe = new Stripe(key, { apiVersion: "2024-12-18.acacia" });
+  }
+  return stripe;
+}
 
 const PACKS_BY_ID = Object.fromEntries(CREDIT_PACKS.map((p) => {
   const priceEur = parseFloat(p.price.replace("€", ""));
@@ -44,7 +52,7 @@ export async function POST(req) {
     if (subscription?.stripeCustomerId) {
       customerId = subscription.stripeCustomerId;
     } else {
-      const customer = await stripe.customers.create({
+      const customer = await getStripe().customers.create({
         email: user.email,
         metadata: { userId: user.id },
       });
@@ -55,7 +63,7 @@ export async function POST(req) {
       });
     }
 
-    const session = await stripe.checkout.sessions.create({
+    const session = await getStripe().checkout.sessions.create({
       customer: customerId,
       mode: "payment",
       line_items: [

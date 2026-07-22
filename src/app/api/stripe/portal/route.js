@@ -3,7 +3,15 @@ import Stripe from "stripe";
 import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+let stripe;
+function getStripe() {
+  if (!stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) throw new Error("Stripe not configured");
+    stripe = new Stripe(key);
+  }
+  return stripe;
+}
 
 export async function POST(req) {
   try {
@@ -20,7 +28,7 @@ export async function POST(req) {
       return NextResponse.json({ error: "No subscription found" }, { status: 400 });
     }
 
-    const session = await stripe.billingPortal.sessions.create({
+    const session = await getStripe().billingPortal.sessions.create({
       customer: subscription.stripeCustomerId,
       return_url: `${process.env.NEXTAUTH_URL}/pricing`,
     });
