@@ -15,7 +15,7 @@ function getStripe() {
 
 export async function POST(req) {
   try {
-    const user = await getCurrentUserWithCredits(req);
+    const user = await getCurrentUserWithCredits();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
