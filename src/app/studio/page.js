@@ -3,23 +3,12 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import Navbar from "@/components/Navbar";
 import CommandPalette from "@/components/studio/CommandPalette";
 import { apiFetch } from "@/lib/client-fetch";
-import ImageStudio from "@/components/studio/ImageStudio";
-import VideoStudio from "@/components/studio/VideoStudio";
-import LipSyncStudio from "@/components/studio/LipSyncStudio";
-import AudioStudio from "@/components/studio/AudioStudio";
-import CinemaStudio from "@/components/studio/CinemaStudio";
-import VibeMotionStudio from "@/components/studio/VibeMotionStudio";
-import ClippingStudio from "@/components/studio/ClippingStudio";
-import MarketingStudio from "@/components/studio/MarketingStudio";
-import RecastStudio from "@/components/studio/RecastStudio";
-import AiInfluencerStudio from "@/components/studio/AiInfluencerStudio";
+import ChatStudio from "@/components/studio/ChatStudio";
 import OrchestratorChat from "@/components/studio/OrchestratorChat";
 import WorkflowBuilder from "@/components/studio/WorkflowBuilder";
 import ProjectMemory from "@/components/studio/ProjectMemory";
-import PromptBar from "@/components/studio/PromptBar";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
@@ -98,10 +87,19 @@ export default function StudioPage({ initialTool }) {
 
   return (
     <>
-      <Navbar />
       <div className="grain" aria-hidden="true" />
 
       <div className="studio">
+        {/* Mobile studio header — logo + credits */}
+        <div className="studio__mobile-header">
+          <Link href="/" className="studio__mobile-logo">
+            <img src="/ico.svg" alt="" />
+            <span>Studio</span>
+          </Link>
+          <Link href="/settings" className="studio__mobile-credits">
+            <IconBolt />
+          </Link>
+        </div>
           {/* Mobile backdrop */}
           <AnimatePresence>
             {mobileNavOpen && (
@@ -203,7 +201,24 @@ export default function StudioPage({ initialTool }) {
 
         {/* Main */}
         <main className="studio__main">
-          {/* Mobile hamburger toggle */}
+          {/* Mobile horizontal tabs */}
+          <div className="studio__tabs">
+            {TOOLS.filter(t => t.id !== "memory").map((t) => {
+              const TabIcon = t.Icon;
+              return (
+                <button
+                  key={t.id}
+                  className={`studio__tab ${activeTab === t.id ? "studio__tab--active" : ""}`}
+                  onClick={() => setActiveTab(t.id)}
+                >
+                  <TabIcon />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Mobile hamburger toggle — hidden, replaced by tabs */}
           <button
             className="studio__hamburger md:hidden"
             onClick={() => setMobileNavOpen((v) => !v)}
@@ -225,46 +240,12 @@ export default function StudioPage({ initialTool }) {
                 {activeTab === "orchestrator" && <OrchestratorChat />}
                 {activeTab === "workflows" && <WorkflowBuilder />}
                 {activeTab === "memory" && <ProjectMemory />}
-                {activeTab === "image" && <ImageStudio />}
-                {activeTab === "video" && <VideoStudio />}
-                {activeTab === "lipsync" && <LipSyncStudio />}
-                {activeTab === "audio" && <AudioStudio />}
-                {activeTab === "cinema" && <CinemaStudio />}
-                {activeTab === "vibe-motion" && <VibeMotionStudio />}
-                {activeTab === "clipping" && <ClippingStudio />}
-                {activeTab === "marketing" && <MarketingStudio />}
-                {activeTab === "body-swap" && <RecastStudio />}
-                {activeTab === "influencer" && <AiInfluencerStudio />}
-                {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && activeTab !== "image" && activeTab !== "video" && activeTab !== "lipsync" && activeTab !== "audio" && activeTab !== "cinema" && activeTab !== "vibe-motion" && activeTab !== "clipping" && activeTab !== "marketing" && activeTab !== "body-swap" && activeTab !== "influencer" && (
-                  <div className="bezel" style={{ color: activeTool.color }}>
-                    <div className="bezel__core">
-                      <div className="studio__empty">
-                        <div className="studio__empty-icon">
-                          <activeTool.Icon />
-                        </div>
-                        <h3>{activeTool.label} Studio</h3>
-                        <p>
-                          The {activeTool.label.toLowerCase()} studio is coming soon.
-                          <br />
-                          {activeTool.desc}
-                        </p>
-                        <div className="studio__empty-cta">
-                          <Link href="/pricing" className="btn btn-secondary">
-                            Upgrade for early access
-                            <span className="btn__icon"><IconArrowUpRight /></span>
-                          </Link>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && (
+                  <ChatStudio tool={activeTab} key={activeTab} />
                 )}
               </motion.div>
             </AnimatePresence>
           </div>
-
-          {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && (
-            <PromptBar activeTab={activeTab} />
-          )}
         </main>
       </div>
 

@@ -79,6 +79,9 @@ export const IconSearch = (p) => (
 export const IconDownload = (p) => (
   <svg {...base(p)}><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
 );
+export const IconSettings = (p) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></svg>
+);
 export const IconExternal = (p) => (
   <svg {...base(p)}><path d="M14 5h5v5M19 5l-9 9M19 13v6H5V5h6" /></svg>
 );
