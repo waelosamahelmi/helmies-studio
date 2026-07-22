@@ -206,6 +206,31 @@ export default function Navbar() {
                   <Link href={l.href} className="nav__overlay-link">{l.name}</Link>
                 </motion.div>
               ))}
+              {/* Studio tools (mobile only) */}
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 40 }}
+                transition={{ duration: 0.6, ease: EASE, delay: 0.08 * NAV_LINKS.length + 0.1 }}
+                className="mt-2 pt-4 border-t border-white/10"
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3 px-1">Studios</p>
+                <div className="grid grid-cols-2 gap-1">
+                  {TOOLS.map(({ id, label, Icon, color }) => (
+                    <Link
+                      key={id}
+                      href={`/studio/${id}`}
+                      className="flex items-center gap-2 p-2 rounded-xl hover:bg-white/[0.04] transition-colors duration-300"
+                      onClick={() => setMobileOpen(false)}
+                    >
+                      <span className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: `${color}15`, color }}>
+                        <Icon />
+                      </span>
+                      <span className="text-[12px] font-medium text-white/80 truncate">{label}</span>
+                    </Link>
+                  ))}
+                </div>
+              </motion.div>
               <motion.div
                 initial={{ opacity: 0, y: 40 }}
                 animate={{ opacity: 1, y: 0 }}

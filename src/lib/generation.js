@@ -1,4 +1,5 @@
 import { getProvider, brandError } from "@/lib/providers";
+import { wavespeedSyncImage } from "@/lib/wavespeed";
 
 const DEFAULT_PROVIDER = "wavespeed";
 
@@ -19,6 +20,7 @@ async function pollForResult(requestId, maxAttempts = 900, interval = 2000, prov
     try {
       const res = await fetch(pollUrl, {
         headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) {
         if (res.status >= 500) continue;
@@ -46,11 +48,12 @@ async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   const path = provider?.buildUrl ? provider.buildUrl(endpoint) : `/api/v1/${endpoint}`;
   const url = `${baseUrl}${path}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
-    body: JSON.stringify(rest),
-  });
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+      body: JSON.stringify(rest),
+      signal: AbortSignal.timeout(30000),
+    });
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(brandError(txt));
@@ -64,6 +67,17 @@ async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
 }
 
 export async function generateImage(params) {
+  const provider = params._provider;
+  const providerName = provider?.name || DEFAULT_PROVIDER;
+
+  if (providerName === "wavespeed" && process.env.WAVESPEED_KEY) {
+    try {
+      return await wavespeedSyncImage(params);
+    } catch {
+      // fall through to submit+poll
+    }
+  }
+
   const endpoint = params.endpoint || params.model;
   const payload = { prompt: params.prompt };
   if (params.aspect_ratio) payload.aspect_ratio = params.aspect_ratio;

@@ -19,9 +19,15 @@ export async function POST(req) {
       return NextResponse.json({ error: "Missing request_id" }, { status: 400 });
     }
 
-    const generation = await prisma.generation.findFirst({
+    let generation = await prisma.generation.findFirst({
       where: { requestId: request_id },
     });
+
+    if (!generation) {
+      generation = await prisma.generation.findFirst({
+        where: { params: { path: ["requestId"], equals: request_id } },
+      });
+    }
 
     if (!generation) {
       return NextResponse.json({ error: "Generation not found" }, { status: 404 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { IMAGE_MODELS } from "@/lib/models";
 import { IconBolt, IconArrowUpRight, IconImage } from "@/components/Icons";
 import { useCreditCost } from "@/components/studio/useCreditCost";
@@ -8,10 +8,9 @@ import RichIdle from "@/components/studio/RichIdle";
 import RichModelPicker from "@/components/studio/RichModelPicker";
 import StagedProgress from "@/components/studio/StagedProgress";
 import BeforeAfterSlider from "@/components/studio/BeforeAfterSlider";
-import { useToast } from "@/components/ToastProvider";
+import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
 
 export default function ImageStudio() {
-  const { notifyGeneration } = useToast();
   const [model, setModel] = useState(IMAGE_MODELS[0]);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("1:1");
@@ -20,54 +19,22 @@ export default function ImageStudio() {
   const [height, setHeight] = useState(1024);
   const [imageUrl, setImageUrl] = useState("");
   const [seed, setSeed] = useState(-1);
-  const [result, setResult] = useState(null);
   const { cost, affordable } = useCreditCost("image", model.id, { aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [elapsed, setElapsed] = useState(0);
+  const { loading, result, error, elapsed, submit } = useAsyncGeneration();
   const fileRef = useRef(null);
-  const timerRef = useRef(null);
 
-  useEffect(() => {
-    if (loading) {
-      setElapsed(0);
-      timerRef.current = setInterval(() => setElapsed((e) => e + 1), 1000);
-    } else {
-      clearInterval(timerRef.current);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [loading]);
-
-  const handleSubmit = async () => {
-    if (!prompt.trim()) { setError("Please enter a prompt"); return; }
-    setLoading(true);
-    setError("");
-    setResult(null);
-
-    try {
-      const res = await fetch("/api/generate/image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: model.id,
-          endpoint: model.endpoint || model.id,
-          prompt,
-          aspect_ratio: aspectRatio,
-          resolution,
-          width,
-          height,
-          image_url: imageUrl || undefined,
-          seed: seed !== -1 ? seed : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) setError(data.error || "Generation failed");
-      else { setResult(data); notifyGeneration("image", data.url); }
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+  const handleSubmit = () => {
+    if (!prompt.trim()) return;
+    submit("image", model.id, {
+      endpoint: model.endpoint || model.id,
+      prompt,
+      aspect_ratio: aspectRatio,
+      resolution,
+      width,
+      height,
+      image_url: imageUrl || undefined,
+      seed: seed !== -1 ? seed : undefined,
+    });
   };
 
   const handleUpload = async (e) => {
@@ -79,9 +46,7 @@ export default function ImageStudio() {
       const res = await fetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (data.url) setImageUrl(data.url);
-    } catch (e) {
-      setError("Upload failed: " + e.message);
-    }
+    } catch {}
   };
 
   return (

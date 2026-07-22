@@ -18,6 +18,7 @@ export async function GET() {
 
     const creditsUsed = totalCreditsUsed._sum.creditsUsed || 0;
     const creditsGranted = totalRevenue._sum.amount || 0;
+    const revenueEur = creditsGranted * CREDIT_TO_EUR;
     const providerCost = totalProviderCost._sum.providerCost || 0;
     const retailValue = creditsUsed * CREDIT_TO_EUR;
     const profit = retailValue - providerCost;
@@ -73,6 +74,7 @@ export async function GET() {
         failed: failedGen,
         creditsUsed,
         creditsGranted,
+        revenueEur,
         retailValue,
         providerCost,
         profit,

@@ -119,32 +119,10 @@ export function resolveEndpoint(model, providerName) {
 
 // ── Universal submit+poll ──
 export async function submitAndPoll(providerName, endpoint, payload, maxAttempts = 900, interval = 2000) {
-  let provider;
-  if (typeof providerName === "object" && providerName.name) {
-    provider = providerName;
-  } else {
-    provider = getProvider(providerName);
-  }
-  const key = provider.apiKey || provider.getKey();
-  const path = provider.buildUrl ? provider.buildUrl(endpoint) : `/api/v1/${endpoint}`;
-  const url = `${provider.baseUrl}${path}`;
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    const branded = brandError(txt);
-    throw new Error(branded);
-  }
-
-  const submitData = await res.json();
-  const requestId = submitData.request_id || submitData.id;
+  const { provider, requestId, submitData } = await submitOnly(providerName, endpoint, payload);
   if (!requestId) return submitData;
 
+  const key = provider.apiKey || provider.getKey();
   const pollUrl = provider.buildPollUrl
     ? provider.buildPollUrl(provider.baseUrl, requestId)
     : `${provider.baseUrl}/api/v1/predictions/${requestId}/result`;
@@ -154,6 +132,7 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
     try {
       const pollRes = await fetch(pollUrl, {
         headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(30000),
       });
       if (!pollRes.ok) {
         if (pollRes.status >= 500) continue;
@@ -169,6 +148,35 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
     }
   }
   throw new Error(BRANDED_ERRORS.timeout);
+}
+
+// ── Submit only (no polling) — returns requestId for webhook/async flows ──
+export async function submitOnly(providerName, endpoint, payload) {
+  let provider;
+  if (typeof providerName === "object" && providerName.name) {
+    provider = providerName;
+  } else {
+    provider = getProvider(providerName);
+  }
+  const key = provider.apiKey || provider.getKey();
+  const path = provider.buildUrl ? provider.buildUrl(endpoint) : `/api/v1/${endpoint}`;
+  const url = `${provider.baseUrl}${path}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(brandError(txt));
+  }
+
+  const submitData = await res.json();
+  const requestId = submitData.request_id || submitData.id;
+  return { provider, requestId, submitData };
 }
 
 // ── LLM completion (OpenRouter) ──

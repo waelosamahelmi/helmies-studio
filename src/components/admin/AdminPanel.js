@@ -16,9 +16,11 @@ export default function AdminPanel() {
   const [flags, setFlags] = useState([]);
   const [models, setModels] = useState([]);
   const [modelFilter, setModelFilter] = useState("all");
+  const [modelSearch, setModelSearch] = useState("");
   const [auditLogs, setAuditLogs] = useState([]);
   const [editingUser, setEditingUser] = useState(null);
   const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "WaveSpeed", providerCost: 0, creditsCost: 1 });
+  const [pricingSearch, setPricingSearch] = useState("");
   const [newProvider, setNewProvider] = useState({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true });
   const [newRefund, setNewRefund] = useState({ userId: "", amount: 0, reason: "" });
   const [toast, setToast] = useState(null);
@@ -220,15 +222,18 @@ export default function AdminPanel() {
                     <button key={c} className={`pill ${modelFilter === c ? "pill--active" : ""}`} onClick={() => setModelFilter(c)}>{c}</button>
                   ))}
                 </div>
+                <div className="admin__edit-row" style={{ marginTop: "0.5rem" }}>
+                  <input className="field-input" placeholder="Search models by name or ID..." value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} style={{ width: "100%" }} />
+                </div>
               </div>
               <div className="admin__models-count">
-                {models.filter((m) => modelFilter === "all" || m.category === modelFilter).length} models
+                {models.filter((m) => (modelFilter === "all" || m.category === modelFilter) && (!modelSearch.trim() || m.name?.toLowerCase().includes(modelSearch.toLowerCase()) || m.id?.toLowerCase().includes(modelSearch.toLowerCase()))).length} models
               </div>
               <div className="admin__table-wrap">
                 <table className="admin__table">
                   <thead><tr><th>Model</th><th>Provider</th><th>Category</th><th>Credits</th><th>Cost</th><th>Status</th><th></th></tr></thead>
                   <tbody>
-                    {models.filter((m) => modelFilter === "all" || m.category === modelFilter).map((m) => (
+                    {models.filter((m) => (modelFilter === "all" || m.category === modelFilter) && (!modelSearch.trim() || m.name?.toLowerCase().includes(modelSearch.toLowerCase()) || m.id?.toLowerCase().includes(modelSearch.toLowerCase()))).map((m) => (
                       <tr key={m.id}>
                         <td><strong>{m.name}</strong><br /><span style={{ fontSize: "0.65rem", color: "rgba(242,242,247,0.3)" }}>{m.id}</span></td>
                         <td>{m.provider}</td>
@@ -273,7 +278,17 @@ export default function AdminPanel() {
                 </div>
               </div>
               <div className="admin__pricing-list">
-                {pricing.map((p) => (
+                <div className="admin__add-row" style={{ marginBottom: "0.75rem" }}>
+                  <input className="field-input" placeholder="Search model ID, type, or provider..." value={pricingSearch} onChange={(e) => setPricingSearch(e.target.value)} style={{ width: "100%" }} />
+                </div>
+                <p className="admin__empty" style={{ marginBottom: "0.5rem", fontSize: "0.75rem" }}>
+                  {pricing.length} pricing entries{pricingSearch ? ` · ${pricing.filter((p) => (p.modelId?.toLowerCase().includes(pricingSearch.toLowerCase()) || p.modelType?.toLowerCase().includes(pricingSearch.toLowerCase()) || p.providerName?.toLowerCase().includes(pricingSearch.toLowerCase()))).length} matching` : ""}
+                </p>
+                {pricing.filter((p) => {
+                  if (!pricingSearch.trim()) return true;
+                  const q = pricingSearch.toLowerCase();
+                  return p.modelId?.toLowerCase().includes(q) || p.modelType?.toLowerCase().includes(q) || p.providerName?.toLowerCase().includes(q);
+                }).map((p) => (
                   <div key={p.id} className="admin__pricing-row">
                     <span><strong>{p.modelId}</strong></span>
                     <span>{p.modelType}</span>

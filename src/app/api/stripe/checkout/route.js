@@ -7,8 +7,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-12-
 
 const PRICE_MAP = {
   starter: process.env.STRIPE_PRICE_STARTER,
+  starter_yearly: process.env.STRIPE_PRICE_STARTER_YEARLY,
   studio: process.env.STRIPE_PRICE_STUDIO,
+  studio_yearly: process.env.STRIPE_PRICE_STUDIO_YEARLY,
   pro: process.env.STRIPE_PRICE_PRO,
+  pro_yearly: process.env.STRIPE_PRICE_PRO_YEARLY,
 };
 
 export async function POST(req) {
@@ -18,10 +21,11 @@ export async function POST(req) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { plan } = await req.json();
-    const priceId = PRICE_MAP[plan];
+    const { plan, yearly } = await req.json();
+    const priceKey = yearly ? `${plan}_yearly` : plan;
+    const priceId = PRICE_MAP[priceKey];
     if (!priceId) {
-      return NextResponse.json({ error: "Invalid plan" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid plan or not configured" }, { status: 400 });
     }
 
     let subscription = await prisma.subscription.findFirst({
@@ -36,13 +40,13 @@ export async function POST(req) {
         metadata: { userId: user.id },
       });
       customerId = customer.id;
-
-      await prisma.subscription.upsert({
-        where: { userId: user.id },
-        create: { userId: user.id, stripeCustomerId: customerId, plan, status: "pending" },
-        update: { stripeCustomerId: customerId, plan, status: "pending" },
-      });
     }
+
+    await prisma.subscription.upsert({
+      where: { userId: user.id },
+      create: { userId: user.id, stripeCustomerId: customerId, plan, status: "pending" },
+      update: { stripeCustomerId: customerId, plan, status: "pending" },
+    });
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
@@ -50,8 +54,8 @@ export async function POST(req) {
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${process.env.NEXTAUTH_URL}/studio?upgrade=success`,
       cancel_url: `${process.env.NEXTAUTH_URL}/pricing?upgrade=cancelled`,
-      metadata: { userId: user.id, plan },
-      subscription_data: { metadata: { userId: user.id, plan } },
+      metadata: { userId: user.id, plan, yearly: yearly ? "1" : "0" },
+      subscription_data: { metadata: { userId: user.id, plan, yearly: yearly ? "1" : "0" } },
     });
 
     return NextResponse.json({ url: session.url });

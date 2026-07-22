@@ -1,4 +1,4 @@
-import { llmComplete, resolveProvider } from "@/lib/providers";
+import { llmComplete, llmStream, resolveProvider } from "@/lib/providers";
 import { estimateCredits, estimateAgentTask } from "@/lib/pricing-engine";
 import {
   generateImage, generateI2I, generateVideo, generateI2V,
@@ -76,6 +76,84 @@ export function getAgent(type) {
 
 export function getAgentList() {
   return Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, description: a.description }));
+}
+
+// ── Plan a task with token-by-token streaming ──
+export async function planTaskStream(userMessage, context = {}) {
+  const hasLLM = process.env.OPENROUTER_KEY;
+
+  if (!hasLLM) {
+    const plan = buildHeuristicPlan(userMessage, context);
+    const estimate = await estimateAgentTask(plan.steps || []);
+    return { stream: null, plan: { ...plan, estimate } };
+  }
+
+  const messages = [
+    { role: "system", content: AGENTS.orchestrator.systemPrompt },
+    { role: "user", content: `Context: ${JSON.stringify(context)}\n\nRequest: ${userMessage}` },
+  ];
+
+  let llmReadable;
+  try {
+    llmReadable = await llmStream(messages, { maxTokens: 2000, temperature: 0.3 });
+  } catch {
+    const plan = buildHeuristicPlan(userMessage, context);
+    const estimate = await estimateAgentTask(plan.steps || []);
+    return { stream: null, plan: { ...plan, estimate } };
+  }
+
+  const encoder = new TextEncoder();
+  const reader = llmReadable.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n").filter(l => l.startsWith("data: "));
+
+          for (const line of lines) {
+            const data = line.slice(6).trim();
+            if (data === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(data);
+              const content = parsed.choices?.[0]?.delta?.content || "";
+              if (content) {
+                buffer += content;
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "token", content })}\n\n`));
+              }
+            } catch {}
+          }
+        }
+
+        // After stream ends, parse accumulated text as plan
+        const cleaned = buffer.replace(/```json\n?/g, "").replace(/```/g, "").trim();
+        let plan;
+        try {
+          const json = JSON.parse(cleaned);
+          const estimate = await estimateAgentTask(json.steps || []);
+          plan = { ...json, estimate };
+        } catch {
+          plan = buildHeuristicPlan(userMessage, context);
+          const estimate = await estimateAgentTask(plan.steps || []);
+          plan = { ...plan, estimate };
+        }
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "plan", plan })}\n\n`));
+      } catch {
+        const fallback = buildHeuristicPlan(userMessage, context);
+        const estimate = await estimateAgentTask(fallback.steps || []);
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "plan", plan: { ...fallback, estimate } })}\n\n`));
+      }
+      controller.close();
+    },
+  });
+
+  return { stream, plan: null };
 }
 
 // ── Plan a task (orchestrator) ──

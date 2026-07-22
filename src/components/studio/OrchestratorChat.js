@@ -139,25 +139,75 @@ export default function OrchestratorChat() {
     const userMsg = input;
     setMessages((m) => [...m, { role: "user", content: userMsg }]);
     setThinking(true);
+    setStreamingText("");
     setInput("");
 
     try {
       const res = await fetch("/api/agent/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMsg }),
+        body: JSON.stringify({ message: userMsg, stream: true }),
       });
-      const data = await res.json();
 
-      if (data.steps) {
-        setPlan(data);
-        setMessages((m) => [...m, {
-          role: "assistant",
-          content: data.summary || "I've planned the task. Review the estimate below.",
-          plan: data,
-        }]);
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("text/event-stream")) {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n").filter(l => l.startsWith("data: "));
+
+          for (const line of lines) {
+            const data = line.slice(6).trim();
+            if (!data) continue;
+            try {
+              const parsed = JSON.parse(data);
+              if (parsed.type === "token") {
+                accumulated += parsed.content;
+                setStreamingText(accumulated);
+              } else if (parsed.type === "plan" && parsed.plan) {
+                const planData = parsed.plan;
+                setPlan(planData);
+                setMessages((m) => {
+                  const updated = [...m];
+                  const lastIdx = updated.length - 1;
+                  if (lastIdx >= 0 && updated[lastIdx].role === "assistant") {
+                    updated[lastIdx] = {
+                      ...updated[lastIdx],
+                      content: accumulated || planData.summary || "I've planned the task. Review the estimate below.",
+                      plan: planData,
+                    };
+                  } else {
+                    updated.push({
+                      role: "assistant",
+                      content: accumulated || planData.summary || "I've planned the task. Review the estimate below.",
+                      plan: planData,
+                    });
+                  }
+                  return updated;
+                });
+                setStreamingText("");
+              }
+            } catch {}
+          }
+        }
       } else {
-        setMessages((m) => [...m, { role: "assistant", content: data.error || "Failed to plan task." }]);
+        const data = await res.json();
+        if (data.steps) {
+          setPlan(data);
+          setMessages((m) => [...m, {
+            role: "assistant",
+            content: data.summary || "I've planned the task. Review the estimate below.",
+            plan: data,
+          }]);
+        } else {
+          setMessages((m) => [...m, { role: "assistant", content: data.error || "Failed to plan task." }]);
+        }
       }
     } catch (e) {
       setMessages((m) => [...m, { role: "assistant", content: e.message }]);
@@ -312,6 +362,20 @@ export default function OrchestratorChat() {
         ))}
 
         {thinking && <ThinkingIndicator />}
+
+        {streamingText && !thinking && (
+          <motion.div
+            className="orchestrator__msg orchestrator__msg--assistant"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: EASE }}
+          >
+            <div className="orchestrator__msg-icon"><IconSparkle /></div>
+            <div className="orchestrator__msg-content">
+              <p>{streamingText}<span className="orchestrator__cursor">|</span></p>
+            </div>
+          </motion.div>
+        )}
 
         {stepCards.length > 0 && (
           <div className="orchestrator__step-cards">

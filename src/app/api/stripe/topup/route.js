@@ -2,19 +2,18 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
+import { CREDIT_PACKS } from "@/lib/credit-packs";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: "2024-12-18.acacia" });
 
-const CREDIT_PACKS = {
-  "500": { credits: 500, priceEur: 9.99, stripePriceId: process.env.STRIPE_PRICE_CREDITS_500 },
-  "1000": { credits: 1000, priceEur: 17.99, stripePriceId: process.env.STRIPE_PRICE_CREDITS_1000 },
-  "2500": { credits: 2500, priceEur: 39.99, stripePriceId: process.env.STRIPE_PRICE_CREDITS_2500 },
-  "5000": { credits: 5000, priceEur: 69.99, stripePriceId: process.env.STRIPE_PRICE_CREDITS_5000 },
-};
+const PACKS_BY_ID = Object.fromEntries(CREDIT_PACKS.map((p) => {
+  const priceEur = parseFloat(p.price.replace("€", ""));
+  return [p.id, { credits: p.credits, priceEur }];
+}));
 
 export async function GET() {
   return NextResponse.json({
-    packs: Object.entries(CREDIT_PACKS).map(([id, pack]) => ({
+    packs: Object.entries(PACKS_BY_ID).map(([id, pack]) => ({
       id,
       credits: pack.credits,
       priceEur: pack.priceEur,
@@ -31,7 +30,7 @@ export async function POST(req) {
     }
 
     const { packId } = await req.json();
-    const pack = CREDIT_PACKS[packId];
+    const pack = PACKS_BY_ID[packId];
     if (!pack) {
       return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
     }

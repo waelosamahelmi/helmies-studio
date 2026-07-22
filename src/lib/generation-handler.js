@@ -69,7 +69,8 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     await debitCredits(user.id, cost);
 
     try {
-      const paramsWithPrompt = { ...body, prompt: finalPrompt };
+      const webhookUrl = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
+      const paramsWithPrompt = { ...body, prompt: finalPrompt, webhook_url: webhookUrl };
       if (!body.negative_prompt && promptType !== "audio") {
         paramsWithPrompt.negative_prompt = getNegativePrompt(promptType);
       }
@@ -128,7 +129,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
 
       await prisma.generation.update({
         where: { id: generation.id },
-        data: { status: "completed", outputUrl: proxiedUrl },
+        data: { status: "completed", outputUrl: proxiedUrl, requestId: result.requestId || null },
       });
 
       await logAudit("generation_complete", tool, generation.id, { model, provider: successfulProvider.name });

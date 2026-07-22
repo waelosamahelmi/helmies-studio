@@ -22,7 +22,7 @@ import PromptBar from "@/components/studio/PromptBar";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
-  IconStar, IconBolt, IconArrowUpRight, IconClose, IconSparkle,
+  IconStar, IconBolt, IconArrowUpRight, IconClose, IconSparkle, IconMenu,
 } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
@@ -52,6 +52,7 @@ export default function StudioPage({ initialTool }) {
   const [pinnedGroup, setPinnedGroup] = useState(null);
   const [railOffset, setRailOffset] = useState(0);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     const handler = (e) => {
@@ -62,6 +63,21 @@ export default function StudioPage({ initialTool }) {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/generations/status?limit=50");
+        const data = await res.json();
+        if (data.generations) {
+          setPendingCount(data.generations.filter((g) => g.status === "pending").length);
+        }
+      } catch {}
+    };
+    poll();
+    const interval = setInterval(poll, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const activeTool = TOOLS.find((t) => t.id === activeTab) || TOOLS[0];
@@ -85,8 +101,26 @@ export default function StudioPage({ initialTool }) {
       <div className="grain" aria-hidden="true" />
 
       <div className="studio">
-        {/* Sidebar — icon rail with hover flyout */}
+          {/* Mobile backdrop */}
+          <AnimatePresence>
+            {mobileNavOpen && (
+              <motion.div
+                className="studio__backdrop md:hidden"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: EASE }}
+                onClick={() => setMobileNavOpen(false)}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Sidebar — icon rail with hover flyout */}
         <aside className={`studio__rail ${mobileNavOpen ? "studio__rail--open" : ""}`} onMouseLeave={() => { setHoveredGroup(null); }}>
+          {/* Mobile close button */}
+          <button className="studio__rail-close md:hidden" onClick={() => setMobileNavOpen(false)} aria-label="Close navigation">
+            <IconClose />
+          </button>
           {/* Logo */}
           <div className="studio__rail-logo">
             <Link href="/" aria-label="Helmies Studio home">
@@ -118,8 +152,14 @@ export default function StudioPage({ initialTool }) {
             })}
           </nav>
 
-          {/* Footer — credits */}
+          {/* Footer — credits + pending */}
           <div className="studio__rail-foot">
+            {pendingCount > 0 && (
+              <div className="studio__pending-badge" title={`${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress`}>
+                <span className="studio__pending-dot" />
+                <span className="studio__pending-count">{pendingCount}</span>
+              </div>
+            )}
             <Link href="/settings" className="studio__rail-credits" title="Credits & Settings">
               <IconBolt />
             </Link>
@@ -162,6 +202,14 @@ export default function StudioPage({ initialTool }) {
 
         {/* Main */}
         <main className="studio__main">
+          {/* Mobile hamburger toggle */}
+          <button
+            className="studio__hamburger md:hidden"
+            onClick={() => setMobileNavOpen((v) => !v)}
+            aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+          >
+            {mobileNavOpen ? <IconClose /> : <IconMenu />}
+          </button>
           <div className="studio__body">
             <AnimatePresence mode="wait">
               <motion.div

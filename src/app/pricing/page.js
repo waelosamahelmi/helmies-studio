@@ -29,12 +29,12 @@ export default function PricingPage() {
   const [yearly, setYearly] = useState(false);
   const subscriptions = yearly ? SUBSCRIPTIONS_YEARLY : SUBSCRIPTIONS_MONTHLY;
 
-  const handleCheckout = async (priceId, mode) => {
+  const handleCheckout = async (plan, yearly) => {
     try {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId, mode }),
+        body: JSON.stringify({ plan, yearly }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -44,13 +44,11 @@ export default function PricingPage() {
   };
 
   const handleTopup = async (packId) => {
-    const priceId = getCreditPackPriceId(packId);
-    if (!priceId) { alert("Credit pack not configured yet."); return; }
     try {
       const res = await fetch("/api/stripe/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ packId }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -113,7 +111,7 @@ export default function PricingPage() {
                       <span className="btn__icon"><IconArrowUpRight /></span>
                     </Link>
                   ) : (
-                    <button className={`btn ${s.popular ? "btn-primary" : "btn-secondary"}`} onClick={() => handleCheckout(s.id === "starter" ? "price_starter_monthly" : s.id === "studio" ? "price_studio_monthly" : "price_pro_monthly", "subscription")}>
+                    <button className={`btn ${s.popular ? "btn-primary" : "btn-secondary"}`} onClick={() => handleCheckout(s.id, yearly)}>
                       {s.cta}
                       <span className="btn__icon"><IconArrowUpRight /></span>
                     </button>

@@ -74,6 +74,8 @@ export default function WorkflowBuilder() {
   const [steps, setSteps] = useState([]);
   const [executing, setExecuting] = useState(false);
   const [result, setResult] = useState(null);
+  const [assembling, setAssembling] = useState(false);
+  const [assembledUrl, setAssembledUrl] = useState(null);
 
   const loadWorkflows = () => {
     fetch("/api/workflows").then((r) => r.json()).then(setWorkflows).catch(() => {});
@@ -117,6 +119,7 @@ export default function WorkflowBuilder() {
   const execute = async (wfId) => {
     setExecuting(true);
     setResult(null);
+    setAssembledUrl(null);
     try {
       const res = await fetch(`/api/workflows/${wfId}/run`, {
         method: "POST",
@@ -129,6 +132,24 @@ export default function WorkflowBuilder() {
       setResult({ success: false, error: e.message });
     } finally {
       setExecuting(false);
+    }
+  };
+
+  const assembleOutputs = async () => {
+    if (!result?.outputs) return;
+    const videoUrls = result.outputs.filter((url) => url && url.match(/\.(mp4|webm)$/i));
+    if (videoUrls.length === 0) return;
+    setAssembling(true);
+    try {
+      const res = await fetch("/api/assemble", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls: videoUrls }),
+      });
+      const data = await res.json();
+      if (data.url) setAssembledUrl(data.url);
+    } catch {} finally {
+      setAssembling(false);
     }
   };
 
@@ -221,6 +242,22 @@ export default function WorkflowBuilder() {
                   if (url.match(/\.(jpg|jpeg|png|webp|gif)$/i)) return <img key={i} src={url} alt="" className="studio-result__img" />;
                   return <pre key={i}>{url}</pre>;
                 })}
+                {result.outputs?.some((url) => url && url.match(/\.(mp4|webm)$/i)) && (
+                  <div style={{ marginTop: "1rem" }}>
+                    {assembledUrl ? (
+                      <div className="studio-result">
+                        <video src={assembledUrl} controls className="studio-result__video" />
+                        <div className="studio-result__meta">
+                          <a href={assembledUrl} download className="btn btn-secondary btn-sm">Download Assembled<span className="btn__icon"><IconArrowUpRight /></span></a>
+                        </div>
+                      </div>
+                    ) : (
+                      <button className="btn btn-primary" onClick={assembleOutputs} disabled={assembling}>
+                        {assembling ? "Assembling..." : <>Assemble Videos <span className="btn__icon"><IconFilm /></span></>}
+                      </button>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <p className="studio-error">{result.error}</p>

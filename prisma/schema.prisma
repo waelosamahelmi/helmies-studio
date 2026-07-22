@@ -89,6 +89,7 @@ model Generation {
   creditsUsed Int       @default(1)
   providerCost Float?   @default(0)
   error       String?   @db.Text
+  requestId   String?
   workflowId  String?
   workflowStepId String?
   createdAt   DateTime  @default(now())

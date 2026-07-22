@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { planTask } from "@/lib/agents";
+import { planTask, planTaskStream } from "@/lib/agents";
 import { checkRateLimit } from "@/lib/security";
 
 export async function POST(req) {
@@ -15,27 +15,17 @@ export async function POST(req) {
     if (!message) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
     if (stream) {
-      const encoder = new TextEncoder();
-      const readable = new ReadableStream({
-        async start(controller) {
-          try {
-            const plan = await planTask(message, context || {});
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(plan)}\n\n`));
-            controller.close();
-          } catch (e) {
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: e.message })}\n\n`));
-            controller.close();
-          }
-        },
-      });
-
-      return new Response(readable, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
-      });
+      const result = await planTaskStream(message, context || {});
+      if (result.stream) {
+        return new Response(result.stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        });
+      }
+      return NextResponse.json({ success: true, ...result.plan });
     }
 
     const plan = await planTask(message, context || {});

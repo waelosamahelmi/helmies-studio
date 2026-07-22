@@ -1,23 +1,14 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserWithCredits, debitCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
-import { resolveProvider, brandError } from "@/lib/providers";
-import { generateImage, generateVideo, generateAudio, processLipSync, processRecast, runClipping, runMotionGraphics, generateMarketingAd, generateI2I, generateI2V, processV2V } from "@/lib/generation";
+import { resolveProvider, brandError, submitOnly } from "@/lib/providers";
+import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
+import { applyMemoryToPrompt } from "@/lib/memory";
 
-const GENERATORS = {
-  image: generateImage,
-  i2i: generateI2I,
-  video: generateVideo,
-  i2v: generateI2V,
-  v2v: processV2V,
-  lipsync: processLipSync,
-  audio: generateAudio,
-  recast: processRecast,
-  clipping: runClipping,
-  motion: runMotionGraphics,
-  marketing: generateMarketingAd,
-  cinema: generateImage,
-  influencer: generateImage,
+const ENDPOINT_MAP = {
+  image: "image", i2i: "i2i", video: "video", i2v: "i2v", v2v: "v2v",
+  lipsync: "lipsync", audio: "audio", recast: "recast", clipping: "clipping",
+  motion: "motion", marketing: "marketing", cinema: "cinema", influencer: "influencer",
 };
 
 export async function POST(req) {
@@ -39,6 +30,26 @@ export async function POST(req) {
       return NextResponse.json({ error: "Insufficient credits", credits: user.credits, cost }, { status: 402 });
     }
 
+    let finalPrompt = prompt || "";
+    if (body.characterId || body.styleId) {
+      finalPrompt = await applyMemoryToPrompt(user.id, finalPrompt, {
+        characterId: body.characterId,
+        styleId: body.styleId,
+      });
+    }
+    if (shouldExpand(finalPrompt)) {
+      const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
+      finalPrompt = await expandPrompt(finalPrompt, promptType, model);
+    }
+
+    const webhookUrl = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
+    const endpoint = params.endpoint || model;
+    const payload = { ...params, model, prompt: finalPrompt, endpoint, webhook_url: webhookUrl };
+    if (!body.negative_prompt) {
+      const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
+      payload.negative_prompt = getNegativePrompt(promptType);
+    }
+
     const generation = await prisma.generation.create({
       data: {
         userId: user.id,
@@ -54,30 +65,19 @@ export async function POST(req) {
 
     await debitCredits(user.id, cost);
 
-    const generator = GENERATORS[tool] || GENERATORS.image;
+    const { requestId } = await submitOnly(provider, endpoint, payload);
 
-    generator({ ...params, model, prompt, endpoint: model, _provider: provider })
-      .then(async (result) => {
-        const outputUrl = result.url || result.outputs?.[0];
-        await prisma.generation.update({
-          where: { id: generation.id },
-          data: { status: "completed", outputUrl, requestId: result.requestId },
-        });
-      })
-      .catch(async (err) => {
-        await prisma.generation.update({
-          where: { id: generation.id },
-          data: { status: "failed", error: err.message?.slice(0, 500) },
-        });
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { credits: { increment: cost } },
-        });
+    if (requestId) {
+      await prisma.generation.update({
+        where: { id: generation.id },
+        data: { requestId },
       });
+    }
 
     return NextResponse.json({
       success: true,
       generationId: generation.id,
+      requestId,
       status: "pending",
       creditsUsed: cost,
       remainingCredits: user.credits - cost,
