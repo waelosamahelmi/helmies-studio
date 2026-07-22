@@ -1,15 +1,24 @@
-import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
 export async function middleware(request) {
   const pathname = request.nextUrl.pathname;
-  const session = await auth();
 
+  const protectedPaths = ["/admin", "/studio", "/settings"];
+  const needsAuth = protectedPaths.some((p) => pathname.startsWith(p));
+  if (!needsAuth) return NextResponse.next();
+
+  const reqUrl = new URL("/api/auth/session", request.url);
+  const sessionRes = await fetch(reqUrl, {
+    headers: { cookie: request.headers.get("cookie") || "" },
+  });
+
+  if (sessionRes.status !== 200) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  const session = await sessionRes.json();
   if (!session?.user) {
-    if (pathname.startsWith("/admin") || pathname.startsWith("/studio") || pathname.startsWith("/settings")) {
-      return NextResponse.redirect(new URL("/login", request.url));
-    }
-    return NextResponse.next();
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
   if (pathname.startsWith("/admin") && session.user.role !== "admin") {
