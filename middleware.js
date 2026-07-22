@@ -9,15 +9,6 @@ export async function middleware(request) {
     if (!session?.user) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
-
-    if (pathname.startsWith("/admin")) {
-      const user = await import("@/lib/prisma").then((m) =>
-        m.default.user.findUnique({ where: { id: session.user.id }, select: { role: true } })
-      );
-      if (user?.role !== "admin") {
-        return NextResponse.redirect(new URL("/studio", request.url));
-      }
-    }
   }
 
   return NextResponse.next();
