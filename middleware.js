@@ -7,8 +7,7 @@ export async function middleware(request) {
   const needsAuth = protectedPaths.some((p) => pathname.startsWith(p));
   if (!needsAuth) return NextResponse.next();
 
-  const reqUrl = new URL("/api/auth/session", request.url);
-  const sessionRes = await fetch(reqUrl, {
+  const sessionRes = await fetch("http://127.0.0.1:3010/api/auth/session", {
     headers: { cookie: request.headers.get("cookie") || "" },
   });
 
