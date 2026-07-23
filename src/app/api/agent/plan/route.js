@@ -11,11 +11,15 @@ export async function POST(req) {
     const rl = await checkRateLimit(user.id, "/api/agent");
     if (!rl.allowed) return NextResponse.json({ error: "Rate limited", retryAfter: rl.retryAfter }, { status: 429 });
 
-    const { message, context, stream } = await req.json();
+    const body = await req.json();
+    const message = body.message || body.prompt;
+    const context = body.context || {};
     if (!message) return NextResponse.json({ error: "Message required" }, { status: 400 });
 
-    if (stream) {
-      const result = await planTaskStream(message, context || {});
+    const shouldStream = body.stream !== false;
+
+    if (shouldStream) {
+      const result = await planTaskStream(message, context);
       if (result.stream) {
         return new Response(result.stream, {
           headers: {
@@ -28,7 +32,7 @@ export async function POST(req) {
       return NextResponse.json({ success: true, ...result.plan });
     }
 
-    const plan = await planTask(message, context || {});
+    const plan = await planTask(message, context);
     return NextResponse.json({ success: true, ...plan });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });

@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import CommandPalette from "@/components/studio/CommandPalette";
 import { apiFetch } from "@/lib/client-fetch";
 import ChatStudio from "@/components/studio/ChatStudio";
-import OrchestratorChat from "@/components/studio/OrchestratorChat";
 import WorkflowBuilder from "@/components/studio/WorkflowBuilder";
 import ProjectMemory from "@/components/studio/ProjectMemory";
 import {
@@ -34,7 +33,7 @@ const TOOLS = [
 ];
 
 export default function StudioPage({ initialTool }) {
-  const [activeTab, setActiveTab] = useState(initialTool || "image");
+  const [activeTab, setActiveTab] = useState(initialTool || "orchestrator");
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState([]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -237,7 +236,7 @@ export default function StudioPage({ initialTool }) {
                 transition={{ duration: 0.5, ease: EASE }}
                 style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
               >
-                {activeTab === "orchestrator" && <OrchestratorChat />}
+                {activeTab === "orchestrator" && <ChatStudio tool="orchestrator" />}
                 {activeTab === "workflows" && <WorkflowBuilder />}
                 {activeTab === "memory" && <ProjectMemory />}
                 {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && (
