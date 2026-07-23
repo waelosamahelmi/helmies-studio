@@ -45,9 +45,10 @@ const PROVIDERS = {
     type: "image+video+audio+lipsync",
     baseUrl: "https://api.wavespeed.ai",
     getKey: () => process.env.WAVESPEED_KEY,
-    buildUrl: (endpoint) => `/api/v1/${endpoint}`,
-    buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
+    buildUrl: (endpoint) => `/api/v3/${endpoint}`,
+    buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v3/predictions/${requestId}/result`,
     isSync: false,
+    apiVersion: 3,
   },
   atlas: {
     name: "Atlas Cloud",
@@ -57,6 +58,7 @@ const PROVIDERS = {
     buildUrl: (endpoint) => `/api/v1/${endpoint}`,
     buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
     isSync: false,
+    apiVersion: 1,
   },
   alibaba: {
     name: "Alibaba Cloud (Qwen)",
@@ -68,15 +70,17 @@ const PROVIDERS = {
     buildUrl: (endpoint) => `/api/v1/${endpoint}`,
     buildPollUrl: (baseUrl, requestId) => `${baseUrl}/api/v1/predictions/${requestId}/result`,
     isSync: false,
+    apiVersion: 1,
   },
   openrouter: {
     name: "OpenRouter",
     type: "llm",
     baseUrl: "https://openrouter.ai/api/v1",
     getKey: () => process.env.OPENROUTER_KEY,
-    buildUrl: (endpoint) => `/chat/completions`,
+    buildUrl: () => `/chat/completions`,
     buildPollUrl: () => null,
     isSync: true,
+    apiVersion: 1,
   },
 };
 
@@ -125,13 +129,14 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
   const key = provider.apiKey || provider.getKey();
   const pollUrl = provider.buildPollUrl
     ? provider.buildPollUrl(provider.baseUrl, requestId)
-    : `${provider.baseUrl}/api/v1/predictions/${requestId}/result`;
+    : `${provider.baseUrl}/api/v3/predictions/${requestId}/result`;
 
+  let pollInterval = interval;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    await new Promise((r) => setTimeout(r, interval));
+    await new Promise((r) => setTimeout(r, pollInterval));
     try {
       const pollRes = await fetch(pollUrl, {
-        headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         signal: AbortSignal.timeout(30000),
       });
       if (!pollRes.ok) {
@@ -139,10 +144,16 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
         const txt = await pollRes.text();
         throw new Error(brandError(txt));
       }
-      const data = await pollRes.json();
+      const body = await pollRes.json();
+      const data = provider.apiVersion >= 3 ? (body.data || body) : body;
       const status = data.status?.toLowerCase();
-      if (status === "completed" || status === "succeeded" || status === "success") return data;
+      if (status === "completed" || status === "succeeded" || status === "success") {
+        return provider.apiVersion >= 3
+          ? { ...data, outputs: data.outputs, url: data.outputs?.[0], outputUrl: data.outputs?.[0] }
+          : data;
+      }
       if (status === "failed" || status === "error") throw new Error(brandError(data.error || ""));
+      pollInterval = Math.min(10000, pollInterval + 1000);
     } catch (e) {
       if (attempt === maxAttempts) throw e;
     }
@@ -159,12 +170,20 @@ export async function submitOnly(providerName, endpoint, payload) {
     provider = getProvider(providerName);
   }
   const key = provider.apiKey || provider.getKey();
-  const path = provider.buildUrl ? provider.buildUrl(endpoint) : `/api/v1/${endpoint}`;
+  const path = provider.buildUrl ? provider.buildUrl(endpoint) : `/api/v3/${endpoint}`;
   const url = `${provider.baseUrl}${path}`;
+
+  const headers = { "Content-Type": "application/json" };
+  if (provider.apiVersion >= 3) {
+    headers["Authorization"] = `Bearer ${key}`;
+  } else {
+    headers["x-api-key"] = key;
+    headers["Authorization"] = `Bearer ${key}`;
+  }
 
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+    headers,
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(30000),
   });
@@ -174,9 +193,10 @@ export async function submitOnly(providerName, endpoint, payload) {
     throw new Error(brandError(txt));
   }
 
-  const submitData = await res.json();
-  const requestId = submitData.request_id || submitData.id;
-  return { provider, requestId, submitData };
+  const body = await res.json();
+  const data = provider.apiVersion >= 3 ? (body.data || body) : body;
+  const requestId = data.request_id || data.id;
+  return { provider, requestId, submitData: data };
 }
 
 // ── LLM completion (OpenRouter) ──
@@ -251,4 +271,67 @@ export async function resolveProviderWithFallback(modelId) {
     const p = PROVIDERS[name];
     return p ? { name, ...p } : null;
   }).filter(Boolean);
+}
+
+// ── Fetch live model list from WaveSpeed ──
+export async function fetchWaveSpeedModels() {
+  const key = process.env.WAVESPEED_KEY;
+  if (!key) return [];
+  try {
+    const res = await fetch("https://api.wavespeed.ai/api/v3/models", {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) return [];
+    const body = await res.json();
+    if (body.code !== 200) return [];
+    return (body.data || []).map((m) => ({
+      id: m.model_id,
+      name: m.name,
+      basePrice: m.base_price,
+      type: m.type,
+      description: m.description,
+      apiSchema: m.api_schema?.api_schemas?.[0] || null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// ── Fetch live pricing for a specific model from WaveSpeed ──
+export async function fetchWaveSpeedPricing(modelId, inputs = {}) {
+  const key = process.env.WAVESPEED_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch("https://api.wavespeed.ai/api/v3/model/pricing", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model_id: modelId, inputs }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (body.code !== 200) return null;
+    return body.data;
+  } catch {
+    return null;
+  }
+}
+
+// ── Fetch live account balance from WaveSpeed ──
+export async function fetchWaveSpeedBalance() {
+  const key = process.env.WAVESPEED_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch("https://api.wavespeed.ai/api/v3/balance", {
+      headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    if (body.code !== 200) return null;
+    return body.data;
+  } catch {
+    return null;
+  }
 }

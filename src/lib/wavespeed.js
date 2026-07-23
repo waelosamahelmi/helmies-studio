@@ -6,9 +6,9 @@ export async function wavespeedSyncImage(params) {
   if (!key) throw new Error("WaveSpeed API key not configured");
 
   const endpoint = params.endpoint || params.model;
-  const url = `${provider.baseUrl}/api/v1/${endpoint}`;
+  const url = `${provider.baseUrl}/api/v3/${endpoint}`;
 
-  const payload = { prompt: params.prompt };
+  const payload = { prompt: params.prompt, enable_sync_mode: true };
   if (params.aspect_ratio) payload.aspect_ratio = params.aspect_ratio;
   if (params.resolution) payload.resolution = params.resolution;
   if (params.width) payload.width = params.width;
@@ -21,7 +21,6 @@ export async function wavespeedSyncImage(params) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": key,
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify(payload),
@@ -33,7 +32,8 @@ export async function wavespeedSyncImage(params) {
     throw new Error(brandError(txt));
   }
 
-  const data = await res.json();
+  const body = await res.json();
+  const data = body.data || body;
   const outputUrl = data.outputs?.[0] || data.url || data.output?.url;
   return { url: outputUrl, requestId: data.request_id || data.id };
 }

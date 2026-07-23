@@ -9,17 +9,36 @@ function getKey(provider) {
   return key;
 }
 
+function getAuthHeaders(provider) {
+  const key = getKey(provider);
+  const headers = { "Content-Type": "application/json" };
+  if (provider.apiVersion >= 3) {
+    headers["Authorization"] = `Bearer ${key}`;
+  } else {
+    headers["x-api-key"] = key;
+    headers["Authorization"] = `Bearer ${key}`;
+  }
+  return headers;
+}
+
+function extractV3Data(body) {
+  if (body && typeof body === "object" && body.code !== undefined && body.data !== undefined) {
+    return body.data;
+  }
+  return body;
+}
+
 async function pollForResult(requestId, maxAttempts = 900, interval = 2000, provider) {
   const key = getKey(provider);
   const pollUrl = provider.buildPollUrl
     ? provider.buildPollUrl(provider.baseUrl, requestId)
-    : `${provider.baseUrl}/api/v1/predictions/${requestId}/result`;
+    : `${provider.baseUrl}/api/v3/predictions/${requestId}/result`;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await new Promise((r) => setTimeout(r, interval));
     try {
       const res = await fetch(pollUrl, {
-        headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
         signal: AbortSignal.timeout(30000),
       });
       if (!res.ok) {
@@ -27,10 +46,14 @@ async function pollForResult(requestId, maxAttempts = 900, interval = 2000, prov
         const txt = await res.text();
         throw new Error(brandError(txt));
       }
-      const data = await res.json();
+      const body = await res.json();
+      const data = provider?.apiVersion >= 3 ? extractV3Data(body) : body;
       const status = data.status?.toLowerCase();
-      if (status === "completed" || status === "succeeded" || status === "success")
-        return data;
+      if (status === "completed" || status === "succeeded" || status === "success") {
+        return provider?.apiVersion >= 3
+          ? { ...data, url: data.outputs?.[0], outputUrl: data.outputs?.[0] }
+          : data;
+      }
       if (status === "failed" || status === "error")
         throw new Error(brandError(data.error || ""));
     } catch (e) {
@@ -45,12 +68,21 @@ async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   const baseUrl = provider?.baseUrl || getProvider(DEFAULT_PROVIDER).baseUrl;
   const key = provider?.apiKey || provider?.getKey?.() || getProvider(DEFAULT_PROVIDER).getKey();
   const { _provider, ...rest } = payload;
-  const path = provider?.buildUrl ? provider.buildUrl(endpoint) : `/api/v1/${endpoint}`;
+  const path = provider?.buildUrl ? provider.buildUrl(endpoint) : `/api/v3/${endpoint}`;
   const url = `${baseUrl}${path}`;
+
+  const headers = { "Content-Type": "application/json" };
+  const isV3 = provider?.apiVersion >= 3;
+  if (isV3) {
+    headers["Authorization"] = `Bearer ${key}`;
+  } else {
+    headers["x-api-key"] = key;
+    headers["Authorization"] = `Bearer ${key}`;
+  }
 
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-api-key": key, Authorization: `Bearer ${key}` },
+      headers,
       body: JSON.stringify(rest),
       signal: AbortSignal.timeout(30000),
     });
@@ -58,9 +90,10 @@ async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
     const txt = await res.text();
     throw new Error(brandError(txt));
   }
-  const submitData = await res.json();
-  const requestId = submitData.request_id || submitData.id;
-  if (!requestId) return submitData;
+  const body = await res.json();
+  const data = isV3 ? extractV3Data(body) : body;
+  const requestId = data.request_id || data.id;
+  if (!requestId) return data;
   const result = await pollForResult(requestId, maxAttempts, 2000, provider || getProvider(DEFAULT_PROVIDER));
   const outputUrl = result.outputs?.[0] || result.url || result.output?.url;
   return { ...result, url: outputUrl, requestId };
@@ -232,18 +265,19 @@ export async function generateMarketingAd(params) {
 export async function uploadFile(file) {
   const provider = getProvider(DEFAULT_PROVIDER);
   const key = getKey(provider);
-  const url = `${provider.baseUrl}/api/v1/upload_file`;
+  const url = `${provider.baseUrl}/api/v3/upload_file`;
   const formData = new FormData();
   formData.append("file", file);
   const res = await fetch(url, {
     method: "POST",
-    headers: { "x-api-key": key },
+    headers: { Authorization: `Bearer ${key}` },
     body: formData,
   });
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(brandError(txt));
   }
-  const data = await res.json();
+  const body = await res.json();
+  const data = provider?.apiVersion >= 3 ? extractV3Data(body) : body;
   return data.url || data.file_url || data.data?.url;
 }

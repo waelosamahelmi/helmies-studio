@@ -20,20 +20,9 @@ export async function estimateCredits(tool, model, params = {}) {
 
 function getFallbackCost(tool, model, params) {
   const costs = {
-    image: 2,
-    i2i: 3,
-    video: 10,
-    i2v: 12,
-    v2v: 8,
-    lipsync: 8,
-    audio: 5,
-    recast: 12,
-    cinema: 4,
-    motion: 8,
-    clipping: 6,
-    marketing: 15,
-    influencer: 3,
-    llm: 1,
+    image: 2, i2i: 3, video: 10, i2v: 12, v2v: 8,
+    lipsync: 8, audio: 5, recast: 12, cinema: 4,
+    motion: 8, clipping: 6, marketing: 15, influencer: 3, llm: 1,
   };
 
   let base = costs[tool] || 2;
@@ -45,6 +34,39 @@ function getFallbackCost(tool, model, params) {
   if (params.images_list?.length > 1) base += Math.ceil(params.images_list.length / 2);
 
   return base;
+}
+
+// ── Sync pricing from WaveSpeed v3 API ──
+export async function syncPricingFromWaveSpeed() {
+  const { fetchWaveSpeedModels, fetchWaveSpeedPricing } = await import("@/lib/providers");
+  const models = await fetchWaveSpeedModels();
+  let synced = 0;
+
+  for (const m of models) {
+    try {
+      const pricing = await fetchWaveSpeedPricing(m.id, {});
+      if (!pricing) continue;
+      const providerCost = pricing.cost || pricing.total_cost || 0;
+      const creditsCost = calculateCredits(providerCost);
+
+      await prisma.modelPricing.upsert({
+        where: { modelId: m.id },
+        create: {
+          modelId: m.id,
+          modelType: m.type || "image",
+          providerName: "WaveSpeed",
+          providerCost,
+          creditsCost,
+          isActive: true,
+        },
+        update: { providerCost, creditsCost, isActive: true },
+      });
+      synced++;
+    } catch {
+      continue;
+    }
+  }
+  return synced;
 }
 
 // ── Estimate multi-step agent task ──

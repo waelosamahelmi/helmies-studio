@@ -4,6 +4,6 @@ import { getCreditCost } from "@/lib/credits";
 
 export async function POST(req) {
   const body = await req.json().catch(() => ({}));
-  const cost = getCreditCost("v2v", body.model);
+  const cost = await getCreditCost("v2v", body.model);
   return handleGeneration(req, "v2v", cost, (params) => processV2V(params));
 }

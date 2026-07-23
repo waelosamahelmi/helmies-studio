@@ -1,5 +1,6 @@
 import {
-  IMAGE_MODELS, VIDEO_MODELS, AUDIO_MODELS, LIPSYNC_MODELS, RECAST_MODELS,
+  IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS,
+  AUDIO_MODELS, LIPSYNC_MODELS, RECAST_MODELS,
   CINEMA_CAMERAS, CINEMA_LENS, CINEMA_FOCAL, CINEMA_APERTURE,
   MARKETING_AVATARS, INFLUENCER_TABS,
 } from "@/lib/models";
@@ -12,10 +13,16 @@ export const CHAT_MODES = {
     defaultModel: IMAGE_MODELS[0],
     settings: [
       { key: "aspect_ratio", label: "Aspect", type: "pills", fromModel: "aspectRatios", default: "1:1" },
-      { key: "resolution", label: "Resolution", type: "pills", fromModel: "resolutions", default: "1k" },
-      { key: "seed", label: "Seed", type: "number", advanced: true, default: -1 },
+      { key: "resolution", label: "Resolution", type: "pills", fromModel: "resolutions", default: "1k", showIf: (m) => m.resolutions },
+      { key: "width", label: "Width", type: "number", default: 1024, min: 128, max: 2048, step: 64, showIf: (m) => m.hasDimensions, advanced: true },
+      { key: "height", label: "Height", type: "number", default: 1024, min: 128, max: 2048, step: 64, showIf: (m) => m.hasDimensions, advanced: true },
+      { key: "num_images", label: "Variations", type: "pills", options: [1, 2, 3, 4], default: 1, advanced: true },
+      { key: "seed", label: "Seed", type: "number", default: -1, min: -1, advanced: true },
     ],
-    uploads: [{ key: "image_url", label: "Reference Image", accept: "image/*", max: 1 }],
+    uploads: [
+      { key: "image_url", label: "Reference Image", accept: "image/*", max: 1, optional: true },
+      { key: "images_list", label: "Multi-Image", accept: "image/*", max: 10, optional: true, multi: true },
+    ],
     promptPlaceholder: "A portrait of a warrior princess in golden armor...",
     resultType: "image",
   },
@@ -25,13 +32,22 @@ export const CHAT_MODES = {
     label: "Video",
     models: VIDEO_MODELS,
     defaultModel: VIDEO_MODELS[0],
+    i2vModels: I2V_MODELS,
     settings: [
       { key: "aspect_ratio", label: "Aspect", type: "pills", fromModel: "aspectRatios", default: "16:9" },
       { key: "duration", label: "Duration", type: "pills", fromModel: "durations", default: 5, suffix: "s" },
+      { key: "resolution", label: "Resolution", type: "pills", options: ["480p", "720p", "1080p"], default: "720p", advanced: true },
+      { key: "mode", label: "Mode", type: "pills", options: ["standard", "professional"], default: "standard", advanced: true },
     ],
-    uploads: [{ key: "start_frame_url", label: "Start Frame", accept: "image/*", max: 1, optional: true }],
+    uploads: [
+      { key: "image_url", label: "First Frame", accept: "image/*", max: 1, optional: true },
+      { key: "last_image", label: "Last Frame", accept: "image/*", max: 1, optional: true, showIf: (m, all) => !!all.image_url },
+      { key: "images_list", label: "Reference Images", accept: "image/*", max: 10, optional: true, multi: true },
+      { key: "videos_list", label: "Reference Videos", accept: "video/*", max: 4, optional: true, multi: true },
+    ],
     promptPlaceholder: "A drone shot flying over neon-lit Tokyo streets at night...",
     resultType: "video",
+    autoSwitchToI2V: true,
   },
 
   audio: {
@@ -40,13 +56,15 @@ export const CHAT_MODES = {
     models: AUDIO_MODELS,
     defaultModel: AUDIO_MODELS[0],
     settings: [
-      { key: "duration", label: "Duration", type: "number", default: 30, min: 5, max: 300, suffix: "s", showIf: (m) => m.inputs?.duration },
-      { key: "voice", label: "Voice", type: "select", fromModel: "inputs.voice.enum", default: null, showIf: (m) => m.inputs?.voice },
+      { key: "duration", label: "Duration (sec)", type: "number", default: 30, min: 5, max: 300, showIf: (m) => m.inputs?.duration },
+      { key: "voice", label: "Voice", type: "select", fromModel: "inputs.voice.enum", default: null, showIf: (m) => m.inputs?.voice?.enum },
     ],
-    uploads: [{ key: "audio_url", label: "Reference Audio", accept: "audio/*", max: 1, showIf: (m) => m.inputs?.audio_url }],
+    uploads: [
+      { key: "audio_url", label: "Reference Audio", accept: "audio/*", max: 1, showIf: (m) => m.inputs?.audio_url },
+    ],
     promptPlaceholder: "Epic orchestral music with soaring strings and thunderous drums...",
     resultType: "audio",
-    dynamicFields: true,
+    promptKey: (model) => model?.inputs?.prompt?.title?.includes("Text") ? "text" : "prompt",
   },
 
   cinema: {
@@ -82,12 +100,15 @@ export const CHAT_MODES = {
     settings: [
       { key: "mode", label: "Mode", type: "pills", options: ["generate", "edit"], default: "generate" },
       { key: "aspect_ratio", label: "Aspect", type: "pills", options: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], default: "16:9" },
-      { key: "duration", label: "Duration", type: "pills", options: [3, 6, 10, 15], default: 6, suffix: "s" },
+      { key: "duration", label: "Duration", type: "pills", options: [3, 6, 10, 15], default: 6, suffix: "s", showIf: (m, all) => all.mode !== "edit" },
     ],
     uploads: [],
     promptPlaceholder: "Smooth motion graphics with flowing particles and gradient transitions...",
+    editPlaceholder: "Describe what to edit in the motion graphic...",
     resultType: "video",
     needsRequestId: (settings) => settings.mode === "edit",
+    promptKey: (model, settings) => settings?.mode === "edit" ? "edit_prompt" : "prompt",
+    paramOverrides: (settings) => settings?.mode === "edit" ? { duration_seconds: undefined } : { duration_seconds: settings?.duration || 6 },
   },
 
   clipping: {
@@ -97,8 +118,8 @@ export const CHAT_MODES = {
     defaultModel: null,
     settings: [
       { key: "num_highlights", label: "Highlights", type: "number", default: 3, min: 1, max: 10 },
-      { key: "aspect_ratio", label: "Aspect", type: "pills", options: ["16:9", "9:16", "1:1", "4:3", "3:4"], default: "16:9" },
-      { key: "output_mode", label: "Output", type: "pills", options: ["clips", "coordinates"], default: "clips" },
+      { key: "aspect_ratio", label: "Aspect", type: "pills", options: ["16:9", "9:16", "1:1", "4:3", "3:4"], default: "9:16" },
+      { key: "return_coordinates_only", label: "Output", type: "pills", options: [{ id: false, label: "Clips" }, { id: true, label: "Coordinates" }], default: false },
     ],
     uploads: [{ key: "video_url", label: "Source Video", accept: "video/*", max: 1, required: true }],
     promptPlaceholder: "Describe what highlights to extract (optional)...",
@@ -117,8 +138,8 @@ export const CHAT_MODES = {
       { key: "resolution", label: "Resolution", type: "pills", options: ["720p", "1080p"], default: "1080p" },
     ],
     uploads: [
-      { key: "avatars", label: "Avatar Presets", type: "avatar-grid", options: MARKETING_AVATARS, max: 4 },
-      { key: "custom_images", label: "Upload Your Own", accept: "image/*", max: 4, optional: true },
+      { key: "images_list", label: "Avatars & Images", accept: "image/*", max: 4, multi: true, presets: MARKETING_AVATARS },
+      { key: "video_files", label: "Reference Videos", accept: "video/*", max: 2, multi: true, optional: true },
     ],
     promptPlaceholder: "A UGC-style ad for a luxury skincare product, energetic and authentic...",
     resultType: "video",
@@ -131,6 +152,7 @@ export const CHAT_MODES = {
     defaultModel: LIPSYNC_MODELS[0],
     settings: [
       { key: "resolution", label: "Resolution", type: "pills", fromModel: "resolutions", default: "720p", showIf: (m) => m.resolutions },
+      { key: "seed", label: "Seed", type: "number", default: -1, min: -1, advanced: true },
     ],
     uploads: [
       { key: "image_url", label: "Portrait Image", accept: "image/*", max: 1, required: true, showIf: (m) => m.mode === "image" },
@@ -139,7 +161,6 @@ export const CHAT_MODES = {
     ],
     promptPlaceholder: "Describe the lip sync task (optional)...",
     resultType: "video",
-    noPrompt: true,
   },
 
   "body-swap": {
@@ -157,7 +178,6 @@ export const CHAT_MODES = {
     ],
     promptPlaceholder: "Describe the body swap (optional)...",
     resultType: "video",
-    noPrompt: true,
   },
 
   influencer: {
@@ -167,6 +187,7 @@ export const CHAT_MODES = {
     defaultModel: null,
     settings: [
       { key: "aspect_ratio", label: "Aspect", type: "pills", options: ["1:1", "3:4", "4:3", "9:16", "16:9"], default: "3:4" },
+      { key: "resolution", label: "Resolution", type: "pills", options: ["1k", "2k", "4k"], default: "1k", advanced: true },
       ...INFLUENCER_TABS.flatMap(tab =>
         tab.categories.map(cat => ({
           key: `influencer_${cat.id}`,

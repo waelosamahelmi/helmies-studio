@@ -36,19 +36,22 @@ function getSettingOptions(setting, model) {
 
 function buildParams(config, model, prompt, settings, uploads) {
   const params = {};
+  const promptKey = config.promptKey ? config.promptKey(model, settings) : "prompt";
+
   if (config.buildPrompt) {
-    params.prompt = config.buildPrompt(prompt, settings);
+    params[promptKey] = config.buildPrompt(prompt, settings);
   } else if (prompt) {
-    params.prompt = prompt;
+    params[promptKey] = prompt;
   }
+
   if (model?.endpoint) params.endpoint = model.endpoint;
   else if (model?.id) params.endpoint = model.id;
 
   for (const [key, val] of Object.entries(settings)) {
-    if (val !== null && val !== undefined && val !== -1) {
-      if (typeof val === "string" && val === "") continue;
-      params[key] = val;
-    }
+    if (val === null || val === undefined || val === -1) continue;
+    if (typeof val === "string" && val === "") continue;
+    if (key.startsWith("influencer_")) continue;
+    params[key] = val;
   }
 
   for (const [key, val] of Object.entries(uploads)) {
@@ -59,6 +62,17 @@ function buildParams(config, model, prompt, settings, uploads) {
         params[key] = val;
       }
     }
+  }
+
+  if (config.paramOverrides) {
+    Object.assign(params, config.paramOverrides(settings));
+  }
+
+  if (config.tool === "clipping") {
+    if (settings.return_coordinates_only !== undefined) {
+      params.return_coordinates_only = !!settings.return_coordinates_only;
+    }
+    delete params.output_mode;
   }
 
   return params;
@@ -352,33 +366,80 @@ export default function ChatStudio({ tool }) {
     setSettings(prev => ({ ...prev, [key]: val }));
   };
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
-    try {
+  const handleUpload = async (e, uploadConfig) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    const key = uploadConfig?.key || "file";
+    const isMulti = uploadConfig?.multi;
+
+    const uploadFile = async (file) => {
+      const formData = new FormData();
+      formData.append("file", file);
       const res = await apiFetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
-      if (data.url) {
-        const uploadConfig = config.uploads?.find(u => u.accept?.includes(file.type.split("/")[0]) || u.accept === "image/*" || u.accept === "video/*" || u.accept === "audio/*");
-        const key = uploadConfig?.key || "file";
-        setUploads(prev => ({ ...prev, [key]: data.url }));
+      return data.url;
+    };
+
+    try {
+      const urls = await Promise.all(files.map(uploadFile));
+      if (isMulti) {
+        setUploads(prev => ({
+          ...prev,
+          [key]: [...(prev[key] || []), ...urls],
+        }));
+      } else {
+        setUploads(prev => ({ ...prev, [key]: urls[0] }));
       }
     } catch {}
+    e.target.value = "";
+  };
+
+  const addPreset = (uploadConfig, preset) => {
+    const key = uploadConfig.key;
+    setUploads(prev => ({
+      ...prev,
+      [key]: [...(prev[key] || []), preset.url],
+    }));
+  };
+
+  const removeUpload = (key, index) => {
+    setUploads(prev => {
+      const val = prev[key];
+      if (Array.isArray(val)) {
+        const next = val.filter((_, i) => i !== index);
+        return { ...prev, [key]: next.length > 0 ? next : undefined };
+      }
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   };
 
   const handleGenerate = useCallback(async () => {
     const hasPrompt = prompt.trim() || config.noPrompt;
-    const hasRequiredUploads = !config.uploads?.some(u => u.required && !uploads[u.key]);
+    const visibleUploadConfigs = config.uploads?.filter(u => {
+      if (u.showIf && model && !u.showIf(model, settings, uploads)) return false;
+      return true;
+    }) || [];
+    const hasRequiredUploads = !visibleUploadConfigs.some(u => u.required && !uploads[u.key]);
     if (!hasPrompt || !hasRequiredUploads || loading) return;
 
+    let activeModel = model;
+    let activeTool = config.tool;
+    if (config.autoSwitchToI2V && uploads.image_url && config.i2vModels) {
+      activeModel = config.i2vModels[0];
+      activeTool = "i2v";
+    }
+
     const chips = [];
-    if (model) chips.push(model.name);
+    if (activeModel) chips.push(activeModel.name);
     for (const s of config.settings || []) {
-      if (s.showIf && model && !s.showIf(model)) continue;
-      if (s.type === "pills" && settings[s.key]) {
-        chips.push(`${s.label}: ${settings[s.key]}${s.suffix || ""}`);
+      if (s.showIf && model && !s.showIf(model, settings, uploads)) continue;
+      if (s.type === "pills" && settings[s.key] !== undefined) {
+        const opts = getSettingOptions(s, model);
+        const val = settings[s.key];
+        const opt = opts?.find(o => (typeof o === "object" ? o.id : o) === val);
+        chips.push(`${s.label}: ${typeof opt === "object" ? opt.label || opt.name : val}${s.suffix || ""}`);
       } else if (s.type === "select" && settings[s.key]) {
         const opts = getSettingOptions(s, model);
         const opt = opts?.find(o => (typeof o === "object" ? o.id : o) === settings[s.key]);
@@ -386,9 +447,18 @@ export default function ChatStudio({ tool }) {
       }
     }
 
-    const attachments = Object.entries(uploads).map(([key, url]) => ({
-      url, type: url.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key,
-    }));
+    const attachments = [];
+    for (const [key, val] of Object.entries(uploads)) {
+      if (Array.isArray(val)) {
+        val.forEach(url => attachments.push({
+          url, type: url.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key,
+        }));
+      } else if (val) {
+        attachments.push({
+          url: val, type: val.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key,
+        });
+      }
+    }
 
     const userMsg = { id: Date.now(), type: "user", text: prompt.trim(), chips, attachments };
     const loadingMsg = { id: Date.now() + 1, type: "loading", elapsed: 0 };
@@ -396,8 +466,8 @@ export default function ChatStudio({ tool }) {
     setLoading(true);
     setPrompt("");
 
-    const params = buildParams(config, model, prompt, settings, uploads);
-    submit(config.tool, model?.id || "default", params);
+    const params = buildParams(config, activeModel, prompt, settings, uploads);
+    submit(activeTool, activeModel?.id || "default", params);
   }, [prompt, config, model, settings, uploads, loading, submit]);
 
   useEffect(() => {
@@ -429,12 +499,16 @@ export default function ChatStudio({ tool }) {
     handleGenerate();
   };
 
-  const hasRequiredUploads = !config.uploads?.some(u => u.required && !uploads[u.key]);
-  const canGenerate = (prompt.trim() || config.noPrompt) && hasRequiredUploads && !loading && affordable;
   const visibleUploads = config.uploads?.filter(u => {
-    if (u.showIf && model && !u.showIf(model)) return false;
+    if (u.showIf && model && !u.showIf(model, settings, uploads)) return false;
     return true;
   }) || [];
+  const hasRequiredUploads = !visibleUploads.some(u => u.required && !uploads[u.key]);
+  const canGenerate = (prompt.trim() || config.noPrompt) && hasRequiredUploads && !loading && affordable;
+
+  const promptPlaceholder = config.editPlaceholder && settings.mode === "edit" ? config.editPlaceholder : config.promptPlaceholder;
+  const fileInputRef = useRef(null);
+  const [activeUploadKey, setActiveUploadKey] = useState(null);
 
   return (
     <div className="chat-studio">
@@ -455,17 +529,46 @@ export default function ChatStudio({ tool }) {
       <div className="chat__input-bar">
         {visibleUploads.length > 0 && (
           <div className="chat__upload-row">
-            {visibleUploads.map(u => (
-              <button
-                key={u.key}
-                className={`chat__upload-btn ${uploads[u.key] ? "chat__upload-btn--done" : ""}`}
-                onClick={() => fileRef.current?.click()}
-              >
-                {uploads[u.key] ? "✓ " : ""}{u.label}
-                {u.required && !uploads[u.key] && <span className="chat__required">*</span>}
-              </button>
-            ))}
-            <input ref={fileRef} type="file" onChange={handleUpload} style={{ display: "none" }} />
+            {visibleUploads.map(u => {
+              const val = uploads[u.key];
+              const count = Array.isArray(val) ? val.length : val ? 1 : 0;
+              return (
+                <div key={u.key} className="chat__upload-group">
+                  <button
+                    className={`chat__upload-btn ${count > 0 ? "chat__upload-btn--done" : ""}`}
+                    onClick={() => { setActiveUploadKey(u.key); fileInputRef.current?.click(); }}
+                  >
+                    {count > 0 ? `✓ ${u.label} (${count})` : u.label}
+                    {u.required && count === 0 && <span className="chat__required">*</span>}
+                  </button>
+                  {u.presets && (
+                    <div className="chat__presets">
+                      {u.presets.slice(0, 6).map(p => (
+                        <button
+                          key={p.id}
+                          className="chat__preset"
+                          onClick={() => addPreset(u, p)}
+                          title={p.name}
+                        >
+                          <img src={p.url} alt={p.name} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={visibleUploads.find(u => u.key === activeUploadKey)?.accept || "*/*"}
+              multiple={visibleUploads.find(u => u.key === activeUploadKey)?.multi}
+              onChange={(e) => {
+                const uc = visibleUploads.find(u => u.key === activeUploadKey);
+                handleUpload(e, uc);
+              }}
+              style={{ display: "none" }}
+            />
           </div>
         )}
 
@@ -492,7 +595,7 @@ export default function ChatStudio({ tool }) {
             </button>
             <textarea
               className="chat__textarea"
-              placeholder={config.promptPlaceholder}
+              placeholder={promptPlaceholder}
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleGenerate(); } }}
