@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { IconSettings, IconImage, IconVideo, IconMusic } from "@/components/Icons";
+import { IconSettings, IconSparkle } from "@/components/Icons";
 
 export default function ChatInput({
   placeholder,
@@ -14,8 +14,10 @@ export default function ChatInput({
   disabled,
   loading,
   cost,
-  settingsOpen,
+  runningCost,
   onSettingsOpen,
+  onOptimize,
+  onAbort,
 }) {
   const [text, setText] = useState("");
   const [focused, setFocused] = useState(false);
@@ -30,7 +32,7 @@ export default function ChatInput({
   }, [text, disabled, loading, onSubmit]);
 
   const handleKeyDown = useCallback((e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && e.shiftKey) {
       e.preventDefault();
       handleSubmit();
     }
@@ -38,9 +40,10 @@ export default function ChatInput({
 
   const hasUploads = uploads && uploads.length > 0;
 
+  const displayCost = runningCost ?? cost;
+
   return (
     <div className={`chat-input ${focused ? "chat-input--focused" : ""}`}>
-      {/* Upload buttons row */}
       {hasUploads && (
         <div className="chat-input__uploads">
           {uploads.map((u) => {
@@ -83,7 +86,6 @@ export default function ChatInput({
         </div>
       )}
 
-      {/* Upload previews */}
       {uploadsState && Object.keys(uploadsState).length > 0 && (
         <div className="chat-input__previews">
           {Object.entries(uploadsState).map(([key, val]) => {
@@ -104,16 +106,13 @@ export default function ChatInput({
         </div>
       )}
 
-      {/* Input area */}
       <div className="chat-input__inner" onClick={() => textRef.current?.focus()}>
-        {/* Model chip + upload button */}
         <div className="chat-input__tools">
           {modelChip && (
             <div className="chat-input__model-chip">{modelChip}</div>
           )}
         </div>
 
-        {/* Textarea */}
         <textarea
           ref={textRef}
           className="chat-input__textarea"
@@ -126,32 +125,59 @@ export default function ChatInput({
           rows={1}
         />
 
-        {/* Actions */}
         <div className="chat-input__actions">
+          {onOptimize && text.trim().length > 0 && (
+            <button
+              className="chat-input__opt-btn"
+              onClick={() => onOptimize(text)}
+              aria-label="Optimize prompt"
+              title="Optimize prompt with AI"
+              type="button"
+            >
+              <IconSparkle />
+            </button>
+          )}
           <button
             className="chat-input__settings-btn"
             onClick={onSettingsOpen}
             aria-label="Settings"
+            type="button"
           >
             <IconSettings />
           </button>
-          <button
-            className="chat-input__send"
-            onClick={handleSubmit}
-            disabled={!text.trim() || disabled || loading}
-          >
-            {loading ? (
-              <span className="chat-input__spinner" />
-            ) : (
-              <>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-                {cost > 0 && <span className="chat-input__cost">{cost}⛯</span>}
-              </>
+          <div className="chat-input__send-wrap">
+            {displayCost > 0 && !loading && (
+              <span className="chat-input__cost-display">{displayCost}⛯</span>
             )}
-          </button>
+            {loading && onAbort ? (
+              <button
+                className="chat-input__stop"
+                onClick={onAbort}
+                aria-label="Stop"
+                type="button"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                className="chat-input__send"
+                onClick={handleSubmit}
+                disabled={!text.trim() || disabled || loading}
+                type="button"
+              >
+                {loading ? (
+                  <span className="chat-input__spinner" />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

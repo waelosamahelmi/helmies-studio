@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/client-fetch";
 import ChatFeed from "../chat/ChatFeed";
 import ChatInput from "../chat/ChatInput";
@@ -9,19 +9,38 @@ import AISuggestions from "../chat/AISuggestions";
 import { IconSparkle } from "@/components/Icons";
 
 const SUGGESTIONS = [
-  { icon: "🎬", label: "Create a luxury perfume commercial" },
-  { icon: "🎨", label: "Design a brand kit for a tech startup" },
-  { icon: "🎵", label: "Make a cinematic trailer with music" },
-  { icon: "📱", label: "Create a social media campaign" },
+  { icon: "🎬", label: "I want to create a luxury perfume commercial" },
+  { icon: "🎨", label: "Design a brand kit for my tech startup" },
+  { icon: "🎵", label: "I need a cinematic trailer with music" },
+  { icon: "📱", label: "Create a social media campaign for my product" },
+  { icon: "🌄", label: "Generate a fantasy landscape image" },
+  { icon: "🎥", label: "Make a video from my photos" },
 ];
+
+const SYSTEM_PROMPT = `You are Helmies Studio's Orchestrator Agent — a creative AI assistant that helps users bring their ideas to life.
+
+You can generate images, videos, audio, build websites, create marketing content, and write code.
+
+When the user describes what they want:
+1. Ask clarifying questions if needed (style, mood, duration, etc.)
+2. Explain what you can create for them
+3. Keep responses friendly, creative, and concise
+4. When the user confirms they're ready, tell them to click "Generate Plan" to proceed`;
 
 export default function OrchestratorMode() {
   const [messages, setMessages] = useState([]);
   const [executing, setExecuting] = useState(false);
   const [thinking, setThinking] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
   const [pendingCount, setPendingCount] = useState(0);
   const [plan, setPlan] = useState(null);
   const [stepCards, setStepCards] = useState([]);
+  const [abortController, setAbortController] = useState(null);
+  const messagesRef = useRef([]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   useEffect(() => {
     const poll = async () => {
@@ -36,19 +55,89 @@ export default function OrchestratorMode() {
     return () => clearInterval(interval);
   }, []);
 
-  const handlePlan = useCallback(async (text) => {
+  const streamChat = useCallback(async (chatMessages) => {
+    const res = await fetch("/api/agent/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: chatMessages }),
+    });
+
+    if (!res.ok) throw new Error("Chat failed");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let fullText = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const dataStr = line.slice(6).trim();
+        if (dataStr === "[DONE]") continue;
+        try {
+          const data = JSON.parse(dataStr);
+          if (data.type === "token" && data.content) {
+            fullText += data.content;
+            setStreamingText(fullText);
+          }
+        } catch {}
+      }
+    }
+
+    return fullText;
+  }, []);
+
+  const handleChat = useCallback(async (text) => {
     if (!text.trim() || thinking || executing) return;
 
     const userMsg = { id: Date.now(), type: "user", text };
-    const thinkingMsg = { id: Date.now() + 1, type: "loading", elapsed: 0 };
-    setMessages(prev => [...prev, userMsg, thinkingMsg]);
+    const loadingMsg = { id: Date.now() + 1, type: "loading" };
+    setMessages(prev => [...prev, userMsg]);
     setThinking(true);
+    setStreamingText("");
+
+    const chatHistory = messagesRef.current
+      .filter(m => m.type === "user" || m.type === "assistant")
+      .map(m => ({ role: m.type === "user" ? "user" : "assistant", content: m.text || m.streamText }));
+
+    chatHistory.push({ role: "user", content: text });
+
+    try {
+      const fullText = await streamChat(chatHistory);
+      const assistantMsg = { id: Date.now() + 1, type: "assistant", text: fullText, streamText: fullText };
+      setMessages(prev => [...prev.filter(m => m.id !== loadingMsg.id), assistantMsg]);
+    } catch (e) {
+      setMessages(prev => [...prev.filter(m => m.id !== loadingMsg.id), { id: Date.now() + 1, type: "error", text: e.message }]);
+    } finally {
+      setThinking(false);
+      setStreamingText("");
+    }
+  }, [thinking, executing, streamChat]);
+
+  const handlePlan = useCallback(async () => {
+    if (thinking || executing || plan) return;
+
+    const chatHistory = messagesRef.current
+      .filter(m => m.type === "user" || m.type === "assistant")
+      .map(m => ({ role: m.type === "user" ? "user" : "assistant", content: m.text || m.streamText }));
+
+    const conversationText = chatHistory.map(m => `${m.role}: ${m.content}`).join("\n");
+
+    setThinking(true);
+    const loadingMsg = { id: Date.now(), type: "loading" };
+    setMessages(prev => [...prev, loadingMsg]);
 
     try {
       const res = await fetch("/api/agent/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: text, stream: true }),
+        body: JSON.stringify({ prompt: conversationText, stream: true }),
       });
 
       if (!res.ok) throw new Error("Planning failed");
@@ -73,7 +162,7 @@ export default function OrchestratorMode() {
             const totalCredits = planData.estimate?.total || 0;
             const steps = (planData.steps || []).map(s => ({
               label: `${s.agent}: ${s.task}`,
-              cost: planData.estimate?.breakdown?.find(b => b.step === s.task)?.credits || 0,
+              cost: planData.estimate?.breakdown?.find(b => b.task === s.task)?.credits || 0,
               status: null,
               agent: s.agent,
               task: s.task,
@@ -90,13 +179,11 @@ export default function OrchestratorMode() {
         }
       }
     } catch (e) {
-      setMessages(prev => prev.map(m =>
-        m.type === "loading" ? { ...m, type: "error", text: e.message } : m
-      ));
+      setMessages(prev => [...prev.filter(m => m.id !== loadingMsg.id), { id: Date.now(), type: "error", text: e.message }]);
     } finally {
       setThinking(false);
     }
-  }, [thinking, executing]);
+  }, [thinking, executing, plan]);
 
   const handleExecute = useCallback(async () => {
     if (!plan || executing) return;
@@ -139,9 +226,6 @@ export default function OrchestratorMode() {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      let lastOutput = null;
-      let lastOutputs = null;
-
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -176,10 +260,10 @@ export default function OrchestratorMode() {
             ));
           } else if (data.type === "run_complete") {
             setExecuting(false);
-            lastOutput = data.assembled?.images?.[0]?.url
+            const lastOutput = data.assembled?.images?.[0]?.url
               || data.assembled?.videos?.[0]?.url
               || data.outputs?.[0] || null;
-            lastOutputs = data.outputs || [];
+            const lastOutputs = data.outputs || [];
 
             const resultMsg = {
               id: Date.now(),
@@ -205,10 +289,6 @@ export default function OrchestratorMode() {
     }
   }, [plan, executing]);
 
-  const handleInput = useCallback(async (text) => {
-    await handlePlan(text);
-  }, [handlePlan]);
-
   useEffect(() => {
     if (plan && !executing && !thinking) {
       setMessages(prev => {
@@ -227,9 +307,11 @@ export default function OrchestratorMode() {
 
   const handleRetry = () => {};
 
+  const hasConversation = messages.some(m => m.type === "assistant");
+
   return (
     <div className="orchestrator-mode">
-      <ChatHeader Icon={IconSparkle} label="Orchestrator" pendingCount={pendingCount} />
+      <ChatHeader Icon={IconSparkle} pendingCount={pendingCount} />
       <ChatFeed
         messages={messages}
         onRetry={handleRetry}
@@ -237,7 +319,7 @@ export default function OrchestratorMode() {
           <div className="orchestrator-mode__idle">
             <div className="orchestrator-mode__greeting">
               <h2>What would you like to create today?</h2>
-              <p>Describe what you want, and the Orchestrator will plan and execute it step by step.</p>
+              <p>Describe what you want, and I'll help you plan and create it step by step.</p>
             </div>
             {executing && (
               <div className="orchestrator-mode__executing">
@@ -255,14 +337,21 @@ export default function OrchestratorMode() {
           </div>
         }
       />
-      {messages.length === 0 && (
+      {messages.length === 0 && !thinking && (
         <div className="orchestrator-mode__suggestions">
-          <AISuggestions suggestions={SUGGESTIONS} onSelect={(s) => handleInput(s.label)} />
+          <AISuggestions suggestions={SUGGESTIONS} onSelect={(s) => handleChat(s.label)} />
+        </div>
+      )}
+      {hasConversation && !plan && !executing && !thinking && (
+        <div className="orchestrator-mode__plan-bar">
+          <button className="orchestrator-mode__plan-btn" onClick={handlePlan}>
+            <IconSparkle /> Generate Plan
+          </button>
         </div>
       )}
       <ChatInput
         placeholder="Describe what you want to create..."
-        onSubmit={handleInput}
+        onSubmit={handleChat}
         disabled={thinking || executing}
         loading={thinking}
       />

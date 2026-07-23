@@ -100,6 +100,17 @@ export default function ChatMessage({ msg, config, onRetry }) {
     );
   }
 
+  if (msg.type === "assistant") {
+    return (
+      <div className="chat-message chat-message--assistant">
+        <div className="chat-message__avatar chat-message__avatar--assistant">H</div>
+        <div className="chat-message__bubble chat-message__bubble--assistant">
+          <p className="chat-message__text">{msg.text || msg.streamText}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (msg.type === "plan") {
     return (
       <div className="chat-message chat-message--assistant">

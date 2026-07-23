@@ -107,11 +107,13 @@ export default function SimpleMode({ tool }) {
   const [uploads, setUploads] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
-  const { result, error, elapsed, submit } = useAsyncGeneration();
+  const [optimizing, setOptimizing] = useState(false);
+  const [pendingOptimization, setPendingOptimization] = useState(null);
+  const { result, error, elapsed, submit, loading: genLoading } = useAsyncGeneration();
   const [loading, setLoading] = useState(false);
 
   const creditParams = buildParams(config, model, prompt, settings, uploads);
-    const { cost, affordable } = useCreditCost(config.tool, model?.id || "default", creditParams);
+  const { cost, affordable } = useCreditCost(config.tool, model?.id || "default", creditParams);
 
   useEffect(() => { setModel(config.defaultModel); setSettings(getDefaultSettings(config)); setUploads({}); setMessages([]); }, [tool]);
 
@@ -194,6 +196,23 @@ export default function SimpleMode({ tool }) {
     });
   };
 
+  const handleOptimize = useCallback(async (text) => {
+    if (!text.trim() || optimizing) return;
+    setOptimizing(true);
+    try {
+      const res = await apiFetch("/api/prompt/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: text, type: config.resultType || "image", modelId: model?.id }),
+      });
+      const data = await res.json();
+      if (data.expanded && data.expanded !== text) {
+        setPendingOptimization({ original: text, optimized: data.expanded });
+      }
+    } catch {}
+    setOptimizing(false);
+  }, [optimizing, config, model]);
+
   const handleGenerate = useCallback(async (text) => {
     const promptText = text || prompt;
     if (!promptText.trim() && !config.noPrompt) return;
@@ -223,7 +242,7 @@ export default function SimpleMode({ tool }) {
       if (Array.isArray(val)) {
         val.forEach(url => attachments.push({ url, type: url.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key }));
       } else if (val) {
-        attachments.push({ url: val, type: val.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key });
+        attachments.push({ url: val, type: url.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key });
       }
     }
 
@@ -232,6 +251,7 @@ export default function SimpleMode({ tool }) {
     setMessages(prev => [...prev, userMsg, loadingMsg]);
     setLoading(true);
     setPrompt("");
+    setPendingOptimization(null);
 
     const params = buildParams(config, activeModel, promptText, settings, uploads);
     submit(activeTool, activeModel?.id || "default", params);
@@ -259,7 +279,7 @@ export default function SimpleMode({ tool }) {
 
   return (
     <div className="simple-mode">
-      <ChatHeader Icon={Icon} label={config.label} pendingCount={pendingCount} />
+      <ChatHeader Icon={Icon} pendingCount={pendingCount} />
       <ChatFeed
         messages={messages}
         config={config}
@@ -290,7 +310,40 @@ export default function SimpleMode({ tool }) {
         loading={loading}
         cost={cost}
         onSettingsOpen={() => setSettingsOpen(true)}
+        onOptimize={handleOptimize}
       />
+      {pendingOptimization && (
+        <div className="prompt-opt__overlay" onClick={() => setPendingOptimization(null)}>
+          <div className="prompt-opt" onClick={(e) => e.stopPropagation()}>
+            <div className="prompt-opt__header">
+              <IconSparkle />
+              <span>Optimized Prompt</span>
+              <button className="prompt-opt__close" onClick={() => setPendingOptimization(null)}>✕</button>
+            </div>
+            <div className="prompt-opt__original">
+              <label>Original</label>
+              <p>{pendingOptimization.original}</p>
+            </div>
+            <div className="prompt-opt__optimized">
+              <label>Optimized</label>
+              <textarea
+                className="prompt-opt__textarea"
+                value={pendingOptimization.optimized}
+                onChange={(e) => setPendingOptimization(prev => ({ ...prev, optimized: e.target.value }))}
+                rows={4}
+              />
+            </div>
+            <div className="prompt-opt__actions">
+              <button className="prompt-opt__btn prompt-opt__btn--cancel" onClick={() => setPendingOptimization(null)}>
+                Edit
+              </button>
+              <button className="prompt-opt__btn prompt-opt__btn--confirm" onClick={() => { setPrompt(pendingOptimization.optimized); setPendingOptimization(null); }}>
+                Use Prompt
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <SettingsDrawer
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
