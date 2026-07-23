@@ -11,10 +11,12 @@ export async function POST(req) {
     const rl = await checkRateLimit(user.id, "/api/agent");
     if (!rl.allowed) return new Response("Rate limited", { status: 429 });
 
-    const { messages } = await req.json();
+    const { messages, model } = await req.json();
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response("Messages required", { status: 400 });
     }
+
+    const selectedModel = model || process.env.LLM_MODEL || "qwen/qwen-2.5-72b-instruct";
 
     const hasLLM = process.env.OPENROUTER_KEY;
     if (!hasLLM) {
@@ -32,13 +34,16 @@ export async function POST(req) {
     }
 
     const orchestrator = getAgent("orchestrator");
-    const systemMsg = { role: "system", content: `${orchestrator.systemPrompt}\n\nYou are having a conversation with the user. Help them refine their request, ask clarifying questions, and when they're ready, suggest they click "Generate Plan" to proceed. Keep responses helpful and concise.` };
+    const systemMsg = {
+      role: "system",
+      content: `${orchestrator.systemPrompt}\n\nYou are having a conversation with the user. Help them refine their request, ask clarifying questions, and when they're ready, suggest they click "Generate Plan" to proceed. Keep responses helpful and concise.`,
+    };
 
     const allMessages = [systemMsg, ...messages.map(m => ({ role: m.role, content: m.content }))];
 
     let llmReadable;
     try {
-      llmReadable = await llmStream(allMessages, { maxTokens: 2000, temperature: 0.7 });
+      llmReadable = await llmStream(allMessages, { maxTokens: 2000, temperature: 0.7, model: selectedModel });
     } catch (e) {
       return new Response(JSON.stringify({ error: e.message }), { status: 500 });
     }

@@ -6,7 +6,7 @@ import ChatFeed from "../chat/ChatFeed";
 import ChatInput from "../chat/ChatInput";
 import ChatHeader from "../chat/ChatHeader";
 import AISuggestions from "../chat/AISuggestions";
-import { IconSparkle } from "@/components/Icons";
+import { IconSparkle, IconChevron, IconCheck } from "@/components/Icons";
 
 const SUGGESTIONS = [
   { icon: "🎬", label: "I want to create a luxury perfume commercial" },
@@ -17,16 +17,6 @@ const SUGGESTIONS = [
   { icon: "🎥", label: "Make a video from my photos" },
 ];
 
-const SYSTEM_PROMPT = `You are Helmies Studio's Orchestrator Agent — a creative AI assistant that helps users bring their ideas to life.
-
-You can generate images, videos, audio, build websites, create marketing content, and write code.
-
-When the user describes what they want:
-1. Ask clarifying questions if needed (style, mood, duration, etc.)
-2. Explain what you can create for them
-3. Keep responses friendly, creative, and concise
-4. When the user confirms they're ready, tell them to click "Generate Plan" to proceed`;
-
 export default function OrchestratorMode() {
   const [messages, setMessages] = useState([]);
   const [executing, setExecuting] = useState(false);
@@ -35,7 +25,9 @@ export default function OrchestratorMode() {
   const [pendingCount, setPendingCount] = useState(0);
   const [plan, setPlan] = useState(null);
   const [stepCards, setStepCards] = useState([]);
-  const [abortController, setAbortController] = useState(null);
+  const [models, setModels] = useState([]);
+  const [selectedModel, setSelectedModel] = useState("qwen/qwen-2.5-72b-instruct");
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const messagesRef = useRef([]);
 
   useEffect(() => {
@@ -55,11 +47,25 @@ export default function OrchestratorMode() {
     return () => clearInterval(interval);
   }, []);
 
-  const streamChat = useCallback(async (chatMessages) => {
+  useEffect(() => {
+    apiFetch("/api/openrouter/models").then(res => res.json()).then(data => {
+      if (data.models?.length > 0) {
+        setModels(data.models);
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const handleClick = () => setModelPickerOpen(false);
+    window.addEventListener("click", handleClick);
+    return () => window.removeEventListener("click", handleClick);
+  }, []);
+
+  const streamChat = useCallback(async (chatMessages, model) => {
     const res = await fetch("/api/agent/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: chatMessages }),
+      body: JSON.stringify({ messages: chatMessages, model }),
     });
 
     if (!res.ok) throw new Error("Chat failed");
@@ -97,7 +103,6 @@ export default function OrchestratorMode() {
     if (!text.trim() || thinking || executing) return;
 
     const userMsg = { id: Date.now(), type: "user", text };
-    const loadingMsg = { id: Date.now() + 1, type: "loading" };
     setMessages(prev => [...prev, userMsg]);
     setThinking(true);
     setStreamingText("");
@@ -109,16 +114,16 @@ export default function OrchestratorMode() {
     chatHistory.push({ role: "user", content: text });
 
     try {
-      const fullText = await streamChat(chatHistory);
+      const fullText = await streamChat(chatHistory, selectedModel);
       const assistantMsg = { id: Date.now() + 1, type: "assistant", text: fullText, streamText: fullText };
-      setMessages(prev => [...prev.filter(m => m.id !== loadingMsg.id), assistantMsg]);
+      setMessages(prev => [...prev, assistantMsg]);
     } catch (e) {
-      setMessages(prev => [...prev.filter(m => m.id !== loadingMsg.id), { id: Date.now() + 1, type: "error", text: e.message }]);
+      setMessages(prev => [...prev, { id: Date.now() + 1, type: "error", text: e.message }]);
     } finally {
       setThinking(false);
       setStreamingText("");
     }
-  }, [thinking, executing, streamChat]);
+  }, [thinking, executing, streamChat, selectedModel]);
 
   const handlePlan = useCallback(async () => {
     if (thinking || executing || plan) return;
@@ -169,12 +174,7 @@ export default function OrchestratorMode() {
               params: s.params,
             }));
 
-            setPlan({
-              steps,
-              totalCredits,
-              summary: planData.summary || "",
-              rawPlan: planData,
-            });
+            setPlan({ steps, totalCredits, summary: planData.summary || "", rawPlan: planData });
           }
         }
       }
@@ -188,21 +188,11 @@ export default function OrchestratorMode() {
   const handleExecute = useCallback(async () => {
     if (!plan || executing) return;
 
-    const planMsg = {
-      id: Date.now(),
-      type: "plan",
-      steps: plan.steps,
-      totalCredits: plan.totalCredits,
-    };
+    const planMsg = { id: Date.now(), type: "plan", steps: plan.steps, totalCredits: plan.totalCredits };
     setMessages(prev => [...prev.filter(m => m.type !== "loading"), planMsg]);
     setExecuting(true);
 
-    const stepCardsInit = plan.steps.map((s, i) => ({
-      index: i,
-      ...s,
-      status: "pending",
-      output: null,
-    }));
+    const stepCardsInit = plan.steps.map((s, i) => ({ index: i, ...s, status: "pending", output: null }));
     setStepCards(stepCardsInit);
 
     try {
@@ -210,11 +200,7 @@ export default function OrchestratorMode() {
       const res = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: summary,
-          context: { precomputedPlan: plan.rawPlan },
-          stream: true,
-        }),
+        body: JSON.stringify({ message: summary, context: { precomputedPlan: plan.rawPlan }, stream: true }),
       });
 
       if (!res.ok) {
@@ -239,45 +225,21 @@ export default function OrchestratorMode() {
 
           if (data.type === "step_start") {
             const stepIndex = (data.step || 1) - 1;
-            setStepCards(prev => prev.map(s =>
-              s.index === stepIndex ? { ...s, status: "running" } : s
-            ));
+            setStepCards(prev => prev.map(s => s.index === stepIndex ? { ...s, status: "running" } : s));
             setMessages(prev => prev.map(m =>
-              m.type === "plan" && m.steps
-                ? { ...m, steps: m.steps.map((s, i) => i === stepIndex ? { ...s, status: "running" } : s) }
-                : m
+              m.type === "plan" && m.steps ? { ...m, steps: m.steps.map((s, i) => i === stepIndex ? { ...s, status: "running" } : s) } : m
             ));
           } else if (data.type === "step_complete") {
             const stepIndex = (data.step || 1) - 1;
-            const output = data.output || null;
-            setStepCards(prev => prev.map(s =>
-              s.index === stepIndex ? { ...s, status: data.status === "failed" ? "error" : "done", output } : s
-            ));
+            setStepCards(prev => prev.map(s => s.index === stepIndex ? { ...s, status: data.status === "failed" ? "error" : "done", output: data.output || null } : s));
             setMessages(prev => prev.map(m =>
-              m.type === "plan" && m.steps
-                ? { ...m, steps: m.steps.map((s, i) => i === stepIndex ? { ...s, status: data.status === "failed" ? "error" : "done" } : s) }
-                : m
+              m.type === "plan" && m.steps ? { ...m, steps: m.steps.map((s, i) => i === stepIndex ? { ...s, status: data.status === "failed" ? "error" : "done" } : s) } : m
             ));
           } else if (data.type === "run_complete") {
             setExecuting(false);
-            const lastOutput = data.assembled?.images?.[0]?.url
-              || data.assembled?.videos?.[0]?.url
-              || data.outputs?.[0] || null;
-            const lastOutputs = data.outputs || [];
-
-            const resultMsg = {
-              id: Date.now(),
-              type: "result",
-              url: lastOutput,
-              outputs: lastOutputs.length > 1 ? lastOutputs : null,
-              creditsUsed: data.creditsUsed || plan.totalCredits,
-            };
-
-            if (!data.success) {
-              resultMsg.type = "error";
-              resultMsg.text = data.error || "Some steps failed";
-            }
-
+            const lastOutput = data.assembled?.images?.[0]?.url || data.assembled?.videos?.[0]?.url || data.outputs?.[0] || null;
+            const resultMsg = { id: Date.now(), type: data.success ? "result" : "error", url: lastOutput, outputs: data.outputs?.length > 1 ? data.outputs : null, creditsUsed: data.creditsUsed || plan.totalCredits };
+            if (!data.success) resultMsg.text = data.error || "Some steps failed";
             setMessages(prev => [...prev, resultMsg]);
             setStepCards([]);
           }
@@ -293,14 +255,7 @@ export default function OrchestratorMode() {
     if (plan && !executing && !thinking) {
       setMessages(prev => {
         if (prev.some(m => m.type === "plan")) return prev;
-        const planMsg = {
-          id: Date.now(),
-          type: "plan",
-          steps: plan.steps,
-          totalCredits: plan.totalCredits,
-          onConfirm: handleExecute,
-        };
-        return [...prev.filter(m => m.type !== "loading"), planMsg];
+        return [...prev.filter(m => m.type !== "loading"), { id: Date.now(), type: "plan", steps: plan.steps, totalCredits: plan.totalCredits, onConfirm: handleExecute }];
       });
     }
   }, [plan, executing, thinking, handleExecute]);
@@ -308,10 +263,57 @@ export default function OrchestratorMode() {
   const handleRetry = () => {};
 
   const hasConversation = messages.some(m => m.type === "assistant");
+  const currentModel = models.find(m => m.id === selectedModel) || { id: selectedModel, name: selectedModel.split("/").pop(), provider: selectedModel.split("/")[0] };
 
   return (
     <div className="orchestrator-mode">
       <ChatHeader Icon={IconSparkle} pendingCount={pendingCount} />
+      {/* Model selector */}
+      <div className="orchestrator-mode__model-bar">
+        <button
+          className="orchestrator-mode__model-btn"
+          onClick={(e) => { e.stopPropagation(); setModelPickerOpen(!modelPickerOpen); }}
+          type="button"
+        >
+          <span className="orchestrator-mode__model-name">{currentModel.name}</span>
+          <span className="orchestrator-mode__model-provider">{currentModel.provider}</span>
+          <IconChevron />
+        </button>
+        {modelPickerOpen && (
+          <div className="orchestrator-mode__model-picker" onClick={(e) => e.stopPropagation()}>
+            <div className="orchestrator-mode__model-picker-search">
+              <input
+                type="text"
+                placeholder="Search models..."
+                className="orchestrator-mode__model-search-input"
+                onChange={(e) => {
+                  const q = e.target.value.toLowerCase();
+                  document.querySelectorAll(".orchestrator-mode__model-option").forEach(el => {
+                    el.style.display = el.textContent.toLowerCase().includes(q) ? "flex" : "none";
+                  });
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="orchestrator-mode__model-picker-list">
+              {models.map(m => (
+                <button
+                  key={m.id}
+                  className={`orchestrator-mode__model-option ${selectedModel === m.id ? "orchestrator-mode__model-option--active" : ""}`}
+                  onClick={() => { setSelectedModel(m.id); setModelPickerOpen(false); }}
+                  type="button"
+                >
+                  <div className="orchestrator-mode__model-option-info">
+                    <span className="orchestrator-mode__model-option-name">{m.name}</span>
+                    <span className="orchestrator-mode__model-option-provider">{m.provider}</span>
+                  </div>
+                  {selectedModel === m.id && <IconCheck />}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
       <ChatFeed
         messages={messages}
         onRetry={handleRetry}
@@ -344,7 +346,7 @@ export default function OrchestratorMode() {
       )}
       {hasConversation && !plan && !executing && !thinking && (
         <div className="orchestrator-mode__plan-bar">
-          <button className="orchestrator-mode__plan-btn" onClick={handlePlan}>
+          <button className="orchestrator-mode__plan-btn" onClick={handlePlan} type="button">
             <IconSparkle /> Generate Plan
           </button>
         </div>
