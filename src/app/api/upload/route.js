@@ -26,7 +26,7 @@ export async function POST(req) {
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, name), buffer);
 
-    const url = `/uploads/${name}`;
+    const url = `/api/media/local/${name}`;
     return NextResponse.json({ url });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
