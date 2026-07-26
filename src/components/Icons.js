@@ -105,3 +105,26 @@ export const IconGoogle = (p) => (
     <path fill="#34A853" d="M9 17.5c2.4 0 4.5-.8 6-2.2l-2.7-2.1c-.8.5-1.8.9-3.3.9-2.5 0-4.7-1.5-5.4-3.6L.9 12.6C2.4 15.5 5.5 17.5 9 17.5z"/>
   </svg>
 );
+
+// ── Added for Brand Kits / Studio V2 ──────────────
+export const IconPalette = (p) => (
+  <svg width={p?.size || 16} height={p?.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" {...p}>
+    <circle cx="13.5" cy="6.5" r="2.5"/><circle cx="6.5" cy="11.5" r="2.5"/><circle cx="17.5" cy="14.5" r="2.5"/>
+    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.5-.6 1.5-1.5 0-.4-.2-.8-.5-1.1-.3-.3-.5-.7-.5-1.1 0-.8.7-1.5 1.5-1.5H17c2.8 0 5-2.2 5-5C22 6.5 17.5 2 12 2z"/>
+  </svg>
+);
+export const IconPlus = (p) => (
+  <svg width={p?.size || 16} height={p?.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" {...p}>
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+);
+export const IconShield = (p) => (
+  <svg width={p?.size || 16} height={p?.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" {...p}>
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+  </svg>
+);
+export const IconLock = (p) => (
+  <svg width={p?.size || 16} height={p?.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" {...p}>
+    <rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>
+  </svg>
+);

@@ -8,10 +8,14 @@ import { apiFetch } from "@/lib/client-fetch";
 import ChatStudio from "@/components/studio/ChatStudio";
 import WorkflowBuilder from "@/components/studio/WorkflowBuilder";
 import ProjectMemory from "@/components/studio/ProjectMemory";
+import BrandKitsView from "@/components/studio/BrandKitsView";
+import CanvasWorkspace from "@/components/studio/CanvasWorkspace";
+import DirectorWorkspace from "@/components/studio/DirectorWorkspace";
+import AssetLibrary from "@/components/studio/AssetLibrary";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
-  IconStar, IconBolt, IconArrowUpRight, IconClose, IconSparkle, IconMenu,
+  IconStar, IconBolt, IconArrowUpRight, IconClose, IconSparkle, IconMenu, IconPlay, IconDownload,
 } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
@@ -19,6 +23,7 @@ const EASE = [0.32, 0.72, 0, 1];
 const TOOLS = [
   { id: "orchestrator", label: "Orchestrator", desc: "AI agent that plans & executes tasks", Icon: IconSparkle, color: "#FF1B6B", group: "AI Agents", badge: "New" },
   { id: "workflows", label: "Workflows", desc: "Multi-step AI pipelines", Icon: IconBolt, color: "#7C3AED", group: "AI Agents", badge: null },
+  { id: "canvas", label: "Canvas", desc: "Visual composition editor & mask tools", Icon: IconImage, color: "#FF6B35", group: "Generate", badge: "New" },
   { id: "image", label: "Image", desc: "Text-to-image & image-to-image", Icon: IconImage, color: "#FF1B6B", group: "Generate", badge: "32" },
   { id: "video", label: "Video", desc: "Text, image & video-to-video", Icon: IconVideo, color: "#7C3AED", group: "Generate", badge: "17" },
   { id: "audio", label: "Audio", desc: "Music, voice & sound effects", Icon: IconMusic, color: "#00E5FF", group: "Generate", badge: "7" },
@@ -26,10 +31,13 @@ const TOOLS = [
   { id: "vibe-motion", label: "Motion", desc: "Motion graphics & remix", Icon: IconFilm, color: "#FFD166", group: "Cinematic", badge: null },
   { id: "clipping", label: "Clipping", desc: "AI highlight extraction", Icon: IconCut, color: "#00E68A", group: "Cinematic", badge: null },
   { id: "marketing", label: "Marketing", desc: "UGC video ads & product shots", Icon: IconMegaphone, color: "#FF1B6B", group: "Cinematic", badge: "New" },
+  { id: "director", label: "Director", desc: "Multi-shot video production planner", Icon: IconPlay, color: "#E040FB", group: "Cinematic", badge: "New" },
   { id: "lipsync", label: "Lip Sync", desc: "Sync audio to portrait or video", Icon: IconMic, color: "#7C3AED", group: "Character", badge: "9" },
   { id: "body-swap", label: "Body Swap", desc: "Recast faces into any scene", Icon: IconUsers, color: "#00E5FF", group: "Character", badge: null },
   { id: "influencer", label: "Influencer", desc: "Build AI personas", Icon: IconCrown, color: "#FF6B35", group: "Character", badge: null },
   { id: "memory", label: "Memory", desc: "Save & reuse characters, styles, assets", Icon: IconStar, color: "#FFD166", group: "AI Agents", badge: null },
+  { id: "brands", label: "Brand Kits", desc: "Manage brand identities", Icon: IconImage, color: "#7C3AED", group: "AI Agents", badge: null },
+  { id: "assets", label: "Assets", desc: "Media library & asset management", Icon: IconDownload, color: "#00E68A", group: "AI Agents", badge: null },
 ];
 
 export default function StudioPage({ initialTool }) {
@@ -239,7 +247,11 @@ export default function StudioPage({ initialTool }) {
                 {activeTab === "orchestrator" && <ChatStudio tool="orchestrator" />}
                 {activeTab === "workflows" && <WorkflowBuilder />}
                 {activeTab === "memory" && <ProjectMemory />}
-                {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && (
+                {activeTab === "brands" && <BrandKitsView />}
+                {activeTab === "canvas" && <CanvasWorkspace />}
+                {activeTab === "director" && <DirectorWorkspace />}
+                {activeTab === "assets" && <AssetLibrary />}
+                {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && activeTab !== "brands" && activeTab !== "canvas" && activeTab !== "director" && activeTab !== "assets" && (
                   <ChatStudio tool={activeTab} key={activeTab} />
                 )}
               </motion.div>

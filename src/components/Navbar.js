@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
-  IconMegaphone, IconMic, IconUsers, IconCrown, IconArrowUpRight, IconMenu, IconClose, IconBolt,
+  IconMegaphone, IconMic, IconUsers, IconCrown, IconArrowUpRight, IconMenu, IconClose, IconBolt, IconPlay, IconDownload,
 } from "@/components/Icons";
 
 const TOOLS = [
@@ -17,6 +17,9 @@ const TOOLS = [
   { id: "vibe-motion", label: "Motion", desc: "Motion graphics & remix", Icon: IconFilm, color: "#FFD166" },
   { id: "clipping", label: "Clipping", desc: "AI highlight extraction", Icon: IconCut, color: "#00E68A" },
   { id: "marketing", label: "Marketing", desc: "UGC video ads & product shots", Icon: IconMegaphone, color: "#FF1B6B" },
+  { id: "canvas", label: "Canvas", desc: "Visual composition & mask editor", Icon: IconImage, color: "#FF6B35" },
+  { id: "director", label: "Director", desc: "Multi-shot video production", Icon: IconPlay, color: "#E040FB" },
+  { id: "assets", label: "Assets", desc: "Media library & management", Icon: IconDownload, color: "#00E68A" },
   { id: "lipsync", label: "Lip Sync", desc: "Sync audio to portrait or video", Icon: IconMic, color: "#7C3AED" },
   { id: "body-swap", label: "Body Swap", desc: "Recast faces into any scene", Icon: IconUsers, color: "#00E5FF" },
   { id: "influencer", label: "Influencer", desc: "Build AI personas", Icon: IconCrown, color: "#FF6B35" },
@@ -102,7 +105,7 @@ export default function Navbar() {
                   >
                     <div className="flex items-center justify-between mb-5 pb-4 border-b border-white/10 px-3">
                       <div>
-                        <h3 className="text-base font-bold tracking-tight">10 Helmies Studios</h3>
+                        <h3 className="text-base font-bold tracking-tight">13 Helmies Studios</h3>
                         <p className="text-[11px] text-white/40 mt-1">One subscription. Every studio. Zero filters.</p>
                       </div>
                       <Link href="/studio" className="btn btn-sm btn-primary">

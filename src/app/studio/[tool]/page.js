@@ -51,6 +51,21 @@ const TOOLS = {
     description: "Build AI personas and virtual influencers. Create consistent AI characters for social media.",
     keywords: ["AI influencer", "virtual influencer", "AI persona", "AI character"],
   },
+  canvas: {
+    title: "AI Canvas Editor",
+    description: "Visual composition editor with mask tools, semantic roles, and AI-aware layout. Design visual instructions for generation.",
+    keywords: ["AI canvas", "visual editor", "mask tools", "AI composition", "inpainting"],
+  },
+  director: {
+    title: "AI Director — Multi-Shot Production",
+    description: "Plan and produce multi-shot AI videos — music videos, short films, ads & social campaigns with continuity tracking.",
+    keywords: ["AI director", "multi-shot video", "AI video production", "AI music video", "AI short film"],
+  },
+  assets: {
+    title: "AI Asset Library",
+    description: "Manage all your AI-generated images, videos, and audio in one place. Track lineage, organize, and reuse assets.",
+    keywords: ["AI asset library", "AI media management", "AI content library", "asset tracking"],
+  },
 };
 
 const VALID_TOOLS = Object.keys(TOOLS);

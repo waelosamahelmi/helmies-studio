@@ -28,6 +28,11 @@ model User {
   auditLogs     AuditLog[]
   apiKeys       ApiKey[]
   rateLimits    RateLimit[]
+  brandKits     BrandKit[]
+  canvasDocs    CanvasDocument[]
+  assets        Asset[]
+  wallet        CreditWallet?
+  projects      Project[]
 
   @@schema("public")
 }
@@ -284,6 +289,314 @@ model Refund {
   status      String   @default("pending")
   createdAt   DateTime @default(now())
   processedAt DateTime?
+
+  @@schema("public")
+}
+
+// ── Director: Production Pipeline ──
+model DirectorPipeline {
+  id              String   @id @default(cuid())
+  userId          String
+  title           String
+  type            String   @default("music_video")
+  status          String   @default("draft")
+  plan            Json?
+  brief           Json?
+  costEstimate    Json?
+  validationResults Json?
+  stateMetadata   Json?
+  assembledUrl    String?  @db.Text
+  assemblyMetadata Json?
+  rerunHistory    Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@schema("public")
+}
+
+// ── Director: Individual Shot ──
+model DirectorShot {
+  id          String   @id @default(cuid())
+  pipelineId  String
+  index       Int
+  title       String?
+  status      String   @default("draft")
+  plan        Json?
+  imageResult Json?
+  videoResult Json?
+  audioResult Json?
+  error       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@schema("public")
+}
+
+// ── Brand Kits ──
+model BrandKit {
+  id               String   @id @default(cuid())
+  userId           String
+  name             String
+  description      String?
+  website          String?
+  primaryColors    Json     @default("[]")
+  secondaryColors  Json     @default("[]")
+  fonts            Json     @default("[]")
+  slogans          Json     @default("[]")
+  photographyStyle String?
+  toneOfVoice      String?
+  avoid            Json     @default("[]")
+  visualReferences Json     @default("[]")
+  fingerprint      Json?
+  enforcement      String   @default("off")
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets           BrandAsset[]
+
+  @@schema("public")
+}
+
+model BrandAsset {
+  id          String   @id @default(cuid())
+  brandKitId  String
+  assetId     String
+  role        String   @default("reference")
+  createdAt   DateTime @default(now())
+  brandKit    BrandKit @relation(fields: [brandKitId], references: [id], onDelete: Cascade)
+  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([brandKitId, assetId])
+  @@schema("public")
+}
+
+// ── Canvas Documents ──
+model CanvasDocument {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String   @default("Untitled Canvas")
+  data        Json
+  width       Int      @default(1024)
+  height      Int      @default(1024)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions    CanvasVersion[]
+
+  @@schema("public")
+}
+
+model CanvasVersion {
+  id          String   @id @default(cuid())
+  documentId  String
+  name        String?
+  data        Json
+  snapshot    String?  @db.Text
+  createdAt   DateTime @default(now())
+  document    CanvasDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+// ── Asset Library ──
+model Asset {
+  id            String   @id @default(cuid())
+  userId        String
+  type          String
+  source        String   @default("upload")
+  storageKey    String?
+  url           String?  @db.Text
+  thumbnailUrl  String?  @db.Text
+  name          String?
+  mimeType      String?
+  bytes         Int      @default(0)
+  width         Int?
+  height        Int?
+  duration      Float?
+  model         String?
+  generationId  String?
+  parentAssetId String?
+  metadata      Json?
+  analysis      Json?
+  isFavorite    Boolean  @default(false)
+  isDeleted     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brandAssets   BrandAsset[]
+  relations     AssetRelation[]  @relation("assetFrom")
+  inverseRelations AssetRelation[] @relation("assetTo")
+
+  @@schema("public")
+}
+
+model AssetRelation {
+  id          String   @id @default(cuid())
+  fromAssetId String
+  toAssetId   String
+  type        String   @default("derived")
+  createdAt   DateTime @default(now())
+  fromAsset   Asset    @relation("assetFrom", fields: [fromAssetId], references: [id], onDelete: Cascade)
+  toAsset     Asset    @relation("assetTo", fields: [toAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([fromAssetId, toAssetId])
+  @@schema("public")
+}
+
+// ── Credit Wallet V2 ──
+model CreditWallet {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  available   Int      @default(0)
+  reserved    Int      @default(0)
+  lifetime    Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledger      CreditLedger[]
+  reservations CreditReservation[]
+
+  @@schema("public")
+}
+
+model CreditLedger {
+  id          String   @id @default(cuid())
+  walletId    String
+  amount      Int
+  type        String
+  description String?
+  referenceId String?
+  balanceAfter Int
+  createdAt   DateTime @default(now())
+  wallet      CreditWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+model CreditReservation {
+  id          String   @id @default(cuid())
+  walletId    String
+  amount      Int
+  generationId String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  releasedAt  DateTime?
+  wallet      CreditWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+// ── CMS ──
+model CmsEntry {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  section     String
+  content     Json
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  revisions   CmsRevision[]
+
+  @@schema("public")
+}
+
+model CmsRevision {
+  id          String   @id @default(cuid())
+  entryId     String
+  content     Json
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  entry       CmsEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+// ── Announcements ──
+model SiteAnnouncement {
+  id          String   @id @default(cuid())
+  message     String
+  style       String   @default("info")
+  link        String?
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  audience    String   @default("all")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@schema("public")
+}
+
+// ── Prompt Intelligence ──
+model PromptGuide {
+  id          String   @id @default(cuid())
+  modelId     String
+  category    String   @default("base")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  versions    PromptGuideVersion[]
+
+  @@unique([modelId, category])
+  @@schema("public")
+}
+
+model PromptGuideVersion {
+  id          String   @id @default(cuid())
+  guideId     String
+  version     Int
+  content     Json
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  guide       PromptGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+
+  @@unique([guideId, version])
+  @@schema("public")
+}
+
+// ── Visual Intelligence ──
+model VisualAnalysis {
+  id          String   @id @default(cuid())
+  assetUrl    String   @db.Text
+  caption     String?  @db.Text
+  background  String?
+  palette     Json?
+  regions     Json?
+  textRegions Json?
+  lighting    Json?
+  style       Json?
+  provider    String?
+  createdAt   DateTime @default(now())
+
+  @@index([assetUrl])
+  @@schema("public")
+}
+
+// ── Provider Health ──
+model ProviderIncident {
+  id          String   @id @default(cuid())
+  provider    String
+  type        String
+  status      String   @default("open")
+  message     String?  @db.Text
+  metadata    Json?
+  startedAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  @@schema("public")
+}
+
+// ── Projects ──
+model Project {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  data        Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }

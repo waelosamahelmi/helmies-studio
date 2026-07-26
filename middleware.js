@@ -7,15 +7,23 @@ export async function middleware(request) {
   const needsAuth = protectedPaths.some((p) => pathname.startsWith(p));
   if (!needsAuth) return NextResponse.next();
 
-  const sessionRes = await fetch("http://127.0.0.1:3010/api/auth/session", {
+  const origin = request.nextUrl.origin;
+  const sessionRes = await fetch(`${origin}/api/auth/session`, {
     headers: { cookie: request.headers.get("cookie") || "" },
+    redirect: "manual",
   });
 
   if (sessionRes.status !== 200) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  const session = await sessionRes.json();
+  let session;
+  try {
+    session = await sessionRes.json();
+  } catch {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   if (!session?.user) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
@@ -24,7 +32,10 @@ export async function middleware(request) {
     return NextResponse.redirect(new URL("/studio", request.url));
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  return response;
 }
 
 export const config = {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { IconSearch, IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut, IconMegaphone, IconMic, IconUsers, IconCrown, IconStar, IconBolt, IconSparkle } from "@/components/Icons";
+import { IconSearch, IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut, IconMegaphone, IconMic, IconUsers, IconCrown, IconStar, IconBolt, IconSparkle, IconPlay, IconDownload } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -17,6 +17,9 @@ const TOOLS = [
   { id: "lipsync", label: "Lip Sync Studio", desc: "Sync audio to portrait or video", Icon: IconMic, shortcut: "8" },
   { id: "body-swap", label: "Body Swap Studio", desc: "Recast faces into any scene", Icon: IconUsers, shortcut: "9" },
   { id: "influencer", label: "Influencer Studio", desc: "Build AI personas", Icon: IconCrown, shortcut: "0" },
+  { id: "canvas", label: "Canvas Editor", desc: "Visual composition & mask tools", Icon: IconImage, shortcut: "C" },
+  { id: "director", label: "Director", desc: "Multi-shot video production", Icon: IconPlay, shortcut: "D" },
+  { id: "assets", label: "Asset Library", desc: "Media library & asset management", Icon: IconDownload, shortcut: "A" },
   { id: "orchestrator", label: "AI Orchestrator", desc: "Plan & execute multi-step tasks", Icon: IconSparkle, shortcut: "O" },
   { id: "workflows", label: "Workflows", desc: "Multi-step AI pipelines", Icon: IconBolt, shortcut: "W" },
   { id: "memory", label: "Project Memory", desc: "Characters, styles & assets", Icon: IconStar, shortcut: "M" },

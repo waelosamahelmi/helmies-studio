@@ -6,11 +6,16 @@ const nextConfig = {
     ],
   },
   allowedDevOrigins: ["172.20.10.4", "172.20.10.5", "172.20.10.6"],
-  async rewrites() {
+  async headers() {
     return [
       {
-        source: "/agent/:path*",
-        destination: "http://localhost:3080/:path*",
+        source: "/(.*)",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
       },
     ];
   },
