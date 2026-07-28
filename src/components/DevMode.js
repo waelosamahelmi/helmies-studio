@@ -61,6 +61,32 @@ export default function DevMode() {
       .catch(() => {});
   }, []);
 
+  const iframeRef = useRef(null);
+  const injectedRef = useRef(false);
+
+  useEffect(() => {
+    const el = iframeRef.current;
+    if (!el || injectedRef.current) return;
+    const inject = () => {
+      try {
+        const doc = el.contentDocument || el.contentWindow?.document;
+        if (!doc) return;
+        injectedRef.current = true;
+        const style = doc.createElement("style");
+        style.textContent = ".xterm-viewport,.xterm-screen,.xterm{background:transparent!important}body{background:transparent!important}body>div{background:rgba(5,5,18,0.1)!important}";
+        doc.head.appendChild(style);
+        const fix = () => {
+          doc.querySelectorAll(".xterm-viewport,.xterm-screen,.xterm").forEach(e => { e.style.setProperty("background-color","transparent","important"); e.style.setProperty("background","transparent","important"); });
+        };
+        fix();
+        new MutationObserver(fix).observe(doc.body || doc.documentElement, {childList:true,subtree:true,attributes:true,attributeFilter:["style"]});
+      } catch {}
+    };
+    el.addEventListener("load", inject);
+    inject();
+    return () => el.removeEventListener("load", inject);
+  }, [tab, open]);
+
   const toggleOpen = useCallback(() => {
     setOpen((o) => !o);
     setMinimized(false);
@@ -215,26 +241,7 @@ export default function DevMode() {
               </div>
             ) : (
               <iframe
-                ref={(el) => {
-                  if (!el || el.dataset.injected) return;
-                  el.dataset.injected = "1";
-                  const inject = () => {
-                    try {
-                      const doc = el.contentDocument || el.contentWindow?.document;
-                      if (!doc) return;
-                      const style = doc.createElement("style");
-                      style.textContent = ".xterm-viewport,.xterm-screen,.xterm{background:transparent!important}body{background:transparent!important}body>div{background:rgba(5,5,18,0.1)!important}";
-                      doc.head.appendChild(style);
-                      const fix = () => {
-                        doc.querySelectorAll(".xterm-viewport,.xterm-screen,.xterm").forEach(e => { e.style.setProperty("background-color","transparent","important"); e.style.setProperty("background","transparent","important"); });
-                      };
-                      fix();
-                      new MutationObserver(fix).observe(doc.body || doc.documentElement, {childList:true,subtree:true,attributes:true,attributeFilter:["style"]});
-                    } catch {}
-                  };
-                  el.addEventListener("load", inject);
-                  inject();
-                }}
+                ref={iframeRef}
                 src={currentTab.url}
                 style={{ flex: 1, width: "100%", border: "none", background: "transparent" }}
                 title={`Dev ${currentTab.label}`}
