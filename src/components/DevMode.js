@@ -131,7 +131,7 @@ export default function DevMode() {
               borderRight: isVertical ? "1px solid rgba(255,255,255,0.05)" : "none",
               userSelect: "none", flexShrink: 0, gap: isVertical ? 6 : 0,
             }}>
-              <div style={{ display: "flex", flexDirection: isVertical ? "column" : "row", alignItems: "center", gap: isVertical ? 4 : 0 }}>
+              <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 0, flexWrap: "wrap" }}>
                 <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#00ff88", boxShadow: "0 0 4px #00ff88", flexShrink: 0, marginRight: isVertical ? 0 : 6, marginBottom: isVertical ? 4 : 0 }} />
                 {TABS.map(t => (
                   <button key={t.id} onClick={() => setTab(t.id)} style={{
