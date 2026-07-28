@@ -31,4 +31,13 @@ for (const u of users) {
   console.log("Recent txs:", JSON.stringify(txs, null, 2));
 }
 
+// Show recent sessions to identify the logged-in user
+const sessions = await prisma.session.findMany({
+  select: { userId: true, expires: true },
+  orderBy: { expires: "desc" },
+  take: 5,
+});
+console.log("\n=== RECENT SESSIONS ===");
+console.log(JSON.stringify(sessions, null, 2));
+
 await pool.end();
