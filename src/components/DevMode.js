@@ -33,7 +33,6 @@ export default function DevMode() {
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, px: 0, py: 0 });
   const hasInit = useRef(false);
-  const iframeRef = useRef(null);
 
   useEffect(() => {
     if (hasInit.current) return;
@@ -75,25 +74,6 @@ export default function DevMode() {
     dragStart.current = { x: e.clientX, y: e.clientY, px: pos.x, py: pos.y };
     e.preventDefault();
   }, [pos]);
-
-  // Inject transparency into terminal iframe
-  useEffect(() => {
-    const el = iframeRef.current;
-    if (!el || !open) return;
-    const inject = () => {
-      try {
-        const doc = el.contentDocument || el.contentWindow?.document;
-        if (!doc) return;
-        doc.querySelectorAll(".xterm-viewport,.xterm-screen,.xterm").forEach(e => {
-          e.style.setProperty("background-color", "transparent", "important");
-          e.style.setProperty("background", "transparent", "important");
-        });
-      } catch {}
-    };
-    el.addEventListener("load", inject);
-    inject();
-    return () => el.removeEventListener("load", inject);
-  }, [open, tab]);
 
   if (!isDev) return null;
 
@@ -182,7 +162,7 @@ export default function DevMode() {
                 ))}
               </div>
             ) : (
-              <iframe ref={iframeRef} src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "transparent" }} title={`Dev ${currentTab.label}`} />
+              <iframe src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "#0a0a1e" }} title={`Dev ${currentTab.label}`} />
             )}
           </motion.div>
         )}
