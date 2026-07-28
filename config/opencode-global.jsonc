@@ -1,8 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": [
-    "AGENTS.md"
-  ],
   "plugin": [
     "@tarquinen/opencode-dcp",
     "@cortexkit/opencode-magic-context",
@@ -15,12 +12,5 @@
     }
   },
   "model": "openrouter/deepseek/deepseek-chat",
-  "permission": {
-    "edit": "allow",
-    "bash": "allow",
-    "read": "allow",
-    "write": "allow",
-    "delete": "allow"
-  },
   "theme": "dark"
 }
