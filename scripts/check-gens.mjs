@@ -20,7 +20,7 @@ const gens = await prisma.generation.findMany({
     status: true,
     prompt: true,
     outputUrl: true,
-    provider: true,
+    requestId: true,
     error: true,
     createdAt: true,
     updatedAt: true,
@@ -31,7 +31,7 @@ console.log("=== RECENT GENERATIONS ===");
 for (const g of gens) {
   console.log(`\n${g.id} | ${g.status} | ${g.tool}/${g.model}`);
   console.log(`  prompt: ${(g.prompt || "").substring(0, 80)}`);
-  console.log(`  provider: ${g.provider}`);
+  console.log(`  requestId: ${g.requestId || "none"}`);
   console.log(`  output: ${g.outputUrl ? g.outputUrl.substring(0, 80) : "NONE"}`);
   console.log(`  error: ${g.error ? g.error.substring(0, 120) : "none"}`);
   console.log(`  created: ${g.createdAt} | updated: ${g.updatedAt}`);
