@@ -4,6 +4,7 @@ import { SessionProvider } from "next-auth/react";
 import { ToastProvider } from "@/components/ToastProvider";
 import { AuthModalProvider } from "@/components/AuthModal";
 import { Toaster } from "react-hot-toast";
+import DevMode from "@/components/DevMode";
 
 export default function Providers({ children }) {
   return (
@@ -11,6 +12,7 @@ export default function Providers({ children }) {
       <ToastProvider>
         <AuthModalProvider>{children}</AuthModalProvider>
       </ToastProvider>
+      <DevMode />
       <Toaster
         position="top-right"
         toastOptions={{
