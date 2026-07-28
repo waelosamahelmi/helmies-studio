@@ -78,16 +78,16 @@ const PROVIDERS = {
     get baseUrl() {
       const workspaceId = process.env.ALIBABA_WORKSPACE_ID;
       return workspaceId
-        ? `https://${workspaceId}.eu-central-1.maas.aliyuncs.com/compatible-mode/v1`
-        : "https://dashscope.aliyuncs.com/compatible-mode/v1";
+        ? `https://${workspaceId}.ap-southeast-1.maas.aliyuncs.com`
+        : "https://dashscope.aliyuncs.com";
     },
     getKey: () => process.env.ALIBABA_KEY,
     buildUrl: (endpoint) => {
       const e = (endpoint || "").toLowerCase();
       if (e.includes("video") || e.includes("t2v") || e.includes("i2v") || e.includes("v2v") || e.startsWith("wan-2")) {
-        return "/video/generations";
+        return "/api/v1/services/aigc/video-generation/video-synthesis";
       }
-      return "/images/generations";
+      return "/api/v1/services/aigc/text2image/image-synthesis";
     },
     formatPayload: (model, prompt, params) => {
       const { endpoint: _ep, callBackUrl: _cb, webhook_url: _wh, ...rest } = params;
@@ -99,16 +99,16 @@ const PROVIDERS = {
         return { requestId: null, status: "succeeded", outputs: data.map((d) => d?.url).filter(Boolean) };
       }
       return {
-        requestId: data.task_id || data.id,
-        status: data.status,
-        outputs: data.output ? [data.output.video_url || data.output.url].filter(Boolean) : [],
+        requestId: data.output?.task_id || data.task_id || data.id,
+        status: data.output?.task_status || data.status,
+        outputs: data.output?.results ? data.output.results.map(r => r.url || r.b64_image).filter(Boolean) : (data.output ? [data.output.video_url || data.output.url].filter(Boolean) : []),
       };
     },
-    buildPollUrl: (requestId) => `/video/generations/${requestId}`,
+    buildPollUrl: (requestId) => `/api/v1/tasks/${requestId}`,
     parsePoll: (data) => ({
-      status: (data.status || "").toLowerCase(),
-      outputs: data.output ? [data.output.video_url || data.output.url].filter(Boolean) : [],
-      error: data.error,
+      status: (data.output?.task_status || data.status || "").toLowerCase(),
+      outputs: data.output?.results ? data.output.results.map(r => r.url || r.b64_image).filter(Boolean) : (data.output ? [data.output.video_url || data.output.url].filter(Boolean) : []),
+      error: data.output?.message || data.error,
     }),
     isSync: false,
     apiVersion: 1,
