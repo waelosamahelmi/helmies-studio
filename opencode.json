@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "AGENTS.md"
+  ],
+  "plugin": [
+    "@tarquinen/opencode-dcp",
+    "opencode-morph-fast-apply",
+    "@cortexkit/opencode-magic-context",
+    "opencode-background-agents"
+  ],
+  "mcp": {
+    "browser": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3099/sse"
+    }
+  },
+  "model": "openrouter/deepseek/deepseek-chat",
+  "permission": {
+    "edit": "allow",
+    "bash": "allow",
+    "read": "allow",
+    "write": "allow",
+    "delete": "ask"
+  },
+  "theme": "dark"
+}
