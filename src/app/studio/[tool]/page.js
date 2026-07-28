@@ -1,4 +1,4 @@
-import StudioPage from "../page";
+import StudioClient from "../StudioClient";
 
 const TOOLS = {
   image: {
@@ -110,5 +110,5 @@ export default async function StudioToolPage({ params, searchParams }) {
   const initialTool = VALID_TOOLS.includes(tool) ? tool : "image";
   const sp = await searchParams;
   const initialModel = sp?.model || null;
-  return <StudioPage initialTool={initialTool} initialModel={initialModel} />;
+  return <StudioClient initialTool={initialTool} initialModel={initialModel} />;
 }
