@@ -33,7 +33,49 @@ try {
   console.log("Error:", e.message);
 }
 
-// Test 2: Image generation via DashScope native API
+// Test 1: Chat completions via generic DashScope endpoint (no workspace domain)
+console.log("\n=== Test 1b: Chat Completions (generic dashscope.aliyuncs.com) ===");
+try {
+  const res = await fetch("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: "qwen-plus",
+      messages: [{ role: "user", content: "Say hello in one word" }],
+      max_tokens: 20,
+    }),
+  });
+  console.log("Status:", res.status);
+  console.log("Body:", (await res.text()).substring(0, 500));
+} catch (e) {
+  console.log("Error:", e.message);
+}
+
+// Test 2: Chat completions via Beijing workspace domain
+console.log("\n=== Test 1c: Chat Completions (cn-beijing workspace domain) ===");
+try {
+  const res = await fetch(`https://${workspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: "qwen-plus",
+      messages: [{ role: "user", content: "Say hello in one word" }],
+      max_tokens: 20,
+    }),
+  });
+  console.log("Status:", res.status);
+  console.log("Body:", (await res.text()).substring(0, 500));
+} catch (e) {
+  console.log("Error:", e.message);
+}
+
+// Test 3: Image generation via DashScope native API
 console.log("\n=== Test 2: Image Generation (qwen-image, native API) ===");
 try {
   const res = await fetch(`${nativeBaseUrl}/services/aigc/text2image/image-synthesis`, {
