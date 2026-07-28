@@ -214,8 +214,30 @@ export default function DevMode() {
                 ))}
               </div>
             ) : (
-              <iframe src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "#0a0a1e", mixBlendMode: "multiply" }} title={`Dev ${currentTab.label}`} />
-            )}
+              <iframe
+                ref={useCallback((el) => {
+                  if (!el) return;
+                  const inject = () => {
+                    try {
+                      const doc = el.contentDocument || el.contentWindow?.document;
+                      if (!doc) return;
+                      const style = doc.createElement("style");
+                      style.textContent = ".xterm-viewport,.xterm-screen,.xterm{background:transparent!important}body{background:transparent!important}body>div{background:rgba(5,5,18,0.1)!important}";
+                      doc.head.appendChild(style);
+                      const fix = () => {
+                        doc.querySelectorAll(".xterm-viewport,.xterm-screen,.xterm").forEach(e => { e.style.setProperty("background-color","transparent","important"); e.style.setProperty("background","transparent","important"); });
+                      };
+                      fix();
+                      new MutationObserver(fix).observe(doc.body || doc.documentElement, {childList:true,subtree:true,attributes:true,attributeFilter:["style"]});
+                    } catch {}
+                  };
+                  el.addEventListener("load", inject);
+                  inject();
+                }, [])}
+                src={currentTab.url}
+                style={{ flex: 1, width: "100%", border: "none", background: "transparent" }}
+                title={`Dev ${currentTab.label}`}
+              />
           </motion.div>
         )}
       </AnimatePresence>
