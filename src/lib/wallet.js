@@ -1,7 +1,7 @@
 // Helmies Studio — Credit Wallet Service
 // Per AGENTS.md Phase 12: available+reserved balance, ledger, reservations
 
-import { prisma } from "./prisma";
+import prisma from "./prisma";
 
 // ── Wallet Operations ────────────────────────────────────────
 
