@@ -1,4 +1,5 @@
 import "@/styles/globals.css";
+import "@/styles/studio-premium.css";
 import AnnouncementBar from "@/components/AnnouncementBar";
 import Providers from "@/components/Providers";
 

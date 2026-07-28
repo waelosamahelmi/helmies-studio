@@ -1,57 +1,32 @@
 "use client";
 
-import { lazy, Suspense } from "react";
 import SimpleMode from "./modes/SimpleMode";
 import OrchestratorMode from "./modes/OrchestratorMode";
-const ImageStudioV2 = lazy(() => import("./ImageStudioV2"));
-const VideoStudioV2 = lazy(() => import("./VideoStudioV2"));
-const AudioStudioV2 = lazy(() => import("./AudioStudioV2"));
-const LipSyncStudioV2 = lazy(() => import("./LipSyncStudioV2"));
-const RecastStudioV2 = lazy(() => import("./RecastStudioV2"));
-const CinemaStudioV2 = lazy(() => import("./CinemaStudioV2"));
-const InfluencerStudioV2 = lazy(() => import("./InfluencerStudioV2"));
-const MarketingStudioV2 = lazy(() => import("./MarketingStudioV2"));
-const MotionStudioV2 = lazy(() => import("./MotionStudioV2"));
-const ClippingStudioV2 = lazy(() => import("./ClippingStudioV2"));
+import ImageStudioV2 from "./ImageStudioV2";
+import VideoStudioV2 from "./VideoStudioV2";
+import AudioStudioV2 from "./AudioStudioV2";
+import LipSyncStudioV2 from "./LipSyncStudioV2";
+import RecastStudioV2 from "./RecastStudioV2";
+import CinemaStudioV2 from "./CinemaStudioV2";
+import InfluencerStudioV2 from "./InfluencerStudioV2";
+import MarketingStudioV2 from "./MarketingStudioV2";
+import MotionStudioV2 from "./MotionStudioV2";
+import ClippingStudioV2 from "./ClippingStudioV2";
 
 // SimpleMode is now only a fallback for tools without a dedicated V2 workspace.
 const TOOL_MODES = [];
 
-function StudioFallback() {
-  return <div className="studio__loading"><div className="studio__spinner" />Loading workspace...</div>;
-}
-
 export default function ChatStudio({ tool, initialModel }) {
-  if (tool === "image") {
-    return <Suspense fallback={<StudioFallback />}><ImageStudioV2 initialModel={initialModel} /></Suspense>;
-  }
-  if (tool === "video") {
-    return <Suspense fallback={<StudioFallback />}><VideoStudioV2 initialModel={initialModel} /></Suspense>;
-  }
-  if (tool === "audio") {
-    return <Suspense fallback={<StudioFallback />}><AudioStudioV2 /></Suspense>;
-  }
-  if (tool === "cinema") {
-    return <Suspense fallback={<StudioFallback />}><CinemaStudioV2 /></Suspense>;
-  }
-  if (tool === "lipsync") {
-    return <Suspense fallback={<StudioFallback />}><LipSyncStudioV2 /></Suspense>;
-  }
-  if (tool === "body-swap" || tool === "recast") {
-    return <Suspense fallback={<StudioFallback />}><RecastStudioV2 /></Suspense>;
-  }
-  if (tool === "influencer") {
-    return <Suspense fallback={<StudioFallback />}><InfluencerStudioV2 /></Suspense>;
-  }
-  if (tool === "marketing") {
-    return <Suspense fallback={<StudioFallback />}><MarketingStudioV2 /></Suspense>;
-  }
-  if (tool === "vibe-motion" || tool === "motion") {
-    return <Suspense fallback={<StudioFallback />}><MotionStudioV2 /></Suspense>;
-  }
-  if (tool === "clipping") {
-    return <Suspense fallback={<StudioFallback />}><ClippingStudioV2 /></Suspense>;
-  }
+  if (tool === "image") return <ImageStudioV2 initialModel={initialModel} />;
+  if (tool === "video") return <VideoStudioV2 initialModel={initialModel} />;
+  if (tool === "audio") return <AudioStudioV2 />;
+  if (tool === "cinema") return <CinemaStudioV2 />;
+  if (tool === "lipsync") return <LipSyncStudioV2 />;
+  if (tool === "body-swap" || tool === "recast") return <RecastStudioV2 />;
+  if (tool === "influencer") return <InfluencerStudioV2 />;
+  if (tool === "marketing") return <MarketingStudioV2 />;
+  if (tool === "vibe-motion" || tool === "motion") return <MotionStudioV2 />;
+  if (tool === "clipping") return <ClippingStudioV2 />;
   if (tool && tool !== "orchestrator" && TOOL_MODES.includes(tool)) {
     return <SimpleMode key={tool} tool={tool} initialModel={initialModel} />;
   }
