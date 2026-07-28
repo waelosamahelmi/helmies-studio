@@ -150,7 +150,7 @@ export default function DevMode() {
             style={{
               position: "fixed", zIndex: 9998,
               overflow: "hidden", display: "flex", flexDirection: "column",
-              background: "rgba(5,5,18,0.65)", backdropFilter: "blur(12px)",
+              background: "rgba(5,5,18,0.45)", backdropFilter: "blur(4px)",
               borderTop: isHorizontal ? "1px solid rgba(255,255,255,0.08)" : "none",
               borderLeft: pos.side === "right" ? "1px solid rgba(255,255,255,0.08)" : "none",
               borderRight: pos.side === "left" ? "1px solid rgba(255,255,255,0.08)" : "none",
