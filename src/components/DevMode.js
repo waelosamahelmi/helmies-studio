@@ -214,7 +214,7 @@ export default function DevMode() {
                 ))}
               </div>
             ) : (
-              <iframe src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "transparent" }} title={`Dev ${currentTab.label}`} />
+              <iframe src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "#0a0a1e", mixBlendMode: "multiply" }} title={`Dev ${currentTab.label}`} />
             )}
           </motion.div>
         )}
