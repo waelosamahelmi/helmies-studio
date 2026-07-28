@@ -35,7 +35,7 @@
 // ══════════════════════════════════════════════════════════════
 export const IMAGE_MODELS = [
   // Google
-  { id: "nano-banana", name: "Nano Banana", endpoint: "nano-banana", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"] },
+  { id: "nano-banana", name: "Nano Banana", endpoint: "nano-banana-2", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"] },
   { id: "nano-banana-2-lite", name: "Nano Banana 2 Lite", endpoint: "nano-banana-2-lite", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9", "auto"] },
   { id: "nano-banana-pro", name: "Nano Banana Pro", endpoint: "nano-banana-pro", provider: "Google", aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9", "3:2", "2:3", "5:4", "4:5", "21:9"], resolutions: ["1k", "2k", "4k"] },
   { id: "imagen4", name: "Imagen 4", endpoint: "imagen4", provider: "Google", aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
@@ -53,7 +53,7 @@ export const IMAGE_MODELS = [
   { id: "midjourney", name: "Midjourney v7", endpoint: "midjourney", provider: "Midjourney", aspectRatios: ["1:1", "16:9", "9:16", "3:4", "4:3", "1:2", "2:1", "2:3", "3:2", "5:6", "6:5"] },
   // OpenAI
   { id: "gpt-image-1.5", name: "GPT Image 1.5", endpoint: "gpt-image-1.5", provider: "OpenAI", aspectRatios: ["1:1", "2:3", "3:2"] },
-  { id: "gpt-image-2", name: "GPT Image 2", endpoint: "gpt-image-2", provider: "OpenAI", aspectRatios: ["1:1", "2:3", "3:2", "16:9", "9:16"] },
+  { id: "gpt-image-2", name: "GPT Image 2", endpoint: "gpt-image-2-text-to-image", provider: "OpenAI", aspectRatios: ["1:1", "2:3", "3:2", "16:9", "9:16"] },
   // ByteDance
   { id: "seedream-v4", name: "Seedream v4", endpoint: "seedream-v4-text-to-image", provider: "ByteDance", aspectRatios: ["1:1", "16:9", "9:16", "3:4", "4:3", "2:3", "3:2", "21:9"], resolutions: ["1K", "2K", "4K"] },
   { id: "seedream-5-lite", name: "Seedream 5 Lite", endpoint: "seedream-5-lite-text-to-image", provider: "ByteDance", aspectRatios: ["1:1", "16:9", "9:16", "3:4", "4:3", "2:3", "3:2", "21:9"], speedTier: "fast" },
