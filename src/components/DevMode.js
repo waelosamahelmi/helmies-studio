@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const DEV_EMAILS = ["waelosamahelmi@gmail.com", "wael@helmies.fi"];
-const TABS = [
+const DEFAULT_TABS = [
   { id: "terminal", label: "Terminal", url: "/dev-terminal" },
   { id: "opencode", label: "Opencode", url: "/dev-opencode" },
   { id: "hermes", label: "Hermes" },
@@ -29,6 +29,7 @@ export default function DevMode() {
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
   const [tab, setTab] = useState("terminal");
+  const [tabs, setTabs] = useState(DEFAULT_TABS);
   const [pos, setPos] = useState({ side: "bottom", x: 0, y: 0 });
   const dragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, px: 0, py: 0 });
@@ -75,11 +76,29 @@ export default function DevMode() {
     e.preventDefault();
   }, [pos]);
 
+  const addTab = useCallback(() => {
+    const url = prompt("Enter URL for new tab (relative like /dev-terminal or absolute):");
+    if (!url) return;
+    const label = prompt("Tab label:", url.replace(/^.*\//, "").replace(/-/g, " "));
+    if (!label) return;
+    const id = "tab-" + Date.now();
+    setTabs(t => [...t, { id, label, url }]);
+    setTab(id);
+  }, []);
+
+  const closeTab = useCallback((tabId) => {
+    if (tabs.length <= 1) return;
+    const idx = tabs.findIndex(t => t.id === tabId);
+    const remaining = tabs.filter(t => t.id !== tabId);
+    setTabs(remaining);
+    if (tab === tabId) {
+      setTab(remaining[Math.min(idx, remaining.length - 1)].id);
+    }
+  }, [tabs, tab]);
+
   if (!isDev) return null;
 
-  const currentTab = TABS.find(t => t.id === tab) || TABS[0];
-  const isVertical = pos.side === "left" || pos.side === "right";
-  const isHorizontal = pos.side === "bottom" || pos.side === "top";
+  const currentTab = tabs.find(t => t.id === tab) || tabs[0];
   const isSnapped = pos.side !== "free";
   const panelFrom = pos.side === "right" ? "right" : pos.side === "left" ? "left" : "bottom";
   const pAnim = panelFrom === "right"
@@ -117,7 +136,7 @@ export default function DevMode() {
             style={{
               position: "fixed", zIndex: 9998, overflow: "hidden", display: "flex", flexDirection: "column",
               background: "rgba(5,5,18,0.35)", backdropFilter: "blur(3px)",
-              borderTop: isHorizontal ? "1px solid rgba(255,255,255,0.08)" : "none",
+              borderTop: (pos.side === "bottom" || pos.side === "top") ? "1px solid rgba(255,255,255,0.08)" : "none",
               borderLeft: pos.side === "right" ? "1px solid rgba(255,255,255,0.08)" : "none",
               borderRight: pos.side === "left" ? "1px solid rgba(255,255,255,0.08)" : "none",
               borderRadius: pos.side === "right" ? "12px 0 0 12px" : pos.side === "left" ? "0 12px 12px 0" : "12px 12px 0 0",
@@ -132,14 +151,26 @@ export default function DevMode() {
             }}>
               <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 0, flexWrap: "wrap" }}>
                 <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#00ff88", boxShadow: "0 0 4px #00ff88", flexShrink: 0, marginRight: 6 }} />
-                {TABS.map(t => (
-                  <button key={t.id} onClick={() => setTab(t.id)} style={{
-                    background: tab === t.id ? "rgba(0,255,136,0.06)" : "transparent",
-                    color: tab === t.id ? "#00ff88" : "#666", border: "none",
-                    borderBottom: tab === t.id ? "2px solid #00ff88" : "none",
-                    padding: "6px 12px", fontSize: 10, fontWeight: 600, cursor: "pointer",
-                  }}>{t.label}</button>
+                {tabs.map(t => (
+                  <span key={t.id} style={{ display: "inline-flex", alignItems: "center" }}>
+                    <button onClick={() => setTab(t.id)} style={{
+                      background: tab === t.id ? "rgba(0,255,136,0.06)" : "transparent",
+                      color: tab === t.id ? "#00ff88" : "#666", border: "none",
+                      borderBottom: tab === t.id ? "2px solid #00ff88" : "none",
+                      padding: "6px 6px 6px 12px", fontSize: 10, fontWeight: 600, cursor: "pointer",
+                    }}>{t.label}</button>
+                    {tabs.length > 1 && (
+                      <button onClick={(e) => { e.stopPropagation(); closeTab(t.id); }} title="Close tab" style={{
+                        background: "transparent", color: "#555", border: "none",
+                        padding: "6px 8px 6px 0", fontSize: 11, cursor: "pointer",
+                      }}>×</button>
+                    )}
+                  </span>
                 ))}
+                <button onClick={addTab} title="New tab" style={{
+                  background: "transparent", color: "#555", border: "1px dashed rgba(255,255,255,0.1)",
+                  borderRadius: 3, padding: "3px 8px", fontSize: 12, cursor: "pointer", marginLeft: 2,
+                }}>+</button>
               </div>
               <div style={{ display: "flex", gap: 3, flexDirection: "row" }}>
                 <button onClick={() => setMinimized(m => !m)} title="Minimize" style={btnS}>—</button>
@@ -147,19 +178,15 @@ export default function DevMode() {
               </div>
             </div>
 
-            {tab === "hermes" ? (
+            {currentTab.url ? (
+              <iframe src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "#0a0a1e" }} title={`Dev ${currentTab.label}`} />
+            ) : (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 12, color: "#999", fontFamily: "monospace", fontSize: 11, gap: 10, overflow: "auto", background: "rgba(5,5,18,0.3)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#00ff88" }} /><strong style={{ color: "#00ff88", fontSize: 12 }}>Hermes</strong><span style={{ color: "#555", fontSize: 9 }}>v0.17.0</span>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#00ff88" }} /><strong style={{ color: "#00ff88", fontSize: 12 }}>{currentTab.label}</strong><span style={{ color: "#555", fontSize: 9 }}>no URL</span>
                 </div>
-                {["Agent: Standby", "Browser MCP: Playwright", "Opencode AI: v1.18.9", "SSH: L9119→dashboard"].map(s => (
-                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", background: "rgba(255,255,255,0.02)", borderRadius: 5 }}>
-                    <span style={{ width: 4, height: 4, borderRadius: "50%", background: "#00ff88" }} /><span style={{ color: "#666" }}>{s.split(":")[0]}</span><span style={{ color: "#888", marginLeft: "auto" }}>{s.split(":")[1]?.trim()}</span>
-                  </div>
-                ))}
+                <div style={{ color: "#555" }}>No embedded content — configure in terminal or SSH.</div>
               </div>
-            ) : (
-              <iframe src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "#0a0a1e" }} title={`Dev ${currentTab.label}`} />
             )}
           </motion.div>
         )}
