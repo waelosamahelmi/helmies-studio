@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import DevToolsPanel from "@/components/studio/DevToolsPanel";
 
 const DEV_EMAILS = ["waelosamahelmi@gmail.com", "wael@helmies.fi"];
 const DEFAULT_TABS = [
   { id: "terminal", label: "Terminal", url: "/dev-terminal" },
   { id: "opencode", label: "Opencode", url: "/dev-opencode" },
   { id: "hermes", label: "Hermes" },
+  { id: "devtools", label: "DevTools" },
 ];
 const BTN_SIZE = 40, SNAP_THRESHOLD = 80;
 
@@ -58,6 +60,8 @@ export default function DevMode() {
     const onUp = (e) => {
       if (!dragging.current) return;
       dragging.current = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
       if (Math.abs(e.clientX - dragStart.current.x) < 4 && Math.abs(e.clientY - dragStart.current.y) < 4) {
         setOpen(o => !o);
         setMinimized(false);
@@ -68,7 +72,7 @@ export default function DevMode() {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
-  }, [isDev, pos]);
+  }, [isDev]);
 
   const onPointerDown = useCallback((e) => {
     dragging.current = true;
@@ -178,8 +182,10 @@ export default function DevMode() {
               </div>
             </div>
 
-            {currentTab.url ? (
-              <iframe src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "#0a0a1e" }} title={`Dev ${currentTab.label}`} />
+            {tab === "devtools" ? (
+              <DevToolsPanel />
+            ) : currentTab.url ? (
+              <iframe src={currentTab.url} style={{ flex: 1, width: "100%", border: "none", background: "#0a0a1e", touchAction: "manipulation" }} title={`Dev ${currentTab.label}`} />
             ) : (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: 12, color: "#999", fontFamily: "monospace", fontSize: 11, gap: 10, overflow: "auto", background: "rgba(5,5,18,0.3)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
