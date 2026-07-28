@@ -215,8 +215,9 @@ export default function DevMode() {
               </div>
             ) : (
               <iframe
-                ref={useCallback((el) => {
-                  if (!el) return;
+                ref={(el) => {
+                  if (!el || el.dataset.injected) return;
+                  el.dataset.injected = "1";
                   const inject = () => {
                     try {
                       const doc = el.contentDocument || el.contentWindow?.document;
@@ -233,7 +234,7 @@ export default function DevMode() {
                   };
                   el.addEventListener("load", inject);
                   inject();
-                }, [])}
+                }}
                 src={currentTab.url}
                 style={{ flex: 1, width: "100%", border: "none", background: "transparent" }}
                 title={`Dev ${currentTab.label}`}
