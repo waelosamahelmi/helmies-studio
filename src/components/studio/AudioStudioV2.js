@@ -291,7 +291,7 @@ export default function AudioStudioV2() {
 
   return (
     <WorkspaceShell
-      title="Audio"
+      title="Audio Studio V2"
       Icon={IconMusic}
       mode={mode}
       onModeChange={setMode}
@@ -300,6 +300,7 @@ export default function AudioStudioV2() {
       bottomBar={bottomBar}
       sheetTitle="Audio Settings"
     >
+      {/* HELMIES_AUDIO_V2_MARKER */}
       {center}
     </WorkspaceShell>
   );
