@@ -15,6 +15,16 @@ import AssetLibrary from "@/components/studio/AssetLibrary";
 import MusicStudio from "@/components/studio/MusicStudio";
 import VideoEditStudio from "@/components/studio/VideoEditStudio";
 import AvatarStudio from "@/components/studio/AvatarStudio";
+import ImageStudioV2 from "@/components/studio/ImageStudioV2";
+import VideoStudioV2 from "@/components/studio/VideoStudioV2";
+import AudioStudioV2 from "@/components/studio/AudioStudioV2";
+import CinemaStudioV2 from "@/components/studio/CinemaStudioV2";
+import LipSyncStudioV2 from "@/components/studio/LipSyncStudioV2";
+import RecastStudioV2 from "@/components/studio/RecastStudioV2";
+import InfluencerStudioV2 from "@/components/studio/InfluencerStudioV2";
+import MarketingStudioV2 from "@/components/studio/MarketingStudioV2";
+import MotionStudioV2 from "@/components/studio/MotionStudioV2";
+import ClippingStudioV2 from "@/components/studio/ClippingStudioV2";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
@@ -289,9 +299,16 @@ export default function StudioPage({ initialTool, initialModel }) {
                 {activeTab === "music" && <MusicStudio />}
                 {activeTab === "video-edit" && <VideoEditStudio />}
                 {activeTab === "avatar" && <AvatarStudio />}
-                {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && activeTab !== "brands" && activeTab !== "canvas" && activeTab !== "director" && activeTab !== "assets" && activeTab !== "music" && activeTab !== "video-edit" && activeTab !== "avatar" && (
-                  <ChatStudio tool={activeTab} key={activeTab} initialModel={initialModel} />
-                )}
+                {activeTab === "image" && <ImageStudioV2 initialModel={initialModel} />}
+                {activeTab === "video" && <VideoStudioV2 initialModel={initialModel} />}
+                {activeTab === "audio" && <AudioStudioV2 />}
+                {activeTab === "cinema" && <CinemaStudioV2 />}
+                {activeTab === "lipsync" && <LipSyncStudioV2 />}
+                {(activeTab === "body-swap" || activeTab === "recast") && <RecastStudioV2 />}
+                {activeTab === "influencer" && <InfluencerStudioV2 />}
+                {activeTab === "marketing" && <MarketingStudioV2 />}
+                {(activeTab === "vibe-motion" || activeTab === "motion") && <MotionStudioV2 />}
+                {activeTab === "clipping" && <ClippingStudioV2 />}
               </motion.div>
             </AnimatePresence>
           </div>
