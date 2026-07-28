@@ -126,24 +126,22 @@ export default function DevMode() {
           >
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: isVertical ? "10px 6px" : "0 12px", flexDirection: isVertical ? "column" : "row",
-              background: "rgba(15,15,30,0.35)", borderBottom: isHorizontal ? "1px solid rgba(255,255,255,0.05)" : "none",
-              borderRight: isVertical ? "1px solid rgba(255,255,255,0.05)" : "none",
-              userSelect: "none", flexShrink: 0, gap: isVertical ? 6 : 0,
+              padding: "0 12px", flexDirection: "row",
+              background: "rgba(15,15,30,0.35)", borderBottom: "1px solid rgba(255,255,255,0.05)",
+              userSelect: "none", flexShrink: 0,
             }}>
               <div style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 0, flexWrap: "wrap" }}>
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#00ff88", boxShadow: "0 0 4px #00ff88", flexShrink: 0, marginRight: isVertical ? 0 : 6, marginBottom: isVertical ? 4 : 0 }} />
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#00ff88", boxShadow: "0 0 4px #00ff88", flexShrink: 0, marginRight: 6 }} />
                 {TABS.map(t => (
                   <button key={t.id} onClick={() => setTab(t.id)} style={{
                     background: tab === t.id ? "rgba(0,255,136,0.06)" : "transparent",
                     color: tab === t.id ? "#00ff88" : "#666", border: "none",
-                    borderBottom: isHorizontal && tab === t.id ? "2px solid #00ff88" : "none",
-                    borderRight: isVertical && tab === t.id ? "2px solid #00ff88" : "none",
-                    padding: isVertical ? "5px 6px" : "6px 12px", fontSize: 10, fontWeight: 600, cursor: "pointer",
+                    borderBottom: tab === t.id ? "2px solid #00ff88" : "none",
+                    padding: "6px 12px", fontSize: 10, fontWeight: 600, cursor: "pointer",
                   }}>{t.label}</button>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: 3, flexDirection: isVertical ? "column" : "row" }}>
+              <div style={{ display: "flex", gap: 3, flexDirection: "row" }}>
                 <button onClick={() => setMinimized(m => !m)} title="Minimize" style={btnS}>—</button>
                 <button onClick={() => setOpen(false)} title="Close" style={{ ...btnS, color: "#ff4444" }}>✕</button>
               </div>
