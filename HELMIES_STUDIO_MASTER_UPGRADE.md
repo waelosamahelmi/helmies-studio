@@ -1,11 +1,9 @@
-# Helmies Studio — Master Merge & Implementation Specification
+# Helmies Studio — Master Implementation Specification
 
 **Status:** Implementation contract / single source of truth  
 **Target product:** Helmies Studio  
-**Target technical foundation:** current `waelosamahelmi/helmies-agent` repository  
-**Repositories analyzed:**  
-- `waelosamahelmi/helmies-studio`
-- `waelosamahelmi/helmies-agent`
+**Target technical foundation:** `waelosamahelmi/helmies-studio` repository (single codebase — all features built here)  
+**Reference repositories (concepts only, not merged):**  
 - `Blizaine/Maestro`
 - `cocktailpeanut/image-to-prompt`
 
@@ -18,11 +16,11 @@
 
 The final product is one platform called **Helmies Studio**.
 
-The current `helmies-agent` becomes the authenticated application shell, AI orchestration runtime, agent platform, conversations layer, tool system, skills system, MCP system, subagent system, memory runtime and long-running/resumable execution foundation.
+The `helmies-agent` project has been **abandoned**. All functionality that was previously planned to come from `helmies-agent` — the authenticated application shell, AI orchestration runtime, agent platform, conversations layer, tool system, skills system, MCP system, subagent system, memory runtime, and long-running/resumable execution foundation — must now be **built natively inside Helmies Studio**.
 
-The current `helmies-studio` is not discarded. Its public landing page, existing provider integrations, generation APIs, pricing/credits logic, workflows, ProjectMemory concepts, database, Stripe-related commercial concepts, admin functions and useful media-generation code are migrated into the final platform.
+The current `helmies-studio` codebase is the **single foundation**. Its public landing page, existing provider integrations, generation APIs, pricing/credits logic, workflows, ProjectMemory concepts, database, Stripe-related commercial concepts, admin functions and useful media-generation code are all retained and **extended in place**.
 
-The customer-facing name **Helmies Agent** disappears.
+There is no second repository to merge from. Everything is implemented within Helmies Studio.
 
 The final URL model is:
 
@@ -90,11 +88,11 @@ https://studio.helmies.fi/studio/admin
 4. Preserve its existing visual language, motion, layout, major sections and overall impression.
 5. It is allowed to optimize SEO, accessibility, performance, data loading and responsiveness.
 6. Replace hard-coded pricing with data from the platform database without visually redesigning pricing cards unless needed for correctness.
-7. The authenticated `/studio` application must use the organizational/UI foundation of Helmies Agent, not the current Helmies Studio tool shell.
-8. Do not copy the old Helmies Studio UI wholesale into Helmies Agent.
+7. The authenticated `/studio` application must be built as a first-class authenticated shell inside Helmies Studio, not imported from an external Agent project.
+8. Do not copy the old Helmies Studio public tool shell wholesale into the authenticated `/studio` area; build a proper authenticated application shell within the same codebase.
 9. Reuse useful generation/backend logic from Helmies Studio.
 10. Do not create a second competing Agent runtime.
-11. The mature Helmies Agent / LibreChat-derived agent runtime becomes the single orchestration runtime.
+11. Helmies Studio must build a single mature orchestration runtime natively (agents, subagents, tools, skills, MCP, memory, resumable jobs). Do not depend on an external Agent runtime.
 12. Agent, manual Studios, Workflows and Director must all execute media through the same Model Gateway.
 13. No manual Studio may call a provider directly.
 14. No Agent tool may call a provider directly outside the Model Gateway.
@@ -147,24 +145,33 @@ https://studio.helmies.fi/studio/admin
 
 ---
 
-# 2. Critical Licensing Rule: Maestro
+# 2. Maestro: Exact Logic, Prompting & Functionality Replication
 
 Maestro is distributed under the WanGP Non-Commercial Evaluation License.
 
 The analyzed license explicitly allows non-commercial evaluation but prohibits using Maestro or a derivative as part of a paid hosted service unless a separate commercial license is obtained.
 
-Therefore the default commercial implementation strategy is:
+Therefore the implementation strategy is:
 
-**Clean-room reimplementation of the useful architecture and product concepts.**
+**Exact behavior replication — reverse-engineer Maestro's logic, prompting, and functionality and reproduce them identically in Helmies Studio's own original source code.**
 
-The final Helmies Studio may independently implement concepts such as:
+The product goal is that Helmies Studio's Director behaves **identically** to Maestro: the same planning logic, the same prompting, the same passes, the same prompt guides, the same rerun semantics, the same continuity rules, the same dashboard concepts, and the same user-visible results.
+
+To achieve this without copying restricted source code:
+
+- study Maestro's behavior, prompts, schemas, and flows as the authoritative reference;
+- write detailed behavioral specs of each Maestro capability (inputs, outputs, prompt templates, pass ordering, schemas, edge cases, validation rules);
+- implement that behavior in **original Helmies Studio code** that produces equivalent outputs;
+- verify equivalence with side-by-side comparison tests against Maestro outputs where the license permits evaluation.
+
+Helmies Studio must replicate the following Maestro capabilities exactly (behavior, not necessarily line-for-line code):
 
 - ProductionPlan.
 - ShotPlan.
-- multi-pass planning.
+- multi-pass planning (same passes, same order, same prompts).
 - Director workflow.
 - shot continuity.
-- model-specific prompt guides.
+- model-specific prompt guides (same guide content/logic).
 - persistent pipeline state.
 - shot-level reruns.
 - reassembly/rejoin.
@@ -172,11 +179,11 @@ The final Helmies Studio may independently implement concepts such as:
 - production dashboard.
 - prompt inspection.
 
-Do not copy Maestro source code into the paid Helmies product unless Helmies first obtains a commercial license explicitly covering the intended SaaS use.
+Do not copy Maestro source code verbatim into the paid Helmies product unless Helmies first obtains a commercial license explicitly covering the intended SaaS use. Reproduce the behavior in original code.
 
-If a commercial license is later obtained, the implementation team may reassess direct code integration.
+If a commercial license is later obtained, the implementation team may reassess direct source integration to shorten the path to exact equivalence.
 
-The architecture in this document is intentionally designed so Helmies does not require Maestro's runtime.
+The architecture in this document is intentionally designed so Helmies reproduces Maestro's runtime behavior in its own original implementation.
 
 ---
 
@@ -295,7 +302,7 @@ Responsibilities:
 
 ## Layer 2 — Authenticated Studio Shell
 
-Based on Helmies Agent / LibreChat client architecture.
+Built natively inside Helmies Studio as a first-class authenticated application shell (sidebar, account, conversations, routing, projects, assets, notifications, credits, billing shortcuts, command palette).
 
 Responsibilities:
 - sidebar;
@@ -372,7 +379,7 @@ Responsibilities:
 
 # 5. Final Repository Strategy
 
-Use `helmies-agent` as the technical base and evolve it into the final Helmies Studio repository.
+Use `helmies-studio` as the single technical base and build all functionality (including the agent runtime, conversations, tools, skills, MCP, etc.) directly within it. The `helmies-agent` repository is abandoned and is **not** a base for this project.
 
 Recommended final logical structure:
 
@@ -382,15 +389,15 @@ helmies-studio/
 │   ├── landing/
 │   │   └── preserved public Helmies Studio Next.js website
 │   ├── studio-web/
-│   │   └── Helmies Agent / LibreChat-derived authenticated UI
+│   │   └── Helmies Studio authenticated UI (built natively)
 │   ├── platform-api/
 │   │   └── commercial platform API
 │   ├── agent-api/
-│   │   └── LibreChat-derived agent/conversation runtime
+│   │   └── agent/conversation runtime (built natively inside Helmies Studio)
 │   ├── worker/
 │   │   └── media and workflow job processors
 │   ├── director-service/
-│   │   └── Helmies clean-room Director planning service
+│   │   └── Helmies Director planning service (Maestro-exact behavior, original code)
 │   └── vision-service/
 │       └── structured image/reference analysis
 │
@@ -406,24 +413,23 @@ helmies-studio/
 │   └── shared-config/
 │
 ├── api/
-│   └── current LibreChat API during staged migration
+│   └── agent/conversation runtime (built natively)
 ├── client/
-│   └── current LibreChat client during staged migration
+│   └── authenticated Studio client (built natively)
 ├── packages/
-│   └── current LibreChat packages during staged migration
+│   └── shared Studio packages
 ├── prisma/
 ├── docker/
 ├── infra/
 ├── docs/
 ├── scripts/
 ├── docker-compose.yml
-├── librechat.yaml
 └── README.md
 ```
 
-Do not force a destructive filesystem reorganization in the first migration commit.
+Do not force a destructive filesystem reorganization in the first implementation commit.
 
-A staged migration may keep existing `api/`, `client/` and current packages while new commercial services are added.
+A staged implementation may keep existing structure while new commercial services are added.
 
 ---
 
@@ -491,8 +497,8 @@ Allowed improvements:
 - bug fixes.
 
 Not allowed:
-- replacing the homepage with the Agent UI.
-- redesigning the homepage to look like LibreChat.
+- replacing the homepage with an external Agent UI.
+- redesigning the homepage to look like a generic chat product.
 - changing its visual identity merely for consistency with `/studio`.
 
 Create visual regression snapshots before migration.
@@ -708,9 +714,9 @@ All subagents must use the same Gateway and wallet.
 
 ---
 
-# 11. Helmies Agent Capabilities to Preserve
+# 11. Helmies Studio Agent Runtime Capabilities to Build
 
-Keep and leverage the mature runtime already present:
+Build the following runtime capabilities natively inside Helmies Studio:
 
 - Agents.
 - subagents.
@@ -738,7 +744,7 @@ Keep and leverage the mature runtime already present:
 - multi-model support.
 - conversation persistence.
 
-Do not rebuild these inside the old Next.js Studio.
+Do not rebuild these inside a separate old Next.js tool shell — build them directly into Helmies Studio's authenticated application.
 
 ---
 
@@ -4022,49 +4028,40 @@ Marketing can display:
 # 118. Authentication Unification
 
 Current Helmies Studio uses NextAuth/Prisma.
-Current Helmies Agent/LibreChat has its own mature auth/user store.
 
-Do not force a risky one-day DB merger.
+Build a unified auth/user store inside Helmies Studio. There is no separate agent project to merge with.
 
-Migration path:
+Since `helmies-agent` is abandoned, there is no second auth system to reconcile.
+
+Implementation path:
 
 ## Stage A
 - Platform user remains commercial identity.
-- Agent user remains runtime identity.
-- create `IdentityLink`.
-- login gateway maps them.
+- Build agent runtime identity within the same Helmies Studio user store.
+- one session/token exchange.
 
 ## Stage B
-- one session/token exchange.
-- Studio UI receives platform commercial context.
+- Studio UI receives platform commercial context from the same session.
 
 ## Stage C
-- optional deeper identity consolidation later.
+- all identity fully unified in one store from the start.
 
 Credits, plans and billing always use platform user ID.
 
 ---
 
-# 119. IdentityLink
+# 119. IdentityLink (not required)
 
-Recommended:
+Since `helmies-agent` is abandoned and all identity lives in Helmies Studio, an `IdentityLink` mapping table is **not required**.
 
-```prisma
-model IdentityLink {
-  id             String   @id @default(cuid())
-  platformUserId String   @unique
-  agentUserId    String   @unique
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-}
-```
+If a future integration ever introduces a separate identity system, revisit this then.
 
 ---
 
 # 120. Agent Commercial Context
 
 At Agent request:
-- map Agent user -> platform user.
+- resolve user from the unified Helmies Studio session.
 - fetch plan.
 - fetch wallet.
 - fetch feature entitlements.
@@ -4121,11 +4118,11 @@ Responsibilities:
 Keep both initially.
 
 Mongo:
-- LibreChat conversations.
+- Helmies Studio conversations.
 - agents.
 - messages.
 - runtime entities.
-- skills/MCP data where currently required.
+- skills/MCP data.
 
 Postgres:
 - commercial identity mapping.
@@ -4143,7 +4140,7 @@ Postgres:
 - CMS.
 - admin.
 
-Do not rewrite mature LibreChat persistence unnecessarily.
+Do not rewrite mature Helmies Studio persistence unnecessarily.
 
 ---
 
@@ -4282,15 +4279,15 @@ Provider interface makes it replaceable.
 
 # 132. Director Service
 
-Clean-room implementation.
+Exact Maestro behavior replication in original code.
 
-Responsibilities:
-- planning.
-- shot schema.
-- continuity.
-- prompt drafts.
-- plan validation.
-- cost operation list.
+Responsibilities (must match Maestro exactly):
+- planning (same multi-pass planning logic, same pass order, same prompts).
+- shot schema (identical to Maestro ShotPlan).
+- continuity (identical continuity rules).
+- prompt drafts (identical prompt templates and guide content).
+- plan validation (identical validation rules).
+- cost operation list (identical operation enumeration).
 
 It does NOT:
 - directly debit credits.
@@ -4399,7 +4396,7 @@ Implement:
 - size limits.
 - content type validation.
 
-Reuse mature SSRF protections from Helmies Agent where possible.
+Reuse mature SSRF protections already present in Helmies Studio where possible.
 
 ---
 
@@ -4508,7 +4505,7 @@ Detect breaking API changes.
 
 # 145. Agent Streaming
 
-Keep mature Helmies Agent streaming/reconnect approach.
+Keep mature Helmies Studio streaming/reconnect approach.
 
 Generated media appears as tool result cards.
 
@@ -4819,9 +4816,7 @@ The current Helmies Studio Orchestrator already demonstrates useful UX:
 - execution steps.
 - progress.
 
-Do not retain it as separate backend Agent system.
-
-Recreate that UX using Helmies Agent runtime.
+Evolve it into the final Master Agent runtime built natively inside Helmies Studio.
 
 The final Master Agent is the only orchestrator.
 
@@ -4829,23 +4824,18 @@ The final Master Agent is the only orchestrator.
 
 # 164. Current `/agent` Proxy
 
-Today the old Next app can proxy `/agent/*` to LibreChat.
+The old Next app previously could proxy `/agent/*` to an external chat runtime.
 
 Final:
-- `/studio` is the Agent-derived app itself.
+- `/studio` is the Helmies Studio authenticated app itself (built natively).
 - landing and Studio are siblings behind gateway.
-- not "Studio page embedding Agent product."
+- not "Studio page embedding an external Agent product."
 
 ---
 
-# 165. Helmies Agent Rebranding
+# 165. Helmies Studio Branding
 
-Replace customer-facing:
-- LibreChat.
-- Helmies Agent.
-
-With:
-- Helmies Studio.
+Replace any customer-facing references to external chat products (e.g. LibreChat, Helmies Agent) with **Helmies Studio**.
 
 Update:
 - app title.
@@ -5331,7 +5321,7 @@ Acceptance:
 
 ## Phase 1 — Repository Shell
 
-- base on Helmies Agent.
+- base on `helmies-studio` (single repo).
 - add landing app.
 - route `/`.
 - route `/studio`.
@@ -5340,18 +5330,17 @@ Acceptance:
 
 Acceptance:
 - homepage unchanged.
-- Agent UI works at `/studio`.
+- authenticated Studio UI works at `/studio`.
 
-## Phase 2 — Identity Bridge
+## Phase 2 — Identity
 
-- IdentityLink.
+- unified Helmies Studio auth/user store.
 - shared login.
-- platform user mapping.
 - one wallet display.
 
 Acceptance:
 - one login experience.
-- commercial user resolved from Agent session.
+- commercial user resolved from Studio session.
 
 ## Phase 3 — Wallet V2
 
@@ -5485,10 +5474,10 @@ Acceptance:
 
 ## Phase 14 — Director
 
-- clean-room planner.
+- Maestro-exact planner (original code, identical behavior).
 - ProductionPlan.
 - ShotPlan.
-- prompt passes.
+- prompt passes (same passes/order/content as Maestro).
 - cost.
 - execution.
 - rerun.
@@ -5615,7 +5604,7 @@ Use as behavior reference:
 - generation.
 - result.
 
-Reimplement in final shell.
+Replicate exactly in final shell.
 
 ## `chatModes`
 
@@ -5644,9 +5633,9 @@ Use current functionality as baseline; replace UI/architecture with Admin V2.
 
 ---
 
-# 199. Source Project Mapping — Helmies Agent
+# 199. Source Project Mapping — Helmies Studio (native build)
 
-Preserve:
+Build natively inside Helmies Studio:
 - Agent runtime.
 - conversations.
 - tools.
@@ -5662,8 +5651,8 @@ Preserve:
 - usage tracking.
 - provider support.
 
-Extend:
-- Helmies commercial identity.
+Extend Helmies Studio with:
+- commercial identity.
 - wallet.
 - creative tools.
 - workspaces.
@@ -5673,50 +5662,50 @@ Extend:
 - generation artifacts.
 - admin link.
 
-Avoid modifying deep LibreChat internals when a clean extension point exists.
+Build clean extension points rather than depending on external Agent internals.
 
 ---
 
 # 200. Source Project Mapping — Maestro Concepts
 
-Clean-room reimplement:
+Replicate Maestro's exact behavior in original Helmies Studio code (same logic, prompting, schemas, and results — not copied source):
 
 ```text
 Maestro ProductionPlan
-    -> Helmies ProductionPlan
+    -> Helmies ProductionPlan (identical schema/logic)
 
 Maestro ShotPlan
-    -> Helmies ShotPlan
+    -> Helmies ShotPlan (identical schema/logic)
 
 Maestro planner passes
-    -> Helmies Director Planning Passes
+    -> Helmies Director Planning Passes (same passes, order, and prompts)
 
 Maestro model prompt guides
-    -> Helmies Prompt Guide Registry
+    -> Helmies Prompt Guide Registry (same guide content/logic)
 
 Maestro saved pipeline
-    -> DirectorPipeline + DirectorShot
+    -> DirectorPipeline + DirectorShot (identical persistence semantics)
 
 Maestro rerun image
-    -> shot image rerun
+    -> shot image rerun (identical rerun semantics)
 
 Maestro rerun video
-    -> shot video rerun
+    -> shot video rerun (identical rerun semantics)
 
 Maestro rejoin
-    -> Assembly worker
+    -> Assembly worker (identical rejoin/reassembly logic)
 
 Maestro dashboard
-    -> Director Dashboard
+    -> Director Dashboard (identical dashboard behavior)
 
 Maestro workspaces
-    -> Projects
+    -> Projects (identical workspace semantics)
 
 Maestro prompt polish
-    -> Prompt Intelligence Engine
+    -> Prompt Intelligence Engine (identical polishing logic/prompts)
 ```
 
-Do not copy restricted implementation code.
+Do not copy restricted Maestro source code. Reproduce its exact behavior in original code, verified by equivalence tests.
 
 ---
 
@@ -6148,10 +6137,10 @@ The project is complete only when all of the following are true.
 - durable.
 
 ## Director
-- clean-room implementation.
+- Maestro-exact behavior replication (original code).
 - ProductionPlan.
 - ShotPlan.
-- multi-pass prompts.
+- multi-pass prompts (same passes/order/content as Maestro).
 - persistent pipeline.
 - quote.
 - shot reruns.
@@ -6584,7 +6573,7 @@ recast.standard
 
 # Appendix H — System Prompt: Master Creative Agent
 
-Use this as the conceptual baseline. Adapt to the exact Helmies Agent runtime and safety envelope.
+Use this as the conceptual baseline. Adapt to the exact Helmies Studio runtime and safety envelope.
 
 ```text
 You are the Helmies Studio Master Creative Agent.
@@ -7380,7 +7369,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT
 
 ## Agent API
 
-Keep existing required LibreChat variables plus:
+Keep existing required Helmies Studio variables plus:
 
 ```text
 HELMIES_PLATFORM_API_URL
@@ -7412,7 +7401,7 @@ Provider-specific credentials should be resolved by the Platform/Gateway secret 
 
 # Appendix AA — Docker Compose Skeleton
 
-Illustrative only; adapt to existing Helmies Agent compose.
+Illustrative only; adapt to existing Helmies Studio compose.
 
 ```yaml
 services:
@@ -8122,7 +8111,7 @@ For every model currently exposed in Helmies Studio:
 | `apps/studio-web` | final authenticated UI |
 | `apps/platform-api` | commercial API |
 | `apps/worker` | async jobs |
-| `apps/director-service` | clean-room production planning |
+| `apps/director-service` | Maestro-exact production planning (original code) |
 | `apps/vision-service` | image analysis |
 | `packages/model-registry` | models/capabilities/schemas |
 | `packages/pricing-engine` | quote/margin/prices |
@@ -8203,16 +8192,17 @@ Work sequentially through the migration phases.
 The current public landing page is visually protected.
 Do not redesign it.
 
-The current helmies-agent codebase is the final authenticated application and Agent-runtime foundation.
+The `helmies-agent` project is abandoned and is NOT used.
+The `helmies-studio` codebase is the single foundation and is built out natively into the final authenticated application and Agent-runtime foundation.
 
-The old helmies-studio codebase is a source of commercial database data, generation providers, pricing, workflows and useful backend logic that must be migrated rather than blindly rewritten.
+The old helmies-studio public tool shell is a source of commercial database data, generation providers, pricing, workflows and useful backend logic that must be evolved in place rather than blindly rewritten.
 
-Do not maintain two Agent runtimes.
-The LibreChat-derived Helmies Agent runtime becomes the Master Agent runtime.
+Do not maintain or import a second Agent runtime.
+Helmies Studio builds its own Master Agent runtime natively.
 
 Agent, manual Studios, Workflows and Director must all use the same Model Gateway, Pricing Engine, wallet and job system.
 
-Do not copy Maestro implementation code into the commercial product unless a valid commercial license has been obtained. Reimplement the Director concepts independently.
+Replicate Maestro's exact Director behavior (logic, prompting, schemas, results) in original Helmies Studio code. Do not copy Maestro source code verbatim unless a valid commercial license has been obtained. Equivalence must be verified by side-by-side comparison tests.
 
 Do not expose provider secrets.
 
@@ -8253,7 +8243,7 @@ The project is not complete until the Definition of Done in the specification is
                      │                                        │
            ┌─────────▼────────┐                    ┌──────────▼─────────┐
            │ Landing Next.js  │                    │ Helmies Studio UI  │
-           │ Existing design  │                    │ Agent-derived UI   │
+           │ Existing design  │                    │ native built UI    │
            └─────────┬────────┘                    └───────┬────────────┘
                      │                                     │
                      │ Public API                          │
@@ -8268,7 +8258,7 @@ The project is not complete until the Definition of Done in the specification is
                   │                     │                     │
           ┌───────▼───────┐     ┌──────▼──────┐      ┌──────▼────────┐
           │ Agent API     │     │ Model       │      │ Projects /    │
-          │ LibreChat     │     │ Gateway     │      │ Assets/Brand  │
+          │ (native)      │     │ Gateway     │      │ Assets/Brand  │
           └───────┬───────┘     └──────┬──────┘      └───────────────┘
                   │                    │
           ┌───────▼───────┐     ┌──────▼──────────────┐
@@ -8286,7 +8276,7 @@ The project is not complete until the Definition of Done in the specification is
 Persistent data:
 
 MongoDB
-    LibreChat/Agent runtime
+    Helmies Studio agent runtime
 
 PostgreSQL
     users/commercial mapping
