@@ -89,5 +89,5 @@ export async function storeMedia(providerUrl, contentType) {
   const filepath = join(MEDIA_DIR, filename);
   await writeFile(filepath, buffer);
 
-  return `/media/${filename}`;
+  return `/api/media/local/${filename}`;
 }

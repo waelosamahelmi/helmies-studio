@@ -6,13 +6,20 @@ export async function GET(req, { params }) {
   try {
     const { name } = await params;
     const safeName = path.basename(name);
-    const filePath = path.join(process.cwd(), "public", "uploads", safeName);
+
+    // Check public/media first (generated outputs), then public/uploads (user uploads)
+    const mediaPath = path.join(process.cwd(), "public", "media", safeName);
+    const uploadsPath = path.join(process.cwd(), "public", "uploads", safeName);
 
     let buffer;
     try {
-      buffer = await readFile(filePath);
+      buffer = await readFile(mediaPath);
     } catch {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
+      try {
+        buffer = await readFile(uploadsPath);
+      } catch {
+        return NextResponse.json({ error: "File not found" }, { status: 404 });
+      }
     }
 
     const ext = path.extname(safeName).toLowerCase();

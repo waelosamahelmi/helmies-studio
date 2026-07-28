@@ -43,7 +43,7 @@ export async function assembleVideos(urls, options = {}) {
       const singlePath = join(MEDIA_DIR, outputName);
       const { rename } = await import("fs/promises");
       await rename(tempFiles[0], singlePath);
-      return `/media/${outputName}`;
+      return `/api/media/local/${outputName}`;
     }
 
     const concatList = tempFiles.map((f) => `file '${f.replace(/\\/g, "/")}'`).join("\n");
@@ -66,7 +66,7 @@ export async function assembleVideos(urls, options = {}) {
 
     await execFileAsync("ffmpeg", args, { timeout: 300000 });
 
-    return `/media/${outputName}`;
+    return `/api/media/local/${outputName}`;
   } finally {
     for (const f of tempFiles) {
       try { await unlink(f); } catch {}
