@@ -8,7 +8,7 @@ const DEV_EMAILS = ["waelosamahelmi@gmail.com", "wael@helmies.fi"];
 const TABS = [
   { id: "terminal", label: "Terminal", url: "/dev-terminal", desc: "root@helmies-studio bash" },
   { id: "opencode", label: "Opencode", url: "/dev-opencode", desc: "AI coding agent (v1.18.9)" },
-  { id: "hermes", label: "Hermes", desc: "Job manager & MCP (v0.17.0)" },
+  { id: "hermes", label: "Hermes", url: "/dev-hermes", desc: "Agent dashboard (v0.17.0)" },
 ];
 
 export default function DevMode() {
@@ -157,48 +157,16 @@ export default function DevMode() {
             </div>
 
             {/* Content */}
-            {tab === "hermes" ? (
-              <div
-                style={{
-                  flex: 1,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  padding: 24,
-                  color: "#aaa",
-                  fontFamily: "monospace",
-                  fontSize: 13,
-                  textAlign: "center",
-                  gap: 12,
-                }}
-              >
-                <p>
-                  <strong style={{ color: "#00ff88" }}>Hermes Agent v0.17.0</strong>
-                  <br />
-                  AI assistant with tool-calling, MCP, browser automation, and more.
-                </p>
-                <p style={{ opacity: 0.7 }}>
-                  Run <code style={{ color: "#ffcc00" }}>hermes chat</code> in the Terminal tab
-                  <br />
-                  or <code style={{ color: "#ffcc00" }}>hermes gui</code> for the desktop interface.
-                </p>
-                <div style={{ fontSize: 11, opacity: 0.5 }}>
-                  Available: chat | model | lsp | mcp | memory | sessions | curator | dashboard | logs | ...
-                </div>
-              </div>
-            ) : (
-              <iframe
-                src={currentTab.url}
-                style={{
-                  flex: 1,
-                  width: "100%",
-                  border: "none",
-                  background: "#0a0a1e",
-                }}
-                title={`Dev ${currentTab.label}`}
-              />
-            )}
+            <iframe
+              src={currentTab.url}
+              style={{
+                flex: 1,
+                width: "100%",
+                border: "none",
+                background: "#0a0a1e",
+              }}
+              title={`Dev ${currentTab.label}`}
+            />
           </motion.div>
         )}
       </AnimatePresence>
