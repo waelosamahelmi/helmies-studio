@@ -45,7 +45,7 @@ export default function ImageStudioV2() {
   const [genStage, setGenStage] = useState("");
 
   const currentModel = V2_MODELS.find((m) => m.id === model) || V2_MODELS[0];
-  const { cost: estCredits, affordable, shortfall, topUpPacks } = useCreditCost("image", model, {
+  const { cost: estCredits, affordable, balance, shortfall, topUpPacks } = useCreditCost("image", model, {
     aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl,
   });
 
@@ -109,7 +109,6 @@ export default function ImageStudioV2() {
   const ASPECTS = currentModel.aspectRatios || ["1:1", "4:5", "9:16", "16:9", "3:2", "2:3"];
   const RESOLUTIONS = currentModel.resolutions || ["1k", "2k", "4k"];
   const credits = estCredits || 0;
-  const balance = 0;
 
   return (
     <div className="studio__workspace">

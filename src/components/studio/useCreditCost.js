@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/client-fetch";
 export function useCreditCost(tool, model, params = {}) {
   const [cost, setCost] = useState(null);
   const [affordable, setAffordable] = useState(true);
+  const [balance, setBalance] = useState(0);
   const [remaining, setRemaining] = useState(null);
   const [shortfall, setShortfall] = useState(0);
   const [topUpPacks, setTopUpPacks] = useState([]);
@@ -24,6 +25,7 @@ export function useCreditCost(tool, model, params = {}) {
         if (!cancelled) {
           setCost(data.credits);
           setAffordable(data.affordable);
+          setBalance(data.balance ?? 0);
           setRemaining(data.remaining);
           setShortfall(data.shortfall || 0);
           setTopUpPacks(data.topUpPacks || []);
@@ -33,5 +35,5 @@ export function useCreditCost(tool, model, params = {}) {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [tool, model, JSON.stringify(params)]);
 
-  return { cost, affordable, remaining, shortfall, topUpPacks };
+  return { cost, affordable, balance, remaining, shortfall, topUpPacks };
 }

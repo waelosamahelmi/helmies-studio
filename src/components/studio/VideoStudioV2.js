@@ -31,7 +31,7 @@ export default function VideoStudioV2() {
   const [genStage, setGenStage] = useState("");
 
   const currentModel = V2_MODELS.find((m) => m.id === model) || V2_MODELS[0];
-  const { cost: estCredits, affordable, shortfall, topUpPacks } = useCreditCost("video", model, {
+  const { cost: estCredits, affordable, balance, shortfall, topUpPacks } = useCreditCost("video", model, {
     duration, aspect_ratio: aspectRatio,
   });
 
@@ -108,7 +108,7 @@ export default function VideoStudioV2() {
 
       <div className="studio__bottombar">
         {showQuote ? (
-          <CostQuote estimated={credits} maximum={Math.ceil(credits * 1.15)} balance={0} onGenerate={handleGenerate} onCancel={() => setShowQuote(false)} generating={generating} />
+          <CostQuote estimated={credits} maximum={Math.ceil(credits * 1.15)} balance={balance} onGenerate={handleGenerate} onCancel={() => setShowQuote(false)} generating={generating} />
         ) : (
           <div className="studio__bottombar-inner">
             <PromptComposer value={prompt} onChange={setPrompt} placeholder="Describe the video you want to create..." />
