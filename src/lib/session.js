@@ -20,8 +20,8 @@ export async function getCurrentUser() {
 // The wallet is the source of truth; `User.credits` is kept as a denormalized
 // mirror so existing UI/queries that read `user.credits` keep working.
 async function syncUserCreditsFromWallet(userId, tx = prisma) {
-  const wallet = await tx.creditWallet.findUnique({ where: { userId } });
-  if (!wallet) return 0;
+  // getWallet() migrates from legacy User.credits if no wallet exists yet.
+  const wallet = await getWallet(userId);
   await tx.user.update({ where: { id: userId }, data: { credits: wallet.available } });
   return wallet.available;
 }
