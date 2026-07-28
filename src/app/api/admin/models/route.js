@@ -33,9 +33,6 @@ export async function GET(req) {
         background: p?.background || null,
         backgroundOverlay: p?.backgroundOverlay ?? null,
         textColor: p?.textColor || null,
-        background: p?.background || null,
-        backgroundOverlay: p?.backgroundOverlay ?? null,
-        textColor: p?.textColor || null,
         configured: !!p,
       };
     });

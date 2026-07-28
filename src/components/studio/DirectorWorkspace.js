@@ -466,6 +466,36 @@ export default function DirectorWorkspace() {
                         {shot.subjects?.length > 0 && (
                           <div><div style={{ fontSize: 11, fontWeight: 600, color: "var(--color-text-dim)", marginBottom: 4 }}>Subjects</div><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{shot.subjects.map((s, j) => (<span key={j} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 100, background: "rgba(255,255,255,0.06)" }}>{s.role}: {s.description}</span>))}</div></div>
                         )}
+                        {shot.continuityTracker && (
+                          <div style={{ padding: 10, borderRadius: 10, background: "rgba(124,58,237,0.06)", border: "1px solid rgba(124,58,237,0.18)" }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: "#A78BFA", marginBottom: 6 }}>Continuity Tracking</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 11, lineHeight: 1.4 }}>
+                              <div><span style={{ color: "var(--color-text-dim)" }}>Identity:</span> {shot.continuityTracker.characterIdentity}</div>
+                              <div><span style={{ color: "var(--color-text-dim)" }}>Outfit:</span> {shot.continuityTracker.outfit}</div>
+                              <div><span style={{ color: "var(--color-text-dim)" }}>Environment:</span> {shot.continuityTracker.environment}</div>
+                              <div><span style={{ color: "var(--color-text-dim)" }}>Lighting:</span> {shot.continuityTracker.lighting}</div>
+                              <div style={{ gridColumn: "1 / -1" }}><span style={{ color: "var(--color-text-dim)" }}>Previous end frame:</span> {shot.continuityTracker.previousEndingFrame}</div>
+                              <div><span style={{ color: "var(--color-text-dim)" }}>Screen direction:</span> {shot.continuityTracker.screenDirection}</div>
+                              <div><span style={{ color: "var(--color-text-dim)" }}>Camera lang:</span> {shot.continuityTracker.cameraLanguage}</div>
+                            </div>
+                          </div>
+                        )}
+                        {(() => {
+                          const shotVal = validation?.results?.find((r) => r.shotId === shot.id);
+                          if (!shotVal || shotVal.valid) return null;
+                          const fails = shotVal.results?.filter((x) => !x.valid) || [];
+                          if (fails.length === 0) return null;
+                          return (
+                            <div style={{ padding: 10, borderRadius: 10, background: "rgba(255,77,77,0.06)", border: "1px solid rgba(255,77,77,0.18)" }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#FF4D4D", marginBottom: 6 }}>Policy Violations</div>
+                              {fails.map((f, k) => (
+                                <div key={k} style={{ fontSize: 11, color: "var(--color-text-dim)", marginBottom: 3 }}>
+                                  <strong style={{ color: "#FF4D4D" }}>{f.field}:</strong> {f.reason}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </motion.div>
                   )}

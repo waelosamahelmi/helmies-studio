@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserWithCredits, debitCredits } from "@/lib/session";
+import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
 import { resolveProvider, resolveProviderWithFallback, brandError, logProviderError, submitAndPoll } from "@/lib/providers";
 import { checkRateLimit, logAudit } from "@/lib/security";
@@ -8,6 +8,16 @@ import { applyMemoryToPrompt } from "@/lib/memory";
 import { validateGenerationOutput, logQualityGate } from "@/lib/quality-gate";
 import { authenticateApiKey } from "@/lib/api-key-auth";
 import { storeMedia } from "@/lib/media-storage";
+import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
+
+// Re-mirror the wallet's `available` balance onto the legacy `User.credits`
+// column so existing UI/queries keep showing the right number.
+async function syncLegacyCredits(userId) {
+  try {
+    const w = await getWallet(userId);
+    await prisma.user.update({ where: { id: userId }, data: { credits: w.available } });
+  } catch {}
+}
 
 export async function handleGeneration(req, tool, cost, apiFn) {
   try {
@@ -30,16 +40,81 @@ export async function handleGeneration(req, tool, cost, apiFn) {
 
     const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
 
+    // ── Prompt Intelligence Engine (5-pass) ──
+    // Replaces the old single-pass expandPrompt. Spec §26.
     let finalPrompt = rawPrompt;
+    let compiledNegative = body.negative_prompt || null;
+    let promptWarnings = [];
+    let guideVersion = null;
+
+    // Apply ProjectMemory character/style first (enricher reads it).
+    let character = null;
     if (body.characterId || body.styleId) {
-      finalPrompt = await applyMemoryToPrompt(user.id, finalPrompt, {
-        characterId: body.characterId,
-        styleId: body.styleId,
-      });
+      try {
+        const mem = await applyMemoryToPrompt(user.id, rawPrompt, {
+          characterId: body.characterId,
+          styleId: body.styleId,
+        });
+        if (mem && mem !== rawPrompt) {
+          character = { physicalDescription: mem };
+        }
+      } catch {}
     }
 
-    if (shouldExpand(finalPrompt)) {
-      finalPrompt = await expandPrompt(finalPrompt, promptType, model);
+    try {
+      const { compilePrompt } = await import("@/lib/prompt-engine");
+
+      // Load brand kit constraints when a brandKitId is provided (spec §8.4).
+      let brandKit = null;
+      if (body.brandKitId) {
+        try {
+          const { buildBrandPromptContext, checkBrandCompliance } = await import("@/lib/brand-engine");
+          const bk = await prisma.brandKit.findFirst({ where: { id: body.brandKitId, userId: user.id } });
+          if (bk) {
+            brandKit = {
+              name: bk.name,
+              palette: bk.fingerprint?.palette || { primary: bk.primaryColors, secondary: bk.secondaryColors },
+              typography: bk.fingerprint?.typography || { heading: null, body: null },
+              photographyStyle: bk.photographyStyle,
+              toneOfVoice: bk.toneOfVoice,
+              avoid: bk.avoid,
+              enforcement: bk.enforcement,
+              slogans: bk.slogans,
+            };
+            // Check compliance and add warnings
+            const compliance = checkBrandCompliance(rawPrompt, bk);
+            if (!compliance.compliant) {
+              promptWarnings = [...(promptWarnings || []), ...compliance.violations.map((v) => `Brand: ${v.message || v.term}`)];
+            }
+          }
+        } catch {}
+      }
+
+      const result = await compilePrompt({
+        rawPrompt,
+        tool,
+        modelId: model,
+        settings: {
+          aspect_ratio: body.aspect_ratio,
+          duration: body.duration,
+          resolution: body.resolution,
+          seed: body.seed,
+        },
+        references: body.images_list || (body.image_url ? [{ url: body.image_url, role: "reference" }] : []),
+        character,
+        brandKit,
+        polish: body.polish || "off",
+        userId: user.id,
+      });
+      finalPrompt = result.finalPrompt;
+      if (!compiledNegative && result.negativePrompt) compiledNegative = result.negativePrompt;
+      promptWarnings = result.warnings;
+      guideVersion = result.guideVersion;
+    } catch {
+      // Fallback to the old single-pass expander if the engine fails to load.
+      if (shouldExpand(finalPrompt)) {
+        finalPrompt = await expandPrompt(finalPrompt, promptType, model).catch(() => finalPrompt);
+      }
     }
 
     const provider = await resolveProvider(model);
@@ -47,8 +122,10 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     const dbPricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
     if (dbPricing?.creditsCost) cost = dbPricing.creditsCost;
 
-    if (user.credits < cost) {
-      return NextResponse.json({ error: "Insufficient credits", credits: user.credits, cost }, { status: 402 });
+    // Wallet is the source of truth for the balance check.
+    const wallet = await getWallet(user.id);
+    if (wallet.available < cost) {
+      return NextResponse.json({ error: "Insufficient credits", credits: wallet.available, cost }, { status: 402 });
     }
 
     const providerCost = dbPricing?.providerCost || 0;
@@ -66,12 +143,23 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       },
     });
 
-    await debitCredits(user.id, cost);
+    // Reserve credits for this job up-front; released/refunded on outcome.
+    // This replaces the old debit-then-manual-increment-refund pattern and
+    // guarantees a single ledger entry per credit change (spec §12.1, §32).
+    try {
+      await reserveCredits(user.id, cost, generation.id);
+    } catch (reserveErr) {
+      await prisma.generation.update({ where: { id: generation.id }, data: { status: "failed", error: reserveErr.message } });
+      return NextResponse.json({ error: reserveErr.message, credits: wallet.available, cost }, { status: 402 });
+    }
 
     try {
       const webhookUrl = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
       const paramsWithPrompt = { ...body, prompt: finalPrompt, webhook_url: webhookUrl };
-      if (!body.negative_prompt && promptType !== "audio") {
+      // Use the compiled negative prompt from the engine when present.
+      if (compiledNegative && !body.negative_prompt && promptType !== "audio") {
+        paramsWithPrompt.negative_prompt = compiledNegative;
+      } else if (!body.negative_prompt && promptType !== "audio") {
         paramsWithPrompt.negative_prompt = getNegativePrompt(promptType);
       }
 
@@ -115,13 +203,9 @@ export async function handleGeneration(req, tool, cost, apiFn) {
           where: { id: generation.id },
           data: { status: "failed", error: quality.reason },
         });
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { credits: { increment: cost } },
-        });
-        await prisma.creditTransaction.create({
-          data: { userId: user.id, amount: cost, type: "refund", description: `Quality gate refund: ${quality.reason}` },
-        });
+        // Quality gate failed: release the full reservation back to the user.
+        await releaseReservation(user.id, generation.id);
+        await syncLegacyCredits(user.id);
         return NextResponse.json({ error: quality.reason }, { status: 500 });
       }
 
@@ -132,6 +216,51 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         data: { status: "completed", outputUrl: proxiedUrl, requestId: result.requestId || null },
       });
 
+      // Create an Asset record with lineage (spec §14, §35-37).
+      // Every provider output is ingested into controlled storage.
+      try {
+        const assetType = tool === "video" || tool === "i2v" || tool === "v2v" || tool === "lipsync" || tool === "recast" ? "video"
+          : tool === "audio" ? "audio" : "image";
+        const parentAssetId = body.image_url || body.video_url
+          ? (await prisma.asset.findFirst({ where: { userId: user.id, url: body.image_url || body.video_url }, select: { id: true } }))?.id
+          : null;
+        await prisma.asset.create({
+          data: {
+            userId: user.id,
+            type: assetType,
+            source: "generation",
+            url: proxiedUrl,
+            storageKey: storedUrl !== proxiedUrl ? storedUrl : null,
+            model,
+            generationId: generation.id,
+            parentAssetId: parentAssetId || null,
+            metadata: { tool, prompt: rawPrompt, provider: successfulProvider.name, creditsUsed: cost },
+          },
+        });
+      } catch {}
+
+      // Record the prompt compilation for reproducibility (spec §33).
+      try {
+        await prisma.promptCompilation.create({
+          data: {
+            generationId: generation.id,
+            userId: user.id,
+            modelId: model,
+            tool,
+            rawPrompt,
+            finalPrompt,
+            negativePrompt: compiledNegative || "",
+            guideVersion,
+            warnings: promptWarnings,
+            polishMode: body.polish || "off",
+          },
+        });
+      } catch {}
+
+      // Success: settle the reservation at the actual (quoted) cost.
+      const settled = await settleReservation(user.id, generation.id, cost);
+      await syncLegacyCredits(user.id);
+
       await logAudit("generation_complete", tool, generation.id, { model, provider: successfulProvider.name }, req);
 
       return NextResponse.json({
@@ -139,7 +268,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         url: proxiedUrl,
         requestId: result.requestId,
         creditsUsed: cost,
-        remainingCredits: user.credits - cost,
+        remainingCredits: settled?.available ?? (wallet.available - cost),
         provider: successfulProvider.name,
         expanded: finalPrompt !== rawPrompt,
         ...(result.outputs ? { outputs: result.outputs } : {}),
@@ -151,10 +280,9 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         where: { id: generation.id },
         data: { status: "failed", error: brandedMsg },
       });
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { credits: { increment: cost } },
-      });
+      // Generation threw: release the full reservation back to the user.
+      await releaseReservation(user.id, generation.id).catch(() => {});
+      await syncLegacyCredits(user.id);
       await prisma.creditTransaction.create({
         data: { userId: user.id, amount: cost, type: "refund", description: `Refund: ${brandedMsg.slice(0, 100)}` },
       });

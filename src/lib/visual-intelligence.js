@@ -1,17 +1,23 @@
 import prisma from "@/lib/prisma";
-import { resolveProvider } from "@/lib/providers";
+
+// Helmies Vision — Visual Intelligence Service (spec §11)
+// Provider-agnostic image analysis. Uses a multimodal LLM via KIE's
+// OpenAI-compatible chat completions endpoint.
+
+const VISION_MODEL = process.env.VISION_MODEL || "google/gemini-2.5-flash-openai";
 
 export async function analyzeImage(imageUrl, options = {}) {
   if (!imageUrl) throw new Error("Image URL required");
 
+  // Check cache first (spec §11.3)
   const cached = await prisma.visualAnalysis.findFirst({
     where: { assetUrl: imageUrl },
     orderBy: { createdAt: "desc" },
   });
   if (cached && !options.force) return cached;
 
-  const provider = await resolveProvider("gpt4o-vision").catch(() => null);
-  if (!provider) {
+  const key = process.env.KIE_KEY;
+  if (!key) {
     return {
       id: null,
       assetUrl: imageUrl,
@@ -28,18 +34,20 @@ export async function analyzeImage(imageUrl, options = {}) {
   }
 
   try {
-    const response = await fetch(provider.baseUrl || "https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.kie.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${provider.apiKey}`,
+        Authorization: `Bearer ${key}`,
+        "HTTP-Referer": process.env.NEXTAUTH_URL || "https://studio.helmies.fi",
+        "X-Title": "Helmies Studio",
       },
       body: JSON.stringify({
-        model: provider.modelId || "gpt-4o",
+        model: VISION_MODEL,
         messages: [
           {
             role: "system",
-            content: "You are a visual analysis expert. Analyze the image and return a JSON object with: caption (detailed description), background (description of background/setting), palette (array of 5 dominant hex colors), regions (array of detected objects with {label, bbox: [x,y,w,h]}), textRegions (array of detected text with {text, bbox}), lighting ({direction, quality, contrast, temperature}), style (fingerprint of the visual style).",
+            content: "You are a visual analysis expert. Analyze the image and return a JSON object with: caption (detailed description), background (description of background/setting), palette (array of 5 dominant hex colors), regions (array of detected objects with {label, bbox: [x,y,w,h]}), textRegions (array of detected text with {text, bbox}), lighting ({direction, quality, contrast, temperature}), style ({contrast, lighting, composition, texture}).",
           },
           {
             role: "user",
@@ -50,6 +58,7 @@ export async function analyzeImage(imageUrl, options = {}) {
           },
         ],
         max_tokens: 2000,
+        temperature: 0.3,
         response_format: { type: "json_object" },
       }),
     });
@@ -72,7 +81,7 @@ export async function analyzeImage(imageUrl, options = {}) {
         textRegions: analysis.textRegions || null,
         lighting: analysis.lighting || null,
         style: analysis.style || null,
-        provider: provider.name,
+        provider: "kie-vision",
       },
     });
 

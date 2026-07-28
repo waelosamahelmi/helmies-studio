@@ -8,7 +8,7 @@ import CanvasEditor, {
   SEMANTIC_ROLES,
 } from "./CanvasEditor";
 import { IconSparkle, IconClose, IconImage, IconChevron, IconBolt, IconArrowUpRight, IconDownload } from "@/components/Icons";
-import { IMAGE_MODELS } from "@/lib/models";
+import { IMAGE_MODELS, I2I_MODELS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { apiFetch } from "@/lib/client-fetch";
 
@@ -24,13 +24,25 @@ const TOOL_DEFS = [
   { id: TOOLS.MASK_EXCLUDE, label: "Mask −", icon: "⊖", shortcut: "N" },
 ];
 
-const CANVAS_MODELS = IMAGE_MODELS.slice(0, 8).map((m) => ({
-  id: m.id,
-  name: m.name,
-  provider: m.provider,
-  endpoint: m.endpoint || m.id,
-  aspectRatios: m.aspectRatios,
-}));
+// Canvas-capable models: edit models (multi-reference + masks) first, then
+// high-quality T2I models that accept custom dimensions. Filtered by capability,
+// not by an arbitrary index slice, so new models in the registry just work.
+const CANVAS_MODELS = [
+  ...I2I_MODELS,
+  ...IMAGE_MODELS.filter((m) => m.hasDimensions || m.aspectRatios),
+]
+  .map((m) => ({
+    id: m.id,
+    name: m.name,
+    provider: m.provider,
+    endpoint: m.endpoint || m.id,
+    aspectRatios: m.aspectRatios,
+    resolutions: m.resolutions,
+    maxImages: m.maxImages,
+    speedTier: m.speedTier,
+  }))
+  // de-dupe by id (I2I + T2I overlap on some endpoints)
+  .filter((m, i, arr) => arr.findIndex((x) => x.id === m.id) === i);
 
 /* ══════════════════════════════════════════════════════════════
    CanvasWorkspace — Full canvas editor workspace layout
@@ -117,21 +129,48 @@ export default function CanvasWorkspace() {
   const zoomFit = () => window.__helmiesCanvasAPI?.applyZoom(100);
 
   /* ── Generate: compile canvas + send with prompt ─────── */
-  const handleGenerate = useCallback(() => {
+  const handleGenerate = useCallback(async () => {
     if (!prompt.trim() && !window.__helmiesCanvasAPI?.getCanvas?.()?.getObjects()?.length) return;
 
     const canvasContext = window.__helmiesCanvasAPI?.compile?.() || null;
+    const fabricCanvas = window.__helmiesCanvasAPI?.getCanvas?.() || null;
+
+    // Run the Canvas Compiler (spec §6.4) to translate visual intent into
+    // model-ready instructions, with warnings for incompatible combos.
+    let compiled = null;
+    let warnings = [];
+    try {
+      const { compileCanvas, flattenToGuideImage } = await import("@/lib/canvas-compiler");
+      compiled = compileCanvas(canvasContext, {
+        modelId: selectedModel,
+        prompt,
+        aspectRatio: canvasContext?.canvas
+          ? `${canvasContext.canvas.width}:${canvasContext.canvas.height}`
+          : "1:1",
+      });
+      warnings = compiled.warnings || [];
+
+      // If the model can't take multi-ref, flatten to a guide image.
+      if (compiled.strategy === "flatten_guide" && fabricCanvas) {
+        const guide = await flattenToGuideImage(fabricCanvas, 1024, 1024);
+        if (guide) compiled.request.image_url = guide;
+      }
+    } catch {}
 
     const aspectRatio = canvasContext?.canvas
       ? `${canvasContext.canvas.width}:${canvasContext.canvas.height}`
       : "1:1";
-    submit("image", selectedModel, {
-      endpoint: currentModel.endpoint || selectedModel,
-      prompt,
-      canvas_context: canvasContext,
-      aspect_ratio: aspectRatio,
-    });
+
+    // Use the compiled request when available; fall back to raw params.
+    const params = compiled
+      ? { ...compiled.request, canvas_context: canvasContext, canvas_compiled: compiled }
+      : { endpoint: currentModel.endpoint || selectedModel, prompt, canvas_context: canvasContext, aspect_ratio: aspectRatio };
+
+    submit("image", selectedModel, params);
     setShowResult(true);
+
+    // Surface warnings in the UI (stored on window for the inspector to read)
+    window.__helmiesCanvasWarnings = warnings;
   }, [prompt, selectedModel, currentModel, submit]);
 
   /* ── Sync zoom display ─────────────────────────────────── */

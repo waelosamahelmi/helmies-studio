@@ -248,7 +248,18 @@ You MUST output a single valid JSON object with this exact structure:
         "windows": []
       },
       "audio": null,
-      "continuity": ["character identity consistent with shot N-1", "outfit match", "environment match"]
+      "continuity": ["character identity consistent with shot N-1", "outfit match", "environment match"],
+      "continuityTracker": {
+        "characterIdentity": "same person as previous shot — describe physically",
+        "outfit": "same outfit as previous shot — describe it",
+        "productIdentity": "same product appearance — describe it, or null",
+        "environment": "same location/setting — describe it",
+        "lighting": "matching light direction/quality — describe it",
+        "timeOfDay": "consistent or intentional progression",
+        "screenDirection": "180-degree rule — eye-line matches previous shot",
+        "previousEndingFrame": "describe how this shot starts where the previous ended, or 'first shot'",
+        "cameraLanguage": "consistent lens/framing vocabulary with previous shots"
+      }
     }
   ],
   "globalStyle": {
@@ -280,6 +291,9 @@ CRITICAL RULES:
 13. Continuity must be EXPLICIT — note what carries over from previous shots
 14. Use the section's default camera strategy as a starting point, then adapt creatively
 15. No hallucinated unrelated scenes — stay on concept
+16. continuityTracker MUST be filled for every shot — it is explicit data, not LLM-guessed. For shot 0, use "first shot" / "establishing" where appropriate
+17. previousEndingFrame: shot N must visually start where shot N-1 ended (e.g. "starts on the close-up of the coffee cup, pulls back to reveal the cafe")
+18. Re-describe characters physically in continuityTracker.characterIdentity every shot — never assume the model remembers
 
 OUTPUT ONLY VALID JSON — no markdown, no explanation outside the JSON object.`;
 }
@@ -517,7 +531,18 @@ export async function createProductionPlan(brief, userId) {
             windows: shot.videoStrategy?.windows || []
           },
           audio: shot.audio || null,
-          continuity: shot.continuity || []
+          continuity: shot.continuity || [],
+          continuityTracker: shot.continuityTracker || {
+            characterIdentity: "not specified",
+            outfit: "not specified",
+            productIdentity: null,
+            environment: "not specified",
+            lighting: "not specified",
+            timeOfDay: "not specified",
+            screenDirection: "not specified",
+            previousEndingFrame: shot.index === 0 ? "first shot" : "not specified",
+            cameraLanguage: "not specified",
+          }
         })),
         globalStyle: parsed.globalStyle || {
           visualStyle: brief.style || "Cinematic",

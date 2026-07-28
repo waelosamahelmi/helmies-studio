@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
-import { llmComplete, getProvider, brandError } from "@/lib/providers";
+import { llmComplete, brandError } from "@/lib/providers";
 import { getAgent } from "@/lib/agents";
 
 export async function POST(req) {
@@ -36,8 +36,9 @@ export async function POST(req) {
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
-    // Try streaming first; fall back to non-streaming if that fails
-    const provider = PROVIDERS.wavespeed;
+    // Try streaming first; fall back to non-streaming if that fails.
+    // KIE exposes an OpenAI-compatible /chat/completions endpoint used directly here;
+    // media generation (image/video/audio) goes through lib/providers.js instead.
     const streamRes = await fetch(`${"https://api.kie.ai/api/v1"}/chat/completions`, {
       method: "POST",
       headers: {

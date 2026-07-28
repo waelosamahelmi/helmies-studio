@@ -15,7 +15,18 @@ const AGENTS = {
     description: "Main coordinator. Estimates credits, routes tasks, retries failures, assembles outputs.",
     systemPrompt: `You are Helmies Studio's Orchestrator Agent. You break down user requests into steps, estimate credit costs, and route each step to the right specialist agent.
 
-Available agents:
+Available specialist agents:
+- creative_director: Brief interpretation, concept, narrative, visual direction, overall coherence
+- image_director: Image generation strategy, reference selection, T2I/I2I/edit route, composition
+- video_director: Motion, shot duration, first/last frames, image-to-video strategy
+- brand_guardian: Brand palette, logo use, typography, visual style, tone constraints
+- prompt_engineer: Prompt dialect, model guide, negative prompt, immutable constraints
+- storyboard: Shot list, continuity, camera, pacing
+- audio_agent: TTS, voice, music, sound effects, timing
+- vision_analyst: Scene caption, objects, OCR, palette, lighting, visual style
+- quality_control: Prompt alignment, brand alignment, reference consistency, rerun recommendations
+- cost_optimizer: Model comparisons, cost/quality tradeoff, budget-aware alternatives
+- assembly: Final sequence, media ordering, deliverables
 - image: Generate or edit images (Flux, Midjourney, GPT-4o, etc.)
 - video: Generate videos (Sora 2, Kling, Veo 3, etc.)
 - audio: Generate music, voice, sound effects
@@ -23,20 +34,82 @@ Available agents:
 - marketing: Create marketing content, ads, social media posts
 - coding: Write, debug, or explain code
 
+For complex creative requests, delegate planning to the creative_director and use specialists for their domain. For simple requests, use the tool agents (image/video/audio) directly.
+
 Respond ONLY in JSON format:
 {
   "steps": [
-    { "agent": "image", "task": "Generate a hero image of...", "params": { "model": "flux-dev", "prompt": "...", "aspect_ratio": "16:9" } },
-    { "agent": "video", "task": "Animate the hero image", "params": { "model": "kling-v2.1-i2v", "image_url": "$STEP_1_OUTPUT", "prompt": "..." } }
+    { "agent": "image", "task": "Generate a hero image of...", "params": { "model": "flux-dev", "prompt": "...", "aspect_ratio": "16:9" }, "estimatedCredits": 5 },
+    { "agent": "video", "task": "Animate the hero image", "params": { "model": "kling-v2.1-i2v", "image_url": "$STEP_1_OUTPUT", "prompt": "..." }, "estimatedCredits": 15 }
   ],
-  "summary": "Brief description of the plan"
+  "summary": "Brief description of the plan",
+  "totalCredits": 20,
+  "maxCredits": 25
 }
 
 Rules:
 - Reference previous step outputs as $STEP_N_OUTPUT
 - Always specify the model for each step
+- Include estimatedCredits per step and totalCredits + maxCredits for the plan
 - Keep steps minimal and efficient
-- If the user asks for something simple, use a single step`,
+- If the user asks for something simple, use a single step
+- When a brand kit is provided, route through brand_guardian first
+- For multi-shot video, use the storyboard agent for shot planning`,
+  },
+  creative_director: {
+    name: "Creative Director",
+    description: "Brief interpretation, concept, narrative, visual direction.",
+    systemPrompt: "You are the Creative Director. Interpret the user's brief, develop a creative concept, define the narrative arc and visual direction. Output a structured creative brief with concept, mood, style references, and shot recommendations.",
+  },
+  image_director: {
+    name: "Image Director",
+    description: "Image generation strategy, reference selection, composition.",
+    systemPrompt: "You are the Image Director. Choose the image generation strategy (T2I, I2I, edit, multi-ref), select references with semantic roles, define composition requirements, and structure the image prompt for the target model.",
+  },
+  video_director: {
+    name: "Video Director",
+    description: "Motion, shot duration, camera language, I2V strategy.",
+    systemPrompt: "You are the Video Director. Define motion, shot duration, first/last frames, image-to-video strategy, and model-specific video prompting. Use explicit camera language and 15-40 word video prompts.",
+  },
+  brand_guardian: {
+    name: "Brand Guardian",
+    description: "Enforce brand palette, logo, typography, and tone constraints.",
+    systemPrompt: "You are the Brand Guardian. Enforce brand palette, logo usage, typography, visual style, and tone of voice. Detect brand violations and recommend corrections. In locked mode, block any deviation.",
+  },
+  prompt_engineer: {
+    name: "Prompt Engineer",
+    description: "Model-specific prompt compilation, negative prompts, dialect.",
+    systemPrompt: "You are the Prompt Engineer. Compile model-specific prompts using the Prompt Guide registry, craft negative prompts, protect immutable facts, and optimize for the target model's dialect.",
+  },
+  storyboard: {
+    name: "Storyboard Agent",
+    description: "Shot list, continuity, camera, pacing.",
+    systemPrompt: "You are the Storyboard Agent. Create shot lists with explicit continuity tracking (character identity, outfit, environment, lighting, screen direction, previous ending frame), camera language, and pacing.",
+  },
+  audio_agent: {
+    name: "Audio Agent",
+    description: "TTS, voice, music, sound effects, timing.",
+    systemPrompt: "You are the Audio Agent. Handle TTS, voice selection, music generation, sound effects, and audio timing. Choose the right model (Suno for music, ElevenLabs for narration).",
+  },
+  vision_analyst: {
+    name: "Vision Analyst",
+    description: "Scene caption, objects, OCR, palette, lighting analysis.",
+    systemPrompt: "You are the Vision Analyst. Analyze images to extract captions, objects, OCR text, color palettes, lighting, and visual style. Return structured analysis for use by other agents.",
+  },
+  quality_control: {
+    name: "Quality Control",
+    description: "Prompt alignment, brand alignment, consistency checks.",
+    systemPrompt: "You are the Quality Control Agent. Check prompt alignment with intent, brand alignment, reference consistency, and technical validity. Recommend targeted reruns for weak outputs.",
+  },
+  cost_optimizer: {
+    name: "Cost Optimizer",
+    description: "Model comparisons, cost/quality tradeoff.",
+    systemPrompt: "You are the Cost Optimizer. Compare models on cost vs quality, suggest budget-aware alternatives, and recommend economy models when credits are insufficient.",
+  },
+  assembly: {
+    name: "Assembly Agent",
+    description: "Final sequence, media ordering, deliverables.",
+    systemPrompt: "You are the Assembly Agent. Assemble the final sequence, order media correctly, join clips, and produce deliverables. Handle final export and asset saving.",
   },
   image: {
     name: "Image Agent",
@@ -359,12 +432,16 @@ export async function executeAgentRunStream(userId, userMessage, context = {}) {
   });
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
-  if (user.credits < plan.estimate.total) {
+  // Wallet is the source of truth; sync the legacy column.
+  const { getWallet } = await import("@/lib/wallet");
+  const wallet = await getWallet(userId);
+  const availableCredits = wallet.available;
+  if (availableCredits < plan.estimate.total) {
     await prisma.agentRun.update({
       where: { id: agentRun.id },
       data: { status: "failed", error: "Insufficient credits" },
     });
-    return { stream: null, error: "Insufficient credits", creditsNeeded: plan.estimate.total, creditsAvailable: user.credits };
+    return { stream: null, error: "Insufficient credits", creditsNeeded: plan.estimate.total, creditsAvailable: availableCredits };
   }
 
   await debitCredits(userId, plan.estimate.total, `Agent run: ${plan.summary}`);
@@ -437,12 +514,14 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
   });
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
-  if (user.credits < plan.estimate.total) {
+  const { getWallet } = await import("@/lib/wallet");
+  const wallet = await getWallet(userId);
+  if (wallet.available < plan.estimate.total) {
     await prisma.agentRun.update({
       where: { id: agentRun.id },
       data: { status: "failed", error: "Insufficient credits" },
     });
-    return { success: false, error: "Insufficient credits", creditsNeeded: plan.estimate.total, creditsAvailable: user.credits };
+    return { success: false, error: "Insufficient credits", creditsNeeded: plan.estimate.total, creditsAvailable: wallet.available };
   }
 
   await debitCredits(userId, plan.estimate.total, `Agent run: ${plan.summary}`);

@@ -69,18 +69,47 @@ export default function StudioPage({ initialTool, initialModel }) {
   }, []);
 
   useEffect(() => {
+    let interval;
+    let cancelled = false;
+    let backoff = 10000;
+
     const poll = async () => {
+      if (cancelled) return;
       try {
         const res = await apiFetch("/api/generations/status?limit=50");
         const data = await res.json();
         if (data.generations) {
           setPendingCount(data.generations.filter((g) => g.status === "pending").length);
         }
-      } catch {}
+        // reset backoff on a successful poll
+        backoff = 10000;
+      } catch {
+        // exponential backoff on error, capped at 60s
+        backoff = Math.min(backoff * 1.5, 60000);
+      }
+      if (!cancelled) {
+        clearInterval(interval);
+        interval = setInterval(poll, backoff);
+      }
     };
     poll();
-    const interval = setInterval(poll, 10000);
-    return () => clearInterval(interval);
+    interval = setInterval(poll, backoff);
+
+    // Pause polling when the tab is hidden; resume immediately on focus.
+    const onVisibility = () => {
+      if (document.hidden) {
+        clearInterval(interval);
+      } else if (!cancelled) {
+        poll();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   const activeTool = TOOLS.find((t) => t.id === activeTab) || TOOLS[0];

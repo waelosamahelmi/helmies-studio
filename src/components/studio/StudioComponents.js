@@ -10,6 +10,20 @@ import {
 const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.8 };
 const EASE = [0.32, 0.72, 0, 1];
 
+// Shared hook: respect prefers-reduced-motion (spec §5.6).
+// Returns true when the user has requested reduced motion.
+export function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(mq.matches);
+    const handler = (e) => setReduced(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+  return reduced;
+}
+
 const TIER_LABEL = { fast: "Fast", premium: "Premium", standard: "Standard" };
 const TIER_BARS = { fast: 1, premium: 3, standard: 2 };
 
@@ -428,5 +442,230 @@ export function BasicAdvancedToggle({ mode, onChange }) {
         </button>
       ))}
     </div>
+  );
+}
+
+// ── EmptyState ──────────────────────────────────────────────
+// Consistent idle/empty state for every workspace center pane.
+export function EmptyState({ Icon, title, description, tips = [], children }) {
+  const reduced = useReducedMotion();
+  return (
+    <div className="studio__empty" style={{ maxWidth: 460, margin: "0 auto", textAlign: "center" }}>
+      {Icon && (
+        <motion.div
+          className="studio__empty-glyph"
+          animate={reduced ? {} : { scale: [1, 1.06, 1], opacity: [0.85, 1, 0.85] }}
+          transition={reduced ? { duration: 0 } : { duration: 3, repeat: Infinity, ease: "easeInOut" }}
+        >
+          <Icon className="studio__empty-glyph-icon" />
+        </motion.div>
+      )}
+      <h3 className="studio__empty-title">{title}</h3>
+      <p className="studio__empty-desc">{description}</p>
+      {tips.length > 0 && (
+        <motion.p
+          className="studio__empty-tip"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: EASE }}
+        >
+          {tips[0]}
+        </motion.p>
+      )}
+      {children}
+    </div>
+  );
+}
+
+// ── ResultCard ──────────────────────────────────────────────
+// Unified result card for image/video/audio outputs. Provides download,
+// send-to-tool, save-to-project, and reuse actions (spec §40 actions).
+const TOOL_ROUTES = {
+  image: "/studio/image",
+  video: "/studio/video",
+  audio: "/studio/audio",
+  canvas: "/studio/canvas",
+  director: "/studio/director",
+  lipsync: "/studio/lipsync",
+  recast: "/studio/body-swap",
+  "body-swap": "/studio/body-swap",
+  influencer: "/studio/influencer",
+};
+
+export function ResultCard({ result, type = "image", credits, model, actions = [], onAction }) {
+  const [copied, setCopied] = useState(false);
+  if (!result) return null;
+
+  const url = result.url || result.outputs?.[0] || result;
+  const isVideo = type === "video" || /\.(mp4|webm|mov)$/i.test(url);
+  const isAudio = type === "audio" || /\.(mp3|wav|ogg)$/i.test(url);
+
+  const defaultActions = [
+    { id: "download", label: "Download", icon: "↓" },
+    { id: "canvas", label: "Add to Canvas", icon: "🖼" },
+    { id: "reference", label: "Use as reference", icon: "↻" },
+    ...(isVideo || isVideo === false && !isAudio ? [{ id: "animate", label: "Animate", icon: "▶" }] : []),
+    ...(type === "image" ? [{ id: "lipsync", label: "Lip Sync", icon: "🗣" }, { id: "recast", label: "Recast", icon: "🎭" }] : []),
+    { id: "analyze", label: "Analyze", icon: "🔍" },
+    { id: "brand", label: "Add to Brand Kit", icon: "🏷" },
+  ];
+  const allActions = actions.length ? actions : defaultActions;
+
+  return (
+    <motion.div
+      className="studio__result-card studio__glass"
+      layout
+      initial={{ opacity: 0, y: 16, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ ...SPRING }}
+    >
+      <div className="studio__result-preview">
+        {isVideo ? (
+          <video src={url} controls loop muted playsInline />
+        ) : isAudio ? (
+          <audio src={url} controls />
+        ) : (
+          <img src={url} alt="generation result" />
+        )}
+      </div>
+      <div className="studio__result-meta">
+        {model && <span className="studio__result-model">{model}</span>}
+        {credits != null && (
+          <span className="studio__result-cost">
+            <IconBolt style={{ width: 11, height: 11 }} /> {credits} cr
+          </span>
+        )}
+        <button
+          className="studio__link"
+          onClick={() => { navigator.clipboard?.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+        >
+          {copied ? "Copied!" : "Copy URL"}
+        </button>
+      </div>
+      <div className="studio__result-actions">
+        {allActions.map((a) => (
+          <button
+            key={a.id}
+            className="studio__chip studio__chip--action"
+            onClick={() => onAction?.(a.id, url)}
+            title={a.label}
+          >
+            <span aria-hidden>{a.icon}</span>
+            {a.label}
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+// ── WorkspaceShell ──────────────────────────────────────────
+// The canonical three-pane layout every Studio workspace composes.
+// Desktop: Inputs (240px) · Center (flex) · Inspector (240px) + bottom bar.
+// Mobile: Inputs → bottom sheet, Inspector → drawer, bottom bar stays.
+export function WorkspaceShell({
+  title,
+  Icon,
+  mode,
+  onModeChange,
+  inputs,
+  inspector,
+  children,
+  bottomBar,
+  sheetTitle = "Settings",
+  drawerTitle = "Inspector",
+}) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  return (
+    <div className="studio__workspace">
+      {/* Desktop left — inputs */}
+      <aside className="studio__pane studio__pane--inputs">
+        <div className="studio__pane-head">
+          <span className="studio__pane-title">{title}</span>
+          {onModeChange && <BasicAdvancedToggle mode={mode} onChange={onModeChange} />}
+        </div>
+        <div className="studio__pane-body">{inputs}</div>
+      </aside>
+
+      {/* Center — canvas/preview + bottom bar */}
+      <main className="studio__pane studio__pane--center">
+        <div className="studio__pane-center-topbar">
+          {/* Mobile controls */}
+          <button className="studio__pane-mobile-btn md:hidden" onClick={() => setSheetOpen(true)}>
+            <IconImage style={{ width: 16, height: 16 }} /> Settings
+          </button>
+          <button className="studio__pane-mobile-btn md:hidden" onClick={() => setDrawerOpen(true)}>
+            <IconSparkle style={{ width: 16, height: 16 }} /> Inspector
+          </button>
+        </div>
+        <div className="studio__pane-canvas">{children}</div>
+        {bottomBar && <div className="studio__pane-bottom">{bottomBar}</div>}
+      </main>
+
+      {/* Desktop right — inspector */}
+      <aside className="studio__pane studio__pane--inspector">
+        <div className="studio__pane-head">
+          <span className="studio__pane-title">Inspector</span>
+        </div>
+        <div className="studio__pane-body">{inspector}</div>
+      </aside>
+
+      {/* Mobile bottom sheet for inputs */}
+      <AnimatePresence>
+        {sheetOpen && (
+          <>
+            <motion.div className="studio__sheet-backdrop md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSheetOpen(false)} />
+            <motion.div
+              className="studio__sheet md:hidden"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ ...SPRING }}
+            >
+              <div className="studio__sheet-handle" onClick={() => setSheetOpen(false)} />
+              <div className="studio__sheet-title">{sheetTitle}</div>
+              {onModeChange && <div style={{ marginBottom: 12 }}><BasicAdvancedToggle mode={mode} onChange={onModeChange} /></div>}
+              <div className="studio__sheet-body">{inputs}</div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Mobile drawer for inspector */}
+      <AnimatePresence>
+        {drawerOpen && (
+          <>
+            <motion.div className="studio__sheet-backdrop md:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setDrawerOpen(false)} />
+            <motion.div
+              className="studio__drawer md:hidden"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ ...SPRING }}
+            >
+              <div className="studio__drawer-head">
+                <span>{drawerTitle}</span>
+                <button onClick={() => setDrawerOpen(false)}><IconClose style={{ width: 16, height: 16 }} /></button>
+              </div>
+              <div className="studio__sheet-body">{inspector}</div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── KeyboardHint ────────────────────────────────────────────
+export function KeyboardHint({ keys, label }) {
+  return (
+    <span className="studio__kbd-hint">
+      {keys.map((k, i) => (
+        <kbd key={i} className="studio__kbd">{k}</kbd>
+      ))}
+      <span className="studio__kbd-label">{label}</span>
+    </span>
   );
 }

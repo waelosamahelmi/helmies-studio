@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   PromptComposer, ModelSelector, CostQuote, GenerateButton,
@@ -33,7 +33,7 @@ export default function ImageStudioV2() {
   const [negativePrompt, setNegativePrompt] = useState("");
   const [model, setModel] = useState(V2_MODELS[0].id);
   const [aspectRatio, setAspectRatio] = useState("1:1");
-  const [resolution, setResolution] = useState("1080p");
+  const [resolution, setResolution] = useState("1k");
   const [width, setWidth] = useState(1024);
   const [height, setHeight] = useState(1024);
   const [seed, setSeed] = useState(null);
@@ -48,6 +48,16 @@ export default function ImageStudioV2() {
   const { cost: estCredits, affordable, shortfall, topUpPacks } = useCreditCost("image", model, {
     aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl,
   });
+
+  // Keep resolution within the model's supported tiers; models without a
+  // `resolutions` list ignore the value, so fall back to "1k".
+  useEffect(() => {
+    const tiers = currentModel.resolutions;
+    if (!tiers || tiers.length === 0) return;
+    if (!tiers.map((t) => String(t).toLowerCase()).includes(String(resolution).toLowerCase())) {
+      setResolution(tiers[0]);
+    }
+  }, [currentModel, resolution]);
 
   const handleAddRefs = useCallback((files) => {
     const newRefs = Array.from(files).map((f, i) => ({
@@ -97,7 +107,7 @@ export default function ImageStudioV2() {
   }, [prompt, negativePrompt, model, aspectRatio, resolution, width, height, imageUrl, seed, submit, currentModel]);
 
   const ASPECTS = currentModel.aspectRatios || ["1:1", "4:5", "9:16", "16:9", "3:2", "2:3"];
-  const RESOLUTIONS = currentModel.resolutions || ["720p", "1080p", "2K", "4K"];
+  const RESOLUTIONS = currentModel.resolutions || ["1k", "2k", "4k"];
   const credits = estCredits || 0;
   const balance = 0;
 

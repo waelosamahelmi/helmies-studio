@@ -558,6 +558,32 @@ model PromptGuideVersion {
   @@schema("public")
 }
 
+// Per-generation prompt compilation record (spec §33). Stores every pass
+// so generations are reproducible and the Prompt Inspector can replay.
+model PromptCompilation {
+  id            String   @id @default(cuid())
+  generationId  String?
+  userId        String?
+  modelId       String
+  tool          String
+  rawPrompt     String   @db.Text
+  normalized    Json?
+  enrichedCtx   Json?
+  expandedPrompt String? @db.Text
+  dialectPrompt String?  @db.Text
+  finalPrompt   String   @db.Text
+  negativePrompt String? @db.Text
+  guideId       String?
+  guideVersion  Int?
+  warnings      Json?
+  polishMode    String   @default("off")
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([modelId])
+  @@schema("public")
+}
+
 // ── Visual Intelligence ──
 model VisualAnalysis {
   id          String   @id @default(cuid())
