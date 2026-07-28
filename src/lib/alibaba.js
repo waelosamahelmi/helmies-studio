@@ -9,7 +9,7 @@ function getAlibabaProvider() {
 
 export async function alibabaVideoGenerate(params) {
   const provider = getAlibabaProvider();
-  const model = params.model || "wan-2.6-t2v";
+  const model = params.model || "wan2.1-t2v-turbo";
 
   const { requestId, immediateResult } = await submitOnly(provider, model, {
     model,
@@ -31,14 +31,14 @@ export async function alibabaVideoGenerate(params) {
 
 export async function alibabaImageGenerate(params) {
   const provider = getAlibabaProvider();
-  const model = params.model || "qwen-image";
+  const model = params.model || "wan2.1-t2i-turbo";
 
   const { requestId, immediateResult } = await submitOnly(provider, model, {
     model,
     prompt: params.prompt,
-    aspect_ratio: params.aspect_ratio || "1:1",
-    ...(params.width ? { size: `${params.width}x${params.height}` } : {}),
+    ...(params.width && params.height ? { size: `${params.width}*${params.height}` } : {}),
     ...(params.negative_prompt ? { negative_prompt: params.negative_prompt } : {}),
+    n: params.n || 1,
   });
 
   if (immediateResult) {
