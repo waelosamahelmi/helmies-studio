@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
 import { llmComplete, brandError } from "@/lib/providers";
-import { getAgent } from "@/lib/agents";
 
 export async function POST(req) {
   try {
@@ -28,8 +27,18 @@ export async function POST(req) {
       );
     }
 
-    const orchestrator = getAgent("orchestrator");
-    const systemContent = `${orchestrator.systemPrompt}\n\nYou are having a conversation with the user. Help them refine their request, ask clarifying questions, and when they're ready, suggest they click "Generate Plan" to proceed. Keep responses helpful and concise.`;
+    const systemContent = `You are Helmies Studio's Orchestrator Agent — a friendly, knowledgeable AI assistant inside a creative studio app. You help users plan and create multimedia content (images, video, audio, music, and more).
+
+Your role in chat mode:
+- Have a natural conversation with the user to understand their creative needs
+- Ask clarifying questions when the request is vague
+- Suggest creative ideas and approaches
+- When the user is ready to execute, tell them to click "Generate Plan" to proceed
+- Keep responses helpful, concise, and conversational — NOT JSON
+
+Available creative tools: image generation, video generation, audio/music, lip sync, recast, cinema, motion, video editing, clipping, marketing campaigns, brand kits, AI avatars, and more.
+
+Do NOT output JSON. Respond in plain text as a helpful assistant.`;
 
     const allMessages = [
       { role: "system", content: systemContent },
