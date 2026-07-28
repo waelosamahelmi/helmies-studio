@@ -47,7 +47,7 @@ export async function debitCredits(userId, amount) {
   if (!wallet || wallet.available < amount) throw new Error("Insufficient credits");
   const updated = await prisma.creditWallet.update({
     where: { userId },
-    data: { available: { decrement: amount }, lifetimeDebited: { increment: amount } },
+    data: { available: { decrement: amount } },
   });
   // mirror to legacy column
   await prisma.user.update({ where: { id: userId }, data: { credits: updated.available } });
@@ -65,8 +65,8 @@ export async function debitCredits(userId, amount) {
 export async function creditUser(userId, amount, type, description) {
   const wallet = await prisma.creditWallet.upsert({
     where: { userId },
-    update: { available: { increment: amount }, lifetimeCredited: { increment: amount } },
-    create: { userId, available: amount, lifetimeCredited: amount },
+    update: { available: { increment: amount }, lifetime: { increment: amount } },
+    create: { userId, available: amount, lifetime: amount },
   });
   await prisma.user.update({ where: { id: userId }, data: { credits: wallet.available } });
   await prisma.creditTransaction.create({

@@ -1180,6 +1180,28 @@
   display: inline-flex;
   width: 1.125rem; height: 1.125rem;
 }
+.auth__input {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  color: #F2F2F7;
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: border-color 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.auth__input::placeholder { color: var(--color-text-faint); }
+.auth__input:focus {
+  outline: none;
+  border-color: #FF1B6B;
+}
+.auth__error {
+  font-size: 13px;
+  color: #FF5C7A;
+  text-align: center;
+  line-height: 1.4;
+}
 
 /* ============================================================ */
 /* STUDIO APP SHELL                                             */
@@ -3000,7 +3022,6 @@
 
   .studio__hamburger { display: none !important; }
   .studio__rail { display: none !important; }
-  .studio__backdrop { display: none !important; }
 
   .studio__tabs {
     display: flex;

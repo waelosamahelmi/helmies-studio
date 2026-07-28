@@ -1,86 +1,154 @@
-# Helmies Studio — Master Implementation Specification
+# Helmies Studio — Master Implementation Specification (v2)
 
-**Status:** Implementation contract / single source of truth  
-**Target product:** Helmies Studio  
-**Target technical foundation:** `waelosamahelmi/helmies-studio` repository (single codebase — all features built here)  
-**Reference repositories (concepts only, not merged):**  
-- `Blizaine/Maestro`
-- `cocktailpeanut/image-to-prompt`
-
-**Specification date:** 2026-07-24  
-**Primary implementation consumer:** DeepSeek / autonomous coding agents and human engineers
+**Status:** Implementation contract / single source of truth
+**Target product:** Helmies Studio — AI media-generation SaaS
+**Production URL:** https://studio.helmies.fi
+**Technical foundation:** `waelosamahelmi/helmies-studio` repository (single codebase; all features are built here)
+**Reference repositories (concepts only, never merged):** `Blizaine/Maestro`, `cocktailpeanut/image-to-prompt`
+**Companion document:** `STUDIO_FUNCTIONALITY.md` — authoritative description of what the codebase implements *today*. This document describes the *target*; the companion describes the *current state*. Where they disagree, this document states the target and the companion states the fact.
+**Previous revision:** `HELMIES_STUDIO_MASTER_UPGRADE.v1-archive.md` (frozen archive of the v1 contract; do not edit)
+**Spec date:** v1 2026-07-24 · v2 (this revision) 2026-07-28
+**Primary consumer:** autonomous coding agents and human engineers (agent-neutral; see Section 12 and Appendix AV)
 
 ---
 
-# 0. Executive Decision
+# 0. How to Use This Document
+
+## 0.1 Document roles
+
+| Document | Role |
+|---|---|
+| `HELMIES_STUDIO_MASTER_UPGRADE.md` (this file) | Target-state contract. Every requirement here is normative unless explicitly marked SUPERSEDED or DEFERRED. |
+| `STUDIO_FUNCTIONALITY.md` | Current-state reference. Describes the deployed codebase as it actually behaves. |
+| `HELMIES_STUDIO_MASTER_UPGRADE.v1-archive.md` | Frozen v1. Preserved for audit; content was consolidated, not deleted, in v2. |
+
+## 0.2 Requirement ledger conventions
+
+1. This document MUST be read in full before making architecture changes (Section 1.4, rule 1).
+2. Every numbered section, table row, checklist item, schema and prompt in this document is an actionable requirement unless labeled otherwise.
+3. Requirement statuses used in this document:
+   - **NORMATIVE** (default) — must be implemented as written.
+   - **CURRENT STATE** — describes what exists today, annotated with `[IMPLEMENTED]`, `[PARTIAL]`, or `[NOT STARTED]`. Current-state notes are informational; they do not weaken the target requirement.
+   - **SUPERSEDED** — the v1 requirement was replaced by a newer decision stated inline, with a reason. Do not resurrect it.
+   - **DEFERRED** — explicitly postponed by this specification (not by agent choice), with the deferring condition stated.
+   - **DONE_EQUIVALENT** — the requirement is already satisfied in the codebase by a different mechanism; the difference is stated.
+4. Agents MUST maintain an internal requirement ledger per the repository's global AGENTS.md zero-skip discipline: every requirement maps to implementation evidence and a verification method before it is marked done.
+5. Checkbox items in Section 12 and the Appendices MUST only be checked after implementation AND verification.
+6. Normative language: **MUST/SHALL/NEVER** = hard requirement; **SHOULD** = implement unless a concrete project reason prevents it; **MAY** = optional.
+
+## 0.3 Implementation Status (living table)
+
+This table maps each major area to its real state in the current codebase (verified 2026-07-28 against `STUDIO_FUNCTIONALITY.md`). It MUST be updated as phases complete.
+
+| Area | Status | Evidence / gap |
+|---|---|---|
+| Google OAuth login | IMPLEMENTED | `src/lib/auth.js` (NextAuth v5 + PrismaAdapter), `src/app/login/page.js` |
+| Credentials (email/password) login | PARTIAL | `Credentials` provider + `bcryptjs` + `/api/auth/register` exist and are wired into the login page; unverified in production; no password reset flow |
+| Admin panel | IMPLEMENTED (v1.5) | `/admin` + `AdminShell` with Overview, Business, AI Platform, Users, Content, Operations tabs; not yet full "Admin V2" (no Advisor chat, no route editor, no role granularity) |
+| Generation APIs (sync + async) | IMPLEMENTED | `/api/generate/*` (13 tools), `/api/generate/async`, `handleGeneration`, provider fallback |
+| Stripe (subscriptions, top-ups, webhook, portal) | IMPLEMENTED | `/api/stripe/*`; **gap:** webhook credits `User.credits` directly and bypasses the wallet (see Section 3.5) |
+| Credit transactions (legacy) | IMPLEMENTED | `User.credits` + `CreditTransaction` |
+| Credit wallet / ledger / reservations | PARTIAL | Models exist and `handleGeneration` uses reserve/settle; **but `lib/wallet.js` and `lib/session.js` reference schema fields that do not exist (`lifetimeCredited`, `lifetimeDebited`, `delta`, `jobId`, `expiresAt`) — the wallet path is broken against the current Prisma schema (Section 3.5)** |
+| Director pipeline | IMPLEMENTED (Helmies-native) | `DirectorPipeline`/`DirectorShot`, `/api/director/*`, planner + executor + rerun + FFmpeg assembly; **not** Maestro-exact (Section 6.9) |
+| Brand kits | IMPLEMENTED | `BrandKit`/`BrandAsset`, `/api/brand-kits*`, fingerprint extraction, prompt-engine integration |
+| Canvas documents | PARTIAL | Fabric.js editor + `CanvasDocument`/`CanvasVersion` models; **the `/api/canvas` route writes fields (`content`, `version`) that do not exist in the schema — persistence path is broken (Section 6.6)** |
+| Workflows | IMPLEMENTED | `Workflow`/`WorkflowRun`, builder UI, `/api/workflows*` |
+| Prompt engine (5-pass) | IMPLEMENTED | `src/lib/prompt-engine/*`, `PromptCompilation` records, `/api/prompt/compile` |
+| Visual analysis | IMPLEMENTED | `src/lib/visual-intelligence.js` (KIE multimodal), `VisualAnalysis`, `/api/analyze` |
+| Asset library | IMPLEMENTED | `Asset`/`AssetRelation`, `/api/assets`, upload + generation ingest |
+| Provider configs / model pricing | IMPLEMENTED | `ProviderConfig`/`ModelPricing` + admin APIs; **plaintext API keys in DB (Section 9.6 violation, open)** |
+| Feature flags | IMPLEMENTED | `FeatureFlag` + `/api/admin/flags` |
+| Audit log | IMPLEMENTED | `AuditLog` + admin audit API |
+| CMS | IMPLEMENTED | `CmsEntry`/`CmsRevision` + admin CMS editor + publish |
+| Announcements | IMPLEMENTED | `SiteAnnouncement` + public `/api/announcements` + bar component |
+| API keys | IMPLEMENTED | `ApiKey` (hashed, prefix, last-used) + `/api/user/keys` + `authenticateApiKey` |
+| Model Registry / Gateway as specified (AiModel, AiProvider, AiModelPrice, ModelRoute, capability routing) | NOT STARTED | Models are hard-coded in `src/lib/models.js`; `ModelPricing` is a flat per-model row; no input/ui schemas, no route table |
+| Job workers / queues (GenerationJob, BullMQ/Redis, settlement pipeline) | NOT STARTED | Generation runs in-request (sync poll) or fire-and-forget async with webhook/polling; no queue, no worker, no idempotency keys |
+| Maestro-exact Director | NOT STARTED | Current Director is Helmies-native; behavioral equivalence with Maestro is unverified |
+| Canvas Compiler (full contract, Appendix R) | PARTIAL | `src/lib/canvas-compiler.js` produces instructions client-side; no server compiler, no mask asset rendering, no CompiledCanvas persistence |
+| Master Agent runtime (native, tools, subagents, HITL, memory, MCP) | PARTIAL | Orchestrator chat + JSON-step planner + executor exist (`lib/agents.js`); no tool contracts, no MCP, no skills, no durable/resumable runs |
+| Subagents (as specified) | PARTIAL | Named personas with system prompts exist in `lib/agents.js`; not independent runtime agents |
+| MCP | NOT STARTED | — |
+| Vision service (separate deployable, provider interface) | NOT STARTED | Implemented as in-process module; no `VisionAnalyzer` interface, no separate service |
+| Monorepo restructure (`apps/*`, `packages/*`) | NOT STARTED | Single Next.js app; Section 2.4 permits staged in-place growth |
+| Postgres migrations directory | NOT STARTED | No `prisma/migrations/`; schema managed via `db push` (Section 3.1, open risk) |
+| Secret manager for provider keys | NOT STARTED | Keys in env + plaintext `ProviderConfig.apiKey` |
+| Media object storage (S3-compatible) | NOT STARTED | Media stored on local filesystem under `public/` |
+
+## 0.4 Changes from v1 (summary)
+
+1. Reorganized 216 numbered sections (0–215) + 50 appendices (A–AX) into 13 numbered parts + the same 50 appendices; every v1 requirement is preserved or explicitly marked SUPERSEDED/DEFERRED/NOT_APPLICABLE with a reason.
+2. Replaced DeepSeek-specific instructions (v1 §§196–197, Appendix AV) with the agent-neutral **Implementation Agent Protocol** (Section 12.3, Appendix AV).
+3. Added this status model and the living Implementation Status table (0.3).
+4. Corrected factual drift against the real schema and codebase (current-state vs target annotations in Sections 3, 4, 9).
+5. Consolidated verbatim-duplicated passages (URL maps, sidebar maps, pricing fallback tables, repeated checklist restatements) into single normative statements with cross-references. No requirement was removed.
+
+---
+
+# 1. Product Vision & Non-Negotiables
+
+## 1.1 Executive decision
 
 The final product is one platform called **Helmies Studio**.
 
-The `helmies-agent` project has been **abandoned**. All functionality that was previously planned to come from `helmies-agent` — the authenticated application shell, AI orchestration runtime, agent platform, conversations layer, tool system, skills system, MCP system, subagent system, memory runtime, and long-running/resumable execution foundation — must now be **built natively inside Helmies Studio**.
+The `helmies-agent` project has been **abandoned**. All functionality that was previously planned to come from `helmies-agent` — the authenticated application shell, AI orchestration runtime, agent platform, conversations layer, tool system, skills system, MCP system, subagent system, memory runtime, and long-running/resumable execution foundation — MUST now be **built natively inside Helmies Studio**.
 
 The current `helmies-studio` codebase is the **single foundation**. Its public landing page, existing provider integrations, generation APIs, pricing/credits logic, workflows, ProjectMemory concepts, database, Stripe-related commercial concepts, admin functions and useful media-generation code are all retained and **extended in place**.
 
 There is no second repository to merge from. Everything is implemented within Helmies Studio.
 
-The final URL model is:
+The final URL model is normative (current state noted):
 
 ```text
-https://studio.helmies.fi/
-    Existing Helmies Studio public homepage.
-    The visual design must remain substantially unchanged.
-
-https://studio.helmies.fi/pricing
-    Public dynamic pricing.
-
-https://studio.helmies.fi/login
-    Shared authentication.
-
-https://studio.helmies.fi/studio
-    Final authenticated Helmies Studio application.
-
-https://studio.helmies.fi/studio/agent
-    Master Agent.
-
-https://studio.helmies.fi/studio/image
-    Image Studio.
-
-https://studio.helmies.fi/studio/video
-    Video Studio.
-
-https://studio.helmies.fi/studio/director
-    Director / multi-shot production.
-
-https://studio.helmies.fi/studio/audio
-    Audio, TTS, music and speech.
-
-https://studio.helmies.fi/studio/lipsync
-    Lip Sync.
-
-https://studio.helmies.fi/studio/recast
-    Recast / body-character replacement.
-
-https://studio.helmies.fi/studio/influencer
-    AI Influencer / Persona.
-
-https://studio.helmies.fi/studio/workflows
-    Workflow builder.
-
-https://studio.helmies.fi/studio/brands
-    Brand Kits.
-
-https://studio.helmies.fi/studio/assets
-    Asset library.
-
-https://studio.helmies.fi/studio/projects
-    Projects.
-
-https://studio.helmies.fi/studio/admin
-    Super-admin control plane.
+https://studio.helmies.fi/            Public landing page. Visual design protected (Section 1.7). [IMPLEMENTED]
+https://studio.helmies.fi/pricing     Public dynamic pricing. [IMPLEMENTED as page; static arrays — must become DB-driven, Section 4.7]
+https://studio.helmies.fi/login       Shared authentication. [IMPLEMENTED]
+https://studio.helmies.fi/studio      Authenticated application. [IMPLEMENTED as single-page studio shell with tool tabs]
+https://studio.helmies.fi/studio/agent      Master Agent.            [NOT STARTED — target route; orchestrator exists at /studio]
+https://studio.helmies.fi/studio/image      Image Studio.            [PARTIAL — /studio/image exists]
+https://studio.helmies.fi/studio/video      Video Studio.            [PARTIAL — /studio/video exists]
+https://studio.helmies.fi/studio/director   Director.                [PARTIAL — /studio/director exists]
+https://studio.helmies.fi/studio/audio      Audio Studio.            [PARTIAL — /studio/audio exists]
+https://studio.helmies.fi/studio/lipsync    Lip Sync.                [PARTIAL — /studio/lipsync exists]
+https://studio.helmies.fi/studio/recast     Recast.                  [PARTIAL — implemented as /studio/body-swap]
+https://studio.helmies.fi/studio/influencer Influencer/Persona.      [PARTIAL — /studio/influencer exists]
+https://studio.helmies.fi/studio/workflows  Workflow builder.        [IMPLEMENTED as /studio tab]
+https://studio.helmies.fi/studio/brands     Brand Kits.              [IMPLEMENTED as /studio tab]
+https://studio.helmies.fi/studio/assets     Asset library.           [IMPLEMENTED as /studio/assets]
+https://studio.helmies.fi/studio/projects   Projects.                [PARTIAL — Project model + API usage only]
+https://studio.helmies.fi/studio/admin      Super-admin control plane. [IMPLEMENTED at /admin — must move/alias under /studio/admin]
 ```
 
----
+## 1.2 Product philosophy — simple user experience
 
-# 1. Non-Negotiable Rules for the Coding Agent
+A simple user should be able to say:
+
+> Create a 15-second premium Instagram launch ad for my coffee brand.
+
+The user MUST NOT need to know:
+
+- which model supports image references;
+- seed values;
+- provider names;
+- scheduler concepts;
+- guidance scale;
+- first/last frame limitations;
+- video windowing;
+- model pricing units;
+- provider request formats;
+- prompt dialects.
+
+The Master Agent handles the complexity.
+
+## 1.3 Product philosophy — advanced user experience
+
+An advanced user may want: exact model; exact provider route; multiple references; per-reference roles; seed; aspect ratio; resolution; duration; prompt; negative prompt; masks; inpaint; outpaint; exact text; Canvas composition; first frame; last frame; LoRA/provider-specific controls when applicable; shot-level planning; prompt inspection; exact credit quote.
+
+The advanced user uses the manual Studios.
+
+## 1.4 Non-negotiable rules for the implementation agent
+
+These rules are binding on every implementation session (v1 §1, preserved in full):
 
 1. Read this entire file before making architecture changes.
 2. Treat this file as the product contract.
@@ -88,12 +156,12 @@ https://studio.helmies.fi/studio/admin
 4. Preserve its existing visual language, motion, layout, major sections and overall impression.
 5. It is allowed to optimize SEO, accessibility, performance, data loading and responsiveness.
 6. Replace hard-coded pricing with data from the platform database without visually redesigning pricing cards unless needed for correctness.
-7. The authenticated `/studio` application must be built as a first-class authenticated shell inside Helmies Studio, not imported from an external Agent project.
+7. The authenticated `/studio` application MUST be built as a first-class authenticated shell inside Helmies Studio, not imported from an external Agent project.
 8. Do not copy the old Helmies Studio public tool shell wholesale into the authenticated `/studio` area; build a proper authenticated application shell within the same codebase.
 9. Reuse useful generation/backend logic from Helmies Studio.
 10. Do not create a second competing Agent runtime.
-11. Helmies Studio must build a single mature orchestration runtime natively (agents, subagents, tools, skills, MCP, memory, resumable jobs). Do not depend on an external Agent runtime.
-12. Agent, manual Studios, Workflows and Director must all execute media through the same Model Gateway.
+11. Helmies Studio MUST build a single mature orchestration runtime natively (agents, subagents, tools, skills, MCP, memory, resumable jobs). Do not depend on an external Agent runtime.
+12. Agent, manual Studios, Workflows and Director MUST all execute media through the same Model Gateway.
 13. No manual Studio may call a provider directly.
 14. No Agent tool may call a provider directly outside the Model Gateway.
 15. No Workflow node may call a provider directly.
@@ -101,40 +169,40 @@ https://studio.helmies.fi/studio/admin
 17. No private provider key may reach the browser.
 18. No private provider key may be placed in model context.
 19. No new provider secret may be stored plaintext in the commercial database.
-20. Existing plaintext provider credentials must be migrated to a secret manager/reference mechanism.
-21. Every billable action must have a server-side price calculation.
-22. Every expensive action must show a preflight quote before execution.
-23. The quote must show credits needed, current balance and expected remaining balance.
-24. Multi-step Agent/Director runs must show total expected and maximum cost.
-25. Credits must never be hard-coded independently in UI components.
-26. Model inputs must be driven by a Model Registry and schemas.
+20. Existing plaintext provider credentials MUST be migrated to a secret manager/reference mechanism. **Current state: violated — `ProviderConfig.apiKey` is plaintext; migration open (Appendix AK).**
+21. Every billable action MUST have a server-side price calculation.
+22. Every expensive action MUST show a preflight quote before execution.
+23. The quote MUST show credits needed, current balance and expected remaining balance.
+24. Multi-step Agent/Director runs MUST show total expected and maximum cost.
+25. Credits MUST never be hard-coded independently in UI components.
+26. Model inputs MUST be driven by a Model Registry and schemas.
 27. Do not scatter `if model === "..."` logic through the UI.
 28. Provider-specific request translation belongs in provider/model adapters.
-29. Historical generation records must retain a pricing snapshot.
-30. Every paid operation must be idempotent.
-31. Every provider job must map to a generation job.
-32. Every credit change must map to a ledger transaction.
-33. Every privileged admin action must be audited.
-34. Long-running generations must run through job workers, not block normal web request processes.
-35. Generated provider URLs must be ingested into Helmies-controlled storage.
+29. Historical generation records MUST retain a pricing snapshot.
+30. Every paid operation MUST be idempotent.
+31. Every provider job MUST map to a generation job.
+32. Every credit change MUST map to a ledger transaction.
+33. Every privileged admin action MUST be audited.
+34. Long-running generations MUST run through job workers, not block normal web request processes.
+35. Generated provider URLs MUST be ingested into Helmies-controlled storage.
 36. Never depend on expiring provider URLs as permanent assets.
-37. Every uploaded/generated media item must become an Asset record.
-38. A Canvas must be persisted as editable JSON/document state, not just a flattened screenshot.
-39. Prompt engineering must live in a shared Prompt Intelligence system.
-40. Brand Kit context must be reusable by Agent, Studios, Workflows and Director.
+37. Every uploaded/generated media item MUST become an Asset record. [IMPLEMENTED for uploads and `handleGeneration` outputs]
+38. A Canvas MUST be persisted as editable JSON/document state, not just a flattened screenshot.
+39. Prompt engineering MUST live in a shared Prompt Intelligence system. [IMPLEMENTED as `src/lib/prompt-engine`]
+40. Brand Kit context MUST be reusable by Agent, Studios, Workflows and Director.
 41. Do not dump entire Brand Kits into prompts when only a subset is relevant.
-42. Every Director run must be persistent and resumable.
-43. Individual Director shots must be independently rerunnable.
-44. Rerunning one shot must not rerun unaffected shots.
-45. The Admin panel must control models, providers, prices, plans, promo codes, CMS content, announcements and feature flags.
-46. Changes to plans/pricing in Admin must propagate to landing/pricing/checkout without code deployment.
-47. Promo creation must include margin warnings.
-48. The Admin Advisor must use deterministic calculator tools for financial numbers.
-49. The LLM may explain financial calculations but must not invent them.
+42. Every Director run MUST be persistent and resumable.
+43. Individual Director shots MUST be independently rerunnable. [IMPLEMENTED via `/api/director/rerun`]
+44. Rerunning one shot MUST NOT rerun unaffected shots.
+45. The Admin panel MUST control models, providers, prices, plans, promo codes, CMS content, announcements and feature flags. [IMPLEMENTED except full route editor and Advisor]
+46. Changes to plans/pricing in Admin MUST propagate to landing/pricing/checkout without code deployment. **Current state: `SubscriptionPlan`/`CreditPack` admin CRUD exists, but the landing page and checkout still read static arrays/env price IDs — open.**
+47. Promo creation MUST include margin warnings.
+48. The Admin Advisor MUST use deterministic calculator tools for financial numbers.
+49. The LLM may explain financial calculations but MUST NOT invent them.
 50. No required button may remain a no-op.
 51. No production path may silently fall back to mock data.
 52. No production DB reset is allowed during migration.
-53. Existing users, subscriptions, Stripe identifiers and credits must be preserved.
+53. Existing users, subscriptions, Stripe identifiers and credits MUST be preserved.
 54. Use additive migrations before destructive migrations.
 55. Keep rollback options and feature flags during major migration phases.
 56. Build and run tests after each phase.
@@ -143,13 +211,9 @@ https://studio.helmies.fi/studio/admin
 59. Do not leave core functionality as TODOs.
 60. Continue through all phases unless a genuine external blocker exists.
 
----
+## 1.5 Maestro replication strategy (legal + technical)
 
-# 2. Maestro: Exact Logic, Prompting & Functionality Replication
-
-Maestro is distributed under the WanGP Non-Commercial Evaluation License.
-
-The analyzed license explicitly allows non-commercial evaluation but prohibits using Maestro or a derivative as part of a paid hosted service unless a separate commercial license is obtained.
+Maestro is distributed under the WanGP Non-Commercial Evaluation License. The analyzed license explicitly allows non-commercial evaluation but prohibits using Maestro or a derivative as part of a paid hosted service unless a separate commercial license is obtained.
 
 Therefore the implementation strategy is:
 
@@ -164,7 +228,7 @@ To achieve this without copying restricted source code:
 - implement that behavior in **original Helmies Studio code** that produces equivalent outputs;
 - verify equivalence with side-by-side comparison tests against Maestro outputs where the license permits evaluation.
 
-Helmies Studio must replicate the following Maestro capabilities exactly (behavior, not necessarily line-for-line code):
+Helmies Studio MUST replicate the following Maestro capabilities exactly (behavior, not necessarily line-for-line code):
 
 - ProductionPlan.
 - ShotPlan.
@@ -185,62 +249,88 @@ If a commercial license is later obtained, the implementation team may reassess 
 
 The architecture in this document is intentionally designed so Helmies reproduces Maestro's runtime behavior in its own original implementation.
 
+**Current state:** the Director implemented in `src/lib/director-planner.js` / `director-executor.js` is Helmies-native and predates this equivalence requirement. Maestro-exact behavioral verification is NOT STARTED.
+
+## 1.6 North Star metric and experience
+
+North Star metric candidate: **completed creative deliverables per active paid creator** — not just number of generations.
+
+The end-to-end target experiences (user and admin) are normative and preserved verbatim in Appendix AX.
+
+## 1.7 Landing page preservation contract
+
+The current public homepage is approved. This is a hard constraint.
+
+Preserve:
+- hero layout;
+- media treatment;
+- typography feel;
+- service sections;
+- visual density;
+- scrolling experience;
+- existing major animations;
+- overall brand impression.
+
+Allowed improvements:
+- optimize video delivery;
+- responsive fixes;
+- accessibility;
+- SEO;
+- image optimization;
+- dynamic content;
+- dynamic pricing;
+- dynamic model counts;
+- announcement bar;
+- bug fixes.
+
+Not allowed:
+- replacing the homepage with an external Agent UI;
+- redesigning the homepage to look like a generic chat product;
+- changing its visual identity merely for consistency with `/studio`.
+
+Create visual regression snapshots before migration (Section 11.6).
+
+## 1.8 Helmies Studio branding
+
+Replace any customer-facing references to external chat products (e.g. LibreChat, Helmies Agent) with **Helmies Studio**.
+
+Update: app title; logo; icons; emails; manifest; metadata; links; help; notifications.
+
+Keep all legally required upstream attribution/license notices.
+
 ---
 
-# 3. Product Philosophy
+# 2. Architecture
 
-Helmies Studio must serve both ordinary users and advanced creators without forcing either group into the wrong interface.
+## 2.1 Product layers
 
-## 3.1 Simple user experience
+### Layer 1 — Public Website
 
-A simple user should be able to say:
+Existing Helmies Studio Next.js landing page. Responsibilities: marketing; SEO; public pricing; signup/login; studio descriptions; public announcements; public FAQ; model counts.
 
-> Create a 15-second premium Instagram launch ad for my coffee brand.
+### Layer 2 — Authenticated Studio Shell
 
-The user should not need to know:
+Built natively inside Helmies Studio as a first-class authenticated application shell. Responsibilities: sidebar; account; conversations; Master Agent; studio routing; projects; assets; notifications; credits; billing shortcuts; command palette.
 
-- which model supports image references;
-- seed values;
-- provider names;
-- scheduler concepts;
-- guidance scale;
-- first/last frame limitations;
-- video windowing;
-- model pricing units;
-- provider request formats;
-- prompt dialects.
+**Current state:** a single-page shell (`src/app/studio/StudioClient.js`) with tab-based tool switching exists; it must evolve into the routed shell of Section 6.1.
 
-The Master Agent handles the complexity.
+### Layer 3 — Creative Workspaces
 
-## 3.2 Advanced user 
+Master Agent; Image Studio; Video Studio; Director; Audio Studio; Lip Sync; Recast; Influencer; Workflows; Brand Kits; Projects; Assets.
 
-An advanced user may want:
+### Layer 4 — Creative Intelligence
 
-- exact model
-- exact provider route.
-- multiple references.
-- per-reference roles.
-- seed.
-- aspect ratio.
-- resolution.
-- duration.
-- prompt.
-- negative prompt.
-- masks.
-- inpaint.
-- outpaint.
-- exact text.
-- Canvas composition.
-- first frame.
-- last frame.
-- LoRA/provider-specific controls when applicable.
-- shot-level planning.
-- prompt inspection.
-- exact credit quote.
+Prompt Intelligence; Brand Context; Visual Intelligence; Canvas Compiler; Director Planner; Quality Evaluator; Model Selector; Cost Optimizer; Continuity Engine.
 
-The advanced user uses the manual Studios.
+### Layer 5 — Execution Platform
 
-## 3.3 Same execution system
+Model Registry; Provider Registry; Model Gateway; Pricing Engine; Credits; Job Queue; Storage; Provider adapters; retries; webhooks; usage accounting.
+
+### Layer 6 — Administration
+
+Users; plans; prices; promo codes; providers; model registry; routes; CMS; alerts; margin advisor; analytics; refunds; audit; feature flags.
+
+## 2.2 Same execution system (permanent architecture invariant)
 
 The UI changes. The engine does not.
 
@@ -280,1577 +370,15 @@ Model Gateway
 Providers
 ```
 
-This is a permanent architecture invariant.
+This is a permanent architecture invariant. Rules 12–16 of Section 1.4 enforce it.
 
----
+**Current state:** all surfaces call providers through `src/lib/providers.js` + `src/lib/generation-handler.js`/`generation.js`. This is a *de facto* shared execution path but is not yet the specified Model Gateway (no registry, no schemas, no route table, no eligibility engine).
 
-# 4. Product Layers
+## 2.3 Model Gateway, Registry and Routing
 
-## Layer 1 — Public Website
+### 2.3.1 Model Gateway
 
-Existing Helmies Studio Next.js landing page.
-
-Responsibilities:
-- marketing;
-- SEO;
-- public pricing;
-- signup/login;
-- studio descriptions;
-- public announcements;
-- public FAQ;
-- model counts.
-
-## Layer 2 — Authenticated Studio Shell
-
-Built natively inside Helmies Studio as a first-class authenticated application shell (sidebar, account, conversations, routing, projects, assets, notifications, credits, billing shortcuts, command palette).
-
-Responsibilities:
-- sidebar;
-- account;
-- conversations;
-- Master Agent;
-- studio routing;
-- projects;
-- assets;
-- notifications;
-- credits;
-- billing shortcuts;
-- command palette.
-
-## Layer 3 — Creative Workspaces
-
-- Master Agent.
-- Image Studio.
-- Video Studio.
-- Director.
-- Audio Studio.
-- Lip Sync.
-- Recast.
-- Influencer.
-- Workflows.
-- Brand Kits.
-- Projects.
-- Assets.
-
-## Layer 4 — Creative Intelligence
-
-- Prompt Intelligence.
-- Brand Context.
-- Visual Intelligence.
-- Canvas Compiler.
-- Director Planner.
-- Quality Evaluator.
-- Model Selector.
-- Cost Optimizer.
-- Continuity Engine.
-
-## Layer 5 — Execution Platform
-
-- Model Registry.
-- Provider Registry.
-- Model Gateway.
-- Pricing Engine.
-- Credits.
-- Job Queue.
-- Storage.
-- Provider adapters.
-- retries.
-- webhooks.
-- usage accounting.
-
-## Layer 6 — Administration
-
-- users.
-- plans.
-- prices.
-- promo codes.
-- providers.
-- model registry.
-- routes.
-- CMS.
-- alerts.
-- margin advisor.
-- analytics.
-- refunds.
-- audit.
-- feature flags.
-
----
-
-# 5. Final Repository Strategy
-
-Use `helmies-studio` as the single technical base and build all functionality (including the agent runtime, conversations, tools, skills, MCP, etc.) directly within it. The `helmies-agent` repository is abandoned and is **not** a base for this project.
-
-Recommended final logical structure:
-
-```text
-helmies-studio/
-├── apps/
-│   ├── landing/
-│   │   └── preserved public Helmies Studio Next.js website
-│   ├── studio-web/
-│   │   └── Helmies Studio authenticated UI (built natively)
-│   ├── platform-api/
-│   │   └── commercial platform API
-│   ├── agent-api/
-│   │   └── agent/conversation runtime (built natively inside Helmies Studio)
-│   ├── worker/
-│   │   └── media and workflow job processors
-│   ├── director-service/
-│   │   └── Helmies Director planning service (Maestro-exact behavior, original code)
-│   └── vision-service/
-│       └── structured image/reference analysis
-│
-├── packages/
-│   ├── contracts/
-│   ├── ui/
-│   ├── model-registry/
-│   ├── pricing-engine/
-│   ├── prompt-engine/
-│   ├── brand-engine/
-│   ├── storage/
-│   ├── telemetry/
-│   └── shared-config/
-│
-├── api/
-│   └── agent/conversation runtime (built natively)
-├── client/
-│   └── authenticated Studio client (built natively)
-├── packages/
-│   └── shared Studio packages
-├── prisma/
-├── docker/
-├── infra/
-├── docs/
-├── scripts/
-├── docker-compose.yml
-└── README.md
-```
-
-Do not force a destructive filesystem reorganization in the first implementation commit.
-
-A staged implementation may keep existing structure while new commercial services are added.
-
----
-
-# 6. Production Routing
-
-Recommended:
-
-```text
-studio.helmies.fi/
-    -> landing service
-
-studio.helmies.fi/pricing
-    -> landing service
-
-studio.helmies.fi/login
-    -> shared login
-
-studio.helmies.fi/studio/*
-    -> authenticated studio-web
-
-studio.helmies.fi/api/platform/*
-    -> platform-api
-
-studio.helmies.fi/api/agent/*
-    -> agent-api
-
-studio.helmies.fi/api/generate/*
-    -> platform-api / execution gateway
-
-studio.helmies.fi/api/director/*
-    -> platform-api
-
-studio.helmies.fi/api/vision/*
-    -> platform-api
-```
-
-Internal Python services must not be exposed directly to browsers.
-
----
-
-# 7. Landing Page Preservation Contract
-
-The current public homepage is approved.
-
-Preserve:
-- hero layout;
-- media treatment;
-- typography feel;
-- service sections;
-- visual density;
-- scrolling experience;
-- existing major animations;
-- overall brand impression.
-
-Allowed improvements:
-- optimize video delivery;
-- responsive fixes;
-- accessibility;
-- SEO;
-- image optimization;
-- dynamic content;
-- dynamic pricing;
-- dynamic model counts;
-- announcement bar;
-- bug fixes.
-
-Not allowed:
-- replacing the homepage with an external Agent UI.
-- redesigning the homepage to look like a generic chat product.
-- changing its visual identity merely for consistency with `/studio`.
-
-Create visual regression snapshots before migration.
-
----
-
-# 8. Studio Navigation
-
-Recommended sidebar:
-
-```text
-CREATE
-    Agent
-    Image Studio
-    Video Studio
-    Director
-    Audio Studio
-    Lip Sync
-    Recast
-    Influencer
-
-BUILD
-    Workflows
-    Brand Kits
-    Projects
-    Assets
-
-LIBRARY
-    Generations
-    Favorites
-    Templates
-
-ACCOUNT
-    Credits
-    Billing
-    API
-    Settings
-```
-
-Admin role also sees:
-
-```text
-ADMIN
-    Dashboard
-```
-
-Do not expose 70+ model names in the sidebar.
-
-Models are controls inside relevant workspaces.
-
----
-
-# 9. Master Agent
-
-The Master Agent is the primary simple-mode experience.
-
-It is a creative production manager, not only a chatbot.
-
-## 9.1 Capabilities
-
-The Master Agent can:
-
-- discuss and refine creative intent;
-- inspect attached images;
-- inspect project assets;
-- load a Brand Kit;
-- analyze visual references;
-- create a structured plan;
-- delegate to subagents;
-- select models;
-- choose cost/quality modes;
-- quote costs;
-- show balance impact;
-- request approval;
-- execute steps;
-- monitor jobs;
-- evaluate outputs;
-- selectively retry;
-- assemble deliverables;
-- save assets to a project;
-- create workflows from successful sequences.
-
-## 9.2 Example
-
-User:
-
-> Create a 20 second vertical skincare launch ad using my Luna brand kit and these two product photos.
-
-Agent:
-
-1. Loads Brand Kit.
-2. Loads product references.
-3. Runs Visual Intelligence.
-4. Builds a creative brief.
-5. Plans shots.
-6. Chooses image/video/audio routes.
-7. Calculates expected and maximum credits.
-8. Shows plan and quote.
-9. User confirms.
-10. Runs child jobs.
-11. Performs quality checks.
-12. Reruns only weak outputs if retry budget permits.
-13. Assembles final.
-14. Saves final and source assets to project.
-15. Shows final result and total actual credits.
-
----
-
-# 10. Subagents
-
-Recommended subagents:
-
-## Creative Director
-
-Responsible for:
-- brief interpretation;
-- concept;
-- narrative;
-- visual direction;
-- overall coherence.
-
-## Image Director
-
-Responsible for:
-- image generation strategy;
-- reference selection;
-- T2I/I2I/edit route;
-- image prompt structure;
-- composition requirements.
-
-## Video Director
-
-Responsible for:
-- motion;
-- shot duration;
-- first/last frames;
-- image-to-video strategy;
-- model-specific video prompting.
-
-## Brand Guardian
-
-Responsible for:
-- brand palette;
-- logo use;
-- typography;
-- visual style;
-- tone constraints;
-- brand violation detection.
-
-## Prompt Engineer
-
-Responsible for:
-- prompt dialect;
-- model guide;
-- negative prompt;
-- prompt compression/expansion;
-- immutable constraints.
-
-## Storyboard Agent
-
-Responsible for:
-- shot list;
-- continuity;
-- camera;
-- pacing.
-
-## Audio Agent
-
-Responsible for:
-- TTS;
-- voice;
-- music;
-- sound effects;
-- timing.
-
-## Vision Analyst
-
-Responsible for:
-- scene caption;
-- objects;
-- regions;
-- OCR;
-- palette;
-- lighting;
-- visual style;
-- reference semantics.
-
-## Quality Control Agent
-
-Responsible for:
-- prompt alignment;
-- brand alignment;
-- visual/reference consistency;
-- technical validity;
-- targeted rerun recommendation.
-
-## Cost Optimizer
-
-Responsible for:
-- model comparisons;
-- cost/quality tradeoff;
-- budget-aware alternatives.
-
-## Assembly Agent
-
-Responsible for:
-- final sequence;
-- media ordering;
-- deliverables;
-- export.
-
-All subagents must use the same Gateway and wallet.
-
----
-
-# 11. Helmies Studio Agent Runtime Capabilities to Build
-
-Build the following runtime capabilities natively inside Helmies Studio:
-
-- Agents.
-- subagents.
-- tools.
-- tool search.
-- deferred tools.
-- skills.
-- manual skills.
-- always-apply skills.
-- MCP.
-- user-scoped MCP.
-- OAuth-aware MCP.
-- memory tools.
-- summarization.
-- context pruning.
-- code execution.
-- file authoring.
-- HITL / ask-user.
-- background tasks.
-- resumable jobs.
-- streaming.
-- usage accounting.
-- provider abstraction.
-- reasoning-history handling.
-- multi-model support.
-- conversation persistence.
-
-Do not rebuild these inside a separate old Next.js tool shell — build them directly into Helmies Studio's authenticated application.
-
----
-
-# 12. Helmies First-Party Agent Tools
-
-Create first-party tools:
-
-```text
-helmies.list_models
-helmies.get_model_schema
-helmies.quote_generation
-helmies.generate_image
-helmies.edit_image
-helmies.generate_video
-helmies.generate_audio
-helmies.generate_tts
-helmies.transcribe_audio
-helmies.lipsync
-helmies.recast
-helmies.analyze_image
-helmies.search_assets
-helmies.get_asset
-helmies.get_brand_kit
-helmies.create_canvas_render
-helmies.create_project
-helmies.add_project_asset
-helmies.create_director_plan
-helmies.quote_director_plan
-helmies.run_director_pipeline
-helmies.get_job
-helmies.retry_job
-helmies.create_workflow
-```
-
-Every tool:
-- validates ownership;
-- validates entitlement;
-- uses normalized inputs;
-- uses Model Gateway;
-- returns structured results;
-- never reveals provider secrets.
-
----
-
-# 13. Manual Studio Layout
-
-Desktop:
-
-```text
-┌──────────────────────┬───────────────────────────────────────┬────────────────────┐
-│ INPUTS / SETTINGS    │                                       │ INSPECTOR / AGENT  │
-│                      │            MAIN WORKSPACE             │                    │
-│ model                │                                       │ current job        │
-│ references           │            Canvas / Preview           │ metadata           │
-│ controls             │                                       │ prompt inspector   │
-│ advanced             │                                       │ Ask Agent          │
-├──────────────────────┴───────────────────────────────────────┴────────────────────┤
-│ Prompt / Command Composer      Model      Cost      Generate                      │
-└───────────────────────────────────────────────────────────────────────────────────┘
-```
-
-Mobile:
-- main workspace stays central;
-- settings become bottom sheet;
-- inspector becomes drawer;
-- prompt bar remains accessible;
-- Agent becomes contextual drawer.
-
----
-
-# 14. Basic vs Advanced Mode
-
-Every Studio supports:
-
-## Basic
-
-Only:
-- prompt;
-- primary references;
-- recommended model;
-- aspect;
-- quality;
-- cost.
-
-## Advanced
-
-Expose:
-- exact model;
-- seed;
-- resolution;
-- references;
-- masks;
-- negative prompt;
-- model-specific options;
-- advanced prompt inspector;
-- provider route if allowed;
-- Canvas;
-- detailed controls.
-
-The user's preference is persisted per workspace.
-
----
-
-# 15. Image Studio
-
-Supported modes:
-
-- Text to Image.
-- Image to Image.
-- Image Edit.
-- Multi Reference.
-- Inpaint.
-- Outpaint.
-- Composition Canvas.
-- Product Image.
-- Poster/Typography.
-- Character Reference.
-- Batch Variations.
-
-Core UI:
-- references left;
-- Canvas/preview center;
-- result/history right;
-- bottom prompt/generate;
-- contextual Agent.
-
----
-
-# 16. Canvas — Core Differentiator
-
-The Canvas is not a simple drawing surface.
-
-It is a **visual instruction document**.
-
-A user can:
-- upload reference image;
-- place it in a specific position;
-- scale it;
-- rotate it;
-- add another image;
-- add a logo;
-- type exact text;
-- scribble;
-- draw an arrow;
-- draw a rectangle;
-- mark "remove";
-- mark "keep exactly";
-- paint an inpaint mask;
-- paint a preservation mask;
-- write "make this marble";
-- create a rough visual composition.
-
-Then the user clicks:
-
-**Generate Professional Image**
-
-Helmies converts the rough Canvas into model-appropriate structured inputs.
-
----
-
-# 17. Canvas Technology
-
-Recommended implementation:
-- Fabric.js as the first candidate because it supports object transforms, text editing, images, selection, grouping and free drawing;
-- custom raster mask layer;
-- Web Worker/OffscreenCanvas for expensive preprocessing where supported;
-- high-resolution server/client export path.
-
-Perform a short technical spike comparing Fabric.js and React-Konva before committing.
-
-Do not manually implement all selection, resize, rotate and text-editing primitives on raw Canvas unless necessary.
-
----
-
-# 18. Canvas Object Types
-
-```text
-IMAGE
-TEXT
-SHAPE
-FREE_DRAW
-MASK_INCLUDE
-MASK_EXCLUDE
-ARROW
-REGION
-PROMPT_NOTE
-COLOR_SWATCH
-LOGO
-REFERENCE
-GUIDE
-BACKGROUND
-```
-
-Each object has:
-- ID.
-- z-index.
-- normalized coordinates.
-- transforms.
-- opacity.
-- visibility.
-- lock state.
-- semantic role.
-- optional prompt note.
-- source Asset ID.
-
----
-
-# 19. Canvas Semantic Roles
-
-Possible roles:
-
-```text
-layout_reference
-identity_reference
-style_reference
-product_reference
-logo
-background_reference
-preserve_exactly
-edit_target
-remove_target
-inpaint_region
-outpaint_context
-text_content
-color_reference
-composition_anchor
-```
-
-The semantic role is more important than the visual object type.
-
-A normal uploaded image can mean:
-- "copy this subject";
-- "copy this style";
-- "use this layout";
-- "keep this product exactly".
-
-The user can select a role; the Agent may recommend one.
-
----
-
-# 20. Canvas Document Schema
-
-Persist editable JSON.
-
-Example:
-
-```json
-{
-  "version": 1,
-  "width": 1080,
-  "height": 1350,
-  "aspectRatio": "4:5",
-  "background": {
-    "type": "color",
-    "value": "#F4F1EA"
-  },
-  "objects": [
-    {
-      "id": "product_1",
-      "type": "image",
-      "assetId": "asset_123",
-      "role": "product_reference",
-      "x": 0.50,
-      "y": 0.61,
-      "width": 0.34,
-      "height": 0.40,
-      "rotation": 0,
-      "locked": false
-    },
-    {
-      "id": "headline",
-      "type": "text",
-      "role": "text_content",
-      "text": "SUMMER DROP",
-      "fontFamily": "BrandHeading",
-      "x": 0.50,
-      "y": 0.18
-    }
-  ],
-  "instructions": [
-    "premium editorial lighting",
-    "keep the product logo legible"
-  ]
-}
-```
-
----
-
-# 21. Canvas Compiler
-
-The Canvas Compiler converts visual intent into:
-
-1. flattened composition guide;
-2. clean source render;
-3. inpaint mask;
-4. preservation mask;
-5. reference assets;
-6. semantic reference roles;
-7. region instructions;
-8. text requirements;
-9. composition JSON;
-10. compiled prompt;
-11. negative prompt;
-12. model-specific request.
-
----
-
-# 22. Canvas Model Strategy
-
-Models have different capabilities.
-
-If model supports:
-- multiple references -> send them directly.
-- one image -> flatten composition guide.
-- masks -> render exact mask.
-- region prompting -> translate regions.
-- T2I only -> convert composition into textual spatial prompt.
-- text rendering -> preserve exact text field.
-- no exact text -> warn user and recommend compatible model.
-
-The user should not need to understand these differences in Basic mode.
-
----
-
-# 23. Canvas History
-
-Required:
-- undo.
-- redo.
-- autosave.
-- version snapshots.
-- duplicate.
-- rename.
-- restore.
-- before/after.
-- generation lineage.
-
-Never overwrite the source Canvas version when generating.
-
----
-
-# 24. Visual Intelligence
-
-Create internal service:
-**Helmies Vision**.
-
-This independently implements the useful behavior seen in image-to-prompt.
-
-Input:
-- one or multiple images.
-
-Output:
-
-```json
-{
-  "caption": "...",
-  "background": "...",
-  "palette": ["#111111", "#D9B86E"],
-  "composition": {},
-  "lighting": {},
-  "camera": {},
-  "subjects": [],
-  "objects": [],
-  "textRegions": [],
-  "regions": [],
-  "style": {},
-  "structuredPrompt": {}
-}
-```
-
-Use cases:
-- reference analysis;
-- image-to-prompt;
-- Brand Kit onboarding;
-- Canvas interpretation;
-- OCR;
-- palette extraction;
-- quality comparison;
-- style fingerprinting.
-
----
-
-# 25. Vision Provider Interface
-
-Do not permanently tie the product to Florence-2.
-
-```ts
-interface VisionAnalyzer {
-  analyzeImage(input: AnalyzeImageInput): Promise<VisualAnalysis>
-  compareImages(input: CompareImagesInput): Promise<VisualComparison>
-}
-```
-
-Possible implementations:
-- local Florence-compatible service.
-- cloud multimodal LLM.
-- future specialized visual-analysis model.
-
-Admin selects routes.
-
----
-
-# 26. Prompt Intelligence Engine
-
-Prompt quality is a platform capability.
-
-Pipeline:
-
-```text
-RAW INTENT
-    ↓
-INTENT NORMALIZER
-    ↓
-PROJECT / BRAND / VISUAL / CANVAS CONTEXT
-    ↓
-CREATIVE EXPANSION
-    ↓
-MODEL DIALECT COMPILER
-    ↓
-DETERMINISTIC VALIDATOR
-    ↓
-OPTIONAL QUALITY POLISH
-    ↓
-FINAL PROVIDER REQUEST
-```
-
----
-
-# 27. Prompt Pass 0 — Intent Normalization
-
-Extract:
-- goal;
-- subject;
-- action;
-- environment;
-- style;
-- camera;
-- mood;
-- platform;
-- aspect;
-- exact text;
-- immutable facts;
-- references;
-- negative constraints.
-
-Produce structured JSON.
-
----
-
-# 28. Prompt Pass 1 — Context Enrichment
-
-Add relevant:
-- Brand Kit;
-- project;
-- visual analysis;
-- Canvas;
-- character/persona;
-- previous approved asset references.
-
-Do not include unrelated project data.
-
----
-
-# 29. Prompt Pass 2 — Creative Expansion
-
-Add useful detail.
-
-Never silently alter immutable facts such as:
-- product name;
-- exact slogan;
-- exact count of people;
-- logo;
-- specified colors;
-- supplied identity.
-
----
-
-# 30. Prompt Pass 3 — Model Dialect
-
-Use model-specific guidance.
-
-Examples:
-- descriptive prose.
-- concise tag structure.
-- video action-camera-environment order.
-- reference-ID syntax.
-- first/last-frame semantics.
-- duration-specific prompt windows.
-
-Prompt Guide Registry stores versions.
-
----
-
-# 31. Prompt Pass 4 — Deterministic Validation
-
-Validate:
-- prompt length.
-- unsupported parameters.
-- reference count.
-- required reference.
-- duration.
-- resolution.
-- aspect.
-- exact text compatibility.
-- mask dimensions.
-- conflicting controls.
-- provider-specific constraints.
-
-Do not use LLM alone for deterministic validation.
-
----
-
-# 32. Prompt Pass 5 — Optional Premium Polish
-
-Modes:
-- Off.
-- Fast.
-- Balanced.
-- Premium.
-
-For expensive jobs, an additional LLM can review final prompt quality.
-
-Admin controls model route.
-
----
-
-# 33. Prompt Inspector
-
-Advanced users can open:
-
-```text
-Raw Intent
-Normalized Intent
-Brand Context
-Visual Context
-Canvas Context
-Prompt Guide
-Final Prompt
-Negative Prompt
-Normalized Request
-```
-
-They may edit the final prompt before generation.
-
-Store both raw and compiled versions.
-
----
-
-# 34. Prompt Guide Registry
-
-Entities:
-- PromptGuide.
-- PromptGuideVersion.
-- PromptRoute.
-
-Guide categories:
-
-```text
-image/base
-image/product
-image/portrait
-image/poster
-image/brand
-video/base
-video/cinematic
-video/ugc
-video/music-video
-video/dialogue
-audio/tts
-audio/music
-model/<model-id>
-```
-
-Admin:
-- create.
-- edit.
-- diff.
-- activate.
-- rollback.
-- benchmark.
-
-Every generation records guide versions.
-
----
-
-# 35. Brand Identity / Brand Kit
-
-Brand Kit is reusable creative memory.
-
-Fields:
-- brand name.
-- description.
-- website.
-- logo variants.
-- logo safe area.
-- forbidden logo usage.
-- primary colors.
-- secondary colors.
-- typography.
-- uploaded font files.
-- type hierarchy.
-- photography style.
-- illustration style.
-- tone of voice.
-- slogans.
-- product images.
-- packaging.
-- previous content.
-- desired references.
-- negative references.
-- audience.
-- platform preferences.
-
----
-
-# 36. Brand Upload Intelligence
-
-When a user uploads references:
-- run visual analysis;
-- extract palette;
-- detect layout tendencies;
-- inspect typography;
-- extract text;
-- derive visual fingerprint.
-
-Logo:
-- transparent preview.
-- dimensions.
-- dominant colors.
-- padding.
-
-Fonts:
-- validate.
-- secure storage.
-- never expose globally.
-
----
-
-# 37. Brand Fingerprint
-
-Example:
-
-```json
-{
-  "palette": {
-    "primary": ["#0D0D0D", "#D5B56D"],
-    "secondary": ["#F4EFE6"]
-  },
-  "visual": {
-    "contrast": "high",
-    "lighting": "warm directional",
-    "composition": "minimal centered",
-    "texture": "premium matte"
-  },
-  "typography": {
-    "heading": "Brand Heading",
-    "body": "Brand Body",
-    "case": "mixed"
-  },
-  "avoid": [
-    "neon rainbow backgrounds",
-    "cartoon style"
-  ]
-}
-```
-
----
-
-# 38. Brand Enforcement Modes
-
-- Off.
-- Suggest.
-- Strong.
-- Locked.
-
-Locked mode:
-- preserve logo rules.
-- enforce brand palette where technically possible.
-- use selected fonts for Canvas/text rendering.
-- require confirmation for conflicts.
-
----
-
-# 39. Projects
-
-A Project groups:
-- conversations;
-- assets;
-- Brand Kit;
-- Canvases;
-- workflows;
-- Director pipelines;
-- generations;
-- notes;
-- deliverables.
-
-Example:
-`Babylon Summer Campaign`.
-
-The Agent can scope itself to one Project.
-
----
-
-# 40. Assets
-
-Every upload/generated output becomes an Asset.
-
-Asset contains:
-- owner.
-- project.
-- type.
-- source.
-- model.
-- generation.
-- dimensions.
-- duration.
-- prompt metadata.
-- cost.
-- visual analysis.
-- storage key.
-- lineage.
-- favorites.
-- tags.
-
-Actions:
-- Open.
-- Add to Canvas.
-- Use as reference.
-- Edit.
-- Animate.
-- Lip Sync.
-- Recast.
-- Analyze.
-- Add to Brand Kit.
-- Save to project.
-- Download.
-- Delete.
-
----
-
-# 41. Video Studio
-
-Modes:
-- Text to Video.
-- Image to Video.
-- Reference to Video.
-- First/Last Frame.
-- Video to Video.
-- Extend.
-- Retake.
-- Motion Transfer.
-- Product Video.
-- UGC.
-- Cinematic.
-
-Advanced controls are schema-driven.
-
----
-
-# 42. Director
-
-Director is a multi-step production workspace, not a single model.
-
-Inputs:
-- creative brief;
-- target duration;
-- platform;
-- aspect;
-- Brand Kit;
-- characters;
-- products;
-- references;
-- script;
-- lyrics;
-- audio;
-- budget mode;
-- quality mode.
-
----
-
-# 43. ProductionPlan
-
-```ts
-type ProductionPlan = {
-  id: string
-  title: string
-  type: "ad" | "short_film" | "music_video" | "social" | "product"
-  durationSec: number
-  globalStyle: string
-  brandKitId?: string
-  subjects: SubjectProfile[]
-  locations: LocationProfile[]
-  shots: ShotPlan[]
-  continuityRules: string[]
-}
-```
-
----
-
-# 44. ShotPlan
-
-```ts
-type ShotPlan = {
-  id: string
-  index: number
-  title: string
-  durationSec: number
-
-  narrativeRole: string
-  sceneGoal: string
-
-  subjects: SubjectRef[]
-  environment: string
-  spatialSetup: string
-  lighting: string
-  mood: string
-
-  camera: {
-    framing: string
-    angle: string
-    lens: string
-    movement: string
-    intensity: string
-  }
-
-  imageStrategy: {
-    mode: "generate" | "reference" | "reuse_previous_end_frame"
-    prompt: string
-    references: string[]
-  }
-
-  videoStrategy: {
-    mode: "t2v" | "i2v" | "reference" | "extend"
-    prompt: string
-    modelRoute: string
-    keyframes?: string[]
-    windows?: string[]
-  }
-
-  audio?: {
-    dialogue?: string
-    ambience?: string
-    effects?: string[]
-  }
-
-  continuity: string[]
-}
-```
-
----
-
-# 45. Director Planning Passes
-
-## Pass A — Creative Structure
-
-Story beats and creative concept.
-
-## Pass B — Shot Breakdown
-
-Convert beats into bounded shots.
-
-## Pass C — Image/Keyframe Prompts
-
-Plan first frames and references.
-
-## Pass D — Video Prompts
-
-Compile model-specific motion instructions.
-
-## Pass E — Validation
-
-Check:
-- total duration.
-- continuity.
-- references.
-- unsupported modes.
-- missing assets.
-- impossible transitions.
-
-## Pass F — Cost Plan
-
-Quote every generation.
-
----
-
-# 46. Director Approval
-
-Before execution:
-
-```text
-Production: 15s Product Launch
-Shots: 4
-
-Shot 1
-Image: 140 credits
-Video: 520 credits
-
-Shot 2
-Image: reuse Shot 1 final frame
-Video: 520 credits
-
-Shot 3
-Image: 140 credits
-Video: 520 credits
-
-Shot 4
-Image: 140 credits
-Video: 520 credits
-
-Expected total: 2,500 credits
-Maximum reserved: 2,900 credits
-
-Balance: 6,200
-Expected remaining: 3,700
-```
-
-Actions:
-- edit plan.
-- choose Economy.
-- choose Balanced.
-- choose Premium.
-- change model per shot.
-- approve.
-
----
-
-# 47. Director Pipeline State
-
-```text
-draft
-planning
-awaiting_approval
-quoted
-queued
-generating_images
-generating_video
-generating_audio
-quality_check
-assembling
-completed
-paused
-failed
-cancelled
-```
-
-Persist all state.
-
----
-
-# 48. Director Shot Reruns
-
-User can rerun:
-- image only.
-- video only.
-- audio only.
-- prompt polish only.
-
-Do not rerun other shots.
-
-After rerun:
-- optionally reassemble final.
-
----
-
-# 49. Director Continuity
-
-Track:
-- character identity.
-- outfit.
-- product identity.
-- environment.
-- lighting.
-- time.
-- screen direction.
-- previous ending frame.
-- next frame.
-- camera language.
-
-Continuity metadata is stored with each shot.
-
----
-
-# 50. Director Dashboard
-
-Show:
-- overall progress.
-- total planned credits.
-- actual credits.
-- planning passes.
-- shots.
-- image prompt.
-- video prompt.
-- references.
-- model.
-- seed.
-- output.
-- quality score.
-- rerun controls.
-- reassemble.
-
-Basic users see simplified view.
-Advanced users can inspect planning details.
-
----
-
-# 51. Audio Studio
-
-Unify:
-- TTS.
-- voice selection.
-- voice clone where permitted.
-- music.
-- sound effects.
-- ASR.
-
-Price units can differ:
-- characters.
-- seconds.
-- fixed job.
-
-Gateway handles them.
-
----
-
-# 52. Lip Sync
-
-Common inputs:
-- image or video.
-- audio.
-- optional prompt.
-- resolution.
-
-Model-specific controls are rendered from schema.
-
----
-
-# 53. Recast
-
-Inputs:
-- source video.
-- target identity/reference.
-- target selector.
-- optional prompt.
-- mask/orientation where supported.
-
-Add quality checks for obvious identity failure.
-
----
-
-# 54. Influencer Studio
-
-Upgrade from one-time prompt builder to persistent personas.
-
-Persona:
-- face description.
-- body description.
-- style.
-- wardrobe.
-- personality.
-- reference assets.
-- Brand Kit.
-- content presets.
-
-Outputs:
-- consistent photos.
-- social templates.
-- videos through Video Studio.
-- reusable references.
-
----
-
-# 55. Workflows
-
-Recommended node types:
-
-```text
-INPUT
-TEXT_LLM
-ANALYZE_IMAGE
-PROMPT_COMPILE
-GENERATE_IMAGE
-EDIT_IMAGE
-GENERATE_VIDEO
-TTS
-MUSIC
-LIPSYNC
-RECAST
-DIRECTOR_PLAN
-QUALITY_CHECK
-CONDITION
-LOOP
-MERGE
-EXPORT
-```
-
-Workflow nodes use Model Gateway.
-
-The workflow must calculate maximum estimated credits before execution.
-
----
-
-# 56. Model Gateway
-
-This is the core backend abstraction.
-
-Product code asks for capability.
+This is the core backend abstraction. Product code asks for capability.
 
 Example:
 
@@ -1866,20 +394,11 @@ Requirements:
 - max 500 credits
 ```
 
-Gateway:
-- validates user.
-- finds eligible models.
-- applies preference.
-- quotes.
-- selects route.
-- executes.
-- accounts.
+Gateway MUST: validate user; find eligible models; apply preference; quote; select route; execute; account.
 
----
+### 2.3.2 Model Registry
 
-# 57. Model Registry
-
-Every model record includes:
+Every model record MUST include:
 
 ```json
 {
@@ -1898,28 +417,13 @@ Every model record includes:
 }
 ```
 
-Required metadata:
-- category.
-- provider.
-- speed tier.
-- quality score.
-- reference support.
-- aspect ratios.
-- resolutions.
-- durations.
-- text rendering.
-- max references.
-- provider regions.
-- plan access.
-- prompt guide.
+Required metadata: category; provider; speed tier; quality score; reference support; aspect ratios; resolutions; durations; text rendering; max references; provider regions; plan access; prompt guide.
 
----
+**Current state:** models are hard-coded arrays in `src/lib/models.js` with per-model UI flags (`hasMode`, `maxImages`, `aspectRatios`, `durations`, …). This is the migration seed for the Registry (Appendix AJ), not the final authority.
 
-# 58. Input Schema
+### 2.3.3 Input schema
 
-Use JSON Schema or strict equivalent.
-
-Normalized field types:
+Use JSON Schema or strict equivalent. Normalized field types:
 
 ```text
 string
@@ -1945,9 +449,7 @@ slider
 
 `uiSchema` determines presentation.
 
----
-
-# 59. UI Schema
+### 2.3.4 UI schema
 
 Example:
 
@@ -1967,11 +469,9 @@ Example:
 }
 ```
 
-Generic renderer uses specialized components for asset/mask/aspect controls.
+A generic renderer MUST use specialized components for asset/mask/aspect controls. Do not scatter `if model === "..."` logic through the UI (rule 27).
 
----
-
-# 60. Provider Adapter
+### 2.3.5 Provider adapter
 
 Normalized request:
 
@@ -1985,166 +485,176 @@ Normalized request:
 }
 ```
 
-Adapter translates to provider-native fields.
+The adapter translates to provider-native fields. The UI MUST never need provider parameter names. The full adapter contract is normative in Appendix D.
 
-The UI never needs provider parameter names.
+### 2.3.6 Model eligibility
 
----
+A model is eligible only if: enabled; provider enabled; user plan permits; region permits; required inputs exist; reference count supported; output constraints supported; model health acceptable; user budget permits.
 
-# 61. Model Eligibility
+### 2.3.7 Cost modes
 
-Model is eligible only if:
-- enabled.
-- provider enabled.
-- user plan permits.
-- region permits.
-- required inputs exist.
-- reference count supported.
-- output constraints supported.
-- model health acceptable.
-- user budget permits.
+User-selectable modes: **Best Quality** (premium model preference); **Balanced** (default quality/cost); **Economy** (cheapest acceptable); **Manual** (exact model). The Agent MUST use the same mode.
 
----
+### 2.3.8 Model auto-selection
 
-# 62. Cost Modes
-
-User can choose:
-
-## Best Quality
-Premium model preference.
-
-## Balanced
-Default quality/cost.
-
-## Economy
-Cheapest acceptable.
-
-## Manual
-Exact model.
-
-Agent uses the same mode.
-
----
-
-# 63. Pricing Engine
-
-Every action goes through server-side quote.
-
-Support strategies:
+After eligibility:
 
 ```text
-fixed
-per_image
-per_megapixel
-per_second
-per_character
-per_audio_second
-per_input_token
-per_output_token
-tiered_duration
-formula
+score =
+qualityWeight * quality
++ valueWeight * value
++ speedWeight * speed
++ reliabilityWeight * reliability
++ userPreference
+- costPenalty
 ```
 
-Never use arbitrary JavaScript `eval` for pricing formulas.
+Admin can tune route weights.
 
----
+### 2.3.9 Model compatibility UI
 
-# 64. Quote Formula
+When the user changes inputs: incompatible models become unavailable; recommended compatible models move up; the UI explains why.
 
-Concept:
+Example:
+
+> This model supports one reference image. You selected four.
+
+Button:
+
+> Choose compatible model.
+
+### 2.3.10 Model and prompt benchmarks
+
+Internal model benchmark suite: prompts; references; output; latency; cost; human rating. Benchmark data MUST inform route quality scores.
+
+Before activating a Prompt Guide update: run benchmark prompts; compare old/new compiled prompt; review outputs; activate version; retain rollback.
+
+### 2.3.11 Model Route table and admin
+
+Route records map abstract route keys to prioritized models. Normative route examples in Appendix G; `ModelRoute` schema in Section 3.4.4.
+
+Admin route display example:
 
 ```text
-provider wholesale cost
-+ infrastructure/retry reserve
-= adjusted platform cost
+image.standard
 
-adjusted platform cost
-→ target margin / pricing policy
-= retail compute value
-
-retail compute value
-→ credits
-
-promo/plan rules applied
-→ final credits
+1. Model A - priority 10 - healthy
+2. Model B - priority 20 - healthy
+3. Model C - priority 30 - degraded
 ```
 
-Store all assumptions in quote snapshot.
+Admin can reorder. Conditions: plan; quality mode; reference support; max cost; region.
 
----
+## 2.4 Repository strategy (target monorepo, staged adoption)
 
-# 65. Quote Response
+Use `helmies-studio` as the single technical base and build all functionality (including the agent runtime, conversations, tools, skills, MCP, etc.) directly within it. The `helmies-agent` repository is abandoned and is **not** a base for this project.
 
-```json
-{
-  "quoteId": "quote_...",
-  "expiresAt": "...",
-  "providerCostEstimated": 0.42,
-  "platformCostEstimated": 0.51,
-  "retailBeforeDiscount": 1.25,
-  "discount": 0.15,
-  "retailAfterDiscount": 1.10,
-  "credits": 110,
-  "maximumCredits": 125,
-  "balance": 4200,
-  "balanceAfterExpected": 4090,
-  "balanceAfterMaximum": 4075,
-  "warnings": []
-}
-```
-
----
-
-# 66. User Cost Confirmation
-
-Single generation:
+Recommended final logical structure:
 
 ```text
-Generate 5s video
-
-Model: Kling 3 Pro
-Estimated: 640 credits
-
-Current balance: 3,250
-Expected remaining: 2,610
-
-[Cancel] [Generate — 640]
+helmies-studio/
+├── apps/
+│   ├── landing/            # preserved public Helmies Studio Next.js website
+│   ├── studio-web/         # Helmies Studio authenticated UI (built natively)
+│   ├── platform-api/       # commercial platform API
+│   ├── agent-api/          # agent/conversation runtime (built natively inside Helmies Studio)
+│   ├── worker/             # media and workflow job processors
+│   ├── director-service/   # Helmies Director planning service (Maestro-exact behavior, original code)
+│   └── vision-service/     # structured image/reference analysis
+│
+├── packages/
+│   ├── contracts/
+│   ├── ui/
+│   ├── model-registry/
+│   ├── pricing-engine/
+│   ├── prompt-engine/
+│   ├── brand-engine/
+│   ├── storage/
+│   ├── telemetry/
+│   └── shared-config/
+│
+├── prisma/
+├── docker/
+├── infra/
+├── docs/
+├── scripts/
+├── docker-compose.yml
+└── README.md
 ```
 
-Agent plan:
+Do not force a destructive filesystem reorganization in the first implementation commit. A staged implementation MAY keep the existing single-app structure while new commercial services are added. **Current state: single Next.js 16 app; the monorepo split is NOT STARTED and remains the stated target.**
+
+## 2.5 Production routing and public APIs
+
+Recommended routing (target):
 
 ```text
-Campaign Production
-8 steps
-
-Expected: 3,780 credits
-Maximum: 4,420 credits
-
-Balance: 7,300
-Expected remaining: 3,520
-
-[Review] [Proceed]
+studio.helmies.fi/                -> landing service
+studio.helmies.fi/pricing         -> landing service
+studio.helmies.fi/login           -> shared login
+studio.helmies.fi/studio/*        -> authenticated studio-web
+studio.helmies.fi/api/platform/*  -> platform-api
+studio.helmies.fi/api/agent/*     -> agent-api
+studio.helmies.fi/api/generate/*  -> platform-api / execution gateway
+studio.helmies.fi/api/director/*  -> platform-api
+studio.helmies.fi/api/vision/*    -> platform-api
 ```
 
----
+Internal Python services MUST NOT be exposed directly to browsers.
 
-# 67. Credit Reservation
+Public site content API (cache public responses):
 
-For variable jobs:
-1. quote.
-2. reserve maximum.
-3. execute.
-4. record actual provider cost.
-5. calculate final credit charge.
-6. settle.
-7. release unused reservation.
-8. refund fully on non-billable failure.
+```text
+GET /api/platform/public/cms?namespace=landing&locale=en
+GET /api/platform/public/announcements
+GET /api/platform/public/plans
+GET /api/platform/public/stats
+```
 
-Wallet cannot become negative.
+Public model counts: instead of manual copy, count enabled public models, group by category, expose public-safe stats. Marketing MAY display `70+ models` based on threshold formatting.
 
----
+**Current state:** single Next.js app serves everything; `/api/announcements` is the only implemented public content endpoint; `/api/platform/public/*` do not exist; landing pricing/model counts are hard-coded.
 
-# 68. Generation Job State Machine
+## 2.6 Identity
+
+### 2.6.1 One identity
+
+The public site, Studio and Agent MUST use one user identity. Long term: one Helmies account. Credits always belong to the platform user.
+
+If immediate physical DB unification is difficult, use secure identity mapping/token exchange and maintain `platformUserId <-> agentUserId` — **SUPERSEDED in practice**: since `helmies-agent` is abandoned and all identity lives in Helmies Studio, there is no second auth system to reconcile. The unified NextAuth store already exists [IMPLEMENTED]. An `IdentityLink` mapping table is **not required**; revisit only if a future integration introduces a separate identity system.
+
+### 2.6.2 Agent commercial context
+
+At Agent request: resolve user from the unified Helmies Studio session; fetch plan; fetch wallet; fetch feature entitlements; attach to Helmies tool execution context.
+
+Do not place complete billing records in LLM prompt. Tools receive context server-side.
+
+### 2.6.3 One wallet
+
+No separate Agent/Studio/Workflow/Director credits. Everything uses one wallet and ledger (Section 4.1).
+
+## 2.7 Execution platform services
+
+### 2.7.1 Service extraction from the current generation handler
+
+The current `handleGeneration` (`src/lib/generation-handler.js`) has useful behavior that MUST be preserved through refactor: authentication; rate limiting; prompt expansion (now the 5-pass engine); ProjectMemory injection; provider fallback; DB pricing override; credit checks; generation record; media storage; quality gate; refunds.
+
+It MUST be refactored into:
+
+```text
+QuoteService
+WalletService
+GenerationService
+ModelGateway
+ProviderAdapter
+StorageService
+QualityService
+SettlementService
+```
+
+Do not keep one giant handler forever.
+
+### 2.7.2 Generation job state machine
 
 ```text
 created
@@ -2162,168 +672,21 @@ cancelled
 refunded
 ```
 
-Parent jobs may contain child jobs.
+Parent jobs MAY contain child jobs. **Current state:** `Generation.status` is a free-form string (`pending`/`processing`/`completed`/`failed`); there is no parent/child job model.
 
----
+### 2.7.3 Prompt/request reproducibility
 
-# 69. Generation UX
+Every generation MUST store: raw prompt; normalized intent; compiled prompt; negative prompt; model; provider route; normalized params; provider params snapshot where safe; seed; references; Brand Kit; Canvas; Prompt Guide versions; quote; actual credits.
 
-Do not show generic spinner for minutes.
+**Current state:** `PromptCompilation` rows store raw/final/negative prompts, guide version, warnings, polish mode [IMPLEMENTED, partial — no normalized intent/canvas/brand snapshot]; `Generation.params` stores the raw request body.
 
-Image stages:
-- Understanding.
-- Preparing references.
-- Generating.
-- Quality check.
-- Finalizing.
+### 2.7.4 Reuse settings
 
-Video stages:
-- Preparing shot.
-- Submitting.
-- Generating.
-- Processing media.
-- Quality check.
-- Finalizing.
+Every generation result MUST offer **Reuse settings**: open the relevant Studio with the exact reusable configuration.
 
-Agent:
-- animate plan steps.
+### 2.7.5 Quality engine
 
----
-
-# 70. Motion During Generation
-
-Image:
-- subtle waves;
-- animated mesh;
-- low-cost shimmer;
-- blurred preview if provider supports;
-- stage labels.
-
-Video:
-- timeline pulse;
-- frame strip;
-- shot progress.
-
-Respect `prefers-reduced-motion`.
-
-Avoid excessive GPU use.
-
----
-
-# 71. Agent Inside Manual Studio
-
-A contextual Agent panel can see:
-- studio.
-- model.
-- prompt.
-- references.
-- Canvas.
-- Brand Kit.
-- project.
-- current error.
-
-User can ask:
-> Make this more cinematic.
-
-> Use a cheaper model.
-
-> Explain why this model cannot use these references.
-
-> Improve the composition.
-
-Agent proposes changes.
-Destructive changes require user confirmation.
-
----
-
-# 72. Project Memory vs Agent Memory
-
-Keep separate.
-
-Project Memory:
-- explicit character.
-- style.
-- Brand Kit.
-- asset.
-- project notes.
-
-Agent memory:
-- conversational/user preferences.
-
-Do not store both as undifferentiated JSON.
-
----
-
-# 73. One Identity
-
-The public site, Studio and Agent must use one user identity.
-
-If immediate physical DB unification is difficult:
-- use secure identity mapping/token exchange.
-- maintain `platformUserId <-> agentUserId`.
-
-Long term:
-one Helmies account.
-
-Credits always belong to platform user.
-
----
-
-# 74. One Wallet
-
-No separate:
-- Agent credits.
-- Studio credits.
-- Workflow credits.
-- Director credits.
-
-Everything uses one wallet and ledger.
-
----
-
-# 75. Asset Storage
-
-Provider output:
-1. provider returns result.
-2. worker fetches safely.
-3. validates.
-4. stores in controlled object storage.
-5. generates thumbnail/metadata.
-6. creates Asset.
-7. marks job complete.
-
-Temporary provider URL is not final asset.
-
----
-
-# 76. Asset Lineage
-
-Store:
-
-```text
-parentAssetId
-generationId
-transformation
-```
-
-Trace:
-image -> video -> lipsync -> final.
-
----
-
-# 77. Quality Engine
-
-Possible checks:
-- valid file.
-- expected dimensions.
-- duration.
-- corruption.
-- prompt alignment.
-- reference similarity.
-- identity consistency.
-- OCR text.
-- brand colors.
-- logo presence.
+Possible checks: valid file; expected dimensions; duration; corruption; prompt alignment; reference similarity; identity consistency; OCR text; brand colors; logo presence.
 
 Store dimensions separately:
 
@@ -2337,252 +700,174 @@ Store dimensions separately:
 }
 ```
 
-Do not automatically spend unlimited retries.
+Do not automatically spend unlimited retries. **Current state:** `lib/quality-gate.js` performs URL/byte-size validation only; semantic scoring is NOT STARTED.
 
----
+### 2.7.6 Asset ingest and lineage (execution-layer rules)
 
-# 78. Prompt / Request Reproducibility
+Provider output handling MUST follow this sequence (v1 §75, preserved):
 
-Every generation stores:
-- raw prompt.
-- normalized intent.
-- compiled prompt.
-- negative prompt.
-- model.
-- provider route.
-- normalized params.
-- provider params snapshot where safe.
-- seed.
-- references.
-- Brand Kit.
-- Canvas.
-- Prompt Guide versions.
-- quote.
-- actual credits.
+1. provider returns result;
+2. worker fetches safely (SSRF protections, Section 9.5.4);
+3. validates;
+4. stores in controlled object storage;
+5. generates thumbnail/metadata;
+6. creates Asset record;
+7. marks job complete.
 
----
+A temporary provider URL is never the final asset (rule 36).
 
-# 79. Reuse Settings
+Lineage MUST be stored (v1 §76): `parentAssetId`, `generationId`, `transformation`. The chain `image -> video -> lipsync -> final` MUST be traceable. **Current state:** `Asset.parentAssetId`, `Asset.generationId` and `AssetRelation` exist; `handleGeneration` populates parent lineage best-effort [IMPLEMENTED, partial].
 
-Every generation result has:
-**Reuse settings**.
+### 2.7.7 Streaming and tool results
 
-Open relevant Studio with exact reusable configuration.
+Keep the mature streaming/reconnect approach for Agent surfaces (v1 §145). Generated media appears as tool result cards. Do not embed huge base64 data in streams.
 
----
+Agent tool result shape (v1 §146, normative):
 
-# 80. Model Compatibility UI
-
-When user changes inputs:
-- incompatible models become unavailable.
-- recommended compatible models move up.
-- explain why.
-
-Example:
-> This model supports one reference image. You selected four.
-
-Button:
-> Choose compatible model.
-
----
-
-# 81. Model Auto Selection
-
-After eligibility:
-
-```text
-score =
-qualityWeight * quality
-+ valueWeight * value
-+ speedWeight * speed
-+ reliabilityWeight * reliability
-+ userPreference
-- costPenalty
+```json
+{
+  "jobId": "job_123",
+  "status": "completed",
+  "assets": [
+    {
+      "id": "asset_1",
+      "type": "image",
+      "thumbnailUrl": "/api/platform/assets/asset_1/thumbnail"
+    }
+  ],
+  "creditsUsed": 180
+}
 ```
 
-Admin can tune route weights.
-
 ---
 
-# 82. Model Benchmarks
+# 3. Data Model & Migrations
 
-Internal benchmark suite:
-- prompts.
-- references.
-- output.
-- latency.
-- cost.
-- human rating.
+## 3.1 Current database inventory (verified 2026-07-28)
 
-Use benchmark data to inform route quality score.
+The current Prisma/PostgreSQL schema (`prisma/schema.prisma`) contains these models. Do not discard this data (v1 §89, rule preserved).
 
----
+| Model | Purpose | Notes vs v1 §89 |
+|---|---|---|
+| `User` | Identity, `role`, legacy `credits` Int | `passwordHash` added for credentials auth |
+| `Account` / `Session` / `VerificationToken` | NextAuth/PrismaAdapter | JWT session strategy in use; `Session` table retained for adapter |
+| `Subscription` | Stripe mapping, plan slug, status | |
+| `Generation` | Generation record (tool, model, prompt, params, outputUrl, status, creditsUsed, providerCost Float, requestId, workflow linkage) | still the only job record; no parent/child |
+| `CreditTransaction` | Legacy credit log | |
+| `AgentRun` | Agent task run w/ steps JSON | |
+| `Workflow` / `WorkflowRun` | Workflow builder + runs | |
+| `ProjectMemory` | character/style/asset/brand memory blobs | migration source (Section 3.6) |
+| `ProviderConfig` | provider row incl. **plaintext `apiKey`** | Section 9.6 violation, open |
+| `ModelPricing` | flat per-model `providerCost` Float + `creditsCost` Int + UI card fields | |
+| `FeatureFlag` | key/enabled/config | |
+| `ApiKey` | hashed user API keys, prefix, lastUsedAt | |
+| `AuditLog` | action/resource/metadata + IP/UA | |
+| `RateLimit` | per-user endpoint counters | |
+| `Refund` | refund requests | |
+| `DirectorPipeline` / `DirectorShot` | Helmies-native Director state | pre-dates Maestro-exact target (Section 6.9) |
+| `BrandKit` / `BrandAsset` | brand identity + linked assets | |
+| `CanvasDocument` / `CanvasVersion` | canvas JSON persistence | route/schema mismatch (Section 3.5) |
+| `Asset` / `AssetRelation` | media library + lineage | |
+| `CreditWallet` / `CreditLedger` / `CreditReservation` | wallet V2 | fields diverge from service code (Section 3.5) |
+| `CmsEntry` / `CmsRevision` | CMS with revisions | shape differs from target (Section 3.4.16) |
+| `SiteAnnouncement` | announcement bar | |
+| `PromptGuide` / `PromptGuideVersion` | prompt guides | keyed by `(modelId, category)`, not by guide key |
+| `PromptCompilation` | per-generation prompt record | |
+| `VisualAnalysis` | cached vision results keyed by `assetUrl` | no `assetId`/`routeKey` yet |
+| `ProviderIncident` | provider health incidents | |
+| `Project` | user projects | minimal (name/description/data) |
+| `PromoCode` | promotions | no redemption table (Section 3.4.15) |
+| `SubscriptionPlan` / `CreditPack` | admin-managed plans/packs | landing/checkout do not read them yet (Section 4.7) |
 
-# 83. Prompt Benchmarks
+**Operational gap:** there is no `prisma/migrations/` directory. The schema is managed via `prisma db push`. Migration files MUST be introduced before the next schema change wave (Phase 3); the v1 rule "additive migrations before destructive migrations" requires versioned migration files to be enforceable.
 
-Before activating Prompt Guide update:
-- run benchmark prompts.
-- compare old/new compiled prompt.
-- review outputs.
-- activate version.
-- retain rollback.
+### 3.1.1 Problems to solve (v1 §89 list, current status annotated)
 
----
+1. `User.credits` is a single integer; reservations require available vs reserved accounting. **Status:** `CreditWallet` exists; mirror sync in `lib/session.js`; wallet code path broken (3.5).
+2. `Generation` is too generic for durable parent/child job execution. **Status:** still true; `GenerationJob` target in 3.4.5.
+3. `providerCost` uses Float; new financial values MUST use Decimal. **Status:** still true (`Generation.providerCost`, `ModelPricing.providerCost`, `ProviderConfig.markup`, `PromoCode.value` are Float).
+4. `ProviderConfig.apiKey` stores secret data in DB; migrate to secret references. **Status:** open (Appendix AK).
+5. `ModelPricing` flat cost insufficient for per-second/per-token/resolution/tier pricing. **Status:** still true; `AiModelPrice` target in 3.4.3.
+6. Model capabilities and required input schemas are not normalized. **Status:** still true.
+7. Current model definitions live partly in code. **Status:** still true (`src/lib/models.js`, `chatModes.js`).
+8. `ProjectMemory` too generic for Brand Kits, Assets, Personas, Projects. **Status:** partially superseded — `BrandKit`, `Asset`, `Project` now exist; `ProjectMemory` remains for character/style; Persona model NOT STARTED.
+9. No first-class Asset table. **Status:** RESOLVED (`Asset`, `AssetRelation`).
+10. No Canvas document/version model. **Status:** RESOLVED in schema; route mismatch open (3.5).
+11. No Director pipeline/shot schema. **Status:** RESOLVED (`DirectorPipeline`, `DirectorShot`).
+12. No Promo Code model. **Status:** RESOLVED (`PromoCode`); redemption tracking NOT STARTED.
+13. No CMS model. **Status:** RESOLVED (`CmsEntry`, `CmsRevision`).
+14. No Announcement model. **Status:** RESOLVED (`SiteAnnouncement`).
+15. No historical pricing snapshot model. **Status:** open (`Generation.params` + `PromptCompilation` are partial substitutes; `quoteSnapshot`/`pricingSnapshot` arrive with `GenerationJob`).
+16. No explicit Provider Incident / health model. **Status:** RESOLVED (`ProviderIncident`).
+17. No deterministic Advisor scenario record. **Status:** open (3.4.35).
+18. No separate Quality Evaluation. **Status:** open (3.4.33; `quality-gate.js` logs only).
+19. No normalized prompt-guide versioning. **Status:** PARTIAL (`PromptGuide`/`PromptGuideVersion` exist but keyed per-model, no route registry).
 
-# 84. Templates
-
-Reusable templates:
-- Instagram product.
-- UGC ad.
-- cinematic product.
-- YouTube thumbnail.
-- talking head.
-- product hero.
-- story reel.
-
-A template stores normalized settings, not provider-specific request.
-
----
-
-# 85. Responsive Studio
-
-Desktop:
-multi-pane.
-
-Tablet:
-collapsible settings.
-
-Mobile:
-- preview/canvas primary.
-- settings bottom sheet.
-- inspector drawer.
-- fixed composer.
-- model picker sheet.
-
-Do not build desktop-only.
-
----
-
-# 86. Command Palette
-
-Retain/enhance `Ctrl/Cmd + K`.
-
-Commands:
-- Ask Agent.
-- Image Studio.
-- Video Studio.
-- Director.
-- open project.
-- open Brand Kit.
-- search assets.
-- view credits.
-- create workflow.
-
----
-
-# 87. Icons
-
-Use one consistent icon system plus custom Helmies brand icons.
-
-Avoid mixed random icon libraries.
-
----
-
-# 88. Accessibility
-
-- keyboard.
-- focus states.
-- screen-reader labels.
-- reduced motion.
-- contrast.
-- accessible dialogs.
-- Canvas object list for keyboard editing.
-- captions/transcripts where possible.
-
----
-
-
-# 89. Current Helmies Studio Database — What Exists
-
-The current Prisma/PostgreSQL schema already contains useful commercial foundations:
-
-- User.
-- Account.
-- Session.
-- VerificationToken.
-- Subscription.
-- Generation.
-- CreditTransaction.
-- AgentRun.
-- Workflow.
-- WorkflowRun.
-- ProjectMemory.
-- ProviderConfig.
-- ModelPricing.
-- FeatureFlag.
-- ApiKey.
-- AuditLog.
-- RateLimit.
-- Refund.
-
-Do not discard this data.
-
-Problems to solve:
-
-1. `User.credits` is a single integer, but future reservations require available vs reserved accounting.
-2. `Generation` is too generic for durable parent/child job execution.
-3. `providerCost` uses Float; new financial values should use Decimal.
-4. `ProviderConfig.apiKey` stores secret data in DB; migrate to secret references.
-5. `ModelPricing` has one flat cost per model, insufficient for per-second/per-token/resolution/tier pricing.
-6. Model capabilities and required input schemas are not normalized.
-7. Current model definitions live partly in code.
-8. ProjectMemory is too generic for Brand Kits, Assets, Personas and Projects.
-9. There is no first-class Asset table.
-10. There is no Canvas document/version model.
-11. There is no Director pipeline/shot schema.
-12. There is no Promo Code model.
-13. There is no CMS model.
-14. There is no Announcement model.
-15. There is no historical pricing snapshot model.
-16. There is no explicit Provider Incident / health model.
-17. There is no deterministic Advisor scenario record.
-18. There is no separate Quality Evaluation.
-19. There is no normalized prompt-guide versioning.
-
----
-
-# 90. Database Migration Strategy
+## 3.2 Database migration strategy (v1 §90, preserved)
 
 Rules:
 
 1. Back up production Postgres.
-2. Back up Mongo.
+2. Back up Mongo. **NOT_APPLICABLE — SUPERSEDED:** no MongoDB exists in this codebase or deployment; the Mongo requirement derived from the abandoned `helmies-agent` runtime (Section 9.3.1).
 3. Do not reset either DB.
 4. Add new tables first.
 5. Preserve old IDs.
 6. Preserve Stripe customer/subscription mappings.
 7. Preserve credit balances.
 8. Backfill new wallet records from current `User.credits`.
-9. Keep old `User.credits` temporarily as compatibility mirror.
+9. Keep old `User.credits` temporarily as compatibility mirror. **Current state:** implemented as a mirror in `lib/session.js` / `lib/generation-handler.js`.
 10. Introduce new ledger/reservation API.
 11. Migrate generation paths to wallet API.
-12. Stop writing direct `User.credits`.
+12. Stop writing direct `User.credits`. **Current state:** violated — Stripe webhook and several paths still write `User.credits` directly (Section 3.5).
 13. Validate balances.
 14. Only later remove compatibility column if desired.
 15. Keep `Subscription` during migration and gradually normalize plan references.
-16. Migrate ProviderConfig credentials to secret references.
-17. Seed Model Registry from existing hard-coded model catalogs.
-18. Seed AiModelPrice from current ModelPricing.
-19. Keep ModelPricing read compatibility until all routes use new pricing engine.
+16. Migrate `ProviderConfig` credentials to secret references (Appendix AK).
+17. Seed Model Registry from existing hard-coded model catalogs (Appendix AJ).
+18. Seed `AiModelPrice` from current `ModelPricing`.
+19. Keep `ModelPricing` read compatibility until all routes use the new pricing engine.
 20. Every migration must be reversible where practical.
 
----
+## 3.3 Wallet migration and accounting rules (v1 §§92–93, preserved)
 
-# 91. Recommended New Prisma Models
+Current `User.credits` migrates:
 
-The exact syntax can be adapted to the final Prisma version.
+```text
+CreditWallet.available = User.credits
+CreditWallet.reserved = 0
+```
 
-## 91.1 AiProvider
+Create an opening ledger row of type `migration_opening_balance`. During transition the wallet service writes both the new wallet and the compatibility `User.credits` mirror, with periodic verification. Then stop direct use of `User.credits` and use the wallet service only.
+
+Accounting model (normative):
+
+```text
+wallet.available
+wallet.reserved
+```
+
+Reserve 500:
+
+```text
+available -= 500
+reserved += 500
+```
+
+Settle at actual 430:
+
+```text
+reserved -= 500
+available += 70
+ledger generation debit = 430
+```
+
+Do not double-debit. Use DB transaction/row lock. The wallet MUST NOT become negative. Ledger types: `signup`, `subscription_grant`, `topup`, `promo`, `reservation`, `reservation_release`, `generation`, `refund`, `admin_adjustment` (plus `migration_opening_balance` during migration).
+
+## 3.4 Target schema — new and changed models (v1 §91, preserved; syntax adaptable to the final Prisma version)
+
+Current-state deltas for models that already exist are consolidated in Section 3.5.
+
+### 3.4.1 AiProvider
 
 ```prisma
 model AiProvider {
@@ -2609,13 +894,9 @@ model AiProvider {
 }
 ```
 
-`secretRef` points to a secret manager/Docker secret/environment secret identifier.
+`secretRef` points to a secret manager/Docker secret/environment secret identifier. Never expose it to the client. **Current state:** NOT STARTED; `ProviderConfig` (plaintext key, Float markup) is the incumbent.
 
-Never expose it to client.
-
----
-
-## 91.2 AiModel
+### 3.4.2 AiModel
 
 ```prisma
 model AiModel {
@@ -2655,9 +936,9 @@ model AiModel {
 }
 ```
 
----
+**Current state:** NOT STARTED; seed source is `src/lib/models.js` + `chatModes.js` (Appendix AJ).
 
-## 91.3 AiModelPrice
+### 3.4.3 AiModelPrice
 
 ```prisma
 model AiModelPrice {
@@ -2683,30 +964,9 @@ model AiModelPrice {
 }
 ```
 
-Example `params`:
+Example `params`: `{ "unitCost": 0.035, "unit": "image" }` or `{ "unit": "second", "tiers": { "720p": 0.05, "1080p": 0.075 } }`. **Current state:** NOT STARTED; `ModelPricing` is the flat incumbent.
 
-```json
-{
-  "unitCost": 0.035,
-  "unit": "image"
-}
-```
-
-or:
-
-```json
-{
-  "unit": "second",
-  "tiers": {
-    "720p": 0.05,
-    "1080p": 0.075
-  }
-}
-```
-
----
-
-## 91.4 ModelRoute
+### 3.4.4 ModelRoute
 
 ```prisma
 model ModelRoute {
@@ -2728,20 +988,9 @@ model ModelRoute {
 }
 ```
 
-Examples:
-- `image.fast`.
-- `image.standard`.
-- `image.premium`.
-- `video.fast`.
-- `video.standard`.
-- `video.premium`.
-- `llm.orchestrator`.
-- `llm.prompt`.
-- `vision.analyze`.
+Route keys include: `image.fast`, `image.standard`, `image.premium`, `video.fast`, `video.standard`, `video.premium`, `llm.orchestrator`, `llm.prompt`, `vision.analyze` (full list in Appendix G). **Current state:** NOT STARTED.
 
----
-
-## 91.5 GenerationJob
+### 3.4.5 GenerationJob
 
 ```prisma
 model GenerationJob {
@@ -2792,9 +1041,9 @@ model GenerationJob {
 }
 ```
 
----
+**Current state:** NOT STARTED; `Generation` is the incumbent record.
 
-## 91.6 GenerationJobEvent
+### 3.4.6 GenerationJobEvent
 
 ```prisma
 model GenerationJobEvent {
@@ -2811,9 +1060,7 @@ model GenerationJobEvent {
 }
 ```
 
----
-
-## 91.7 UsageEvent
+### 3.4.7 UsageEvent
 
 ```prisma
 model UsageEvent {
@@ -2845,9 +1092,7 @@ model UsageEvent {
 }
 ```
 
----
-
-## 91.8 CreditWallet
+### 3.4.8 CreditWallet (target)
 
 ```prisma
 model CreditWallet {
@@ -2860,9 +1105,9 @@ model CreditWallet {
 }
 ```
 
----
+**Current state:** PARTIAL — the model exists with `available`/`reserved` but with a single `lifetime Int` instead of `lifetimeCredited`/`lifetimeDebited`; service code already writes the target fields (3.5, mismatch #1).
 
-## 91.9 CreditLedger
+### 3.4.9 CreditLedger (target)
 
 ```prisma
 model CreditLedger {
@@ -2884,20 +1129,9 @@ model CreditLedger {
 }
 ```
 
-Ledger types:
-- signup.
-- subscription_grant.
-- topup.
-- promo.
-- reservation.
-- reservation_release.
-- generation.
-- refund.
-- admin_adjustment.
+**Current state:** PARTIAL — exists with `walletId`/`amount` and without `delta`/`reservedAfter`/`referenceType`/`metadata`; service code writes the target fields (3.5, mismatch #1).
 
----
-
-## 91.10 CreditReservation
+### 3.4.10 CreditReservation (target)
 
 ```prisma
 model CreditReservation {
@@ -2914,9 +1148,9 @@ model CreditReservation {
 }
 ```
 
----
+**Current state:** PARTIAL — exists with `walletId`/`generationId`/`releasedAt` and without `jobId`/`expiresAt`/`settledAt`; service code writes the target fields (3.5, mismatch #1).
 
-## 91.11 PricingPlan
+### 3.4.11 PricingPlan
 
 ```prisma
 model PricingPlan {
@@ -2939,9 +1173,9 @@ model PricingPlan {
 }
 ```
 
----
+**Current state:** PARTIAL — `SubscriptionPlan` exists (name, slug, price Int, credits, stripePriceId, features, isActive, sortOrder) but lacks `featureConfig`/`limits`/`popular`/`public`/yearly handling and is not read by landing/checkout.
 
-## 91.12 PlanPrice
+### 3.4.12 PlanPrice
 
 ```prisma
 model PlanPrice {
@@ -2959,9 +1193,9 @@ model PlanPrice {
 }
 ```
 
----
+**Current state:** NOT STARTED — Stripe price IDs live in env vars (`STRIPE_PRICE_*`).
 
-## 91.13 CreditPack
+### 3.4.13 CreditPack (target)
 
 ```prisma
 model CreditPack {
@@ -2976,9 +1210,9 @@ model CreditPack {
 }
 ```
 
----
+**Current state:** PARTIAL — `CreditPack` exists with `price Int` (no currency Decimal, no bonus) and duplicates the static `src/lib/credit-packs.js` + `STRIPE_PRICE_CREDITS_*` env vars (Section 4.6).
 
-## 91.14 PromoCode
+### 3.4.14 PromoCode (target)
 
 ```prisma
 model PromoCode {
@@ -3010,15 +1244,9 @@ model PromoCode {
 }
 ```
 
-Promo types:
-- percent_discount.
-- fixed_discount.
-- bonus_credits.
-- plan_override.
+Promo types: `percent_discount`, `fixed_discount`, `bonus_credits`, `plan_override`. **Current state:** PARTIAL — `PromoCode` exists with `type` default `"percentage"`, `value Float`, `eligibility String`, `maxUses`/`maxUsesPerUser`/`currentUses`, `expiresAt`; no plan/pack scoping JSON, no stackable, no minimumSpend, no Stripe promotion-code linkage.
 
----
-
-## 91.15 PromoRedemption
+### 3.4.15 PromoRedemption
 
 ```prisma
 model PromoRedemption {
@@ -3034,9 +1262,9 @@ model PromoRedemption {
 }
 ```
 
----
+**Current state:** NOT STARTED.
 
-## 91.16 CmsEntry
+### 3.4.16 CmsEntry (target)
 
 ```prisma
 model CmsEntry {
@@ -3055,15 +1283,13 @@ model CmsEntry {
 }
 ```
 
----
+**Current state:** PARTIAL — `CmsEntry` exists with `key @unique`/`section`/`content`/`status` instead of `namespace`/`locale`/`published`/`version`.
 
-## 91.17 CmsRevision
+### 3.4.17 CmsRevision
 
-Immutable previous values.
+Immutable previous values. **Current state:** IMPLEMENTED (`CmsRevision` with entryId/content/createdBy).
 
----
-
-## 91.18 SiteAnnouncement
+### 3.4.18 SiteAnnouncement (target)
 
 ```prisma
 model SiteAnnouncement {
@@ -3086,9 +1312,9 @@ model SiteAnnouncement {
 }
 ```
 
----
+**Current state:** PARTIAL — `SiteAnnouncement` exists with `link`, `startDate`/`endDate`, `audience String`, `isActive`; no `linkLabel`, `dismissible`, audience/locale arrays, or priority (Section 8.8).
 
-## 91.19 Project
+### 3.4.19 Project (target)
 
 ```prisma
 model Project {
@@ -3106,9 +1332,9 @@ model Project {
 }
 ```
 
----
+**Current state:** PARTIAL — `Project` exists (name/description/data); no `brandKitId`, `settings`, `archivedAt`.
 
-## 91.20 Asset
+### 3.4.20 Asset (target)
 
 ```prisma
 model Asset {
@@ -3142,22 +1368,13 @@ model Asset {
 }
 ```
 
----
+**Current state:** PARTIAL — `Asset` exists with `url`/`thumbnailUrl`/`name`/`bytes Int`/`duration Float`/`generationId`/`isFavorite`/`isDeleted`; no `projectId`, `durationMs`, `generationJobId`.
 
-## 91.21 AssetRelation
+### 3.4.21 AssetRelation
 
-For multiple parent relationships.
+For multiple parent relationships. Types: `reference`, `derived_from`, `first_frame`, `brand_source`, `canvas_source`. **Current state:** IMPLEMENTED (`AssetRelation` with `type` default `"derived"`).
 
-Examples:
-- reference.
-- derived_from.
-- first_frame.
-- brand_source.
-- canvas_source.
-
----
-
-## 91.22 BrandKit
+### 3.4.22 BrandKit (target)
 
 ```prisma
 model BrandKit {
@@ -3177,31 +1394,13 @@ model BrandKit {
 }
 ```
 
----
+**Current state:** PARTIAL — `BrandKit` exists with explicit fields (primaryColors, secondaryColors, fonts, slogans, photographyStyle, toneOfVoice, avoid, visualReferences, fingerprint, `enforcement` default `"off"`, website, isActive) instead of a single `config` JSON; functionally equivalent, DONE_EQUIVALENT pending enforcement-mode default alignment.
 
-## 91.23 BrandAsset
+### 3.4.23 BrandAsset
 
-Fields:
-- brandKitId.
-- assetId.
-- role.
-- label.
-- order.
-- metadata.
+Fields: `brandKitId`, `assetId`, `role`, `label`, `order`, `metadata`. Roles: `primary_logo`, `secondary_logo`, `product`, `photography_reference`, `negative_reference`, `typography_reference`, `social_reference`, `packaging`. **Current state:** PARTIAL — `BrandAsset` exists with `brandKitId`/`assetId`/`role` only.
 
-Roles:
-- primary_logo.
-- secondary_logo.
-- product.
-- photography_reference.
-- negative_reference.
-- typography_reference.
-- social_reference.
-- packaging.
-
----
-
-## 91.24 CanvasDocument
+### 3.4.24 CanvasDocument (target)
 
 ```prisma
 model CanvasDocument {
@@ -3224,9 +1423,9 @@ model CanvasDocument {
 }
 ```
 
----
+**Current state:** PARTIAL — `CanvasDocument` exists with `data`/`width`/`height`/`isActive`; no `projectId`, `previewAssetId`, `currentVersion`; API route writes wrong field names (3.5, mismatch #3).
 
-## 91.25 CanvasVersion
+### 3.4.25 CanvasVersion (target)
 
 ```prisma
 model CanvasVersion {
@@ -3241,9 +1440,9 @@ model CanvasVersion {
 }
 ```
 
----
+**Current state:** PARTIAL — `CanvasVersion` exists with `documentId`/`name`/`data`/`snapshot`; no `version` number or uniqueness (3.5, mismatch #3).
 
-## 91.26 VisualAnalysis
+### 3.4.26 VisualAnalysis (target)
 
 ```prisma
 model VisualAnalysis {
@@ -3259,9 +1458,9 @@ model VisualAnalysis {
 }
 ```
 
----
+**Current state:** PARTIAL — `VisualAnalysis` exists keyed by `assetUrl` with result columns (caption, palette, regions, textRegions, lighting, style, provider) instead of a `result` JSON, `assetId`, `routeKey`, `version`.
 
-## 91.27 PromptGuide
+### 3.4.27 PromptGuide (target)
 
 ```prisma
 model PromptGuide {
@@ -3275,9 +1474,9 @@ model PromptGuide {
 }
 ```
 
----
+**Current state:** PARTIAL — `PromptGuide` exists keyed by `(modelId, category)` without `key`/`name`/`activeVersion`.
 
-## 91.28 PromptGuideVersion
+### 3.4.28 PromptGuideVersion
 
 ```prisma
 model PromptGuideVersion {
@@ -3293,27 +1492,13 @@ model PromptGuideVersion {
 }
 ```
 
----
+**Current state:** PARTIAL — exists with `content Json` (not Text) and the same uniqueness.
 
-## 91.29 PromptCompilation
+### 3.4.29 PromptCompilation
 
-Store:
-- job.
-- user.
-- guide versions.
-- source.
-- normalized intent.
-- brand context summary.
-- canvas context summary.
-- final prompt.
-- negative prompt.
-- metadata.
+Stores: job, user, guide versions, source, normalized intent, brand context summary, canvas context summary, final prompt, negative prompt, metadata. Used for debugging and reproducibility. **Current state:** IMPLEMENTED with per-pass columns (rawPrompt, normalized, enrichedCtx, expandedPrompt, dialectPrompt, finalPrompt, negativePrompt, guideId/guideVersion, warnings, polishMode) — DONE_EQUIVALENT; brand/canvas context summaries not yet stored.
 
-This is useful for debugging and reproducibility.
-
----
-
-## 91.30 DirectorPipeline
+### 3.4.30 DirectorPipeline (target)
 
 ```prisma
 model DirectorPipeline {
@@ -3341,159 +1526,183 @@ model DirectorPipeline {
 }
 ```
 
----
+**Current state:** PARTIAL — `DirectorPipeline` exists with `plan`/`brief`/`costEstimate`/`validationResults`/`stateMetadata`/`assembledUrl`/`assemblyMetadata`/`rerunHistory`; no `projectId`, credit counters, or `finalAssetId`.
 
-## 91.31 DirectorShot
+### 3.4.31 DirectorShot
 
-Fields:
-- pipelineId.
-- index.
-- status.
-- ShotPlan JSON.
-- imageAssetId.
-- videoAssetId.
-- audioAssetId.
-- imageJobId.
-- videoJobId.
-- quality.
-- prompt versions.
-- timestamps.
+Fields: `pipelineId`, `index`, `status`, ShotPlan JSON, `imageAssetId`, `videoAssetId`, `audioAssetId`, `imageJobId`, `videoJobId`, quality, prompt versions, timestamps. **Current state:** PARTIAL — `DirectorShot` exists with `plan`/`imageResult`/`videoResult`/`audioResult`/`error` JSON blobs; no asset/job ID columns or quality.
 
----
+### 3.4.32 DirectorShotVersion
 
-## 91.32 DirectorShotVersion
+Immutable shot revision. **Current state:** NOT STARTED.
 
-Immutable shot revision.
+### 3.4.33 QualityEvaluation
 
----
+Fields: job, asset, evaluator route/model, technical, prompt alignment, reference consistency, brand consistency, text accuracy, result JSON. **Current state:** NOT STARTED.
 
-## 91.33 QualityEvaluation
+### 3.4.34 ProviderIncident (target)
 
-Fields:
-- job.
-- asset.
-- evaluator route/model.
-- technical.
-- prompt alignment.
-- reference consistency.
-- brand consistency.
-- text accuracy.
-- result JSON.
+Track: provider, model optional, start, end, status, error rate, detail. **Current state:** IMPLEMENTED (`ProviderIncident` with provider/type/status/message/metadata/startedAt/resolvedAt) — DONE_EQUIVALENT.
 
----
+### 3.4.35 AdminAdvisorScenario
 
-## 91.34 ProviderIncident
+Store: input assumptions, calculator output, LLM explanation, admin, timestamp. **Current state:** NOT STARTED.
 
-Track:
-- provider.
-- model optional.
-- start.
-- end.
-- status.
-- error rate.
-- detail.
+## 3.5 Schema drift register (current code vs current schema)
 
----
+These mismatches exist **today** between service code and `prisma/schema.prisma`. They are defects, not design. Each MUST be fixed by migrating the schema toward the target (Section 3.4) or correcting the code, before Phase 6 relies on the affected path.
 
-## 91.35 AdminAdvisorScenario
+| # | Path | Code writes | Schema has | Impact |
+|---|---|---|---|---|
+| 1 | `src/lib/wallet.js`, `src/lib/session.js` | `CreditWallet.lifetimeCredited/lifetimeDebited`; `CreditLedger.userId/delta/reservedAfter/referenceType/metadata`; `CreditReservation.jobId/expiresAt/settledAt` | `CreditWallet.lifetime`; `CreditLedger.walletId/amount`; `CreditReservation.walletId/generationId/releasedAt` | Wallet reserve/settle/release and `debitCredits`/`creditUser` throw against the declared schema. Affects `handleGeneration` (reserve→402 path), async debit, webhook refund. Verify against the live DB (which may have drifted columns) and reconcile one way |
+| 2 | `src/app/api/stripe/webhook/route.js` | `User.credits` increment directly | wallet models exist | Top-ups/subscription grants bypass the wallet and ledger; the `User.credits` mirror is then overwritten from the wallet by `getCurrentUserWithCredits`, so webhook-granted credits can be silently lost |
+| 3 | `src/app/api/canvas/route.js` | `CanvasDocument.content`, `CanvasVersion.content`, `CanvasVersion.version` | `CanvasDocument.data`, `CanvasVersion.data` (no `version`) | Canvas create/update/version writes fail against the declared schema |
+| 4 | `src/app/api/generate/async/route.js` | `Generation.providerName` | no such column | Async submission fails at `prisma.generation.create` against the declared schema |
+| 5 | `src/lib/credits.js` `PLAN_IDS` | env `STRIPE_PRICE_*` → plan slug | `SubscriptionPlan` table exists | Plan/price authority is split between env vars, static arrays and the DB (Section 4.7 invariant violated) |
 
-Store:
-- input assumptions.
-- calculator output.
-- LLM explanation.
-- admin.
-- timestamp.
+## 3.6 ProjectMemory migration (v1 §162, preserved)
 
----
-
-# 92. One Wallet Migration
-
-Current `User.credits` should migrate:
+Existing `ProjectMemory` types: `character`, `style`, `asset`, `brand`. Migrate:
 
 ```text
-CreditWallet.available = User.credits
-CreditWallet.reserved = 0
+character -> Persona/Project entity
+style     -> StylePreset
+asset     -> Asset
+brand     -> BrandKit
 ```
 
-Create opening ledger row:
-`migration_opening_balance`.
-
-During transition:
-- wallet service writes both new wallet and compatibility `User.credits`.
-- verify periodically.
-
-Then:
-- stop direct use of `User.credits`.
-- use wallet service only.
+Keep compatibility reads during migration. **Current state:** `BrandKit`/`Asset` targets exist; `Persona` and `StylePreset` entities NOT STARTED; `ProjectMemory` still actively used by `lib/memory.js` and the generation handler.
 
 ---
 
-# 93. Wallet Transaction Rules
+# 4. Commercial System
 
-Use DB transaction/row lock.
+## 4.1 One wallet and the reservation flow
 
-For reservation:
+One wallet per user across Agent, Studios, Workflows and Director (Section 2.6.3). Every credit change maps to a ledger transaction (rule 32).
 
-```text
-available decreases logically by moving to reserved
-total value is not destroyed
-```
+For variable-cost jobs the flow is (v1 §67, normative):
 
-Recommended accounting model:
+1. quote;
+2. reserve maximum;
+3. execute;
+4. record actual provider cost;
+5. calculate final credit charge;
+6. settle;
+7. release unused reservation;
+8. refund fully on non-billable failure.
 
-```text
-wallet.available
-wallet.reserved
-```
+The wallet MUST NOT become negative, including under concurrent jobs (Appendix AS, wallet race test).
 
-When reserve 500:
+## 4.2 Pricing engine strategies (v1 §63, preserved)
 
-```text
-available -= 500
-reserved += 500
-```
-
-When actual 430:
+Every action goes through a server-side quote. Supported strategies:
 
 ```text
-reserved -= 500
-available += 70
-ledger generation debit = 430
+fixed
+per_image
+per_megapixel
+per_second
+per_character
+per_audio_second
+per_input_token
+per_output_token
+tiered_duration
+formula
 ```
 
-Do not double-debit.
+Never use arbitrary JavaScript `eval` for pricing formulas. The strategy interface and implementations are normative in Appendix E.
 
----
+## 4.3 Quote formula and response (v1 §§64–65, preserved)
 
-# 94. Pricing Plans
+Concept:
 
-Admin-controlled.
+```text
+provider wholesale cost
++ infrastructure/retry reserve
+= adjusted platform cost
 
-Each plan has:
-- name.
-- public description.
-- monthly/yearly prices.
-- credits.
-- max concurrency.
-- max active jobs.
-- allowed quality tiers.
-- API access.
-- Director access.
-- Brand Kit limit.
-- storage allowance.
-- queue priority.
-- selected premium model access.
-- team seats later.
+adjusted platform cost
+→ target margin / pricing policy
+= retail compute value
 
-Do not hardcode plan names/credits in multiple files.
+retail compute value
+→ credits
 
----
+promo/plan rules applied
+→ final credits
+```
 
-# 95. Landing Pricing
+All assumptions MUST be stored in the quote snapshot.
 
-The current landing page uses static pricing arrays.
+Quote response shape (normative):
 
-Replace with:
+```json
+{
+  "quoteId": "quote_...",
+  "expiresAt": "...",
+  "providerCostEstimated": 0.42,
+  "platformCostEstimated": 0.51,
+  "retailBeforeDiscount": 1.25,
+  "discount": 0.15,
+  "retailAfterDiscount": 1.10,
+  "credits": 110,
+  "maximumCredits": 125,
+  "balance": 4200,
+  "balanceAfterExpected": 4090,
+  "balanceAfterMaximum": 4075,
+  "warnings": []
+}
+```
+
+Quote validity rules are normative in Appendix F. Historical generation records MUST retain a pricing snapshot (rule 29).
+
+## 4.4 User cost confirmation (v1 §66, preserved)
+
+Single generation:
+
+```text
+Generate 5s video
+
+Model: Kling 3 Pro
+Estimated: 640 credits
+
+Current balance: 3,250
+Expected remaining: 2,610
+
+[Cancel] [Generate — 640]
+```
+
+Agent plan:
+
+```text
+Campaign Production
+8 steps
+
+Expected: 3,780 credits
+Maximum: 4,420 credits
+
+Balance: 7,300
+Expected remaining: 3,520
+
+[Review] [Proceed]
+```
+
+The quote MUST show credits needed, current balance and expected remaining balance (rule 23). Multi-step runs MUST show total expected and maximum cost (rule 24). A single manual Generate button press is explicit approval of the displayed quote (Section 5.7). Credits MUST never be hard-coded independently in UI components (rule 25).
+
+## 4.5 Pricing plans (v1 §94, preserved)
+
+Admin-controlled. Each plan has: name; public description; monthly/yearly prices; credits; max concurrency; max active jobs; allowed quality tiers; API access; Director access; Brand Kit limit; storage allowance; queue priority; selected premium model access; team seats later.
+
+Do not hardcode plan names/credits in multiple files. Plan/entitlement shape is normative in Appendices AF and AG. **Current state:** plan slugs/credits are hard-coded in `src/lib/credits.js` (`SUBSCRIPTION_CREDITS`) and env price IDs; `SubscriptionPlan` admin CRUD exists but is not authoritative.
+
+## 4.6 Credit packs (v1 §96, preserved)
+
+Admin-managed fields: name; credits; price; currency; Stripe price; active; bonus; sort. The Advisor shows effective price per credit and implied margin under typical usage. **Current state:** `CreditPack` table + admin API exist; `/api/stripe/topup` still reads the static `src/lib/credit-packs.js` and `STRIPE_PRICE_CREDITS_*` env vars.
+
+## 4.7 Landing dynamic pricing (v1 §95, preserved)
+
+The current landing page uses static pricing arrays. Replace with:
 
 ```text
 GET /api/platform/public/plans
@@ -3509,75 +1718,21 @@ Response contains UI-safe fields:
       "name": "Studio",
       "description": "...",
       "popular": true,
-      "monthly": {
-        "price": 49,
-        "currency": "EUR",
-        "credits": 1500
-      },
-      "yearly": {
-        "displayMonthly": 39,
-        "billedYearly": 468,
-        "creditsPerMonth": 1500
-      },
+      "monthly": { "price": 49, "currency": "EUR", "credits": 1500 },
+      "yearly": { "displayMonthly": 39, "billedYearly": 468, "creditsPerMonth": 1500 },
       "features": []
     }
   ]
 }
 ```
 
-Homepage keeps the same pricing card design.
+The homepage keeps the same pricing card design (Section 1.7). Migration seed values and the signup-bonus vs Free-plan inconsistency are normative in Appendix A: both `PricingPlan.monthlyCredits` and a configurable `SignupCampaign.welcomeCredits` MUST exist; do not assume the signup bonus equals monthly Free credits. **Current state:** NOT STARTED — `/pricing` and the landing render static arrays; checkout reads env price IDs; signup grants 100 credits hard-coded in `src/lib/auth.js` and `/api/auth/register`.
 
----
+## 4.8 Promo codes and guardrails (v1 §§97–98, preserved)
 
-# 96. Credit Packs
+Admin can configure: code; percentage discount; fixed discount; bonus credits; eligible plans; eligible credit packs; new customers only; minimum spend; max total uses; max uses/user; start/end; stackable; active.
 
-Admin-managed.
-
-Fields:
-- name.
-- credits.
-- price.
-- currency.
-- Stripe price.
-- active.
-- bonus.
-- sort.
-
-Advisor shows:
-- effective price per credit.
-- implied margin under typical usage.
-
----
-
-# 97. Promo Codes
-
-Admin can configure:
-- code.
-- percentage discount.
-- fixed discount.
-- bonus credits.
-- eligible plans.
-- eligible credit packs.
-- new customers only.
-- minimum spend.
-- max total uses.
-- max uses/user.
-- start/end.
-- stackable.
-- active.
-
-Before save, calculate financial risk.
-
----
-
-# 98. Promo Guardrail Example
-
-Admin enters:
-- 50% off Studio.
-- 3 months.
-- no usage restrictions.
-
-System calculates:
+Before save, the system MUST calculate financial risk. Guardrail example (normative behavior): for "50% off Studio, 3 months, no usage restrictions" the system calculates and displays:
 
 ```text
 Normal monthly price: €49
@@ -3593,16 +1748,751 @@ AI cost: €28.50
 Contribution: NEGATIVE
 ```
 
-Display:
-- green/yellow/red warning.
-- exact assumptions.
-- ability for super admin to proceed with reason.
+Display: green/yellow/red warning; exact assumptions; ability for super admin to proceed with reason. **Current state:** `PromoCode` model + `/api/admin/promos` CRUD exist; simulation/margin warnings and redemption flow NOT STARTED.
+
+## 4.9 Margin, fees, tax, infrastructure reserve (v1 §§152–155, preserved)
+
+Margin calculation MUST use Decimal:
+
+```text
+providerCost
++ variable infra reserve
+= adjustedCost
+
+adjustedCost / (1 - targetGrossMargin)
+= targetRetail
+```
+
+If policy uses a multiplier, explicitly label it. Do not call a `2.5x markup` a `60% margin` incorrectly. **Current state:** `src/lib/pricing-engine.js` applies a flat `2.5` markup over provider cost with `CREDIT_TO_EUR = 0.01`, markup overridable per provider via `ProviderConfig.markup` (Float).
+
+Payment fees: configurable assumptions (percentage, fixed fee, region); the Advisor uses them.
+
+Tax: treat separately. Do not hide VAT assumptions inside AI cost. The Admin Advisor shows whether a scenario is pre/post-tax.
+
+Infrastructure reserve: configurable globally and per capability (e.g. LLM lower reserve, video higher reserve). Reserve covers retries, storage, transcode, operational overhead.
+
+## 4.10 Cost simulator and subscription scenarios (v1 §§156–157, preserved)
+
+Admin cost simulator inputs: model; params; plan; target margin; promo; assumed utilization. Outputs: wholesale cost; adjusted cost; retail credits; revenue; expected margin; worst-case margin.
+
+Subscription scenario simulation MUST support: 20% / 50% / 80% / 100% utilization, historical p50, historical p90, using actual model mix where available.
+
+## 4.11 Pricing consistency invariant (v1 §207, preserved)
+
+The following surfaces MUST read the same pricing plan records: homepage; pricing page; checkout; Billing page; Agent upgrade recommendation; Admin; promo engine; advisor. There MUST NOT be separate price constants. **Current state:** violated — prices exist as static landing arrays, `lib/credits.js` constants, env `STRIPE_PRICE_*` IDs, `lib/credit-packs.js`, and `SubscriptionPlan`/`CreditPack` rows.
+
+## 4.12 Admin offer workflow (v1 §208, preserved)
+
+1. Admin creates promo draft.
+2. Calculator runs.
+3. Advisor explains risk.
+4. Admin previews public effect.
+5. Admin activates.
+6. Stripe sync occurs if required.
+7. Public offer API updates.
+8. Audit logged.
+9. Analytics tracks redemptions.
+10. Promo expires automatically.
+
+## 4.13 Stripe integration requirements
+
+Webhook processing MUST verify signatures, be idempotent (dedupe by Stripe event ID), credit the wallet/ledger (not the legacy column), and never trust success redirect URLs as proof of payment. Server-side prices only; validate plan/pack IDs server-side. **Current state:** signature verification exists; idempotency, wallet crediting and DB-driven price validation are open (Section 3.5, mismatch #2).
 
 ---
 
-# 99. Admin Panel V2
+# 5. Agent Platform
 
-Main navigation:
+## 5.1 Master Agent (v1 §9, preserved)
+
+The Master Agent is the primary simple-mode experience. It is a creative production manager, not only a chatbot.
+
+The Master Agent can: discuss and refine creative intent; inspect attached images; inspect project assets; load a Brand Kit; analyze visual references; create a structured plan; delegate to subagents; select models; choose cost/quality modes; quote costs; show balance impact; request approval; execute steps; monitor jobs; evaluate outputs; selectively retry; assemble deliverables; save assets to a project; create workflows from successful sequences.
+
+Normative example flow:
+
+User:
+> Create a 20 second vertical skincare launch ad using my Luna brand kit and these two product photos.
+
+Agent:
+1. Loads Brand Kit.
+2. Loads product references.
+3. Runs Visual Intelligence.
+4. Builds a creative brief.
+5. Plans shots.
+6. Chooses image/video/audio routes.
+7. Calculates expected and maximum credits.
+8. Shows plan and quote.
+9. User confirms.
+10. Runs child jobs.
+11. Performs quality checks.
+12. Reruns only weak outputs if retry budget permits.
+13. Assembles final.
+14. Saves final and source assets to project.
+15. Shows final result and total actual credits.
+
+The Master Agent system prompt baseline is normative in Appendix H.
+
+## 5.2 Subagents (v1 §10, preserved)
+
+Required subagents and responsibilities:
+
+| Subagent | Responsibilities |
+|---|---|
+| Creative Director | brief interpretation; concept; narrative; visual direction; overall coherence |
+| Image Director | image generation strategy; reference selection; T2I/I2I/edit route; image prompt structure; composition requirements |
+| Video Director | motion; shot duration; first/last frames; image-to-video strategy; model-specific video prompting |
+| Brand Guardian | brand palette; logo use; typography; visual style; tone constraints; brand violation detection |
+| Prompt Engineer | prompt dialect; model guide; negative prompt; prompt compression/expansion; immutable constraints |
+| Storyboard Agent | shot list; continuity; camera; pacing |
+| Audio Agent | TTS; voice; music; sound effects; timing |
+| Vision Analyst | scene caption; objects; regions; OCR; palette; lighting; visual style; reference semantics |
+| Quality Control Agent | prompt alignment; brand alignment; visual/reference consistency; technical validity; targeted rerun recommendation |
+| Cost Optimizer | model comparisons; cost/quality tradeoff; budget-aware alternatives |
+| Assembly Agent | final sequence; media ordering; deliverables; export |
+
+All subagents MUST use the same Gateway and wallet. Subagent system prompts are normative in Appendices I–O. **Current state:** named personas with system prompts exist in `src/lib/agents.js` (orchestrator + the above roles + tool agents); they are prompt presets inside one runtime, not independent runtime agents.
+
+## 5.3 Agent runtime capabilities to build (v1 §11, preserved)
+
+Build natively inside Helmies Studio: agents; subagents; tools; tool search; deferred tools; skills; manual skills; always-apply skills; MCP; user-scoped MCP; OAuth-aware MCP; memory tools; summarization; context pruning; code execution; file authoring; HITL / ask-user; background tasks; resumable jobs; streaming; usage accounting; provider abstraction; reasoning-history handling; multi-model support; conversation persistence.
+
+Do not rebuild these inside a separate old Next.js tool shell — build them directly into Helmies Studio's authenticated application. **Current state:** orchestrator chat (`/api/agent/chat`), JSON-step planner (`/api/agent/plan`) and step executor (`/api/agent/run` via `executeAgentRun`/`executeAgentRunStream` with `AgentRun` persistence) exist; the remaining capabilities are NOT STARTED.
+
+## 5.4 First-party agent tools (v1 §12, preserved)
+
+```text
+helmies.list_models
+helmies.get_model_schema
+helmies.quote_generation
+helmies.generate_image
+helmies.edit_image
+helmies.generate_video
+helmies.generate_audio
+helmies.generate_tts
+helmies.transcribe_audio
+helmies.lipsync
+helmies.recast
+helmies.analyze_image
+helmies.search_assets
+helmies.get_asset
+helmies.get_brand_kit
+helmies.create_canvas_render
+helmies.create_project
+helmies.add_project_asset
+helmies.create_director_plan
+helmies.quote_director_plan
+helmies.run_director_pipeline
+helmies.get_job
+helmies.retry_job
+helmies.create_workflow
+```
+
+Every tool MUST: validate ownership; validate entitlement; use normalized inputs; use the Model Gateway; return structured results; never reveal provider secrets. **Current state:** NOT STARTED as a tool contract layer; the executor calls `lib/generation.js` functions directly.
+
+## 5.5 Creative plan schema (v1 §147, normative)
+
+```ts
+type CreativePlan = {
+  id: string
+  title: string
+  summary: string
+  projectId?: string
+  steps: CreativePlanStep[]
+  quote?: PlanQuote
+}
+
+type CreativePlanStep = {
+  id: string
+  kind: string
+  description: string
+  dependsOn: string[]
+  routeKey?: string
+  modelId?: string
+  params: Record<string, unknown>
+  estimatedCredits?: number
+}
+```
+
+## 5.6 Plan execution (v1 §148, preserved)
+
+Use a DAG. Independent steps can run in parallel if: no dependency; user concurrency permits; reservation exists; provider limits permit.
+
+## 5.7 Approval policy (v1 §149, preserved)
+
+Explicit approval is required when: multi-step plan; cost > configurable threshold; batch; destructive action; external publish; pricing/subscription action. A single manual Generate button is explicit approval of the displayed quote.
+
+## 5.8 Retry budget (v1 §150, preserved)
+
+Plan quote includes: expected cost; maximum reserved; retry allowance. The quality agent MUST NOT exceed maximum without new approval.
+
+## 5.9 Agent inside a manual Studio (v1 §71, preserved)
+
+A contextual Agent panel can see: studio; model; prompt; references; Canvas; Brand Kit; project; current error.
+
+The user can ask: "Make this more cinematic." / "Use a cheaper model." / "Explain why this model cannot use these references." / "Improve the composition." The Agent proposes changes. Destructive changes require user confirmation.
+
+## 5.10 Project Memory vs Agent memory (v1 §72, preserved)
+
+Keep separate. Project Memory: explicit character; style; Brand Kit; asset; project notes. Agent memory: conversational/user preferences. Do not store both as undifferentiated JSON.
+
+## 5.11 Agent commercial context
+
+Covered by Sections 2.6.2 and 9.9: resolve user from the unified session; fetch plan, wallet, feature entitlements; attach to tool execution context server-side. Do not place complete billing records in the LLM prompt.
+
+## 5.12 Migration from the current orchestrator (v1 §§163–164, preserved)
+
+The current Helmies Studio Orchestrator already demonstrates useful UX: conversational clarification; Generate Plan; estimated credits; execution steps; progress. Evolve it into the final Master Agent runtime built natively inside Helmies Studio. The final Master Agent is the only orchestrator.
+
+The old Next app previously could proxy `/agent/*` to an external chat runtime. Final: `/studio` is the Helmies Studio authenticated app itself (built natively); landing and Studio are siblings behind the gateway; not "Studio page embedding an external Agent product."
+
+---
+
+# 6. Studios & Workspaces
+
+## 6.1 Authenticated shell and navigation (v1 §8, preserved)
+
+Recommended sidebar:
+
+```text
+CREATE
+    Agent
+    Image Studio
+    Video Studio
+    Director
+    Audio Studio
+    Lip Sync
+    Recast
+    Influencer
+
+BUILD
+    Workflows
+    Brand Kits
+    Projects
+    Assets
+
+LIBRARY
+    Generations
+    Favorites
+    Templates
+
+ACCOUNT
+    Credits
+    Billing
+    API
+    Settings
+```
+
+Admin role also sees `ADMIN / Dashboard`. Do not expose 70+ model names in the sidebar; models are controls inside relevant workspaces. Route access is entitlement-aware. The full route map is normative in Appendix AE. **Current state:** `StudioClient.js` implements a tab-based shell with CREATE/BUILD groups (Agent, Image, Video, Director, Audio, Music, Lip Sync, Recast, Influencer, AI Avatar, Canvas, Cinema, Motion, Video Edit, Clipping, Marketing, Workflows, Brand Kits, Projects, Assets) plus LIBRARY (Generations→/gallery) and ACCOUNT (Settings, Billing); `/studio/[tool]` provides per-tool URLs for 14 tools. It MUST evolve into the routed shell above.
+
+## 6.2 Studio layout and Basic/Advanced mode (v1 §§13–14, preserved)
+
+Desktop layout:
+
+```text
+┌──────────────────────┬───────────────────────────────────────┬────────────────────┐
+│ INPUTS / SETTINGS    │                                       │ INSPECTOR / AGENT  │
+│                      │            MAIN WORKSPACE             │                    │
+│ model                │                                       │ current job        │
+│ references           │            Canvas / Preview           │ metadata           │
+│ controls             │                                       │ prompt inspector   │
+│ advanced             │                                       │ Ask Agent          │
+├──────────────────────┴───────────────────────────────────────┴────────────────────┤
+│ Prompt / Command Composer      Model      Cost      Generate                      │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Mobile: main workspace stays central; settings become bottom sheet; inspector becomes drawer; prompt bar remains accessible; Agent becomes contextual drawer.
+
+Every Studio supports Basic mode (prompt; primary references; recommended model; aspect; quality; cost) and Advanced mode (exact model; seed; resolution; references; masks; negative prompt; model-specific options; advanced prompt inspector; provider route if allowed; Canvas; detailed controls). The user's preference is persisted per workspace.
+
+## 6.3 Image Studio (v1 §15, preserved)
+
+Supported modes: Text to Image; Image to Image; Image Edit; Multi Reference; Inpaint; Outpaint; Composition Canvas; Product Image; Poster/Typography; Character Reference; Batch Variations.
+
+Core UI: references left; Canvas/preview center; result/history right; bottom prompt/generate; contextual Agent. Completion checklist: Appendix AM. **Current state:** `/studio/image` with T2I/I2I, multi-image references, aspect/resolution/seed/variations controls exists (`chatModes` image mode; ImageStudioV2); inpaint/outpaint/mask flows, Canvas-guided generation and batch variations PARTIAL.
+
+## 6.4 Video Studio (v1 §41, preserved)
+
+Modes: Text to Video; Image to Video; Reference to Video; First/Last Frame; Video to Video; Extend; Retake; Motion Transfer; Product Video; UGC; Cinematic. Advanced controls are schema-driven. **Current state:** T2V/I2V/V2V, first+last frame, duration/aspect/resolution/mode controls exist; extend via Video Edit tool; reference-to-video and motion transfer PARTIAL.
+
+## 6.5 Audio Studio (v1 §51, preserved)
+
+Unify: TTS; voice selection; voice clone where permitted; music; sound effects; ASR. Price units can differ (characters; seconds; fixed job); the Gateway handles them. **Current state:** Audio tool (music/voice/SFX, Suno + ElevenLabs models) and a separate Music tool exist; ASR NOT STARTED.
+
+## 6.6 Canvas — core differentiator (v1 §§16–23, preserved)
+
+The Canvas is not a simple drawing surface. It is a **visual instruction document**.
+
+A user can: upload reference image; place it in a specific position; scale it; rotate it; add another image; add a logo; type exact text; scribble; draw an arrow; draw a rectangle; mark "remove"; mark "keep exactly"; paint an inpaint mask; paint a preservation mask; write "make this marble"; create a rough visual composition. Then the user clicks **Generate Professional Image** and Helmies converts the rough Canvas into model-appropriate structured inputs.
+
+### 6.6.1 Technology (v1 §17)
+
+Recommended: Fabric.js as the first candidate (object transforms, text editing, images, selection, grouping, free drawing); custom raster mask layer; Web Worker/OffscreenCanvas for expensive preprocessing where supported; high-resolution server/client export path. Perform a short technical spike comparing Fabric.js and React-Konva before committing. Do not manually implement all selection/resize/rotate/text-editing primitives on raw Canvas unless necessary. **Current state:** Fabric.js 7 is the chosen library (spike DONE_EQUIVALENT); `CanvasEditor.js`/`CanvasWorkspace.js` exist.
+
+### 6.6.2 Object types (v1 §18)
+
+```text
+IMAGE
+TEXT
+SHAPE
+FREE_DRAW
+MASK_INCLUDE
+MASK_EXCLUDE
+ARROW
+REGION
+PROMPT_NOTE
+COLOR_SWATCH
+LOGO
+REFERENCE
+GUIDE
+BACKGROUND
+```
+
+Each object has: ID; z-index; normalized coordinates; transforms; opacity; visibility; lock state; semantic role; optional prompt note; source Asset ID.
+
+### 6.6.3 Semantic roles (v1 §19)
+
+```text
+layout_reference
+identity_reference
+style_reference
+product_reference
+logo
+background_reference
+preserve_exactly
+edit_target
+remove_target
+inpaint_region
+outpaint_context
+text_content
+color_reference
+composition_anchor
+```
+
+The semantic role is more important than the visual object type. A normal uploaded image can mean "copy this subject", "copy this style", "use this layout", or "keep this product exactly". The user can select a role; the Agent may recommend one.
+
+### 6.6.4 Document schema (v1 §20, normative)
+
+Persist editable JSON (rule 38 — a Canvas MUST be persisted as editable document state, not just a flattened screenshot):
+
+```json
+{
+  "version": 1,
+  "width": 1080,
+  "height": 1350,
+  "aspectRatio": "4:5",
+  "background": { "type": "color", "value": "#F4F1EA" },
+  "objects": [
+    {
+      "id": "product_1",
+      "type": "image",
+      "assetId": "asset_123",
+      "role": "product_reference",
+      "x": 0.50, "y": 0.61, "width": 0.34, "height": 0.40,
+      "rotation": 0,
+      "locked": false
+    },
+    {
+      "id": "headline",
+      "type": "text",
+      "role": "text_content",
+      "text": "SUMMER DROP",
+      "fontFamily": "BrandHeading",
+      "x": 0.50, "y": 0.18
+    }
+  ],
+  "instructions": [
+    "premium editorial lighting",
+    "keep the product logo legible"
+  ]
+}
+```
+
+### 6.6.5 Canvas Compiler (v1 §21)
+
+The Canvas Compiler converts visual intent into: flattened composition guide; clean source render; inpaint mask; preservation mask; reference assets; semantic reference roles; region instructions; text requirements; composition JSON; compiled prompt; negative prompt; model-specific request. The output contract is normative in Appendix R. **Current state:** `src/lib/canvas-compiler.js` produces instructions client-side; server compilation, mask asset rendering and `CompiledCanvas` persistence NOT STARTED.
+
+### 6.6.6 Canvas model strategy (v1 §22)
+
+If the model supports: multiple references → send them directly; one image → flatten composition guide; masks → render exact mask; region prompting → translate regions; T2I only → convert composition into textual spatial prompt; text rendering → preserve exact text field; no exact text → warn user and recommend compatible model. The user should not need to understand these differences in Basic mode.
+
+### 6.6.7 Canvas history (v1 §23)
+
+Required: undo; redo; autosave; version snapshots; duplicate; rename; restore; before/after; generation lineage. Never overwrite the source Canvas version when generating. **Current state:** `CanvasDocument`/`CanvasVersion` models exist; the `/api/canvas` route writes non-existent fields (Section 3.5, mismatch #3) — persistence is broken against the declared schema. Completion checklist: Appendix AN.
+
+## 6.7 Lip Sync (v1 §52, preserved)
+
+Common inputs: image or video; audio; optional prompt; resolution. Model-specific controls are rendered from schema. **Current state:** IMPLEMENTED as a tool (9 models incl. wan-speech-to-video, infinitetalk, volcengine-lipsync).
+
+## 6.8 Recast (v1 §53, preserved)
+
+Inputs: source video; target identity/reference; target selector; optional prompt; mask/orientation where supported. Add quality checks for obvious identity failure. **Current state:** IMPLEMENTED as `/studio/body-swap` (target URL `/studio/recast`).
+
+## 6.9 Director — multi-shot production (v1 §§42–50, 132–134, preserved)
+
+Director is a multi-step production workspace, not a single model.
+
+Inputs: creative brief; target duration; platform; aspect; Brand Kit; characters; products; references; script; lyrics; audio; budget mode; quality mode.
+
+### 6.9.1 ProductionPlan (v1 §43, normative)
+
+```ts
+type ProductionPlan = {
+  id: string
+  title: string
+  type: "ad" | "short_film" | "music_video" | "social" | "product"
+  durationSec: number
+  globalStyle: string
+  brandKitId?: string
+  subjects: SubjectProfile[]
+  locations: LocationProfile[]
+  shots: ShotPlan[]
+  continuityRules: string[]
+}
+```
+
+The wire-format Director production schema is normative in Appendix T.
+
+### 6.9.2 ShotPlan (v1 §44, normative)
+
+```ts
+type ShotPlan = {
+  id: string
+  index: number
+  title: string
+  durationSec: number
+
+  narrativeRole: string
+  sceneGoal: string
+
+  subjects: SubjectRef[]
+  environment: string
+  spatialSetup: string
+  lighting: string
+  mood: string
+
+  camera: {
+    framing: string
+    angle: string
+    lens: string
+    movement: string
+    intensity: string
+  }
+
+  imageStrategy: {
+    mode: "generate" | "reference" | "reuse_previous_end_frame"
+    prompt: string
+    references: string[]
+  }
+
+  videoStrategy: {
+    mode: "t2v" | "i2v" | "reference" | "extend"
+    prompt: string
+    modelRoute: string
+    keyframes?: string[]
+    windows?: string[]
+  }
+
+  audio?: {
+    dialogue?: string
+    ambience?: string
+    effects?: string[]
+  }
+
+  continuity: string[]
+}
+```
+
+Shot state and planning-validation rules are normative in Appendices U and V.
+
+### 6.9.3 Planning passes (v1 §45)
+
+- **Pass A — Creative Structure.** Story beats and creative concept.
+- **Pass B — Shot Breakdown.** Convert beats into bounded shots.
+- **Pass C — Image/Keyframe Prompts.** Plan first frames and references.
+- **Pass D — Video Prompts.** Compile model-specific motion instructions.
+- **Pass E — Validation.** Check total duration; continuity; references; unsupported modes; missing assets; impossible transitions.
+- **Pass F — Cost Plan.** Quote every generation.
+
+### 6.9.4 Approval (v1 §46)
+
+Before execution the user sees per-shot image/video costs, expected total, maximum reserved, balance and expected remaining, e.g.:
+
+```text
+Production: 15s Product Launch
+Shots: 4
+
+Shot 1: Image 140 credits / Video 520 credits
+Shot 2: Image reuse Shot 1 final frame / Video 520 credits
+Shot 3: Image 140 credits / Video 520 credits
+Shot 4: Image 140 credits / Video 520 credits
+
+Expected total: 2,500 credits
+Maximum reserved: 2,900 credits
+
+Balance: 6,200
+Expected remaining: 3,700
+```
+
+Actions: edit plan; choose Economy; choose Balanced; choose Premium; change model per shot; approve. Tiered cost options are normative in Appendix W.
+
+### 6.9.5 Pipeline state (v1 §47)
+
+```text
+draft
+planning
+awaiting_approval
+quoted
+queued
+generating_images
+generating_video
+generating_audio
+quality_check
+assembling
+completed
+paused
+failed
+cancelled
+```
+
+Persist all state. Every Director run MUST be persistent and resumable (rule 42).
+
+### 6.9.6 Shot reruns (v1 §48)
+
+The user can rerun: image only; video only; audio only; prompt polish only. Do not rerun other shots (rule 44). After rerun: optionally reassemble final.
+
+### 6.9.7 Continuity (v1 §49)
+
+Track: character identity; outfit; product identity; environment; lighting; time; screen direction; previous ending frame; next frame; camera language. Continuity metadata is stored with each shot.
+
+### 6.9.8 Dashboard (v1 §50)
+
+Show: overall progress; total planned credits; actual credits; planning passes; shots; image prompt; video prompt; references; model; seed; output; quality score; rerun controls; reassemble. Basic users see a simplified view; advanced users can inspect planning details.
+
+### 6.9.9 Director service boundaries (v1 §132)
+
+Exact Maestro behavior replication in original code (Section 1.5). Responsibilities (must match Maestro exactly): planning (same multi-pass planning logic, same pass order, same prompts); shot schema (identical to Maestro ShotPlan); continuity (identical continuity rules); prompt drafts (identical prompt templates and guide content); plan validation (identical validation rules); cost operation list (identical operation enumeration).
+
+It does NOT: directly debit credits; directly call arbitrary providers; own user authentication; permanently store billing. Platform API owns commercial state.
+
+### 6.9.10 Director execution (v1 §133)
+
+A Director plan produces executable operations, e.g.:
+
+```json
+[
+  { "shotId": "s1", "operation": "image.generate", "routeKey": "image.premium", "params": {} },
+  { "shotId": "s1", "operation": "video.image_to_video", "routeKey": "video.standard", "dependsOn": ["s1-image"] }
+]
+```
+
+The platform quotes operations.
+
+### 6.9.11 Assembly (v1 §134)
+
+Can initially be part of the worker. Responsibilities: join video clips; preserve audio; normalize resolution/fps; final encoding; thumbnails. Use FFmpeg.
+
+**Current state (6.9 overall):** a Helmies-native Director exists (`director-planner.js`: `createProductionPlan`, prompt policies, shot validation, cost estimation, section visual strategies, production type presets; `director-executor.js`: state machine with `PIPELINE_STATES`/`SHOT_STATES`/`VALID_TRANSITIONS`, execute/rerun/cancel/list; `/api/director/plan|execute|rerun|status`; `video-assembly.js` FFmpeg assembly; `DirectorWorkspace.js` UI). Maestro-exact behavioral equivalence is NOT STARTED (Section 1.5). Completion checklist: Appendix AP.
+
+## 6.10 Influencer Studio (v1 §54, preserved)
+
+Upgrade from one-time prompt builder to persistent personas. Persona: face description; body description; style; wardrobe; personality; reference assets; Brand Kit; content presets. Outputs: consistent photos; social templates; videos through Video Studio; reusable references. **Current state:** `/studio/influencer` exists as a prompt-builder tool (INFLUENCER_TABS, MARKETING_AVATARS in `lib/models.js`); persistent persona entities NOT STARTED.
+
+## 6.11 Workflows (v1 §55, preserved)
+
+Recommended node types:
+
+```text
+INPUT
+TEXT_LLM
+ANALYZE_IMAGE
+PROMPT_COMPILE
+GENERATE_IMAGE
+EDIT_IMAGE
+GENERATE_VIDEO
+TTS
+MUSIC
+LIPSYNC
+RECAST
+DIRECTOR_PLAN
+QUALITY_CHECK
+CONDITION
+LOOP
+MERGE
+EXPORT
+```
+
+Workflow nodes use the Model Gateway. The workflow MUST calculate maximum estimated credits before execution. **Current state:** `Workflow`/`WorkflowRun` + builder UI + `/api/workflows`, `/api/workflows/[id]/run`, `/api/workflows/[id]/regen` exist; nodes call generation functions directly; preflight max-cost display PARTIAL.
+
+## 6.12 Brand Kits (workspace)
+
+Brand Kit is reusable creative memory (Section 7.6 defines the intelligence side; this section defines the workspace). The workspace MUST support: create; name; description; website; primary/alternate logos; colors; font uploads; typography roles; voice/tone; slogans; products; packaging; visual references; negative references; image analysis; palette extraction; style fingerprint; enforcement mode; preview; use in Image Studio, Video Studio, Agent and Director. Completion checklist: Appendix AO. **Current state:** `BrandKitsView.js` + `/api/brand-kits` CRUD + `/api/brand-kits/fingerprint` exist; generation-handler brand context injection exists; Video/Agent/Director integration PARTIAL.
+
+## 6.13 Projects (v1 §39, preserved)
+
+A Project groups: conversations; assets; Brand Kit; Canvases; workflows; Director pipelines; generations; notes; deliverables. Example: `Babylon Summer Campaign`. The Agent can scope itself to one Project. **Current state:** `Project` model + usage in workflows exist; grouping UI NOT STARTED; the studio "Projects" tab currently surfaces `ProjectMemory`.
+
+## 6.14 Assets (v1 §40, preserved)
+
+Every upload/generated output becomes an Asset (rule 37). An Asset contains: owner; project; type; source; model; generation; dimensions; duration; prompt metadata; cost; visual analysis; storage key; lineage; favorites; tags.
+
+Actions: Open; Add to Canvas; Use as reference; Edit; Animate; Lip Sync; Recast; Analyze; Add to Brand Kit; Save to project; Download; Delete.
+
+Storage and lineage rules are defined in Section 2.7.6. **Current state:** `AssetLibrary.js` + `/api/assets` exist; upload and `handleGeneration` outputs create Assets; tags/cost/project fields PARTIAL.
+
+## 6.15 Templates (v1 §84, preserved)
+
+Reusable templates: Instagram product; UGC ad; cinematic product; YouTube thumbnail; talking head; product hero; story reel. A template stores normalized settings, not a provider-specific request. **Current state:** NOT STARTED (workflow `isTemplate` flag exists).
+
+## 6.16 Studio history, result actions, compare mode (v1 §§169–171, preserved)
+
+Every Studio: current session; persistent history; filters; model; cost; status; rerun; reuse settings; send to another Studio.
+
+Result actions — Image: edit; Canvas; animate; download; Brand Kit; project. Video: extend; retake; lipsync; recast; Director; download.
+
+Compare mode: side-by-side; swipe; overlay for images. Useful for models, prompts, Brand consistency. **Current state:** `/gallery` generations history and `BeforeAfterSlider` exist; cross-tool "send to", compare mode and reuse-settings deep links PARTIAL.
+
+---
+
+# 7. Prompt & Vision Intelligence
+
+## 7.1 Prompt Intelligence Engine (v1 §26, preserved)
+
+Prompt quality is a platform capability. Pipeline:
+
+```text
+RAW INTENT
+    ↓
+INTENT NORMALIZER
+    ↓
+PROJECT / BRAND / VISUAL / CANVAS CONTEXT
+    ↓
+CREATIVE EXPANSION
+    ↓
+MODEL DIALECT COMPILER
+    ↓
+DETERMINISTIC VALIDATOR
+    ↓
+OPTIONAL QUALITY POLISH
+    ↓
+FINAL PROVIDER REQUEST
+```
+
+**Current state:** IMPLEMENTED as `src/lib/prompt-engine/` (`normalizer`, `enricher`, `expander`, `dialect-compiler`, `validator`, `polish`, `index`) with `PromptCompilation` persistence and `/api/prompt/compile`; `handleGeneration` runs it with fallback to the legacy single-pass `expandPrompt`.
+
+## 7.2 Prompt passes (v1 §§27–32, preserved)
+
+- **Pass 0 — Intent Normalization.** Extract: goal; subject; action; environment; style; camera; mood; platform; aspect; exact text; immutable facts; references; negative constraints. Produce structured JSON.
+- **Pass 1 — Context Enrichment.** Add relevant: Brand Kit; project; visual analysis; Canvas; character/persona; previous approved asset references. Do not include unrelated project data.
+- **Pass 2 — Creative Expansion.** Add useful detail. Never silently alter immutable facts: product name; exact slogan; exact count of people; logo; specified colors; supplied identity.
+- **Pass 3 — Model Dialect.** Use model-specific guidance: descriptive prose; concise tag structure; video action-camera-environment order; reference-ID syntax; first/last-frame semantics; duration-specific prompt windows. The Prompt Guide Registry stores versions.
+- **Pass 4 — Deterministic Validation.** Validate: prompt length; unsupported parameters; reference count; required reference; duration; resolution; aspect; exact text compatibility; mask dimensions; conflicting controls; provider-specific constraints. Do not use an LLM alone for deterministic validation.
+- **Pass 5 — Optional Premium Polish.** Modes: Off; Fast; Balanced; Premium. For expensive jobs an additional LLM can review final prompt quality. Admin controls the model route.
+
+The compiler reference pseudocode is normative in Appendix AU-1 (Section 12.5.1). The structured output shape is normative in Appendix Q.
+
+## 7.3 Prompt Inspector (v1 §33, preserved)
+
+Advanced users can open: Raw Intent; Normalized Intent; Brand Context; Visual Context; Canvas Context; Prompt Guide; Final Prompt; Negative Prompt; Normalized Request. They may edit the final prompt before generation. Store both raw and compiled versions.
+
+## 7.4 Prompt Guide Registry (v1 §34, preserved)
+
+Entities: PromptGuide; PromptGuideVersion; PromptRoute. Guide categories:
+
+```text
+image/base
+image/product
+image/portrait
+image/poster
+image/brand
+video/base
+video/cinematic
+video/ugc
+video/music-video
+video/dialogue
+audio/tts
+audio/music
+model/<model-id>
+```
+
+Admin: create; edit; diff; activate; rollback; benchmark. Every generation records guide versions. Storage example: Appendix AH. **Current state:** `PromptGuide`/`PromptGuideVersion` (per-model keying) + `/api/admin/prompt-guides` exist; diff/benchmark/activate/rollback UI PARTIAL.
+
+## 7.5 Visual Intelligence — Helmies Vision (v1 §24, preserved)
+
+Create an internal service: **Helmies Vision**. It independently implements the useful behavior seen in `image-to-prompt`.
+
+Input: one or multiple images. Output:
+
+```json
+{
+  "caption": "...",
+  "background": "...",
+  "palette": ["#111111", "#D9B86E"],
+  "composition": {},
+  "lighting": {},
+  "camera": {},
+  "subjects": [],
+  "objects": [],
+  "textRegions": [],
+  "regions": [],
+  "style": {},
+  "structuredPrompt": {}
+}
+```
+
+Use cases: reference analysis; image-to-prompt; Brand Kit onboarding; Canvas interpretation; OCR; palette extraction; quality comparison; style fingerprinting. The typed contract is normative in Appendix S.
+
+## 7.6 Vision provider interface (v1 §25, preserved)
+
+Do not permanently tie the product to Florence-2:
+
+```ts
+interface VisionAnalyzer {
+  analyzeImage(input: AnalyzeImageInput): Promise<VisualAnalysis>
+  compareImages(input: CompareImagesInput): Promise<VisualComparison>
+}
+```
+
+Possible implementations: local Florence-compatible service; cloud multimodal LLM; future specialized visual-analysis model. Admin selects routes. **Current state:** `src/lib/visual-intelligence.js` implements analysis via KIE's OpenAI-compatible multimodal endpoint with `VisualAnalysis` caching keyed by URL; no `VisionAnalyzer` interface, no compare route, no separate deployable service (Section 9.8).
+
+## 7.7 Brand Kit intelligence (v1 §§35–38, preserved)
+
+Brand Kit fields: brand name; description; website; logo variants; logo safe area; forbidden logo usage; primary colors; secondary colors; typography; uploaded font files; type hierarchy; photography style; illustration style; tone of voice; slogans; product images; packaging; previous content; desired references; negative references; audience; platform preferences.
+
+Brand upload intelligence — when a user uploads references: run visual analysis; extract palette; detect layout tendencies; inspect typography; extract text; derive visual fingerprint. Logo: transparent preview; dimensions; dominant colors; padding. Fonts: validate; secure storage; never expose globally.
+
+Brand fingerprint example (normative shape):
+
+```json
+{
+  "palette": {
+    "primary": ["#0D0D0D", "#D5B56D"],
+    "secondary": ["#F4EFE6"]
+  },
+  "visual": {
+    "contrast": "high",
+    "lighting": "warm directional",
+    "composition": "minimal centered",
+    "texture": "premium matte"
+  },
+  "typography": {
+    "heading": "Brand Heading",
+    "body": "Brand Body",
+    "case": "mixed"
+  },
+  "avoid": ["neon rainbow backgrounds", "cartoon style"]
+}
+```
+
+Brand enforcement modes: Off; Suggest; Strong; Locked. Locked mode: preserve logo rules; enforce brand palette where technically possible; use selected fonts for Canvas/text rendering; require confirmation for conflicts.
+
+Brand Kit context MUST be reusable by Agent, Studios, Workflows and Director (rule 40). Do not dump entire Brand Kits into prompts when only a subset is relevant (rule 41).
+
+---
+
+# 8. Admin Control Plane
+
+## 8.1 Admin Panel V2 navigation (v1 §99, preserved)
 
 ```text
 Overview
@@ -3644,121 +2534,29 @@ OPERATIONS
     System
 ```
 
----
+**Current state:** `/admin` + `AdminShell` implements Overview; Business (Revenue, Plans, Credit Packs, Promo Codes, Pricing, Margin Advisor); AI Platform (Models, Routes, Providers, Prompt Guides, Quality, Generations, Director); Users; Content (Website Content, Announcements); Operations (Jobs, Provider Health, Feature Flags, Audit Logs). Teams, Templates, Brand Examples, System subs NOT STARTED; several subs are placeholders backed by the generic APIs in Section 8.12.
 
-# 100. Admin Overview
+## 8.2 Overview dashboard (v1 §100, preserved)
 
-Cards:
-- users.
-- paid users.
-- MRR.
-- ARR estimate.
-- today revenue.
-- today provider cost.
-- gross AI margin.
-- credits sold.
-- credits consumed.
-- generations.
-- success rate.
-- refunds.
-- active jobs.
+Cards: users; paid users; MRR; ARR estimate; today revenue; today provider cost; gross AI margin; credits sold; credits consumed; generations; success rate; refunds; active jobs.
 
-Charts:
-- revenue vs AI COGS.
-- margin.
-- model spend.
-- tool usage.
-- plan distribution.
-- conversion.
-- churn.
-- provider failures.
+Charts: revenue vs AI COGS; margin; model spend; tool usage; plan distribution; conversion; churn; provider failures. **Current state:** `OverviewDashboard` + `/api/admin/analytics` exist with a subset of these metrics.
 
----
+## 8.3 Users administration (v1 §101, preserved)
 
-# 101. Admin Users
+Admin can: search; view profile; view subscription; view wallet; view usage; view jobs; view refunds; view promo redemptions; grant credits; remove credits with validation; suspend generation; suspend API; suspend account; force logout; reset role; initiate data export/deletion workflow. Every sensitive action requires a reason and an audit row. **Current state:** `/api/admin/users` (list, credit adjustment, role change, audit) exists; suspension/force-logout/data-export NOT STARTED.
 
-Admin can:
-- search.
-- view profile.
-- view subscription.
-- view wallet.
-- view usage.
-- view jobs.
-- view refunds.
-- view promo redemptions.
-- grant credits.
-- remove credits with validation.
-- suspend generation.
-- suspend API.
-- suspend account.
-- force logout.
-- reset role.
-- initiate data export/deletion workflow.
+## 8.4 Models administration (v1 §102, preserved)
 
-Every sensitive action:
-- reason.
-- audit.
+Admin can: create model; edit; disable; hide; mark beta; mark recommended; choose provider; set capability; edit input schema; edit UI schema; define limits; set plan access; set prompt guide; configure pricing; assign routes; set priority; set timeout; set retries; run smoke test. Raw JSON editing can exist in an advanced admin view; the normal admin form SHOULD validate schema. **Current state:** `ModelManager` + `/api/admin/models` (ModelPricing CRUD + test) exist; schema/route editors NOT STARTED.
 
----
+## 8.5 Providers administration (v1 §103, preserved)
 
-# 102. Admin Models
+Display: name; enabled; endpoint; region; secret configured/not configured; health; latency; success; 429; spend. Actions: disable; maintenance; rotate secret reference; change URL; update limits; test. Never display the secret after creation. **Current state:** `/api/admin/providers` + `/api/admin/provider-health` exist; keys are stored and returnable in plaintext (Section 9.6 violation).
 
-Admin can:
-- create model.
-- edit.
-- disable.
-- hide.
-- mark beta.
-- mark recommended.
-- choose provider.
-- set capability.
-- edit input schema.
-- edit UI schema.
-- define limits.
-- set plan access.
-- set prompt guide.
-- configure pricing.
-- assign routes.
-- set priority.
-- set timeout.
-- set retries.
-- run smoke test.
+## 8.6 Routes administration (v1 §104, preserved)
 
-Raw JSON editing can exist in advanced admin view.
-
-Normal admin form should validate schema.
-
----
-
-# 103. Admin Provider
-
-Display:
-- name.
-- enabled.
-- endpoint.
-- region.
-- secret configured/not configured.
-- health.
-- latency.
-- success.
-- 429.
-- spend.
-
-Actions:
-- disable.
-- maintenance.
-- rotate secret reference.
-- change URL.
-- update limits.
-- test.
-
-Never display secret after creation.
-
----
-
-# 104. Model Route Admin
-
-Example:
+Route display example:
 
 ```text
 image.standard
@@ -3768,82 +2566,15 @@ image.standard
 3. Model C — priority 30 — degraded
 ```
 
-Admin can reorder.
+Admin can reorder. Conditions: plan; quality mode; reference support; max cost; region. **Current state:** Routes sub-tab exists as UI; no `ModelRoute` backend (Section 3.4.4).
 
-Conditions:
-- plan.
-- quality mode.
-- reference support.
-- max cost.
-- region.
+## 8.7 Prompt Guides administration (v1 §105, preserved)
 
----
+Features: list; edit; version; compare; benchmark; activate; rollback. Do not mutate a production guide with no history. **Current state:** `/api/admin/prompt-guides` CRUD exists.
 
-# 105. Prompt Guide Admin
+## 8.8 CMS and announcements (v1 §§108–110, 158–159, preserved)
 
-Features:
-- list.
-- edit.
-- version.
-- compare.
-- benchmark.
-- activate.
-- rollback.
-
-Do not mutate production guide with no history.
-
----
-
-# 106. Admin Generations
-
-Filters:
-- user.
-- model.
-- provider.
-- capability.
-- project.
-- Agent/Studio/Workflow/Director source.
-- status.
-- date.
-- credits.
-- provider cost.
-
-Display:
-- job timeline.
-- quote.
-- actual.
-- safe error.
-- assets.
-- retries.
-
-Actions:
-- retry where safe.
-- cancel.
-- refund.
-- mark incident.
-
----
-
-# 107. Admin Director
-
-Show:
-- active pipelines.
-- failed shots.
-- total spend.
-- average shots.
-- pipeline duration.
-- repairs.
-- cost.
-
-Admin can cancel abusive/stuck jobs.
-
----
-
-# 108. Admin CMS
-
-Do not build unrestricted page builder.
-
-Editable approved keys:
+Do not build an unrestricted page builder. Editable approved keys:
 
 ```text
 landing.hero.subtitle
@@ -3858,62 +2589,19 @@ landing.footer.tagline
 pricing.faq.*
 ```
 
-Code provides safe defaults.
-CMS overrides.
+Code provides safe defaults; CMS overrides. CMS workflow (v1 §§109, 209): edit field; preview; save draft; publish; revision snapshot created; cache invalidated; audit logged; rollback available. Do not inject raw arbitrary HTML without sanitization. Website CMS safety: do not allow CMS to edit JavaScript, arbitrary React, route paths, or sensitive HTML. Allowed: strings; safe rich text; URLs; labels; selected media IDs. Admin can preview unpublished revisions using a signed preview token; public users only see the published revision.
 
----
+Announcement bar fields: message; style; link; CTA; start; end; audience; locale; dismissible; priority. Visible in landing and Studio; use the same public API. **Current state:** `CmsEditor` + `/api/admin/cms-content` (+ publish) and `/api/admin/announcements` + public `/api/announcements` + `AnnouncementBar` exist; approved-key allowlist, preview tokens and sanitization rules PARTIAL.
 
-# 109. CMS Workflow
+## 8.9 Generations, Director and Jobs administration (v1 §§106–107, preserved)
 
-1. edit.
-2. preview.
-3. save draft.
-4. publish.
-5. revision created.
-6. audit.
-7. rollback available.
+Generations filters: user; model; provider; capability; project; Agent/Studio/Workflow/Director source; status; date; credits; provider cost. Display: job timeline; quote; actual; safe error; assets; retries. Actions: retry where safe; cancel; refund; mark incident.
 
-Do not inject raw arbitrary HTML without sanitization.
+Director admin: active pipelines; failed shots; total spend; average shots; pipeline duration; repairs; cost. Admin can cancel abusive/stuck jobs. **Current state:** `/api/admin/jobs`, `/api/admin/refunds` exist; filtering/timeline UI PARTIAL.
 
----
+## 8.10 Admin Advisor (v1 §§111–114, 206, preserved)
 
-# 110. Announcement Bar
-
-Fields:
-- message.
-- style.
-- link.
-- CTA.
-- start.
-- end.
-- audience.
-- locale.
-- dismissible.
-- priority.
-
-Visible in:
-- landing.
-- Studio.
-
-Use same public API.
-
----
-
-# 111. Admin Advisor
-
-The Admin Advisor is a business control assistant.
-
-It can answer:
-
-> Can I run 40% off Pro for three months?
-
-> Which models have the worst margins?
-
-> Should I raise video credit prices?
-
-> What is the expected cost if users use 80% of included credits?
-
-> Which plan has the highest AI COGS ratio?
+The Admin Advisor is a business control assistant. It can answer: "Can I run 40% off Pro for three months?" / "Which models have the worst margins?" / "Should I raise video credit prices?" / "What is the expected cost if users use 80% of included credits?" / "Which plan has the highest AI COGS ratio?"
 
 Architecture:
 
@@ -3929,11 +2617,7 @@ Aggregated Business Data
 Explanation
 ```
 
-Never let the LLM invent cost numbers.
-
----
-
-# 112. Advisor Calculator Tools
+Never let the LLM invent cost numbers (rule 48–49). Calculator tools (normative):
 
 ```text
 advisor.calculate_plan_margin
@@ -3945,135 +2629,39 @@ advisor.calculate_credit_pack_margin
 advisor.detect_cost_anomaly
 ```
 
-Tool output is authoritative.
+Tool output is authoritative. Advisor inputs: plan revenue; average credit usage; p50/p90/p100 usage scenarios; historical model mix; provider costs; infra reserve; payment fees; refunds; promo; tax assumptions if configured. The Advisor MUST clearly distinguish observed data, configured assumptions and model forecast. Warning levels: Info; Caution; High Risk — e.g. "High Risk: At 100% included-credit utilization, this plan loses approximately €4.20/user/month under the current model mix." The Advisor system prompt is normative in Appendix P; the explain-don't-compute pseudocode in Section 12.5.5. **Current state:** NOT STARTED (Margin Advisor sub-tab is a placeholder).
 
----
+## 8.11 Admin roles (v1 §115, preserved)
 
-# 113. Advisor Inputs
+Recommended roles: `super_admin`, `finance_admin`, `support_admin`, `ai_ops`, `content_admin`. Least privilege. Examples: content admin cannot view provider secrets; support admin cannot change pricing; finance admin cannot modify prompt guides; ai_ops cannot issue large credit grants without permission. **Current state:** single `User.role = "admin"` gate; role granularity NOT STARTED.
 
-- plan revenue.
-- average credit usage.
-- p50/p90/p100 usage scenarios.
-- historical model mix.
-- provider costs.
-- infra reserve.
-- payment fees.
-- refunds.
-- promo.
-- tax assumptions if configured.
+## 8.12 Admin API surface
 
-Advisor must clearly distinguish:
-- observed data.
-- configured assumptions.
-- model forecast.
+The target Admin API matrix is normative in Appendix Y. **Current state:** implemented admin routes are `/api/admin/{analytics, announcements, audit, cms-content, cms-content/publish, credit-packs, flags, jobs, keys, models, plans, pricing, pricing/sync, promos, prompt-guides, provider-health, providers, refunds, sync/kie, users}` — all gated by `requireAdmin` (role === "admin").
 
----
+## 8.13 Business aggregations (v1 §151, preserved)
 
-# 114. Advisor Warnings
-
-Levels:
-- Info.
-- Caution.
-- High Risk.
-
-Example:
-> High Risk: At 100% included-credit utilization, this plan loses approximately €4.20/user/month under the current model mix.
-
----
-
-# 115. Admin Roles
-
-Recommended:
-- super_admin.
-- finance_admin.
-- support_admin.
-- ai_ops.
-- content_admin.
-
-Least privilege.
-
-Examples:
-- content admin cannot view provider secrets.
-- support admin cannot change pricing.
-- finance admin cannot modify prompt guides.
-- ai_ops cannot issue large credit grants without permission.
-
----
-
-# 116. Public Site Content API
+Create daily aggregate tables/jobs:
 
 ```text
-GET /api/platform/public/cms?namespace=landing&locale=en
-GET /api/platform/public/announcements
-GET /api/platform/public/plans
-GET /api/platform/public/stats
+provider_model_daily
+capability_daily
+plan_daily
+user_cost_daily
+promo_daily
 ```
 
-Cache public responses.
+Avoid recalculating whole history for every dashboard request. **Current state:** NOT STARTED.
+
+## 8.14 Abuse signals (v1 §176, preserved)
+
+Monitor: free account loops; repeated failures; refund abuse; API bursts; suspicious uploads. Admin sees signals. **Current state:** `detectAbuse` in `lib/security.js` implements volume/failure/refund thresholds; no admin surfacing.
 
 ---
 
-# 117. Public Model Counts
+# 9. Infrastructure, Security, Observability
 
-Instead of manual copy:
-- count enabled public models.
-- group by category.
-- expose public-safe stats.
-
-Marketing can display:
-`70+ models` based on threshold formatting.
-
----
-
-# 118. Authentication Unification
-
-Current Helmies Studio uses NextAuth/Prisma.
-
-Build a unified auth/user store inside Helmies Studio. There is no separate agent project to merge with.
-
-Since `helmies-agent` is abandoned, there is no second auth system to reconcile.
-
-Implementation path:
-
-## Stage A
-- Platform user remains commercial identity.
-- Build agent runtime identity within the same Helmies Studio user store.
-- one session/token exchange.
-
-## Stage B
-- Studio UI receives platform commercial context from the same session.
-
-## Stage C
-- all identity fully unified in one store from the start.
-
-Credits, plans and billing always use platform user ID.
-
----
-
-# 119. IdentityLink (not required)
-
-Since `helmies-agent` is abandoned and all identity lives in Helmies Studio, an `IdentityLink` mapping table is **not required**.
-
-If a future integration ever introduces a separate identity system, revisit this then.
-
----
-
-# 120. Agent Commercial Context
-
-At Agent request:
-- resolve user from the unified Helmies Studio session.
-- fetch plan.
-- fetch wallet.
-- fetch feature entitlements.
-- attach to Helmies tool execution context.
-
-Do not place complete billing records in LLM prompt.
-
-Tools receive context server-side.
-
----
-
-# 121. Docker Architecture
+## 9.1 Deployment topology (v1 §121, preserved)
 
 Recommended services:
 
@@ -4087,81 +2675,32 @@ services:
   worker:
   director-service:
   vision-service:
-  mongodb:
   postgres:
   redis:
   meilisearch:
 ```
 
-Object storage can be external.
+Object storage can be external. Compose skeleton: Appendix AA. **Current state:** single Next.js 16 app on one Node host; no Docker artifacts in the repo. The `mongodb` service from v1 is removed (Section 9.3.1).
 
----
+## 9.2 Gateway / reverse proxy (v1 §122, preserved)
 
-# 122. Gateway / Reverse Proxy
+Responsibilities: route root to landing; route `/studio` to Studio client; API routing; streaming; WebSockets; headers; compression; TLS termination if appropriate; body size limits; request IDs. **Current state:** not present; Next.js serves everything directly behind the host reverse proxy.
 
-Responsibilities:
-- route root to landing.
-- route `/studio` to Studio client.
-- API routing.
-- streaming.
-- WebSockets.
-- headers.
-- compression.
-- TLS termination if appropriate.
-- body size limits.
-- request IDs.
+## 9.3 Datastores (v1 §123, amended)
 
----
+Postgres owns: users/identity; billing; credits; pricing; providers; models; jobs; assets; projects; Brand Kits; Canvas; Director; CMS; admin; agent runtime entities (AgentRun, conversations when built).
 
-# 123. Mongo and Postgres
+### 9.3.1 MongoDB requirement — SUPERSEDED
 
-Keep both initially.
-
-Mongo:
-- Helmies Studio conversations.
-- agents.
-- messages.
-- runtime entities.
-- skills/MCP data.
-
-Postgres:
-- commercial identity mapping.
-- billing.
-- credits.
-- pricing.
-- providers.
-- models.
-- jobs.
-- assets.
-- projects.
-- Brand Kits.
-- Canvas.
-- Director.
-- CMS.
-- admin.
+v1 §§90(2), 121, 123, 192–194 and Appendix AW carried MongoDB for "conversations, agents, messages, runtime entities, skills/MCP data" because that persistence belonged to the now-abandoned `helmies-agent` runtime. **Superseded by decision:** no MongoDB exists in the current codebase, and new agent-runtime persistence MUST be built on Postgres models in this repository (Prisma), consistent with the single-foundation rule (Section 1.1). If a future runtime component genuinely needs a document store, reintroduce it deliberately with its own migration plan. Do not silently resurrect the Mongo requirement.
 
 Do not rewrite mature Helmies Studio persistence unnecessarily.
 
----
+## 9.4 Redis, queues and workers (v1 §§124–129, preserved)
 
-# 124. Redis
+Redis uses: BullMQ or equivalent; distributed locks; rate limits; job events; provider circuit state; cache; Agent reconnect/background mechanisms. Money remains Postgres source of truth.
 
-Use:
-- BullMQ or equivalent.
-- distributed locks.
-- rate limits.
-- job events.
-- provider circuit state.
-- cache.
-- Agent reconnect/background mechanisms where existing runtime uses Redis.
-
-Money remains Postgres source of truth.
-
----
-
-# 125. Worker Queues
-
-Recommended:
+Recommended queues:
 
 ```text
 generation:image
@@ -4177,173 +2716,21 @@ assembly
 notification
 ```
 
-Priorities:
-- paid interactive.
-- free interactive.
-- background.
-- batch.
+Priorities: paid interactive; free interactive; background; batch.
 
----
+Provider execution worker: loads job; validates reservation; resolves provider/model; compiles provider request; submits; stores provider request ID; polls/webhook; ingests output; quality check; usage record; settlement; notify.
 
-# 126. Provider Execution Worker
+Retry policy classification: validation error → no retry; auth error → incident, no blind retry; 429 → delayed retry/fallback; 5xx → retry; timeout before provider acceptance → retry; unknown acceptance → query provider before duplicating. Never double-generate expensive jobs accidentally.
 
-Worker:
-1. loads job.
-2. validates reservation.
-3. resolves provider/model.
-4. compiles provider request.
-5. submits.
-6. stores provider request ID.
-7. polls/webhook.
-8. ingests output.
-9. quality check.
-10. usage record.
-11. settlement.
-12. notify.
+Provider fallback allowed only if: capability same; required inputs supported; output semantics compatible; price does not exceed approved maximum; user plan allows; prompt adapter available. Otherwise ask for new approval/choice.
 
----
+Circuit breaker: track rolling success, 429, 5xx, timeout, latency. When unhealthy: lower route; open circuit; alert Admin. Provider health workflow (v1 §210): metrics detect failure spike → provider status degraded → route priority adjusted automatically if configured → Admin alert → Agent/manual users receive safe fallback → no raw provider error shown.
 
-# 127. Retry Policy
+**Current state:** NOT STARTED — no Redis, no queues, no workers. Generation runs in-request with a polling loop (`submitAndPoll`, up to 900 attempts × ~2s) or fire-and-forget with provider webhooks; fallback is a static `["wavespeed", "kie"]` chain without eligibility checks; no circuit breaker.
 
-Classify:
-- validation error -> no retry.
-- auth error -> incident, no blind retry.
-- 429 -> delayed retry/fallback.
-- 5xx -> retry.
-- timeout before provider acceptance -> retry.
-- unknown acceptance -> query provider before duplicating.
+## 9.5 Media storage and delivery
 
-Never double-generate expensive jobs accidentally.
-
----
-
-# 128. Provider Fallback
-
-Fallback allowed only if:
-- capability same.
-- required inputs supported.
-- output semantics compatible.
-- price does not exceed approved maximum.
-- user plan allows.
-- prompt adapter available.
-
-Otherwise ask for new approval/choice.
-
----
-
-# 129. Circuit Breaker
-
-Track rolling:
-- success.
-- 429.
-- 5xx.
-- timeout.
-- latency.
-
-When unhealthy:
-- lower route.
-- open circuit.
-- alert Admin.
-
----
-
-# 130. Vision Service
-
-Internal API:
-
-```text
-POST /analyze
-POST /analyze-batch
-POST /compare
-POST /ocr
-POST /palette
-```
-
-Platform API owns user authentication and asset ownership.
-
-The internal Vision service receives controlled files/URLs only.
-
----
-
-# 131. Vision Deployment
-
-MVP can use:
-- cloud multimodal route for simplicity.
-
-Optional:
-- local Florence-compatible analyzer.
-
-Provider interface makes it replaceable.
-
----
-
-# 132. Director Service
-
-Exact Maestro behavior replication in original code.
-
-Responsibilities (must match Maestro exactly):
-- planning (same multi-pass planning logic, same pass order, same prompts).
-- shot schema (identical to Maestro ShotPlan).
-- continuity (identical continuity rules).
-- prompt drafts (identical prompt templates and guide content).
-- plan validation (identical validation rules).
-- cost operation list (identical operation enumeration).
-
-It does NOT:
-- directly debit credits.
-- directly call arbitrary providers.
-- own user authentication.
-- permanently store billing.
-
-Platform API owns commercial state.
-
----
-
-# 133. Director Execution
-
-Director plan produces executable operations.
-
-Example:
-
-```json
-[
-  {
-    "shotId": "s1",
-    "operation": "image.generate",
-    "routeKey": "image.premium",
-    "params": {}
-  },
-  {
-    "shotId": "s1",
-    "operation": "video.image_to_video",
-    "routeKey": "video.standard",
-    "dependsOn": ["s1-image"]
-  }
-]
-```
-
-Platform quotes operations.
-
----
-
-# 134. Assembly Service
-
-Can initially be part of worker.
-
-Responsibilities:
-- join video clips.
-- preserve audio.
-- normalize resolution/fps.
-- final encoding.
-- thumbnails.
-
-Use FFmpeg.
-
----
-
-# 135. Media Storage
-
-Logical prefixes:
+### 9.5.1 Logical prefixes (v1 §135)
 
 ```text
 users/<userId>/uploads/<assetId>
@@ -4353,387 +2740,77 @@ brands/<brandKitId>/<assetId>
 director/<pipelineId>/<shotId>/*
 ```
 
-Private by default.
+Private by default. **Current state:** media is written to the local filesystem under `public/media` and `public/uploads` and served publicly; no object storage, no per-user prefixes.
 
----
+### 9.5.2 Signed URLs (v1 §136)
 
-# 136. Signed URLs
+Browser uploads/downloads use short-lived signed URLs; ownership is validated before signing. Do not use permanent public bucket URLs for private user assets. **Current state:** NOT STARTED.
 
-Browser uploads/downloads:
-- short-lived signed URLs.
-- ownership validated before signing.
+### 9.5.3 Upload security (v1 §137)
 
-Do not use permanent public bucket URLs for private user assets.
+Validate: file size; content type; actual decodability; dimensions; video duration; allowed extensions; malicious payload. Strip unnecessary EXIF where appropriate. **Current state:** `/api/upload` performs no size/MIME/decodability validation; `media-storage.js` strips JPEG EXIF and PNG metadata chunks on ingest (partial).
 
----
+### 9.5.4 SSRF (v1 §138)
 
-# 137. Upload Security
+Critical because the system fetches provider result URLs, remote assets and MCP URLs. Implement: domain allowlist for providers; IP/private-network blocking; redirect revalidation; size limits; content type validation. Reuse mature SSRF protections already present where possible. **Current state:** VIOLATED — `/api/media/proxy` fetches arbitrary http(s) URLs unauthenticated; its `PROVIDER_DOMAINS` allowlist is declared but never enforced, and it sets `Access-Control-Allow-Origin: *`. `storeMedia` fetches provider URLs without host validation.
 
-Validate:
-- file size.
-- content type.
-- actual decodability.
-- dimensions.
-- video duration.
-- allowed extensions.
-- malicious payload.
+## 9.6 Provider secrets (v1 §139, preserved)
 
-Strip unnecessary EXIF where appropriate.
+Use: Docker secrets; cloud secret manager; Vault-style solution. DB stores `secretRef`. Admin sees configured/not configured. Never: show the actual secret; send the secret to a browser; log the secret. Rules 17–20 apply: no private provider key reaches the browser or model context; no new provider secret is stored plaintext; existing plaintext credentials MUST be migrated (Appendix AK). **Current state:** VIOLATED — `ProviderConfig.apiKey` is plaintext in Postgres; provider keys otherwise live in `.env`; `ssh.md` (plaintext server credentials) is tracked in git and MUST be removed from tracking with credentials rotated (Section 12.1, Phase 0).
 
----
+## 9.7 Observability (v1 §§140–142, preserved)
 
-# 138. SSRF
+Structured events include: request ID; platform user ID; job ID; parent job; capability; model; provider; quote ID; latency; status; credits; provider cost; safe error.
 
-Critical because system fetches:
-- provider result URLs.
-- remote assets.
-- MCP URLs.
+Metrics: requests; successful jobs; failed jobs; provider cost; retail credits; gross margin; p50/p95 latency; provider 429; queue depth; job age; Director completion; Canvas compilation; quote abandonment.
 
-Implement:
-- domain allowlist for providers.
-- IP/private-network blocking.
-- redirect revalidation.
-- size limits.
-- content type validation.
+Cost anomaly detection alerts if: provider cost suddenly exceeds configured expected; average video cost spikes; retries spike; provider response changes; margin falls below threshold. **Current state:** console logging + `AuditLog` + `ProviderIncident` only.
 
-Reuse mature SSRF protections already present in Helmies Studio where possible.
+## 9.8 Vision and Director service deployment (v1 §§130–131, preserved)
 
----
-
-# 139. Provider Secrets
-
-Use:
-- Docker secrets.
-- cloud secret manager.
-- Vault-style solution.
-
-DB:
-`secretRef`.
-
-Admin:
-configured/not configured.
-
-Never:
-- show actual secret.
-- send secret to browser.
-- log secret.
-
----
-
-# 140. Observability
-
-Structured events include:
-- request ID.
-- platform user ID.
-- job ID.
-- parent job.
-- capability.
-- model.
-- provider.
-- quote ID.
-- latency.
-- status.
-- credits.
-- provider cost.
-- safe error.
-
----
-
-# 141. Metrics
-
-Track:
-- requests.
-- successful jobs.
-- failed jobs.
-- provider cost.
-- retail credits.
-- gross margin.
-- p50/p95 latency.
-- provider 429.
-- queue depth.
-- job age.
-- Director completion.
-- Canvas compilation.
-- quote abandonment.
-
----
-
-# 142. Cost Anomaly Detection
-
-Alert if:
-- provider cost suddenly > configured expected.
-- average video cost spikes.
-- retries spike.
-- provider response changes.
-- margin falls below threshold.
-
----
-
-# 143. Provider Diagnostics
-
-Admin screen must solve current broken-generation/LLM problems.
-
-Tests:
-- auth.
-- chat completion.
-- streaming.
-- image generation.
-- video submission.
-- video status.
-- TTS.
-- storage ingest.
-- webhook/callback.
-- quote.
-
-A model cannot be activated until validation passes.
-
----
-
-# 144. Contract Tests
-
-Each provider adapter has:
-- request fixture.
-- expected provider body.
-- success response.
-- validation error.
-- transient error.
-- async job response.
-
-Detect breaking API changes.
-
----
-
-# 145. Agent Streaming
-
-Keep mature Helmies Studio streaming/reconnect approach.
-
-Generated media appears as tool result cards.
-
-Do not embed huge base64 data.
-
----
-
-# 146. Agent Tool Result
-
-```json
-{
-  "jobId": "job_123",
-  "status": "completed",
-  "assets": [
-    {
-      "id": "asset_1",
-      "type": "image",
-      "thumbnailUrl": "/api/platform/assets/asset_1/thumbnail"
-    }
-  ],
-  "creditsUsed": 180
-}
-```
-
----
-
-# 147. Agent Creative Plan Schema
-
-```ts
-type CreativePlan = {
-  id: string
-  title: string
-  summary: string
-  projectId?: string
-  steps: CreativePlanStep[]
-  quote?: PlanQuote
-}
-
-type CreativePlanStep = {
-  id: string
-  kind: string
-  description: string
-  dependsOn: string[]
-  routeKey?: string
-  modelId?: string
-  params: Record<string, unknown>
-  estimatedCredits?: number
-}
-```
-
----
-
-# 148. Agent Plan Execution
-
-Use DAG.
-
-Independent steps can run in parallel if:
-- no dependency.
-- user concurrency permits.
-- reservation exists.
-- provider limits permit.
-
----
-
-# 149. Approval Policy
-
-Explicit approval required when:
-- multi-step plan.
-- cost > configurable threshold.
-- batch.
-- destructive action.
-- external publish.
-- pricing/subscription action.
-
-Single manual Generate button is explicit approval of displayed quote.
-
----
-
-# 150. Retry Budget
-
-Plan quote includes:
-- expected cost.
-- maximum reserved.
-- retry allowance.
-
-Quality agent cannot exceed maximum without new approval.
-
----
-
-# 151. Admin Business Aggregations
-
-Create daily aggregate tables/jobs:
+Vision internal API:
 
 ```text
-provider_model_daily
-capability_daily
-plan_daily
-user_cost_daily
-promo_daily
+POST /analyze
+POST /analyze-batch
+POST /compare
+POST /ocr
+POST /palette
 ```
 
-Avoid recalculating whole history for every dashboard request.
+The platform API owns user authentication and asset ownership; the internal Vision service receives controlled files/URLs only. MVP MAY use a cloud multimodal route for simplicity; a local Florence-compatible analyzer is optional. The provider interface keeps it replaceable. **Current state:** in-process module only (Section 7.6).
 
----
+## 9.9 Web security and privacy (v1 §§174–180, preserved)
 
-# 152. Margin Calculation
+API access: Pro/API users can use the normalized Helmies API. API keys: hashed; prefix; scopes; last used; rate limits. Same Gateway and wallet. **Current state:** `ApiKey` (sha256 hash, prefix, lastUsedAt) + `/api/user/keys` + `authenticateApiKey` exist; scopes NOT STARTED.
 
-Use Decimal.
+Rate limiting by: user; plan; API key; capability; IP for auth/public. Generation concurrency also enforced. **Current state:** `RateLimit` table + per-endpoint windows in `lib/security.js`; `/api/auth/register` has in-memory per-IP limiting; no plan/API-key/concurrency dimensions.
 
-Concept:
+Security headers at edge: HSTS; CSP; Permissions-Policy; Referrer-Policy; X-Content-Type-Options; frame policy. Ensure media workers/canvas are compatible. **Current state:** middleware sets `X-Frame-Options` and `X-Content-Type-Options` on protected paths only; the rest NOT STARTED.
 
-```text
-providerCost
-+ variable infra reserve
-= adjustedCost
+User data controls: delete asset; delete project; clear Agent memory; delete account; export data; revoke API key; logout sessions. **Current state:** asset/project delete + API-key revoke exist; the rest NOT STARTED.
 
-adjustedCost / (1 - targetGrossMargin)
-= targetRetail
-```
+Logging privacy: do not log provider keys, OAuth tokens, passwords, card details, private asset bytes. Raw prompts can exist in the protected generation DB, not indiscriminate logs.
 
-If policy uses multiplier:
-- explicitly label it.
+Analytics: track Studio opened; Agent plan created; quote shown; quote confirmed; quote abandoned; generation completed; generation failed; Canvas used; Brand Kit used; Director completed; subscription; topup; promo. Do not send raw prompt text to marketing analytics by default.
 
-Do not call a `2.5x markup` a `60% margin` incorrectly.
+## 9.10 Provider diagnostics and contract tests (v1 §§143–144, preserved)
 
----
+The Admin diagnostics screen MUST solve broken-generation/LLM problems. Tests: auth; chat completion; streaming; image generation; video submission; video status; TTS; storage ingest; webhook/callback; quote. A model cannot be activated until validation passes.
 
-# 153. Payment Fees
+Each provider adapter has contract tests: request fixture; expected provider body; success response; validation error; transient error; async job response. Detect breaking API changes. **Current state:** `ModelManager` has a per-model test action; full diagnostics/contract suites NOT STARTED.
 
-Configurable assumptions:
-- percentage.
-- fixed fee.
-- region.
+## 9.11 Environments, local development, backups (v1 §§192–194, preserved)
 
-Advisor uses them.
+Environments: local; test; staging; production. Separate: Postgres; Redis; storage; Stripe mode; provider keys. (Mongo removed — Section 9.3.1.)
 
----
+Local Docker SHOULD include: Postgres; Redis; Meilisearch; MinIO; Mailpit; APIs; web. Optional profiles: local vision; local director tooling.
 
-# 154. Tax
+Backups: Postgres daily, PITR if possible; storage versioning/lifecycle per provider; restore tested.
 
-Treat tax separately.
+## 9.12 Feature flags (v1 §160, preserved)
 
-Do not hide VAT assumptions inside AI cost.
-
-Admin Advisor shows whether scenario is pre/post-tax.
-
----
-
-# 155. Infrastructure Reserve
-
-Configure:
-- global.
-- per capability.
-
-Example concept:
-- LLM lower reserve.
-- video higher reserve.
-
-Reserve covers:
-- retries.
-- storage.
-- transcode.
-- operational overhead.
-
----
-
-# 156. Admin Cost Simulator
-
-Admin inputs:
-- model.
-- params.
-- plan.
-- target margin.
-- promo.
-- assumed utilization.
-
-Outputs:
-- wholesale cost.
-- adjusted cost.
-- retail credits.
-- revenue.
-- expected margin.
-- worst-case margin.
-
----
-
-# 157. Subscription Scenario
-
-Admin can simulate:
-- 20% utilization.
-- 50%.
-- 80%.
-- 100%.
-- historical p50.
-- historical p90.
-
-Use actual model mix where available.
-
----
-
-# 158. Website CMS Safety
-
-Do not allow CMS to edit:
-- JavaScript.
-- arbitrary React.
-- route paths.
-- sensitive HTML.
-
-Allowed:
-- strings.
-- safe rich text.
-- URLs.
-- labels.
-- selected media IDs.
-
----
-
-# 159. CMS Preview
-
-Admin can preview unpublished revisions using signed preview token.
-
-Public users only see published revision.
-
----
-
-# 160. Feature Flags
-
-Initial:
+Initial flags:
 
 ```text
 new_studio_shell
@@ -4752,790 +2829,530 @@ cms_content
 admin_advisor
 ```
 
+**Current state:** `FeatureFlag` model + `/api/admin/flags` exist; flags are not systematically consulted by the surfaces above.
+
 ---
 
-# 161. Migration from Current `handleGeneration`
+# 10. UX & Design System
 
-Current generation handler has useful behavior:
-- authentication.
-- rate limiting.
-- prompt expansion.
-- ProjectMemory injection.
-- provider fallback.
-- DB pricing override.
-- credit checks.
-- generation record.
-- media storage.
-- quality gate.
-- refunds.
+## 10.1 Studio theme (v1 §166, preserved)
 
-Refactor into:
+The authenticated app should feel: premium; organized; creative; calm; fast; approachable; capable. Do not inherit all current old Studio UI; use the cleaner Agent-style organization as base. Avoid: provider jargon everywhere; giant settings forms; gradients everywhere; excessive glow; cramped UI.
+
+## 10.2 Motion system (v1 §167, preserved)
+
+Central tokens: fast; normal; slow; spring; generation wave; panel slide; result reveal. All motion honors reduced-motion.
+
+## 10.3 Generation UX and loading philosophy (v1 §§69–70, 168, preserved)
+
+Do not show a generic spinner for minutes. Animation should communicate work stage.
+
+Image stages: Understanding; Preparing references; Generating; Quality check; Finalizing. Video stages: Preparing shot; Submitting; Generating; Processing media; Quality check; Finalizing. Agent: animate plan steps / plan graph.
+
+Motion during generation — Image: subtle waves; animated mesh; low-cost shimmer; blurred preview if the provider supports; stage labels. Video: timeline pulse; frame strip; shot progress. Respect `prefers-reduced-motion`; avoid excessive GPU use. Do not fake exact percentage if the provider does not expose it: show stage + indeterminate/probabilistic progress. **Current state:** `StagedProgress` implements staged labels.
+
+## 10.4 Responsive Studio (v1 §85, preserved)
+
+Desktop: multi-pane. Tablet: collapsible settings. Mobile: preview/canvas primary; settings bottom sheet; inspector drawer; fixed composer; model picker sheet. Do not build desktop-only.
+
+## 10.5 Command palette and search (v1 §§86, 172–173, preserved)
+
+Retain/enhance `Ctrl/Cmd + K`. Commands: Ask Agent; Image Studio; Video Studio; Director; open project; open Brand Kit; search assets; view credits; create workflow. Global palette: switch Studio; open Agent; open project; create Brand Kit; find asset; view wallet; create workflow.
+
+Search: conversations; projects; assets; workflows; Brand Kits. Use Meilisearch infrastructure where appropriate (target — Section 9.1). **Current state:** `CommandPalette.js` exists; Meilisearch NOT STARTED.
+
+## 10.6 Icons (v1 §87, preserved)
+
+Use one consistent icon system plus custom Helmies brand icons. Avoid mixed random icon libraries. **Current state:** `react-icons` + custom `components/Icons.js`.
+
+## 10.7 Accessibility (v1 §88, preserved)
+
+Keyboard; focus states; screen-reader labels; reduced motion; contrast; accessible dialogs; Canvas object list for keyboard editing; captions/transcripts where possible.
+
+## 10.8 Low-balance and failure UX (v1 §§211–212, preserved)
+
+If quote exceeds balance:
 
 ```text
-QuoteService
-WalletService
-GenerationService
-ModelGateway
-ProviderAdapter
-StorageService
-QualityService
-SettlementService
+You need 640 credits.
+You have 420.
+
+Options:
+- Add credits
+- Use Economy model (~310 credits)
+- Reduce duration to 3 sec (~390 credits)
 ```
 
-Do not keep one giant handler forever.
+The Agent can generate alternatives automatically.
+
+Failure UX — bad: `HTTP 422 invalid image_list`. Good: "This model supports a maximum of two reference images, but four are selected." with actions: Keep the first two; Switch to a compatible model. **Current state:** `brandError` maps provider errors to safe branded messages.
+
+## 10.9 History and reproducibility display (v1 §213, preserved)
+
+Each generation detail shows: Studio source; Agent/Workflow/Director source; model; date; credits; prompt; references; project; reuse. Provider wholesale price remains admin-only unless product decides otherwise.
 
 ---
 
-# 162. Current ProjectMemory Migration
+# 11. Testing & Acceptance
 
-Existing types:
-- character.
-- style.
-- asset.
-- brand.
+## 11.1 CI (v1 §182, preserved)
 
-Migrate:
+PR pipeline: secret scan; install; lint; TypeScript; unit; Prisma validation; integration; Python tests (if Python services exist); landing build; Studio build; APIs build; Docker build; Playwright smoke. **Current state:** no CI workflows in the repo; `npm run lint` only.
 
-```text
-character -> Persona/Project entity
-style -> StylePreset
-asset -> Asset
-brand -> BrandKit
-```
+## 11.2 Unit tests (v1 §184, preserved)
 
-Keep compatibility reads during migration.
+Required modules: pricing; margin; promo; wallet; reservation; model eligibility; input validation; adapters; Prompt Compiler; Canvas Compiler; Brand Compiler; Director validator; quality evaluator.
 
----
+## 11.3 Integration tests (v1 §185, preserved)
 
-# 163. Current Orchestrator Migration
+Use mocked providers. Test: quote; reserve; submit; provider result; storage; settlement; refund; fallback; idempotency.
 
-The current Helmies Studio Orchestrator already demonstrates useful UX:
-- conversational clarification.
-- Generate Plan.
-- estimated credits.
-- execution steps.
-- progress.
+## 11.4 End-to-end tests (v1 §§186–190, preserved)
 
-Evolve it into the final Master Agent runtime built natively inside Helmies Studio.
+Critical path: login → Studio loads → wallet visible → Image Studio → reference → model → quote → generate → result Asset → correct wallet → open Asset in Canvas → Canvas regenerate → Agent can access result.
 
-The final Master Agent is the only orchestrator.
+Admin E2E: admin edits plan price → publish → landing price changes → checkout uses same product price → audit row exists.
 
----
+Promo E2E: create promo → advisor warning generated → activate → eligible user redeems → ineligible user rejected → financial effect recorded.
 
-# 164. Current `/agent` Proxy
+Director E2E: project → Brand Kit → create 15-second ad → plan shots → quote → approve → execute → fail one shot → retry one → reassemble → final asset.
 
-The old Next app previously could proxy `/agent/*` to an external chat runtime.
+Canvas E2E: upload product → place → add text → add reference → draw mask → autosave → reload → document restores → compile → quote → generate.
 
-Final:
-- `/studio` is the Helmies Studio authenticated app itself (built natively).
-- landing and Studio are siblings behind gateway.
-- not "Studio page embedding an external Agent product."
+## 11.5 Provider smoke tests (v1 §191, preserved)
 
----
+Before a model is active: credential; request schema; quote; provider request; status; output ingest; quality; settlement.
 
-# 165. Helmies Studio Branding
+## 11.6 Landing visual regression (v1 §183, preserved)
 
-Replace any customer-facing references to external chat products (e.g. LibreChat, Helmies Agent) with **Helmies Studio**.
+Capture: desktop homepage; mobile homepage; pricing section; major service sections. Fail review if unintentional layout change exceeds tolerance. Snapshots MUST exist before migration phases that touch the landing page (Section 1.7).
 
-Update:
-- app title.
-- logo.
-- icons.
-- emails.
-- manifest.
-- metadata.
-- links.
-- help.
-- notifications.
+## 11.7 Critical acceptance tests
 
-Keep all legally required upstream attribution/license notices.
+Normative in Appendix AS (26-row matrix covering landing, pricing, wallet, quote, idempotency, schemas, fallback, storage, Canvas, Brand, Vision, Agent, Workflow, Director, Promo, CMS, audit, security, ownership, wallet race).
 
----
+## 11.8 Definition of Done (v1 §214, preserved in full — hard completion gate)
 
-# 166. Studio Theme
+The project is complete only when all of the following are true.
 
-The authenticated app should feel:
-- premium.
-- organized.
-- creative.
-- calm.
-- fast.
-- approachable.
-- capable.
+### Public Website
+- [ ] current landing visual design preserved.
+- [ ] dynamic plans.
+- [ ] dynamic CMS.
+- [ ] announcements.
+- [ ] correct auth links.
+- [ ] public model counts.
 
-Do not inherit all current old Studio UI.
+### Auth
+- [ ] one user identity experience.
+- [ ] Agent runtime mapped to platform user.
 
-Use the Agent UI's cleaner organization as base.
+### Wallet
+- [ ] one wallet.
+- [ ] ledger.
+- [ ] reservations.
+- [ ] refunds.
+- [ ] no negative balance.
 
-Avoid:
-- provider jargon everywhere.
-- giant settings forms.
-- gradients everywhere.
-- excessive glow.
-- cramped UI.
+### Model Platform
+- [ ] model registry.
+- [ ] input schemas.
+- [ ] UI schemas.
+- [ ] provider adapters.
+- [ ] price rules.
+- [ ] model routes.
+- [ ] health.
 
----
+### Agent
+- [ ] one Master Agent.
+- [ ] creative subagents.
+- [ ] first-party creative tools.
+- [ ] cost plan.
+- [ ] user approval.
+- [ ] persistent jobs.
+- [ ] results as Assets.
 
-# 167. UI Motion System
+### Image Studio
+- [ ] native final UI.
+- [ ] T2I.
+- [ ] I2I.
+- [ ] references.
+- [ ] edit.
+- [ ] inpaint/outpaint where supported.
+- [ ] Canvas.
+- [ ] prompt engine.
+- [ ] history.
+- [ ] pricing.
 
-Central tokens:
-- fast.
-- normal.
-- slow.
-- spring.
-- generation wave.
-- panel slide.
-- result reveal.
+### Canvas
+- [ ] editable objects.
+- [ ] images.
+- [ ] text.
+- [ ] shapes.
+- [ ] free draw.
+- [ ] masks.
+- [ ] semantic roles.
+- [ ] persistence.
+- [ ] versions.
+- [ ] compiler.
+- [ ] quote/generation.
 
-All motion honors reduced-motion.
+### Vision
+- [ ] reference analysis.
+- [ ] palette.
+- [ ] OCR/text regions.
+- [ ] objects/regions.
+- [ ] structured output.
 
----
+### Brand
+- [ ] Brand Kits.
+- [ ] logos.
+- [ ] fonts.
+- [ ] colors.
+- [ ] references.
+- [ ] fingerprint.
+- [ ] enforcement modes.
+- [ ] Agent/Studio/Director integration.
 
-# 168. Loading Animation Philosophy
+### Video
+- [ ] manual Video Studio.
+- [ ] provider model schemas.
+- [ ] async jobs.
+- [ ] pricing.
 
-Animation should communicate work stage.
+### Audio
+- [ ] TTS.
+- [ ] music.
+- [ ] ASR if configured.
 
-Image:
-- wave/mesh.
-- prompt particles.
-- preview reveal.
+### Lip Sync
+- [ ] working.
 
-Video:
-- timeline.
-- frame movement.
-- shot stage.
+### Recast
+- [ ] working.
 
-Agent:
-- plan graph.
+### Influencer
+- [ ] persistent persona capabilities.
 
-Do not fake exact percentage if provider does not expose it.
-Show stage + indeterminate/probabilistic progress.
+### Workflows
+- [ ] Gateway-backed.
+- [ ] quoted.
+- [ ] durable.
 
----
+### Director
+- [ ] Maestro-exact behavior replication (original code).
+- [ ] ProductionPlan.
+- [ ] ShotPlan.
+- [ ] multi-pass prompts (same passes/order/content as Maestro).
+- [ ] persistent pipeline.
+- [ ] quote.
+- [ ] shot reruns.
+- [ ] reassembly.
+- [ ] dashboard.
 
-# 169. Studio History
+### Assets/Projects
+- [ ] central Assets.
+- [ ] Projects.
+- [ ] lineage.
+- [ ] search.
 
-Every Studio:
-- current session.
-- persistent history.
-- filters.
-- model.
-- cost.
-- status.
-- rerun.
-- reuse settings.
-- send to another Studio.
+### Admin
+- [ ] dashboard.
+- [ ] users.
+- [ ] plans.
+- [ ] credit packs.
+- [ ] promo codes.
+- [ ] pricing.
+- [ ] providers.
+- [ ] models.
+- [ ] routes.
+- [ ] prompt guides.
+- [ ] generations.
+- [ ] jobs.
+- [ ] quality.
+- [ ] CMS.
+- [ ] announcements.
+- [ ] advisor.
+- [ ] audit.
+- [ ] feature flags.
 
----
+### Infrastructure
+- [ ] Docker.
+- [ ] Postgres.
+- [ ] Redis.
+- [ ] queues.
+- [ ] storage.
+- [ ] backups.
+- [ ] monitoring.
+- [ ] provider diagnostics.
 
-# 170. Result Actions
-
-Image:
-- edit.
-- Canvas.
-- animate.
-- download.
-- Brand Kit.
-- project.
-
-Video:
-- extend.
-- retake.
-- lipsync.
-- recast.
-- Director.
-- download.
-
----
-
-# 171. Compare Mode
-
-Support:
-- side-by-side.
-- swipe.
-- overlay for images.
-
-Useful for:
-- models.
-- prompts.
-- Brand consistency.
-
----
-
-# 172. Command Palette
-
-Global:
-- switch Studio.
-- open Agent.
-- open project.
-- create Brand Kit.
-- find asset.
-- view wallet.
-- create workflow.
-
----
-
-# 173. Search
-
-Search:
-- conversations.
-- projects.
-- assets.
-- workflows.
-- Brand Kits.
-
-Use current Meilisearch infrastructure where appropriate.
-
----
-
-# 174. API Access
-
-Pro/API users can use normalized Helmies API.
-
-API keys:
-- hashed.
-- prefix.
-- scopes.
-- last used.
-- rate limits.
-
-Same Gateway and wallet.
+### Quality
+- [ ] CI.
+- [ ] unit.
+- [ ] integration.
+- [ ] E2E.
+- [ ] visual regression.
+- [ ] no broken LLM.
+- [ ] no broken primary generation.
+- [ ] no dead required controls.
 
 ---
 
-# 175. Rate Limiting
-
-Rate by:
-- user.
-- plan.
-- API key.
-- capability.
-- IP for auth/public.
-
-Generation concurrency also enforced.
-
----
-
-# 176. Abuse Detection
-
-Monitor:
-- free account loops.
-- repeated failures.
-- refund abuse.
-- API bursts.
-- suspicious uploads.
-
-Admin sees signals.
-
----
-
-# 177. Security Headers
-
-At edge:
-- HSTS.
-- CSP.
-- Permissions-Policy.
-- Referrer-Policy.
-- X-Content-Type-Options.
-- frame policy.
-
-Ensure media workers/canvas are compatible.
-
----
-
-# 178. User Data Controls
-
-User:
-- delete asset.
-- delete project.
-- clear Agent memory.
-- delete account.
-- export data.
-- revoke API key.
-- logout sessions.
-
----
-
-# 179. Logging Privacy
-
-Do not log:
-- provider keys.
-- OAuth tokens.
-- passwords.
-- card details.
-- private asset bytes.
-
-Raw prompts can exist in protected generation DB, not indiscriminate logs.
-
----
-
-# 180. Analytics
-
-Track:
-- Studio opened.
-- Agent plan created.
-- quote shown.
-- quote confirmed.
-- quote abandoned.
-- generation completed.
-- generation failed.
-- Canvas used.
-- Brand Kit used.
-- Director completed.
-- subscription.
-- topup.
-- promo.
-
-Do not send raw prompt text to marketing analytics by default.
-
----
-
-# 181. North Star Metric
-
-Candidate:
-**completed creative deliverables per active paid creator**.
-
-Not just number of generations.
-
----
-
-# 182. CI
-
-PR pipeline:
-- secret scan.
-- install.
-- lint.
-- TypeScript.
-- unit.
-- Prisma validation.
-- integration.
-- Python tests.
-- landing build.
-- Studio build.
-- APIs build.
-- Docker build.
-- Playwright smoke.
-
----
-
-# 183. Landing Visual Regression
-
-Capture:
-- desktop homepage.
-- mobile homepage.
-- pricing section.
-- major service sections.
-
-Fail review if unintentional layout change exceeds tolerance.
-
----
-
-# 184. Unit Tests
-
-Required modules:
-- pricing.
-- margin.
-- promo.
-- wallet.
-- reservation.
-- model eligibility.
-- input validation.
-- adapters.
-- Prompt Compiler.
-- Canvas Compiler.
-- Brand Compiler.
-- Director validator.
-- quality evaluator.
-
----
-
-# 185. Integration Tests
-
-Use mocked providers.
-
-Test:
-- quote.
-- reserve.
-- submit.
-- provider result.
-- storage.
-- settlement.
-- refund.
-- fallback.
-- idempotency.
-
----
-
-# 186. E2E Tests
-
-Critical path:
-
-1. login.
-2. Studio loads.
-3. wallet visible.
-4. Image Studio.
-5. reference.
-6. model.
-7. quote.
-8. generate.
-9. result Asset.
-10. correct wallet.
-11. open Asset in Canvas.
-12. Canvas regenerate.
-13. Agent can access result.
-
----
-
-# 187. Admin E2E
-
-1. admin edits plan price.
-2. publish.
-3. landing price changes.
-4. checkout uses same product price.
-5. audit row exists.
-
----
-
-# 188. Promo E2E
-
-1. create promo.
-2. advisor warning generated.
-3. activate.
-4. eligible user redeems.
-5. ineligible user rejected.
-6. financial effect recorded.
-
----
-
-# 189. Director E2E
-
-1. project.
-2. Brand Kit.
-3. create 15-second ad.
-4. plan shots.
-5. quote.
-6. approve.
-7. execute.
-8. fail one shot.
-9. retry one.
-10. reassemble.
-11. final asset.
-
----
-
-# 190. Canvas E2E
-
-1. upload product.
-2. place.
-3. add text.
-4. add reference.
-5. draw mask.
-6. autosave.
-7. reload.
-8. document restores.
-9. compile.
-10. quote.
-11. generate.
-
----
-
-# 191. Provider Smoke Tests
-
-Before model active:
-- credential.
-- request schema.
-- quote.
-- provider request.
-- status.
-- output ingest.
-- quality.
-- settlement.
-
----
-
-# 192. Deployment Environments
-
-- local.
-- test.
-- staging.
-- production.
-
-Separate:
-- Postgres.
-- Mongo.
-- Redis.
-- storage.
-- Stripe mode.
-- provider keys.
-
----
-
-# 193. Local Docker
-
-Include:
-- Mongo.
-- Postgres.
-- Redis.
-- Meilisearch.
-- MinIO.
-- Mailpit.
-- APIs.
-- web.
-
-Optional profiles:
-- local vision.
-- local director tooling.
-
----
-
-# 194. Backups
-
-Postgres:
-- daily.
-- PITR if possible.
-
-Mongo:
-- regular.
-- restore tested.
-
-Storage:
-- version/lifecycle according to provider.
-
----
-
-# 195. Production Migration Phases
-
-## Phase 0 — Safety
-
-- backup Postgres.
-- backup Mongo.
-- export Stripe mapping.
-- inventory providers.
-- inventory current environment.
-- create migration branch.
-- run current tests/build.
-
-Acceptance:
-- backups verified.
-- baseline recorded.
-
-## Phase 1 — Repository Shell
-
-- base on `helmies-studio` (single repo).
-- add landing app.
-- route `/`.
-- route `/studio`.
-- preserve homepage.
-- visual regression.
-
-Acceptance:
-- homepage unchanged.
-- authenticated Studio UI works at `/studio`.
-
-## Phase 2 — Identity
-
-- unified Helmies Studio auth/user store.
-- shared login.
-- one wallet display.
-
-Acceptance:
-- one login experience.
-- commercial user resolved from Studio session.
-
-## Phase 3 — Wallet V2
-
-- CreditWallet.
-- CreditLedger.
-- CreditReservation.
-- migration.
-- compatibility mirror.
-
-Acceptance:
-- balances identical to old system.
-- reservation tests pass.
-
-## Phase 4 — Model Registry
-
-- AiProvider.
-- AiModel.
-- AiModelPrice.
-- ModelRoute.
-- seed importer from current model lists.
-- admin model view.
-
-Acceptance:
-- all current production models represented.
-
-## Phase 5 — Pricing Engine
-
-- strategies.
-- quote endpoint.
-- credit calculation.
-- margin config.
-- plan entitlements.
-
-Acceptance:
-- quote matches known current models.
-
-## Phase 6 — Job Engine
-
-- GenerationJob.
-- queues.
-- worker.
-- events.
-- settlement.
-- idempotency.
-
-Acceptance:
-- one image provider works end-to-end.
-
-## Phase 7 — Image Studio V2
-
-- native Agent UI workspace.
-- dynamic controls.
-- reference uploads.
-- history.
-- Asset output.
-- Prompt Engine.
-
-Acceptance:
-- production image generation reliable.
-
-## Phase 8 — Canvas
-
-- library spike.
-- document.
-- autosave.
-- objects.
-- mask.
-- compiler.
-- quote/generate.
-
-Acceptance:
-- rough composition can produce valid generation request.
-
-## Phase 9 — Vision
-
-- VisualAnalysis.
-- service.
-- caption.
-- palette.
-- OCR.
-- regions.
-- batch.
-
-Acceptance:
-- reference analysis visible and reusable.
-
-## Phase 10 — Brand Kits
-
-- schema.
-- UI.
-- logo/font/reference assets.
-- fingerprint.
-- prompt context.
-
-Acceptance:
-- same Brand Kit works in Image Studio and Agent.
-
-## Phase 11 — Agent Creative Tools
-
-- quote tool.
-- image tool.
-- asset tools.
-- Brand tools.
-- subagents.
-- plan.
-- approval.
-
-Acceptance:
-- Agent creates a priced image task using same Gateway as Image Studio.
-
-## Phase 12 — Remaining Studios
-
-- Video.
-- Audio.
-- TTS.
-- Lip Sync.
-- Recast.
-- Influencer.
-
-Acceptance:
-- all current key tools migrated.
-
-## Phase 13 — Workflows
-
-- normalized nodes.
-- preflight cost.
-- durable runs.
-
-Acceptance:
-- workflow uses same jobs/wallet.
-
-## Phase 14 — Director
-
-- Maestro-exact planner (original code, identical behavior).
-- ProductionPlan.
-- ShotPlan.
-- prompt passes (same passes/order/content as Maestro).
-- cost.
-- execution.
-- rerun.
-- reassembly.
-
-Acceptance:
-- multi-shot production survives refresh and targeted rerun.
-
-## Phase 15 — Admin V2
-
-- business dashboard.
-- plans.
-- pricing.
-- promo.
-- models.
-- providers.
-- CMS.
-- alerts.
-- advisor.
-
-Acceptance:
-- commercial configuration no longer requires code deployment.
-
-## Phase 16 — Landing Dynamic Data
-
-- pricing API.
-- CMS.
-- announcements.
-- model counts.
-
-Acceptance:
-- visual homepage unchanged but business data dynamic.
-
-## Phase 17 — Hardening
-
-- tests.
-- load.
-- security.
-- backup.
-- monitoring.
-- performance.
-
-## Phase 18 — Legacy Removal
-
+# 12. Phased Execution Plan
+
+## 12.1 Production migration phases (v1 §195, preserved; checkboxes MUST only be checked after implementation AND verification)
+
+### Phase 0 — Safety
+- [ ] backup Postgres.
+- [ ] export Stripe mapping.
+- [ ] inventory providers.
+- [ ] inventory current environment.
+- [ ] remove `ssh.md` from git tracking and rotate the exposed server credentials (Section 9.6).
+- [ ] create migration branch.
+- [ ] run current tests/build.
+
+Acceptance: backups verified; baseline recorded. (v1's "backup Mongo" item is NOT_APPLICABLE — Section 9.3.1.)
+
+### Phase 1 — Repository Shell
+- [ ] base on `helmies-studio` (single repo).
+- [ ] add landing app.
+- [ ] route `/`.
+- [ ] route `/studio`.
+- [ ] preserve homepage.
+- [ ] visual regression.
+
+Acceptance: homepage unchanged; authenticated Studio UI works at `/studio`.
+
+### Phase 2 — Identity
+- [ ] unified Helmies Studio auth/user store.
+- [ ] shared login.
+- [ ] one wallet display.
+
+Acceptance: one login experience; commercial user resolved from Studio session. **Current state:** largely satisfied — NextAuth v5 (Google OAuth + credentials) with JWT sessions, `/login`, `User.role`, wallet mirror (Section 3.5 caveats).
+
+### Phase 3 — Wallet V2
+- [ ] CreditWallet.
+- [ ] CreditLedger.
+- [ ] CreditReservation.
+- [ ] migration.
+- [ ] compatibility mirror.
+- [ ] resolve Section 3.5 mismatches #1 and #2.
+
+Acceptance: balances identical to old system; reservation tests pass.
+
+### Phase 4 — Model Registry
+- [ ] AiProvider.
+- [ ] AiModel.
+- [ ] AiModelPrice.
+- [ ] ModelRoute.
+- [ ] seed importer from current model lists (Appendix AJ).
+- [ ] admin model view.
+
+Acceptance: all current production models represented.
+
+### Phase 5 — Pricing Engine
+- [ ] strategies.
+- [ ] quote endpoint.
+- [ ] credit calculation.
+- [ ] margin config.
+- [ ] plan entitlements.
+
+Acceptance: quote matches known current models.
+
+### Phase 6 — Job Engine
+- [ ] GenerationJob.
+- [ ] queues.
+- [ ] worker.
+- [ ] events.
+- [ ] settlement.
+- [ ] idempotency.
+
+Acceptance: one image provider works end-to-end.
+
+### Phase 7 — Image Studio V2
+- [ ] native Agent UI workspace.
+- [ ] dynamic controls.
+- [ ] reference uploads.
+- [ ] history.
+- [ ] Asset output.
+- [ ] Prompt Engine.
+
+Acceptance: production image generation reliable.
+
+### Phase 8 — Canvas
+- [ ] library spike.
+- [ ] document.
+- [ ] autosave.
+- [ ] objects.
+- [ ] mask.
+- [ ] compiler.
+- [ ] quote/generate.
+- [ ] resolve Section 3.5 mismatch #3.
+
+Acceptance: rough composition can produce valid generation request.
+
+### Phase 9 — Vision
+- [ ] VisualAnalysis.
+- [ ] service.
+- [ ] caption.
+- [ ] palette.
+- [ ] OCR.
+- [ ] regions.
+- [ ] batch.
+
+Acceptance: reference analysis visible and reusable.
+
+### Phase 10 — Brand Kits
+- [ ] schema.
+- [ ] UI.
+- [ ] logo/font/reference assets.
+- [ ] fingerprint.
+- [ ] prompt context.
+
+Acceptance: same Brand Kit works in Image Studio and Agent.
+
+### Phase 11 — Agent Creative Tools
+- [ ] quote tool.
+- [ ] image tool.
+- [ ] asset tools.
+- [ ] Brand tools.
+- [ ] subagents.
+- [ ] plan.
+- [ ] approval.
+
+Acceptance: Agent creates a priced image task using the same Gateway as Image Studio.
+
+### Phase 12 — Remaining Studios
+- [ ] Video.
+- [ ] Audio.
+- [ ] TTS.
+- [ ] Lip Sync.
+- [ ] Recast.
+- [ ] Influencer.
+
+Acceptance: all current key tools migrated.
+
+### Phase 13 — Workflows
+- [ ] normalized nodes.
+- [ ] preflight cost.
+- [ ] durable runs.
+
+Acceptance: workflow uses same jobs/wallet.
+
+### Phase 14 — Director
+- [ ] Maestro-exact planner (original code, identical behavior).
+- [ ] ProductionPlan.
+- [ ] ShotPlan.
+- [ ] prompt passes (same passes/order/content as Maestro).
+- [ ] cost.
+- [ ] execution.
+- [ ] rerun.
+- [ ] reassembly.
+
+Acceptance: multi-shot production survives refresh and targeted rerun.
+
+### Phase 15 — Admin V2
+- [ ] business dashboard.
+- [ ] plans.
+- [ ] pricing.
+- [ ] promo.
+- [ ] models.
+- [ ] providers.
+- [ ] CMS.
+- [ ] alerts.
+- [ ] advisor.
+
+Acceptance: commercial configuration no longer requires code deployment.
+
+### Phase 16 — Landing Dynamic Data
+- [ ] pricing API.
+- [ ] CMS.
+- [ ] announcements.
+- [ ] model counts.
+
+Acceptance: visual homepage unchanged but business data dynamic.
+
+### Phase 17 — Hardening
+- [ ] tests.
+- [ ] load.
+- [ ] security.
+- [ ] backup.
+- [ ] monitoring.
+- [ ] performance.
+
+### Phase 18 — Legacy Removal
 Only after verified parity:
-- remove old Studio UI.
-- retire old Orchestrator.
-- retire direct provider paths.
-- retire old pricing reads.
-- remove compatibility writes.
+- [ ] remove old Studio UI.
+- [ ] retire old Orchestrator.
+- [ ] retire direct provider paths.
+- [ ] retire old pricing reads.
+- [ ] remove compatibility writes.
 
----
+## 12.2 Source project mappings (v1 §§198–201, preserved)
 
-# 196. Phase Completion Protocol for DeepSeek
+### 12.2.1 Current Helmies Studio sources
+
+| Source | Treatment |
+|---|---|
+| Public `src/app/page.js` | Keep as landing source. Change hard-coded plan arrays → public Plan API; manual model counts → public stats; selected editable text → CMS. Do not redesign. |
+| Current `/studio` | Do not use as the final shell. Extract logic only. |
+| `SimpleMode` | Behavior reference: model settings; upload; prompt; generation; result. Replicate exactly in final shell. |
+| `chatModes` | Migration seed for Model Registry, input schemas, UI schemas. Do not keep as long-term authority. |
+| `lib/models` | Model inventory seed. |
+| `handleGeneration` | Refactor into shared services (Section 2.7.1). |
+| `lib/memory` | Migrate ProjectMemory (Section 3.6). |
+| `AdminPanel` | Use current functionality as baseline; replace UI/architecture with Admin V2. |
+
+### 12.2.2 Native build scope
+
+Build natively inside Helmies Studio: Agent runtime; conversations; tools; subagents; skills; MCP; auth/security; memory; summarization; context; background jobs; resumability; usage tracking; provider support. Extend Helmies Studio with: commercial identity; wallet; creative tools; workspaces; assets; Brand Kits; Studio navigation; generation artifacts; admin link. Build clean extension points rather than depending on external Agent internals.
+
+### 12.2.3 Maestro concept mapping
+
+Replicate Maestro's exact behavior in original Helmies Studio code (same logic, prompting, schemas, and results — not copied source):
+
+```text
+Maestro ProductionPlan        -> Helmies ProductionPlan (identical schema/logic)
+Maestro ShotPlan              -> Helmies ShotPlan (identical schema/logic)
+Maestro planner passes        -> Helmies Director Planning Passes (same passes, order, and prompts)
+Maestro model prompt guides   -> Helmies Prompt Guide Registry (same guide content/logic)
+Maestro saved pipeline        -> DirectorPipeline + DirectorShot (identical persistence semantics)
+Maestro rerun image           -> shot image rerun (identical rerun semantics)
+Maestro rerun video           -> shot video rerun (identical rerun semantics)
+Maestro rejoin                -> Assembly worker (identical rejoin/reassembly logic)
+Maestro dashboard             -> Director Dashboard (identical dashboard behavior)
+Maestro workspaces            -> Projects (identical workspace semantics)
+Maestro prompt polish         -> Prompt Intelligence Engine (identical polishing logic/prompts)
+```
+
+Do not copy restricted Maestro source code. Reproduce its exact behavior in original code, verified by equivalence tests (Section 1.5).
+
+### 12.2.4 image-to-prompt concept mapping
+
+Independently implement:
+
+```text
+scene caption          -> VisualAnalysis.caption
+background description -> VisualAnalysis.background
+palette                -> VisualAnalysis.palette
+object boxes           -> VisualAnalysis.regions
+OCR                    -> VisualAnalysis.textRegions
+editable zones         -> Canvas regions
+structured prompt      -> StructuredVisualPrompt
+multi-image queue      -> batch analysis jobs
+```
+
+Verify source licensing before any direct code reuse.
+
+## 12.3 Implementation Agent Protocol
+
+This protocol replaces v1 §§196–197 ("Phase Completion Protocol for DeepSeek" / "DeepSeek Must Not Stop Because the Task Is Large"). It is agent-neutral and binding on every implementation agent, human or autonomous.
+
+### 12.3.1 Phase completion protocol
 
 For every phase:
 
-1. inspect actual repository.
+1. inspect the actual repository.
 2. list affected files.
 3. read current implementations.
 4. create a local checklist.
@@ -5556,194 +3373,21 @@ For every phase:
 
 Do not ask the owner about a decision already made in this specification.
 
----
+### 12.3.2 Completion discipline
 
-# 197. DeepSeek Must Not Stop Because the Task Is Large
+The implementation agent MUST: work phase by phase; keep a progress file; continue until the Definition of Done (Section 11.8); use smaller commits.
 
-The implementation agent should:
-- work phase by phase.
-- keep progress file.
-- continue until Definition of Done.
-- use smaller commits.
+The implementation agent MUST NOT: declare the project complete after scaffolding; stop after the first working Studio; leave Director unimplemented; leave Admin buttons fake; defer required billing logic; replace real provider integrations with mock APIs.
 
-It must not:
-- declare project complete after scaffolding.
-- stop after first working Studio.
-- leave Director unimplemented.
-- leave Admin buttons fake.
-- defer required billing logic.
-- replace real provider integrations with mock APIs.
+## 12.4 Suggested commit sequence
 
----
+The suggested first 40 commits are normative guidance in Appendix AU.
 
-# 198. Source Project Mapping — Current Helmies Studio
+## 12.5 Reference pseudocode (v1 §§202–206, preserved)
 
-## Public `src/app/page.js`
+These blocks are normative behavior references; adapt syntax to the real architecture (Section 0.2, rule on equivalent implementation).
 
-Keep as landing source.
-
-Change:
-- hard-coded plan arrays -> public Plan API.
-- manual model counts -> public stats.
-- selected editable text -> CMS.
-
-Do not redesign.
-
-## Current `/studio`
-
-Do not use as final shell.
-
-Extract logic only.
-
-## `SimpleMode`
-
-Use as behavior reference:
-- model settings.
-- upload.
-- prompt.
-- generation.
-- result.
-
-Replicate exactly in final shell.
-
-## `chatModes`
-
-Use as migration seed for:
-- Model Registry.
-- input schemas.
-- UI schemas.
-
-Do not keep as long-term authority.
-
-## `lib/models`
-
-Use as model inventory seed.
-
-## `handleGeneration`
-
-Refactor into shared services.
-
-## `lib/memory`
-
-Migrate ProjectMemory.
-
-## AdminPanel
-
-Use current functionality as baseline; replace UI/architecture with Admin V2.
-
----
-
-# 199. Source Project Mapping — Helmies Studio (native build)
-
-Build natively inside Helmies Studio:
-- Agent runtime.
-- conversations.
-- tools.
-- subagents.
-- skills.
-- MCP.
-- auth/security.
-- memory.
-- summarization.
-- context.
-- background jobs.
-- resumability.
-- usage tracking.
-- provider support.
-
-Extend Helmies Studio with:
-- commercial identity.
-- wallet.
-- creative tools.
-- workspaces.
-- assets.
-- Brand Kits.
-- Studio navigation.
-- generation artifacts.
-- admin link.
-
-Build clean extension points rather than depending on external Agent internals.
-
----
-
-# 200. Source Project Mapping — Maestro Concepts
-
-Replicate Maestro's exact behavior in original Helmies Studio code (same logic, prompting, schemas, and results — not copied source):
-
-```text
-Maestro ProductionPlan
-    -> Helmies ProductionPlan (identical schema/logic)
-
-Maestro ShotPlan
-    -> Helmies ShotPlan (identical schema/logic)
-
-Maestro planner passes
-    -> Helmies Director Planning Passes (same passes, order, and prompts)
-
-Maestro model prompt guides
-    -> Helmies Prompt Guide Registry (same guide content/logic)
-
-Maestro saved pipeline
-    -> DirectorPipeline + DirectorShot (identical persistence semantics)
-
-Maestro rerun image
-    -> shot image rerun (identical rerun semantics)
-
-Maestro rerun video
-    -> shot video rerun (identical rerun semantics)
-
-Maestro rejoin
-    -> Assembly worker (identical rejoin/reassembly logic)
-
-Maestro dashboard
-    -> Director Dashboard (identical dashboard behavior)
-
-Maestro workspaces
-    -> Projects (identical workspace semantics)
-
-Maestro prompt polish
-    -> Prompt Intelligence Engine (identical polishing logic/prompts)
-```
-
-Do not copy restricted Maestro source code. Reproduce its exact behavior in original code, verified by equivalence tests.
-
----
-
-# 201. Source Project Mapping — image-to-prompt Concepts
-
-Independently implement:
-
-```text
-scene caption
-    -> VisualAnalysis.caption
-
-background description
-    -> VisualAnalysis.background
-
-palette
-    -> VisualAnalysis.palette
-
-object boxes
-    -> VisualAnalysis.regions
-
-OCR
-    -> VisualAnalysis.textRegions
-
-editable zones
-    -> Canvas regions
-
-structured prompt
-    -> StructuredVisualPrompt
-
-multi-image queue
-    -> batch analysis jobs
-```
-
-Verify source licensing before any direct code reuse.
-
----
-
-# 202. Prompt Compiler Pseudocode
+### 12.5.1 Prompt compiler (v1 §202)
 
 ```ts
 async function compilePrompt(input: CompilePromptInput) {
@@ -5795,9 +3439,7 @@ async function compilePrompt(input: CompilePromptInput) {
 }
 ```
 
----
-
-# 203. Quote Pseudocode
+### 12.5.2 Quote (v1 §203)
 
 ```ts
 async function quoteGeneration(user, model, params, promoCode) {
@@ -5834,9 +3476,7 @@ async function quoteGeneration(user, model, params, promoCode) {
 }
 ```
 
----
-
-# 204. Generation Pseudocode
+### 12.5.3 Generation creation (v1 §204)
 
 ```ts
 async function createGeneration(user, quoteId, clientRequestId) {
@@ -5867,9 +3507,7 @@ async function createGeneration(user, quoteId, clientRequestId) {
 }
 ```
 
----
-
-# 205. Settlement Pseudocode
+### 12.5.4 Settlement (v1 §205)
 
 ```ts
 async function settleJob(job, actualUsage) {
@@ -5894,9 +3532,7 @@ async function settleJob(job, actualUsage) {
 }
 ```
 
----
-
-# 206. Admin Advisor Pseudocode
+### 12.5.5 Admin Advisor (v1 §206)
 
 ```ts
 const scenario = calculator.simulatePromo({
@@ -5920,313 +3556,11 @@ return {
 }
 ```
 
-LLM never computes hidden finance values.
+The LLM never computes hidden finance values.
 
 ---
 
-# 207. Pricing Consistency Invariant
-
-The following surfaces must read the same pricing plan records:
-
-- homepage.
-- pricing page.
-- checkout.
-- Billing page.
-- Agent upgrade recommendation.
-- Admin.
-- promo engine.
-- advisor.
-
-There must not be separate price constants.
-
----
-
-# 208. Admin Offer Workflow
-
-1. Admin creates promo draft.
-2. Calculator runs.
-3. Advisor explains risk.
-4. Admin previews public effect.
-5. Admin activates.
-6. Stripe sync occurs if required.
-7. public offer API updates.
-8. audit logged.
-9. analytics tracks redemptions.
-10. promo expires automatically.
-
----
-
-# 209. Admin CMS Workflow
-
-1. Edit field.
-2. Save draft.
-3. Preview landing.
-4. Publish.
-5. revision snapshot.
-6. cache invalidated.
-7. audit logged.
-
----
-
-# 210. Provider Health Workflow
-
-1. metrics detect failure spike.
-2. provider status degraded.
-3. route priority adjusted automatically if configured.
-4. Admin alert.
-5. Agent/manual users receive safe fallback.
-6. no raw provider error shown.
-
----
-
-# 211. Low Balance UX
-
-If quote exceeds balance:
-
-```text
-You need 640 credits.
-You have 420.
-
-Options:
-- Add credits
-- Use Economy model (~310 credits)
-- Reduce duration to 3 sec (~390 credits)
-```
-
-Agent can generate alternatives automatically.
-
----
-
-# 212. Failure UX
-
-Bad:
-`HTTP 422 invalid image_list`
-
-Good:
-> This model supports a maximum of two reference images, but four are selected.
-
-Actions:
-- Keep the first two.
-- Switch to a compatible model.
-
----
-
-# 213. History and Reproducibility
-
-Each generation detail shows:
-- Studio source.
-- Agent/Workflow/Director source.
-- model.
-- date.
-- credits.
-- prompt.
-- references.
-- project.
-- reuse.
-
-Provider wholesale price remains admin-only unless product decides otherwise.
-
----
-
-# 214. Final Definition of Done
-
-The project is complete only when all of the following are true.
-
-## Public Website
-- current landing visual design preserved.
-- dynamic plans.
-- dynamic CMS.
-- announcements.
-- correct auth links.
-- public model counts.
-
-## Auth
-- one user identity experience.
-- Agent runtime mapped to platform user.
-
-## Wallet
-- one wallet.
-- ledger.
-- reservations.
-- refunds.
-- no negative balance.
-
-## Model Platform
-- model registry.
-- input schemas.
-- UI schemas.
-- provider adapters.
-- price rules.
-- model routes.
-- health.
-
-## Agent
-- one Master Agent.
-- creative subagents.
-- first-party creative tools.
-- cost plan.
-- user approval.
-- persistent jobs.
-- results as Assets.
-
-## Image Studio
-- native final UI.
-- T2I.
-- I2I.
-- references.
-- edit.
-- inpaint/outpaint where supported.
-- Canvas.
-- prompt engine.
-- history.
-- pricing.
-
-## Canvas
-- editable objects.
-- images.
-- text.
-- shapes.
-- free draw.
-- masks.
-- semantic roles.
-- persistence.
-- versions.
-- compiler.
-- quote/generation.
-
-## Vision
-- reference analysis.
-- palette.
-- OCR/text regions.
-- objects/regions.
-- structured output.
-
-## Brand
-- Brand Kits.
-- logos.
-- fonts.
-- colors.
-- references.
-- fingerprint.
-- enforcement modes.
-- Agent/Studio/Director integration.
-
-## Video
-- manual Video Studio.
-- provider model schemas.
-- async jobs.
-- pricing.
-
-## Audio
-- TTS.
-- music.
-- ASR if configured.
-
-## Lip Sync
-- working.
-
-## Recast
-- working.
-
-## Influencer
-- persistent persona capabilities.
-
-## Workflows
-- Gateway-backed.
-- quoted.
-- durable.
-
-## Director
-- Maestro-exact behavior replication (original code).
-- ProductionPlan.
-- ShotPlan.
-- multi-pass prompts (same passes/order/content as Maestro).
-- persistent pipeline.
-- quote.
-- shot reruns.
-- reassembly.
-- dashboard.
-
-## Assets/Projects
-- central Assets.
-- Projects.
-- lineage.
-- search.
-
-## Admin
-- dashboard.
-- users.
-- plans.
-- credit packs.
-- promo codes.
-- pricing.
-- providers.
-- models.
-- routes.
-- prompt guides.
-- generations.
-- jobs.
-- quality.
-- CMS.
-- announcements.
-- advisor.
-- audit.
-- feature flags.
-
-## Infrastructure
-- Docker.
-- Mongo.
-- Postgres.
-- Redis.
-- queues.
-- storage.
-- backups.
-- monitoring.
-- provider diagnostics.
-
-## Quality
-- CI.
-- unit.
-- integration.
-- E2E.
-- visual regression.
-- no broken LLM.
-- no broken primary generation.
-- no dead required controls.
-
----
-
-# 215. Final Mental Model
-
-Helmies Studio is not a collection of API forms.
-
-It is a creative operating system.
-
-The **Master Agent** is the natural-language controller.
-
-The **Manual Studios** are precision instruments.
-
-The **Model Gateway** is the execution kernel.
-
-The **Prompt Intelligence Engine** translates creative intent into model language.
-
-The **Canvas** translates rough visual thought into structured generation instructions.
-
-The **Visual Intelligence service** understands references.
-
-The **Brand Kit** is persistent brand memory.
-
-The **Director** turns ideas into multi-shot productions.
-
-The **Asset/Project system** gives the work continuity.
-
-The **Admin panel** is the business and AI control plane.
-
-The existing **landing page** remains the storefront.
-
-All of these are one product:
-**Helmies Studio**.
-
+# Appendices
 
 # Appendix A — Initial Commercial Data Migration
 
@@ -6266,37 +3600,27 @@ Pro
 €948 billed yearly
 ```
 
-These are **migration seed values**, not permanently hard-coded product decisions.
+These are **migration seed values**, not permanently hard-coded product decisions. The final Admin panel controls them.
 
-The final Admin panel controls them.
-
-Important inconsistency to resolve explicitly:
-
-The current auth create-user event grants `100` signup credits, while the public Free pricing card advertises `10 credits/mo`.
-
-Treat these as two separate concepts:
+Important inconsistency to resolve explicitly: the current auth create-user event grants `100` signup credits, while the public Free pricing card advertises `10 credits/mo`. Treat these as two separate concepts:
 
 ```text
 Free plan recurring monthly credits
 Signup welcome bonus credits
 ```
 
-Both must become configurable.
-
-Recommended configuration:
+Both must become configurable. Recommended configuration:
 
 ```text
 PricingPlan.monthlyCredits
 SignupCampaign.welcomeCredits
 ```
 
-Do not assume the signup bonus equals monthly Free credits.
-
----
+Do not assume the signup bonus equals monthly Free credits. **Current state:** the inconsistency is live — 100-credit hard-coded signup grant (Section 4.7) and a separate hard-coded `SUBSCRIPTION_CREDITS` table (`free: 100, starter: 1000, studio: 3000, pro: 10000`) that also diverges from the seed values above.
 
 # Appendix B — Normalized Capability Registry
 
-The initial capability registry should include at least:
+The initial capability registry MUST include at least:
 
 | Capability | Required Input | Output | Typical Optional Inputs |
 |---|---|---|---|
@@ -6325,8 +3649,6 @@ The initial capability registry should include at least:
 | `llm.prompt_compile` | structured intent | prompt | model ID |
 | `llm.quality` | requirements + result | score | rubric |
 
----
-
 # Appendix C — Generic Model Schema Example
 
 ```json
@@ -6345,81 +3667,34 @@ The initial capability registry should include at least:
     "type": "object",
     "required": ["prompt", "image"],
     "properties": {
-      "prompt": {
-        "type": "string",
-        "maxLength": 4000
-      },
-      "image": {
-        "type": "asset",
-        "accept": ["image/*"]
-      },
-      "durationSec": {
-        "type": "integer",
-        "enum": [5, 10]
-      },
-      "aspectRatio": {
-        "type": "string",
-        "enum": ["16:9", "9:16", "1:1"]
-      },
-      "resolution": {
-        "type": "string",
-        "enum": ["720p", "1080p"]
-      },
-      "seed": {
-        "type": "integer",
-        "minimum": -1
-      }
+      "prompt": { "type": "string", "maxLength": 4000 },
+      "image": { "type": "asset", "accept": ["image/*"] },
+      "durationSec": { "type": "integer", "enum": [5, 10] },
+      "aspectRatio": { "type": "string", "enum": ["16:9", "9:16", "1:1"] },
+      "resolution": { "type": "string", "enum": ["720p", "1080p"] },
+      "seed": { "type": "integer", "minimum": -1 }
     }
   },
 
   "uiSchema": {
-    "prompt": {
-      "control": "prompt-composer",
-      "group": "Main"
-    },
-    "image": {
-      "control": "asset-picker",
-      "label": "First Frame",
-      "group": "References"
-    },
-    "durationSec": {
-      "control": "segmented",
-      "label": "Duration",
-      "suffix": "s",
-      "group": "Output"
-    },
-    "aspectRatio": {
-      "control": "aspect-picker",
-      "group": "Output"
-    },
-    "resolution": {
-      "control": "segmented",
-      "group": "Output"
-    },
-    "seed": {
-      "control": "seed",
-      "advanced": true,
-      "group": "Advanced"
-    }
+    "prompt": { "control": "prompt-composer", "group": "Main" },
+    "image": { "control": "asset-picker", "label": "First Frame", "group": "References" },
+    "durationSec": { "control": "segmented", "label": "Duration", "suffix": "s", "group": "Output" },
+    "aspectRatio": { "control": "aspect-picker", "group": "Output" },
+    "resolution": { "control": "segmented", "group": "Output" },
+    "seed": { "control": "seed", "advanced": true, "group": "Advanced" }
   },
 
   "pricingRule": {
     "strategy": "per_second_resolution",
-    "params": {
-      "720p": 0.05,
-      "1080p": 0.075
-    }
+    "params": { "720p": 0.05, "1080p": 0.075 }
   },
 
-  "limits": {
-    "maxReferenceImages": 1
-  },
+  "limits": { "maxReferenceImages": 1 },
 
   "promptGuideKey": "video/model-y"
 }
 ```
-
----
 
 # Appendix D — Provider Adapter Contract
 
@@ -6453,16 +3728,7 @@ export interface ProviderAdapter {
 }
 ```
 
-`ProviderExecutionContext` may contain:
-- secret resolved server-side.
-- timeout.
-- request ID.
-- user internal ID for audit.
-- job ID.
-
-It must not expose secrets to product code.
-
----
+`ProviderExecutionContext` may contain: secret resolved server-side; timeout; request ID; user internal ID for audit; job ID. It MUST NOT expose secrets to product code.
 
 # Appendix E — Price Strategy Interface
 
@@ -6495,8 +3761,6 @@ TieredStrategy
 RestrictedFormulaStrategy
 ```
 
----
-
 # Appendix F — Quote Validity Rules
 
 A quote is invalid if:
@@ -6513,11 +3777,7 @@ A quote is invalid if:
 - referenced Asset no longer exists.
 - reference ownership changed.
 
-For a harmless small provider price update within configured tolerance, the server may honor a recent quote.
-
-For a material increase, generate new quote.
-
----
+For a harmless small provider price update within configured tolerance, the server MAY honor a recent quote. For a material increase, generate a new quote.
 
 # Appendix G — Model Route Examples
 
@@ -6568,8 +3828,6 @@ audio.music
 lipsync.standard
 recast.standard
 ```
-
----
 
 # Appendix H — System Prompt: Master Creative Agent
 
@@ -6675,8 +3933,6 @@ At the end of a production:
 - offer relevant next action such as Edit in Canvas, Animate, Lip Sync or Create Variation.
 ```
 
----
-
 # Appendix I — System Prompt: Creative Director Subagent
 
 ```text
@@ -6713,8 +3969,6 @@ Rules:
 Return structured output when a schema is provided.
 ```
 
----
-
 # Appendix J — System Prompt: Image Director
 
 ```text
@@ -6740,8 +3994,6 @@ Use actual reference assets when exact identity/product preservation matters.
 Produce a structured image brief.
 Do not directly call a provider.
 ```
-
----
 
 # Appendix K — System Prompt: Video Director
 
@@ -6770,8 +4022,6 @@ For long productions, break work into shots.
 
 Do not directly call providers.
 ```
-
----
 
 # Appendix L — System Prompt: Brand Guardian
 
@@ -6812,8 +4062,6 @@ Do not invent brand facts.
 Return only context relevant to the current generation.
 ```
 
----
-
 # Appendix M — System Prompt: Prompt Engineer
 
 ```text
@@ -6836,8 +4084,6 @@ Rules:
 
 When a JSON schema is supplied, return schema-valid output only.
 ```
-
----
 
 # Appendix N — System Prompt: Quality Control Agent
 
@@ -6872,8 +4118,6 @@ Prefer targeted correction.
 Do not authorize spending beyond the supplied retry budget.
 ```
 
----
-
 # Appendix O — System Prompt: Cost Optimizer
 
 ```text
@@ -6899,8 +4143,6 @@ Return:
 
 Do not perform provider-cost arithmetic yourself when calculator data is available.
 ```
-
----
 
 # Appendix P — System Prompt: Admin Margin Advisor
 
@@ -6928,8 +4170,6 @@ Useful questions:
 - What credit-pack price reaches our target margin?
 ```
 
----
-
 # Appendix Q — Prompt Compilation Structured Output
 
 ```json
@@ -6942,14 +4182,8 @@ Useful questions:
   },
 
   "immutableFacts": [
-    {
-      "type": "product_asset",
-      "assetId": "asset_product"
-    },
-    {
-      "type": "exact_text",
-      "value": "SUMMER DROP"
-    }
+    { "type": "product_asset", "assetId": "asset_product" },
+    { "type": "exact_text", "value": "SUMMER DROP" }
   ],
 
   "brandConstraints": {
@@ -6972,8 +4206,6 @@ Useful questions:
   }
 }
 ```
-
----
 
 # Appendix R — Canvas Compilation Contract
 
@@ -7012,8 +4244,6 @@ type CompiledCanvas = {
   warnings: string[]
 }
 ```
-
----
 
 # Appendix S — Visual Analysis Contract
 
@@ -7060,8 +4290,6 @@ type VisualAnalysis = {
 }
 ```
 
----
-
 # Appendix T — Director Production Schema
 
 ```ts
@@ -7092,8 +4320,6 @@ type DirectorProductionPlan = {
   shots: DirectorShotPlan[]
 }
 ```
-
----
 
 # Appendix U — Director Shot State
 
@@ -7129,8 +4355,6 @@ type DirectorShotState = {
 }
 ```
 
----
-
 # Appendix V — Director Planning Validation
 
 A plan is rejected before quote if:
@@ -7144,8 +4368,6 @@ A plan is rejected before quote if:
 - Brand Kit immutable constraint is impossible without user confirmation.
 - plan contains an execution cycle.
 - exact text is assigned to a model known not to support it when a compatible route exists.
-
----
 
 # Appendix W — Director Cost Options
 
@@ -7173,9 +4395,7 @@ Director should be able to produce:
 
 The plan structure may adapt between modes.
 
----
-
-# Appendix X — Public API Matrix
+# Appendix X — Public API Matrix (target)
 
 ## Public
 
@@ -7241,9 +4461,9 @@ POST /api/platform/workflows/:id/quote
 POST /api/platform/workflows/:id/run
 ```
 
----
+The currently implemented API surface is documented in `STUDIO_FUNCTIONALITY.md` (current-state reference).
 
-# Appendix Y — Admin API Matrix
+# Appendix Y — Admin API Matrix (target)
 
 ```text
 GET   /api/platform/admin/dashboard
@@ -7318,9 +4538,9 @@ POST  /api/platform/admin/feature-flags
 GET   /api/platform/admin/audit
 ```
 
----
-
 # Appendix Z — Environment Variable Contract
+
+Target variables by service. **Current state:** the deployed single-app variable set is documented in `STUDIO_FUNCTIONALITY.md` §16 and `.env.example`; the variables below apply to the target multi-service topology (Section 9.1).
 
 ## Public Landing
 
@@ -7340,7 +4560,7 @@ VITE_AGENT_API_URL
 VITE_SENTRY_DSN
 ```
 
-No provider secret.
+No provider secret. (Applies only if `studio-web` becomes a Vite app; a Next.js `studio-web` uses `NEXT_PUBLIC_*` equivalents.)
 
 ## Platform API
 
@@ -7395,13 +4615,11 @@ VISION_LOCAL_MODEL_PATH
 PLATFORM_INTERNAL_TOKEN
 ```
 
-Provider-specific credentials should be resolved by the Platform/Gateway secret layer rather than broadly copied into every service.
-
----
+Provider-specific credentials SHOULD be resolved by the Platform/Gateway secret layer rather than broadly copied into every service.
 
 # Appendix AA — Docker Compose Skeleton
 
-Illustrative only; adapt to existing Helmies Studio compose.
+Illustrative only; adapt to the existing deployment. MongoDB from v1 removed (Section 9.3.1).
 
 ```yaml
 services:
@@ -7432,7 +4650,7 @@ services:
       dockerfile: docker/agent-api.Dockerfile
     restart: unless-stopped
     depends_on:
-      - mongodb
+      - postgres
       - redis
       - meilisearch
 
@@ -7470,10 +4688,6 @@ services:
     image: postgres:17
     restart: unless-stopped
 
-  mongodb:
-    image: mongo:8
-    restart: unless-stopped
-
   redis:
     image: redis:7
     restart: unless-stopped
@@ -7483,10 +4697,7 @@ services:
     restart: unless-stopped
 ```
 
-Do not blindly replace currently working pinned DB versions without migration testing.
-Use versions compatible with current production data.
-
----
+Do not blindly replace currently working pinned DB versions without migration testing. Use versions compatible with current production data.
 
 # Appendix AB — Queue Payload
 
@@ -7503,9 +4714,7 @@ type GenerationQueuePayload = {
 }
 ```
 
-Queue payload does not contain provider secret.
-
----
+The queue payload MUST NOT contain provider secrets.
 
 # Appendix AC — Job Event Contract
 
@@ -7535,8 +4744,6 @@ type JobEvent = {
   }
 }
 ```
-
----
 
 # Appendix AD — UI Components to Build
 
@@ -7635,8 +4842,6 @@ AdvisorScenario
 AuditTable
 ```
 
----
-
 # Appendix AE — Sidebar Route Map
 
 ```text
@@ -7666,8 +4871,6 @@ AuditTable
 
 Route access is entitlement-aware.
 
----
-
 # Appendix AF — Feature Entitlement Contract
 
 ```ts
@@ -7690,10 +4893,7 @@ type Entitlements = {
 }
 ```
 
-The browser may use it for UI.
-Server remains authority.
-
----
+The browser MAY use it for UI. The server remains the authority.
 
 # Appendix AG — Admin Plan Example
 
@@ -7718,8 +4918,6 @@ Server remains authority.
 
 This is illustrative and can be changed in Admin.
 
----
-
 # Appendix AH — Prompt Guide Storage Example
 
 ```json
@@ -7730,56 +4928,26 @@ This is illustrative and can be changed in Admin.
   "config": {
     "maxPromptChars": 4000,
     "supportsNegativePrompt": true,
-    "order": [
-      "subject",
-      "action",
-      "environment",
-      "camera",
-      "lighting",
-      "style"
-    ]
+    "order": ["subject", "action", "environment", "camera", "lighting", "style"]
   }
 }
 ```
-
----
 
 # Appendix AI — Model Price Examples
 
 Examples only; actual provider pricing is admin-managed and effective-dated.
 
 ```json
-{
-  "strategy": "per_image",
-  "params": {
-    "unitCost": 0.035
-  }
-}
+{ "strategy": "per_image", "params": { "unitCost": 0.035 } }
 ```
 
 ```json
-{
-  "strategy": "per_second_resolution",
-  "params": {
-    "rates": {
-      "720p": 0.05,
-      "1080p": 0.075
-    }
-  }
-}
+{ "strategy": "per_second_resolution", "params": { "rates": { "720p": 0.05, "1080p": 0.075 } } }
 ```
 
 ```json
-{
-  "strategy": "token",
-  "params": {
-    "inputPerMillion": 0.10,
-    "outputPerMillion": 0.40
-  }
-}
+{ "strategy": "token", "params": { "inputPerMillion": 0.10, "outputPerMillion": 0.40 } }
 ```
-
----
 
 # Appendix AJ — Model Importer
 
@@ -7789,29 +4957,13 @@ Write a one-time/importable script:
 scripts/import-current-model-registry.ts
 ```
 
-Sources:
-- current `src/lib/models`.
-- current `chatModes`.
-- current `ModelPricing`.
-- current provider config.
-
-Output:
-- AiProvider.
-- AiModel.
-- AiModelPrice.
-- ModelRoute seeds.
-
-The script must be idempotent.
-
----
+Sources: current `src/lib/models`; current `chatModes`; current `ModelPricing`; current provider config. Output: AiProvider; AiModel; AiModelPrice; ModelRoute seeds. The script MUST be idempotent.
 
 # Appendix AK — Provider Secret Migration
 
-Current ProviderConfig has `apiKey`.
+Current `ProviderConfig` has `apiKey`. Migration:
 
-Migration:
-
-1. read provider rows in secure migration environment.
+1. read provider rows in a secure migration environment.
 2. create secret in secret manager.
 3. store secret reference.
 4. test provider.
@@ -7819,9 +4971,7 @@ Migration:
 6. audit.
 7. ensure backups containing plaintext are protected under retention policy.
 
-Never print key to migration logs.
-
----
+Never print keys to migration logs.
 
 # Appendix AL — Existing Model/Tool Migration Checklist
 
@@ -7847,8 +4997,6 @@ For every model currently exposed in Helmies Studio:
 - [ ] create provider smoke test.
 - [ ] verify result storage.
 - [ ] enable only after test.
-
----
 
 # Appendix AM — Image Studio Completion Checklist
 
@@ -7878,8 +5026,6 @@ For every model currently exposed in Helmies Studio:
 - [ ] history.
 - [ ] send to Video.
 - [ ] Ask Agent.
-
----
 
 # Appendix AN — Canvas Completion Checklist
 
@@ -7919,8 +5065,6 @@ For every model currently exposed in Helmies Studio:
 - [ ] generate.
 - [ ] result lineage.
 
----
-
 # Appendix AO — Brand Kit Completion Checklist
 
 - [ ] create.
@@ -7947,8 +5091,6 @@ For every model currently exposed in Helmies Studio:
 - [ ] use in Video Studio.
 - [ ] use in Agent.
 - [ ] use in Director.
-
----
 
 # Appendix AP — Director Completion Checklist
 
@@ -7984,8 +5126,6 @@ For every model currently exposed in Helmies Studio:
 - [ ] pause.
 - [ ] cancel.
 
----
-
 # Appendix AQ — Master Agent Completion Checklist
 
 - [ ] creative system prompt.
@@ -8011,8 +5151,6 @@ For every model currently exposed in Helmies Studio:
 - [ ] project saving.
 - [ ] Agent -> Studio handoff.
 - [ ] Studio -> Agent context handoff.
-
----
 
 # Appendix AR — Admin Completion Checklist
 
@@ -8068,8 +5206,6 @@ For every model currently exposed in Helmies Studio:
 - [ ] audit.
 - [ ] system health.
 
----
-
 # Appendix AS — Critical Acceptance Tests
 
 | Feature | Test | Expected |
@@ -8101,8 +5237,6 @@ For every model currently exposed in Helmies Studio:
 | Asset ownership | user requests another user's asset | denied |
 | Wallet race | concurrent jobs | balance never negative |
 
----
-
 # Appendix AT — File/Module Target Map
 
 | Target | Responsibility |
@@ -8120,15 +5254,12 @@ For every model currently exposed in Helmies Studio:
 | `packages/contracts` | shared types |
 | `packages/storage` | assets/object storage |
 | `prisma` | commercial DB |
-| existing `api/server/controllers/agents` | mature Agent runtime |
-| existing Agent MCP modules | external tool connectivity |
-| existing Agent skills modules | reusable creative skills |
 | current Helmies Studio `src/lib/models` | migration seed only |
 | current Helmies Studio `chatModes` | migration seed only |
 | current generation handler | service extraction source |
 | current AdminPanel | baseline requirements, not final UI |
 
----
+(v1 rows referencing "existing Agent runtime / MCP / skills modules" from the abandoned `helmies-agent` project are SUPERSEDED — there is no external runtime to reference; Section 9.3.1.)
 
 # Appendix AU — Suggested First 40 Commits
 
@@ -8173,36 +5304,43 @@ For every model currently exposed in Helmies Studio:
 39. `feat: add dynamic landing pricing cms and alerts`
 40. `chore: remove verified legacy paths`
 
----
+# Appendix AV — Implementation Agent Instruction Block
 
-# Appendix AV — Final DeepSeek Instruction Block
-
-Copy this intent into the coding-agent context when implementation starts:
+Copy this intent into the coding-agent context when implementation starts. This block replaces the v1 "Final DeepSeek Instruction Block" and is agent-neutral.
 
 ```text
 You are implementing the final Helmies Studio according to
-HELMIES_STUDIO_MASTER_MERGE_IMPLEMENTATION_SPEC.md.
+HELMIES_STUDIO_MASTER_UPGRADE.md.
 
 Read the entire file before making changes.
 
 Do not ask product questions already answered in the specification.
 
-Work sequentially through the migration phases.
+Work sequentially through the migration phases (Section 12.1).
 
 The current public landing page is visually protected.
 Do not redesign it.
 
 The `helmies-agent` project is abandoned and is NOT used.
-The `helmies-studio` codebase is the single foundation and is built out natively into the final authenticated application and Agent-runtime foundation.
+The `helmies-studio` codebase is the single foundation and is built out
+natively into the final authenticated application and Agent-runtime
+foundation.
 
-The old helmies-studio public tool shell is a source of commercial database data, generation providers, pricing, workflows and useful backend logic that must be evolved in place rather than blindly rewritten.
+The old helmies-studio public tool shell is a source of commercial
+database data, generation providers, pricing, workflows and useful
+backend logic that must be evolved in place rather than blindly
+rewritten.
 
 Do not maintain or import a second Agent runtime.
 Helmies Studio builds its own Master Agent runtime natively.
 
-Agent, manual Studios, Workflows and Director must all use the same Model Gateway, Pricing Engine, wallet and job system.
+Agent, manual Studios, Workflows and Director must all use the same
+Model Gateway, Pricing Engine, wallet and job system.
 
-Replicate Maestro's exact Director behavior (logic, prompting, schemas, results) in original Helmies Studio code. Do not copy Maestro source code verbatim unless a valid commercial license has been obtained. Equivalence must be verified by side-by-side comparison tests.
+Replicate Maestro's exact Director behavior (logic, prompting, schemas,
+results) in original Helmies Studio code. Do not copy Maestro source
+code verbatim unless a valid commercial license has been obtained.
+Equivalence must be verified by side-by-side comparison tests.
 
 Do not expose provider secrets.
 
@@ -8212,7 +5350,7 @@ Do not reset production databases.
 
 Do not stop at scaffolding.
 
-For each phase:
+For each phase (Section 12.3):
 - inspect
 - migrate
 - implement
@@ -8222,12 +5360,11 @@ For each phase:
 - document
 - continue
 
-The project is not complete until the Definition of Done in the specification is satisfied.
+The project is not complete until the Definition of Done (Section 11.8)
+is satisfied.
 ```
 
----
-
-# Appendix AW — Architecture Diagram
+# Appendix AW — Architecture Diagram (target)
 
 ```text
                          ┌────────────────────────────┐
@@ -8238,7 +5375,7 @@ The project is not complete until the Definition of Done in the specification is
                                │ Gateway / Edge │
                                └──────┬─────┬────┘
                                       │     │
-                         /             │     │ /studio
+                          /            │     │ /studio
                      ┌────────────────┘     └─────────────────┐
                      │                                        │
            ┌─────────▼────────┐                    ┌──────────▼─────────┐
@@ -8275,16 +5412,14 @@ The project is not complete until the Definition of Done in the specification is
 
 Persistent data:
 
-MongoDB
-    Helmies Studio agent runtime
-
 PostgreSQL
-    users/commercial mapping
+    users/identity
     wallet/billing
     models/pricing
     jobs/assets/projects
     Brand Kits/Canvas
     Director/Admin/CMS
+    agent runtime entities
 
 Redis
     queues/cache/locks/realtime
@@ -8293,7 +5428,7 @@ Object Storage
     all user/generated media
 ```
 
----
+(MongoDB removed from the target — Section 9.3.1.)
 
 # Appendix AX — Product North Star Experience
 
@@ -8339,3 +5474,23 @@ At the same time, the owner/admin should be able to:
 10. see real AI COGS and margin.
 
 That is the final Helmies Studio.
+
+---
+
+# Final Mental Model (v1 §215, preserved)
+
+Helmies Studio is not a collection of API forms. It is a creative operating system.
+
+The **Master Agent** is the natural-language controller.
+The **Manual Studios** are precision instruments.
+The **Model Gateway** is the execution kernel.
+The **Prompt Intelligence Engine** translates creative intent into model language.
+The **Canvas** translates rough visual thought into structured generation instructions.
+The **Visual Intelligence service** understands references.
+The **Brand Kit** is persistent brand memory.
+The **Director** turns ideas into multi-shot productions.
+The **Asset/Project system** gives the work continuity.
+The **Admin panel** is the business and AI control plane.
+The existing **landing page** remains the storefront.
+
+All of these are one product: **Helmies Studio**.

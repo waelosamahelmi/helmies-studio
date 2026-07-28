@@ -15,6 +15,10 @@ export function useAuth() {
 export function AuthModalProvider({ children }) {
   const [showLogin, setShowLogin] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [formLoading, setFormLoading] = useState(false);
 
   useEffect(() => {
     const handler = () => setShowLogin(true);
@@ -25,6 +29,27 @@ export function AuthModalProvider({ children }) {
   const handleGoogle = async () => {
     setLoading(true);
     await signIn("google", { callbackUrl: window.location.pathname });
+  };
+
+  const handleCredentials = async (e) => {
+    e.preventDefault();
+    setError("");
+    setFormLoading(true);
+    try {
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+      if (result?.error) {
+        setError("Invalid email or password.");
+        return;
+      }
+      setShowLogin(false);
+      window.location.reload();
+    } finally {
+      setFormLoading(false);
+    }
   };
 
   return (
@@ -62,14 +87,49 @@ export function AuthModalProvider({ children }) {
                   Create with 70+ AI models. Your generations are waiting.
                 </p>
 
-                <button className="btn btn-primary w-full justify-center" onClick={handleGoogle} disabled={loading}>
+                <form className="auth__form" onSubmit={handleCredentials}>
+                  <input
+                    className="auth__input"
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                  />
+                  <input
+                    className="auth__input"
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+
+                  {error && <p className="auth__error" role="alert">{error}</p>}
+
+                  <button className="btn btn-primary w-full justify-center" type="submit" disabled={formLoading || loading}>
+                    {formLoading ? (
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        Sign in
+                        <span className="btn__icon"><IconArrowUpRight /></span>
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <div className="auth__divider"><span>or</span></div>
+
+                <button className="btn btn-ghost w-full justify-center" onClick={handleGoogle} disabled={loading || formLoading}>
                   {loading ? (
                     <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
                     <>
                       <IconGoogle className="auth__google" />
                       Continue with Google
-                      <span className="btn__icon"><IconArrowUpRight /></span>
                     </>
                   )}
                 </button>

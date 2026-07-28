@@ -11,7 +11,7 @@ export async function getWallet(userId) {
     // Migrate from legacy User.credits if no wallet exists
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
     wallet = await prisma.creditWallet.create({
-      data: { userId, available: user?.credits || 0, reserved: 0, lifetimeCredited: user?.credits || 0, lifetimeDebited: 0 },
+      data: { userId, available: user?.credits || 0, reserved: 0, lifetime: user?.credits || 0 },
     });
     if (user?.credits) {
       await addLedgerEntry(userId, user.credits, user.credits, 0, "migration_opening_balance", "Initial balance from legacy credits");
@@ -61,7 +61,7 @@ export async function settleReservation(userId, jobId, actualCredits) {
     const release = reservation.amount - actualCredits;
     const wallet = await tx.creditWallet.update({
       where: { userId },
-      data: { reserved: { decrement: reservation.amount }, available: { increment: release }, lifetimeDebited: { increment: actualCredits } },
+      data: { reserved: { decrement: reservation.amount }, available: { increment: release } },
     });
 
     await tx.creditReservation.update({ where: { jobId }, data: { status: "settled", settledAt: new Date() } });
@@ -99,8 +99,8 @@ export async function grantCredits(userId, amount, type = "admin_adjustment", de
   return prisma.$transaction(async (tx) => {
     const wallet = await tx.creditWallet.upsert({
       where: { userId },
-      update: { available: { increment: amount }, lifetimeCredited: { increment: amount } },
-      create: { userId, available: amount, lifetimeCredited: amount },
+      update: { available: { increment: amount }, lifetime: { increment: amount } },
+      create: { userId, available: amount, lifetime: amount },
     });
     await addLedgerEntry(userId, amount, wallet.available, wallet.reserved, type, description);
     return wallet;
