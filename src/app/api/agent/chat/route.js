@@ -19,11 +19,11 @@ export async function POST(req) {
     }
 
     const selectedModel = model || process.env.LLM_MODEL || "google/gemini-2.5-flash-openai";
-    const key = process.env.KIE_KEY;
+    const key = process.env.OPENROUTER_KEY;
 
     if (!key) {
       return new Response(
-        `data: ${JSON.stringify({ type: "token", content: "No LLM configured. Set KIE_KEY in .env" })}\n\ndata: [DONE]\n\n`,
+        `data: ${JSON.stringify({ type: "token", content: "No LLM configured. Set OPENROUTER_KEY in .env" })}\n\ndata: [DONE]\n\n`,
         { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } }
       );
     }
@@ -36,10 +36,9 @@ export async function POST(req) {
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
-    // Try streaming first; fall back to non-streaming if that fails.
-    // KIE exposes an OpenAI-compatible /chat/completions endpoint used directly here;
-    // media generation (image/video/audio) goes through lib/providers.js instead.
-    const streamRes = await fetch(`${"https://api.kie.ai/api/v1"}/chat/completions`, {
+    // OpenRouter exposes an OpenAI-compatible /chat/completions endpoint.
+    // KIE is async task-only (media generation) and has no chat endpoint.
+    const streamRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
