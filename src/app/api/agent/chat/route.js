@@ -18,7 +18,7 @@ export async function POST(req) {
       return NextResponse.json({ error: "Messages required" }, { status: 400 });
     }
 
-    const selectedModel = model || process.env.LLM_MODEL || "google/gemini-3.6-flash";
+    const selectedModel = model || process.env.LLM_MODEL || "deepseek/deepseek-v4-flash";
     const key = process.env.OPENROUTER_KEY;
 
     if (!key) {

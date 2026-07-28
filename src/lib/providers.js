@@ -116,14 +116,15 @@ const PROVIDERS = {
 };
 
 const LLM_PROVIDER = {
-  baseUrl: "http://localhost:11434",
-  getKey: () => "ollama",
-  defaultModel: "llama3.2:3b",
+  baseUrl: "https://openrouter.ai/api/v1",
+  getKey: () => process.env.OPENROUTER_KEY,
+  defaultModel: "deepseek/deepseek-v4-flash",
   models: {
-    "gemini-2.5-flash": "llama3.2:3b",
-    "gemini-2.5-flash-openai": "llama3.2:3b",
-    "gemini-2.5-pro": "llama3.2:3b",
-    "google/gemini-2.5-flash-openai": "llama3.2:3b",
+    "gemini-2.5-flash": "deepseek/deepseek-v4-flash",
+    "gemini-2.5-flash-openai": "deepseek/deepseek-v4-flash",
+    "gemini-2.5-pro": "deepseek/deepseek-v4-flash",
+    "google/gemini-2.5-flash-openai": "deepseek/deepseek-v4-flash",
+    "google/gemini-3.6-flash": "deepseek/deepseek-v4-flash",
   },
 };
 
@@ -265,26 +266,25 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
 
 export async function llmComplete(messages, options = {}) {
   const p = LLM_PROVIDER;
+  const key = p.getKey();
+  if (!key) throw new Error("OPENROUTER_KEY not configured");
   const modelId = p.models[options.model] || p.defaultModel;
 
-  const systemMsg = messages.find(m => m.role === "system");
-  const chatMessages = systemMsg ? messages.filter(m => m.role !== "system") : messages;
-
-  const body = {
-    model: modelId,
-    messages: chatMessages,
-    stream: false,
-    options: {
-      temperature: options.temperature ?? 0.7,
-      num_predict: options.maxTokens ?? 2000,
-    },
-  };
-  if (systemMsg) body.system = systemMsg.content;
-
-  const res = await fetch(`${p.baseUrl}/api/chat`, {
+  const res = await fetch(`${p.baseUrl}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+      "HTTP-Referer": process.env.NEXTAUTH_URL || "https://studio.helmies.fi",
+      "X-Title": "Helmies Studio",
+    },
+    body: JSON.stringify({
+      model: modelId,
+      messages,
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxTokens ?? 2000,
+      stream: false,
+    }),
     signal: AbortSignal.timeout(options.timeout || 60000),
   });
 
@@ -294,32 +294,31 @@ export async function llmComplete(messages, options = {}) {
   }
 
   const data = await res.json();
-  return data.message?.content || "";
+  return data.choices?.[0]?.message?.content || "";
 }
 
 export async function llmStream(messages, options = {}) {
   const p = LLM_PROVIDER;
+  const key = p.getKey();
+  if (!key) throw new Error("OPENROUTER_KEY not configured");
   const modelId = p.models[options.model] || p.defaultModel;
 
-  const systemMsg = messages.find(m => m.role === "system");
-  const chatMessages = systemMsg ? messages.filter(m => m.role !== "system") : messages;
-
-  const body = {
-    model: modelId,
-    messages: chatMessages,
-    stream: true,
-    options: {
-      temperature: options.temperature ?? 0.7,
-      num_predict: options.maxTokens ?? 2000,
-    },
-  };
-  if (systemMsg) body.system = systemMsg.content;
-
-  const res = await fetch(`${p.baseUrl}/api/chat`, {
+  const res = await fetch(`${p.baseUrl}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(options.timeout || 120000),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+      "HTTP-Referer": process.env.NEXTAUTH_URL || "https://studio.helmies.fi",
+      "X-Title": "Helmies Studio",
+    },
+    body: JSON.stringify({
+      model: modelId,
+      messages,
+      temperature: options.temperature ?? 0.7,
+      max_tokens: options.maxTokens ?? 2000,
+      stream: true,
+    }),
+    signal: AbortSignal.timeout(options.timeout || 60000),
   });
 
   if (!res.ok) {

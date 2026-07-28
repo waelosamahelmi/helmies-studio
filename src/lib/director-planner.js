@@ -471,7 +471,7 @@ export async function createProductionPlan(brief, userId) {
 
   let plan;
 
-  const hasLLM = process.env.KIE_KEY;
+  const hasLLM = process.env.OPENROUTER_KEY;
   if (hasLLM) {
     try {
       const systemPrompt = buildSystemPrompt(preset.label, sectionStrategy);
@@ -485,7 +485,7 @@ export async function createProductionPlan(brief, userId) {
       const response = await llmComplete(messages, {
         maxTokens: 4096,
         temperature: 0.4,
-        model: "google/gemini-2.5-flash-openai"
+        model: "deepseek/deepseek-v4-flash"
       });
 
       // Extract JSON from response — handle markdown code blocks

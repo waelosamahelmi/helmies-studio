@@ -212,7 +212,7 @@ export default function OrchestratorMode() {
   const [plan, setPlan] = useState(null);
   const [stepCards, setStepCards] = useState([]);
   const [models, setModels] = useState([]);
-  const [selectedModel, setSelectedModel] = useState("google/gemini-3.6-flash");
+  const [selectedModel, setSelectedModel] = useState("deepseek/deepseek-v4-flash");
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const messagesRef = useRef([]);

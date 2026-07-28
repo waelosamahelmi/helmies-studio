@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 // Provider-agnostic image analysis. Uses a multimodal LLM via KIE's
 // OpenAI-compatible chat completions endpoint.
 
-const VISION_MODEL = process.env.VISION_MODEL || "google/gemini-2.5-flash-openai";
+const VISION_MODEL = process.env.VISION_MODEL || "deepseek/deepseek-v4-flash";
 
 export async function analyzeImage(imageUrl, options = {}) {
   if (!imageUrl) throw new Error("Image URL required");
@@ -16,7 +16,7 @@ export async function analyzeImage(imageUrl, options = {}) {
   });
   if (cached && !options.force) return cached;
 
-  const key = process.env.KIE_KEY;
+  const key = process.env.OPENROUTER_KEY;
   if (!key) {
     return {
       id: null,
@@ -34,7 +34,7 @@ export async function analyzeImage(imageUrl, options = {}) {
   }
 
   try {
-    const response = await fetch("https://api.kie.ai/api/v1/chat/completions", {
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -212,7 +212,8 @@ export const AUDIO_MODELS = [
 //  LLM / CHAT (for agent, prompt expansion, analysis)
 // ══════════════════════════════════════════════════════════════
 export const LLM_MODELS = [
-  { id: "google/gemini-2.5-flash-openai", name: "Gemini 2.5 Flash", provider: "Google", contextLength: 1048576 },
+  { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash", provider: "DeepSeek", contextLength: 1000000 },
+  { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro", provider: "DeepSeek", contextLength: 1000000 },
 ];
 
 // ══════════════════════════════════════════════════════════════

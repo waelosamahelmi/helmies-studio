@@ -153,7 +153,7 @@ export function getAgentList() {
 
 // ── Plan a task with token-by-token streaming ──
 export async function planTaskStream(userMessage, context = {}) {
-  const hasLLM = process.env.KIE_KEY;
+  const hasLLM = process.env.OPENROUTER_KEY;
 
   if (!hasLLM) {
     const plan = buildHeuristicPlan(userMessage, context);
@@ -231,7 +231,7 @@ export async function planTaskStream(userMessage, context = {}) {
 
 // ── Plan a task (orchestrator) ──
 export async function planTask(userMessage, context = {}) {
-  const hasLLM = process.env.KIE_KEY;
+  const hasLLM = process.env.OPENROUTER_KEY;
 
   if (!hasLLM) {
     const plan = buildHeuristicPlan(userMessage, context);
