@@ -1,17 +1,19 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import CanvasEditor, {
   TOOLS,
   OBJECT_TYPES,
   SEMANTIC_ROLES,
 } from "./CanvasEditor";
-import { IconSparkle, IconClose, IconImage, IconChevron } from "@/components/Icons";
+import { IconSparkle, IconClose, IconImage, IconChevron, IconBolt, IconArrowUpRight, IconDownload } from "@/components/Icons";
+import { IMAGE_MODELS } from "@/lib/models";
+import { useAsyncGeneration } from "./useAsyncGeneration";
+import { apiFetch } from "@/lib/client-fetch";
 
 const EASE = [0.32, 0.72, 0, 1];
 
-/* ── Tool definitions ──────────────────────────────────────── */
 const TOOL_DEFS = [
   { id: TOOLS.SELECT, label: "Select", icon: "↖", shortcut: "V" },
   { id: TOOLS.ADD_IMAGE, label: "Image", icon: "🖼", shortcut: "I" },
@@ -21,6 +23,14 @@ const TOOL_DEFS = [
   { id: TOOLS.MASK_INCLUDE, label: "Mask +", icon: "⊕", shortcut: "M" },
   { id: TOOLS.MASK_EXCLUDE, label: "Mask −", icon: "⊖", shortcut: "N" },
 ];
+
+const CANVAS_MODELS = IMAGE_MODELS.slice(0, 8).map((m) => ({
+  id: m.id,
+  name: m.name,
+  provider: m.provider,
+  endpoint: m.endpoint || m.id,
+  aspectRatios: m.aspectRatios,
+}));
 
 /* ══════════════════════════════════════════════════════════════
    CanvasWorkspace — Full canvas editor workspace layout
@@ -32,12 +42,20 @@ export default function CanvasWorkspace() {
   const [selectedLayerId, setSelectedLayerId] = useState(null);
   const zoomRef = useRef(null);
 
+  // Prompt + generation state
+  const [prompt, setPrompt] = useState("");
+  const [selectedModel, setSelectedModel] = useState(CANVAS_MODELS[0].id);
+  const [showModelMenu, setShowModelMenu] = useState(false);
+  const [showResult, setShowResult] = useState(false);
+  const { loading: generating, result, error, elapsed, submit } = useAsyncGeneration();
+
+  const currentModel = CANVAS_MODELS.find((m) => m.id === selectedModel) || CANVAS_MODELS[0];
+
   /* ── Keyboard shortcuts ────────────────────────────────── */
   const handleKeyDown = useCallback(
     (e) => {
       if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
 
-      // Undo / Redo
       if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
         window.__helmiesCanvasAPI?.undo();
@@ -47,7 +65,6 @@ export default function CanvasWorkspace() {
         window.__helmiesCanvasAPI?.redo();
       }
 
-      // Tool shortcuts
       if (e.key === "v" || e.key === "V") { setMode(TOOLS.SELECT); return; }
       if (e.key === "i" || e.key === "I") { setMode(TOOLS.ADD_IMAGE); triggerImageUpload(); return; }
       if (e.key === "t" || e.key === "T") { setMode(TOOLS.ADD_TEXT); return; }
@@ -56,7 +73,6 @@ export default function CanvasWorkspace() {
       if (e.key === "m" || e.key === "M") { setMode(TOOLS.MASK_INCLUDE); return; }
       if (e.key === "n" || e.key === "N") { setMode(TOOLS.MASK_EXCLUDE); return; }
 
-      // Zoom
       if ((e.metaKey || e.ctrlKey) && e.key === "=") {
         e.preventDefault();
         const api = window.__helmiesCanvasAPI;
@@ -72,11 +88,9 @@ export default function CanvasWorkspace() {
         window.__helmiesCanvasAPI?.applyZoom(100);
       }
 
-      // Delete selected
-      if (e.key === "Delete" || e.key === "Backspace") {
-        if (selectedLayerId) {
-          // handled inside CanvasEditor
-        }
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        handleGenerate();
       }
     },
     [selectedLayerId]
@@ -101,7 +115,24 @@ export default function CanvasWorkspace() {
   const zoomIn = () => window.__helmiesCanvasAPI?.applyZoom((window.__helmiesCanvasAPI?.getZoom() || 100) + 10);
   const zoomOut = () => window.__helmiesCanvasAPI?.applyZoom((window.__helmiesCanvasAPI?.getZoom() || 100) - 10);
   const zoomFit = () => window.__helmiesCanvasAPI?.applyZoom(100);
-  const compile = () => window.__helmiesCanvasAPI?.compile();
+
+  /* ── Generate: compile canvas + send with prompt ─────── */
+  const handleGenerate = useCallback(() => {
+    if (!prompt.trim() && !window.__helmiesCanvasAPI?.getCanvas?.()?.getObjects()?.length) return;
+
+    const canvasContext = window.__helmiesCanvasAPI?.compile?.() || null;
+
+    const aspectRatio = canvasContext?.canvas
+      ? `${canvasContext.canvas.width}:${canvasContext.canvas.height}`
+      : "1:1";
+    submit("image", selectedModel, {
+      endpoint: currentModel.endpoint || selectedModel,
+      prompt,
+      canvas_context: canvasContext,
+      aspect_ratio: aspectRatio,
+    });
+    setShowResult(true);
+  }, [prompt, selectedModel, currentModel, submit]);
 
   /* ── Sync zoom display ─────────────────────────────────── */
   const refreshZoom = useCallback(() => {
@@ -109,6 +140,14 @@ export default function CanvasWorkspace() {
       setZoomState(zoomRef.current.zoom);
     }
   }, []);
+
+  /* ── Close model menu on outside click ────────────────── */
+  useEffect(() => {
+    if (!showModelMenu) return;
+    const handler = () => setShowModelMenu(false);
+    setTimeout(() => document.addEventListener("click", handler), 0);
+    return () => document.removeEventListener("click", handler);
+  }, [showModelMenu]);
 
   return (
     <div
@@ -141,6 +180,64 @@ export default function CanvasWorkspace() {
             selectedLayerId={selectedLayerId}
             onLayerSelect={setSelectedLayerId}
           />
+
+          {/* Generation result overlay */}
+          <AnimatePresence>
+            {showResult && (generating || result?.url || error) && (
+              <motion.div
+                className="studio__canvas-result-overlay"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: EASE }}
+              >
+                <div className="studio__canvas-result-card">
+                  <div className="studio__canvas-result-header">
+                    <span className="studio__canvas-result-title">
+                      {generating ? "Generating..." : error ? "Failed" : "Result"}
+                    </span>
+                    <button onClick={() => setShowResult(false)} className="studio__canvas-result-close">
+                      <IconClose />
+                    </button>
+                  </div>
+                  <div className="studio__canvas-result-body">
+                    {generating && (
+                      <div className="studio__canvas-result-loading">
+                        <span className="studio__spinner" />
+                        <span>{elapsed}s elapsed</span>
+                      </div>
+                    )}
+                    {error && <div className="studio__error">{error}</div>}
+                    {result?.url && !generating && (
+                      <>
+                        <img src={result.url} alt="Generated" className="studio__canvas-result-img" />
+                        <div className="studio__canvas-result-actions">
+                          <a href={result.url} download className="studio__chip">
+                            <IconDownload style={{ width: 14, height: 14 }} /> Download
+                          </a>
+                          <button
+                            className="studio__chip"
+                            onClick={() => {
+                              const api = window.__helmiesCanvasAPI;
+                              if (api && result.url) api.addImageFromUrl?.(result.url);
+                              setShowResult(false);
+                            }}
+                          >
+                            <IconImage style={{ width: 14, height: 14 }} /> Add to canvas
+                          </button>
+                          {result.creditsUsed && (
+                            <span className="studio__chip">
+                              <IconBolt style={{ width: 14, height: 14 }} /> {result.creditsUsed} cr
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Right Panel: Layers + Properties */}
@@ -163,11 +260,67 @@ export default function CanvasWorkspace() {
         </AnimatePresence>
       </div>
 
-      {/* ── Bottom Bar ─────────────────────────────────── */}
-      <BottomBar
-        onCompile={compile}
-        mode={mode}
-      />
+      {/* ── Bottom Prompt Bar ──────────────────────────────── */}
+      <div className="studio__canvas-promptbar">
+        <div className="studio__canvas-promptbar-inner">
+          {/* Model selector */}
+          <div className="studio__canvas-model-select" onClick={(e) => { e.stopPropagation(); setShowModelMenu(!showModelMenu); }}>
+            <span className="studio__canvas-model-name">{currentModel.name}</span>
+            <IconChevron style={{ width: 12, height: 12, transform: showModelMenu ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+            <AnimatePresence>
+              {showModelMenu && (
+                <motion.div
+                  className="studio__canvas-model-menu"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  transition={{ duration: 0.2 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {CANVAS_MODELS.map((m) => (
+                    <button
+                      key={m.id}
+                      className={`studio__canvas-model-item ${selectedModel === m.id ? "studio__canvas-model-item--active" : ""}`}
+                      onClick={() => { setSelectedModel(m.id); setShowModelMenu(false); }}
+                    >
+                      <span>{m.name}</span>
+                      <span className="studio__canvas-model-provider">{m.provider}</span>
+                    </button>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Prompt input */}
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Describe what to generate from your canvas... (Ctrl+Enter to generate)"
+            rows={1}
+            className="studio__canvas-prompt-input"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                handleGenerate();
+              }
+            }}
+          />
+
+          {/* Generate button */}
+          <button
+            onClick={handleGenerate}
+            disabled={(!prompt.trim() && !window.__helmiesCanvasAPI?.getCanvas?.()?.getObjects()?.length) || generating}
+            className="studio__canvas-generate-btn"
+          >
+            <IconSparkle style={{ width: 16, height: 16 }} />
+            {generating ? "Generating..." : "Generate"}
+          </button>
+        </div>
+        <div className="studio__canvas-promptbar-hint">
+          Canvas objects are automatically included as context · {currentModel.provider}
+        </div>
+      </div>
     </div>
   );
 }
@@ -189,7 +342,6 @@ function Toolbar({
 }) {
   return (
     <div className="studio__canvas-toolbar">
-      {/* Tool buttons */}
       <div className="studio__canvas-toolbar-group">
         {tools.map((tool) => (
           <button
@@ -204,10 +356,8 @@ function Toolbar({
         ))}
       </div>
 
-      {/* Spacer */}
       <div className="studio__canvas-toolbar-spacer" />
 
-      {/* Undo / Redo */}
       <div className="studio__canvas-toolbar-group">
         <button
           onClick={() => window.__helmiesCanvasAPI?.undo()}
@@ -225,7 +375,6 @@ function Toolbar({
         </button>
       </div>
 
-      {/* Zoom controls */}
       <div className="studio__canvas-toolbar-group">
         <button onClick={onZoomOut} className="studio__canvas-tool-btn" title="Zoom out">
           −
@@ -239,7 +388,6 @@ function Toolbar({
         </button>
       </div>
 
-      {/* Right panel toggle */}
       <div className="studio__canvas-toolbar-group">
         <button
           onClick={onToggleRightPanel}
@@ -296,31 +444,6 @@ function RightPanelContent({ selectedLayerId }) {
           <p>Select an object on the canvas to view properties</p>
         </div>
       )}
-    </div>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════
-   BottomBar — Compile & Generate actions
-   ══════════════════════════════════════════════════════════════ */
-function BottomBar({ onCompile, mode }) {
-  return (
-    <div className="studio__canvas-bottombar">
-      <div className="studio__canvas-bottombar-left">
-        <span className="studio__canvas-bottombar-hint">
-          Tip: Use keyboard shortcuts — V (select), I (image), T (text), S (shape), D (draw), M/N (mask)
-        </span>
-      </div>
-      <div className="studio__canvas-bottombar-actions">
-        <button
-          onClick={onCompile}
-          className="studio__btn studio__btn--primary"
-          title="Compile the canvas into a structured JSON document"
-        >
-          <IconSparkle />
-          Compile & Generate
-        </button>
-      </div>
     </div>
   );
 }

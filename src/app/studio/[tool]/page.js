@@ -101,8 +101,10 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function StudioToolPage({ params }) {
+export default async function StudioToolPage({ params, searchParams }) {
   const { tool } = await params;
   const initialTool = VALID_TOOLS.includes(tool) ? tool : "image";
-  return <StudioPage initialTool={initialTool} />;
+  const sp = await searchParams;
+  const initialModel = sp?.model || null;
+  return <StudioPage initialTool={initialTool} initialModel={initialModel} />;
 }

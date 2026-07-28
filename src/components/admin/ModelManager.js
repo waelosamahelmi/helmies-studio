@@ -76,6 +76,9 @@ export default function ModelManager() {
         providerCost: editingModel.providerCost ?? null,
         creditsCost: editingModel.creditsCost ?? null,
         isActive: editingModel.isActive,
+        background: editingModel.background || null,
+        backgroundOverlay: editingModel.backgroundOverlay ?? null,
+        textColor: editingModel.textColor || null,
         inputSchema: editingModel._inputSchemaRaw,
         uiSchema: editingModel._uiSchemaRaw,
       }),
@@ -188,6 +191,9 @@ export default function ModelManager() {
                       className="btn btn-sm btn-secondary"
                       onClick={() => setEditingModel({
                         ...m,
+                        background: m.background || null,
+                        backgroundOverlay: m.backgroundOverlay ?? 0.05,
+                        textColor: m.textColor || "light",
                         _inputSchemaRaw: m.inputSchema ? JSON.stringify(m.inputSchema, null, 2) : "",
                         _uiSchemaRaw: m.uiSchema ? JSON.stringify(m.uiSchema, null, 2) : "",
                       })}
@@ -309,6 +315,93 @@ export default function ModelManager() {
                   }}
                   placeholder='{"prompt":{"ui:widget":"textarea"}}'
                 />
+              </div>
+
+              {/* Background image upload */}
+              <div className="field-group" style={{ marginBottom: "0.75rem" }}>
+                <label className="field-label">Card Background Image</label>
+                <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                  <input
+                    className="field-input"
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const formData = new FormData();
+                      formData.append("file", file);
+                      try {
+                        const res = await fetch("/api/upload", { method: "POST", body: formData });
+                        const data = await res.json();
+                        if (data.url) setEditingModel({ ...editingModel, background: data.url });
+                      } catch {}
+                    }}
+                    style={{ padding: "0.35rem", fontSize: "0.75rem" }}
+                  />
+                  {editingModel.background && (
+                    <button
+                      onClick={() => setEditingModel({ ...editingModel, background: null, backgroundOverlay: null, textColor: null })}
+                      style={{ background: "none", border: "none", color: "rgba(255,61,113,0.7)", cursor: "pointer", fontSize: "0.7rem" }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {editingModel.background && (
+                  <div style={{ marginTop: "0.5rem", borderRadius: "0.5rem", overflow: "hidden", maxHeight: 120, position: "relative" }}>
+                    <img src={editingModel.background} alt="Preview" style={{ width: "100%", height: 80, objectFit: "cover", borderRadius: "0.5rem" }} />
+                  </div>
+                )}
+                <p style={{ fontSize: "0.65rem", color: "rgba(242,242,247,0.4)", marginTop: "0.25rem" }}>Shown as background on the model card in catalog and studio.</p>
+              </div>
+
+              {editingModel.background && (
+              <div className="field-group" style={{ marginBottom: "0.75rem" }}>
+                <label className="field-label">Background Opacity</label>
+                <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={Math.round((editingModel.backgroundOverlay ?? 0.05) * 100)}
+                    onChange={(e) => setEditingModel({ ...editingModel, backgroundOverlay: parseInt(e.target.value) / 100 })}
+                    style={{ flex: 1, accentColor: "#6366f1" }}
+                  />
+                  <span style={{ fontSize: "0.8rem", fontFamily: "monospace", minWidth: "3ch", textAlign: "right" }}>
+                    {Math.round((editingModel.backgroundOverlay ?? 0.05) * 100)}%
+                  </span>
+                </div>
+                <p style={{ fontSize: "0.65rem", color: "rgba(242,242,247,0.4)", marginTop: "0.25rem" }}>0% = image fully visible, 100% = fully opaque overlay.</p>
+              </div>
+              )}
+
+              <div className="field-group" style={{ marginBottom: "0.75rem" }}>
+                <label className="field-label">Text Color</label>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", cursor: "pointer", padding: "0.35rem 0.75rem", borderRadius: "0.5rem", background: (editingModel.textColor || "light") === "light" ? "rgba(255,255,255,0.1)" : "transparent", border: "1px solid rgba(255,255,255,0.08)", fontSize: "0.8rem" }}>
+                    <input
+                      type="radio"
+                      name="textColor"
+                      value="light"
+                      checked={(editingModel.textColor || "light") === "light"}
+                      onChange={() => setEditingModel({ ...editingModel, textColor: "light" })}
+                      style={{ accentColor: "#6366f1" }}
+                    />
+                    Light Text
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.35rem", cursor: "pointer", padding: "0.35rem 0.75rem", borderRadius: "0.5rem", background: (editingModel.textColor || "light") === "dark" ? "rgba(0,0,0,0.3)" : "transparent", border: "1px solid rgba(255,255,255,0.08)", fontSize: "0.8rem" }}>
+                    <input
+                      type="radio"
+                      name="textColor"
+                      value="dark"
+                      checked={(editingModel.textColor || "light") === "dark"}
+                      onChange={() => setEditingModel({ ...editingModel, textColor: "dark" })}
+                      style={{ accentColor: "#6366f1" }}
+                    />
+                    Dark Text
+                  </label>
+                </div>
               </div>
 
               <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>

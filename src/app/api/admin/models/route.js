@@ -30,6 +30,12 @@ export async function GET(req) {
         isActive: p ? p.isActive : true,
         creditsCost: p?.creditsCost || null,
         providerCost: p?.providerCost || null,
+        background: p?.background || null,
+        backgroundOverlay: p?.backgroundOverlay ?? null,
+        textColor: p?.textColor || null,
+        background: p?.background || null,
+        backgroundOverlay: p?.backgroundOverlay ?? null,
+        textColor: p?.textColor || null,
         configured: !!p,
       };
     });
@@ -43,12 +49,20 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     await requireAdmin(req);
-    const { modelId, modelType, providerName, providerCost, creditsCost, isActive } = await req.json();
+    const { modelId, modelType, providerName, providerCost, creditsCost, isActive, background, backgroundOverlay, textColor } = await req.json();
+
+    const updateData = {};
+    if (providerCost != null) updateData.providerCost = providerCost;
+    if (creditsCost != null) updateData.creditsCost = creditsCost;
+    if (isActive != null) updateData.isActive = isActive;
+    if (background !== undefined) updateData.background = background;
+    if (backgroundOverlay !== undefined) updateData.backgroundOverlay = backgroundOverlay;
+    if (textColor !== undefined) updateData.textColor = textColor;
 
     await prisma.modelPricing.upsert({
       where: { modelId },
-      create: { modelId, modelType, providerName: providerName || "WaveSpeed", providerCost: providerCost || 0, creditsCost: creditsCost || 1, isActive: isActive ?? true },
-      update: { providerCost, creditsCost, isActive },
+      create: { modelId, modelType, providerName: providerName || "WaveSpeed", providerCost: providerCost || 0, creditsCost: creditsCost || 1, isActive: isActive ?? true, background: background || null, backgroundOverlay: backgroundOverlay ?? null, textColor: textColor || null },
+      update: updateData,
     });
 
     return NextResponse.json({ success: true });

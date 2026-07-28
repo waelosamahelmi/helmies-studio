@@ -1,30 +1,36 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { getModeConfig } from "../chatModes";
 import { useAsyncGeneration } from "../useAsyncGeneration";
 import { useCreditCost } from "../useCreditCost";
+import { useAllCreditCosts } from "../useAllCreditCosts";
 import { apiFetch } from "@/lib/client-fetch";
 import ChatFeed from "../chat/ChatFeed";
 import ChatInput from "../chat/ChatInput";
 import ChatHeader from "../chat/ChatHeader";
 import AISuggestions from "../chat/AISuggestions";
 import SettingsDrawer from "../chat/SettingsDrawer";
-import RichIdle from "../RichIdle";
 import {
-  IconImage, IconVideo, IconMusic,
+  IconImage, IconVideo, IconMusic, IconSparkle, IconBolt,
+  IconArrowRight, IconDownload, IconClose, IconUsers, IconCamera,
+  IconFilm, IconCut, IconMegaphone, IconMic,
 } from "@/components/Icons";
+
+const SPRING = { type: "spring", stiffness: 380, damping: 30, mass: 0.8 };
+const EASE = [0.32, 0.72, 0, 1];
 
 const TOOL_ICONS = {
   image: IconImage,
   video: IconVideo,
   audio: IconMusic,
-  cinema: IconImage,
-  "vibe-motion": IconVideo,
-  clipping: IconVideo,
-  marketing: IconVideo,
+  cinema: IconCamera,
+  "vibe-motion": IconFilm,
+  clipping: IconCut,
+  marketing: IconMegaphone,
   lipsync: IconVideo,
-  "body-swap": IconVideo,
+  "body-swap": IconUsers,
   influencer: IconImage,
 };
 
@@ -42,7 +48,43 @@ const TOOL_SUGGESTIONS = {
     { icon: "🎵", label: "Epic orchestral with soaring strings" },
     { icon: "🎹", label: "Lo-fi hip hop for studying" },
   ],
+  cinema: [
+    { icon: "🎥", label: "A lone figure in the rain, neon reflections" },
+    { icon: "🎞️", label: "Close-up of an eye, anamorphic flare" },
+  ],
+  "vibe-motion": [
+    { icon: "✨", label: "Flowing particles with gradient transitions" },
+    { icon: "🌀", label: "Liquid morphing shapes in pastel colors" },
+  ],
+  clipping: [
+    { icon: "✂️", label: "Extract the top 3 viral moments" },
+    { icon: "🔥", label: "Find the funniest 30-second clips" },
+  ],
+  marketing: [
+    { icon: "📢", label: "A UGC ad for a luxury skincare product" },
+    { icon: "💎", label: "Cinematic product reveal with dramatic lighting" },
+  ],
+  lipsync: [
+    { icon: "🗣️", label: "Lip sync this portrait to the uploaded audio" },
+    { icon: "🎬", label: "Make this character speak the dialogue" },
+  ],
+  "body-swap": [
+    { icon: "🎭", label: "Swap the body to match the reference face" },
+    { icon: "🕺", label: "Replace the dancer with the subject" },
+  ],
+  influencer: [
+    { icon: "📸", label: "A fitness influencer in a sunlit gym" },
+    { icon: "👗", label: "A fashion creator in a Parisian street" },
+  ],
 };
+
+const TIPS = [
+  "Tip: Be specific — describe lighting, mood, and camera for stronger results.",
+  "Tip: Use the settings panel to fine-tune model, aspect, and duration.",
+  "Tip: Optimize your prompt with the sparkle button before generating.",
+  "Tip: Upload a reference to unlock edit and image-to-video models.",
+  "Tip: Press Cmd / Ctrl + Enter to generate instantly.",
+];
 
 function getDefaultSettings(config) {
   const defaults = {};
@@ -98,24 +140,96 @@ function buildParams(config, model, prompt, settings, uploads) {
   return params;
 }
 
-export default function SimpleMode({ tool }) {
+function PremiumIdle({ tool, Icon, title, description, tipIdx }) {
+  return (
+    <div className="studio__empty" style={{ maxWidth: 460, margin: "0 auto" }}>
+      <motion.div
+        className="studio__empty-glyph"
+        animate={{ scale: [1, 1.06, 1], opacity: [0.85, 1, 0.85] }}
+        transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+      >
+        <Icon className="studio__empty-glyph-icon" />
+      </motion.div>
+      <h3 className="studio__empty-title">{title}</h3>
+      <p className="studio__empty-desc">{description}</p>
+
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={tipIdx}
+          className="studio__empty-tip"
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.3, ease: EASE }}
+        >
+          <IconSparkle className="studio__empty-tip-icon" />
+          {TIPS[tipIdx]}
+        </motion.div>
+      </AnimatePresence>
+
+      <div className="studio__empty-shortcuts">
+        <kbd>Cmd</kbd>
+        <kbd>↵</kbd>
+        <span>Generate</span>
+      </div>
+    </div>
+  );
+}
+
+export default function SimpleMode({ tool, initialModel }) {
   const config = getModeConfig(tool);
   const [messages, setMessages] = useState([]);
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(config.defaultModel);
+  const [bgMap, setBgMap] = useState({});
+
+  useEffect(() => {
+    if (initialModel && Array.isArray(models) && models.some((m) => m.id === initialModel)) {
+      setModel(initialModel);
+    }
+  }, [initialModel]);
+
+  useEffect(() => {
+    fetch("/api/admin/models")
+      .then((r) => r.json())
+      .then((d) => {
+        const map = {};
+        (d.models || []).forEach((m) => {
+          if (m.background) map[m.id] = {
+              url: m.background,
+              overlay: m.backgroundOverlay ?? 0.05,
+              textColor: m.textColor || "light",
+            };
+        });
+        setBgMap(map);
+      })
+      .catch(() => {});
+  }, []);
   const [settings, setSettings] = useState(() => getDefaultSettings(config));
   const [uploads, setUploads] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [optimizing, setOptimizing] = useState(false);
   const [pendingOptimization, setPendingOptimization] = useState(null);
+  const [tipIdx, setTipIdx] = useState(0);
   const { result, error, elapsed, submit, loading: genLoading } = useAsyncGeneration();
   const [loading, setLoading] = useState(false);
 
+  const selectableModels = config.models
+    ? [...config.models, ...(config.i2vModels || [])]
+    : [];
+
+  const { costs: allCosts } = useAllCreditCosts(config.tool, selectableModels);
+
   const creditParams = buildParams(config, model, prompt, settings, uploads);
-  const { cost, affordable } = useCreditCost(config.tool, model?.id || "default", creditParams);
+  const { cost, affordable, shortfall, topUpPacks } = useCreditCost(config.tool, model?.id || "default", creditParams);
 
   useEffect(() => { setModel(config.defaultModel); setSettings(getDefaultSettings(config)); setUploads({}); setMessages([]); }, [tool]);
+
+  useEffect(() => {
+    const id = setInterval(() => setTipIdx((i) => (i + 1) % TIPS.length), 5200);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (loading && elapsed > 0) {
@@ -242,7 +356,7 @@ export default function SimpleMode({ tool }) {
       if (Array.isArray(val)) {
         val.forEach(url => attachments.push({ url, type: url.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key }));
       } else if (val) {
-        attachments.push({ url: val, type: url.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key });
+        attachments.push({ url: val, type: val.match(/\.(jpg|jpeg|png|webp|gif)$/i) ? "image" : "file", name: key });
       }
     }
 
@@ -285,19 +399,30 @@ export default function SimpleMode({ tool }) {
         config={config}
         onRetry={handleRetry}
         idle={
-          <RichIdle
-            tool={config.tool}
-            icon={Icon}
-            title={`${config.label} Studio`}
-            description={`Type a prompt below to create ${config.resultType === "image" ? "images" : config.resultType === "video" ? "videos" : "audio"} with AI.`}
-          />
+          messages.length === 0 ? (
+            <PremiumIdle
+              tool={config.tool}
+              Icon={Icon}
+              title={`${config.label} Studio`}
+              description={`Type a prompt below to create ${config.resultType === "image" ? "images" : config.resultType === "video" ? "videos" : "audio"} with AI.`}
+              tipIdx={tipIdx}
+            />
+          ) : null
         }
       />
-      {messages.length === 0 && suggestions.length > 0 && (
-        <div className="simple-mode__suggestions">
-          <AISuggestions suggestions={suggestions} onSelect={handleSuggestion} />
-        </div>
-      )}
+      <AnimatePresence>
+        {messages.length === 0 && suggestions.length > 0 && (
+          <motion.div
+            className="simple-mode__suggestions"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={SPRING}
+          >
+            <AISuggestions suggestions={suggestions} onSelect={handleSuggestion} />
+          </motion.div>
+        )}
+      </AnimatePresence>
       <ChatInput
         placeholder={config.promptPlaceholder}
         onSubmit={handleGenerate}
@@ -312,38 +437,60 @@ export default function SimpleMode({ tool }) {
         onSettingsOpen={() => setSettingsOpen(true)}
         onOptimize={handleOptimize}
       />
-      {pendingOptimization && (
-        <div className="prompt-opt__overlay" onClick={() => setPendingOptimization(null)}>
-          <div className="prompt-opt" onClick={(e) => e.stopPropagation()}>
-            <div className="prompt-opt__header">
-              <IconSparkle />
-              <span>Optimized Prompt</span>
-              <button className="prompt-opt__close" onClick={() => setPendingOptimization(null)}>✕</button>
-            </div>
-            <div className="prompt-opt__original">
-              <label>Original</label>
-              <p>{pendingOptimization.original}</p>
-            </div>
-            <div className="prompt-opt__optimized">
-              <label>Optimized</label>
-              <textarea
-                className="prompt-opt__textarea"
-                value={pendingOptimization.optimized}
-                onChange={(e) => setPendingOptimization(prev => ({ ...prev, optimized: e.target.value }))}
-                rows={4}
-              />
-            </div>
-            <div className="prompt-opt__actions">
-              <button className="prompt-opt__btn prompt-opt__btn--cancel" onClick={() => setPendingOptimization(null)}>
-                Edit
-              </button>
-              <button className="prompt-opt__btn prompt-opt__btn--confirm" onClick={() => { setPrompt(pendingOptimization.optimized); setPendingOptimization(null); }}>
-                Use Prompt
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {pendingOptimization && (
+          <motion.div
+            className="prompt-opt__overlay"
+            onClick={() => setPendingOptimization(null)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <motion.div
+              className="prompt-opt"
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.98 }}
+              transition={SPRING}
+            >
+              <div className="prompt-opt__header">
+                <IconSparkle />
+                <span>Optimized Prompt</span>
+                <button className="prompt-opt__close" onClick={() => setPendingOptimization(null)} type="button">
+                  <IconClose style={{ width: 14, height: 14 }} />
+                </button>
+              </div>
+              <div className="prompt-opt__original">
+                <label>Original</label>
+                <p>{pendingOptimization.original}</p>
+              </div>
+              <div className="prompt-opt__optimized">
+                <label>Optimized</label>
+                <textarea
+                  className="prompt-opt__textarea"
+                  value={pendingOptimization.optimized}
+                  onChange={(e) => setPendingOptimization(prev => ({ ...prev, optimized: e.target.value }))}
+                  rows={4}
+                />
+              </div>
+              <div className="prompt-opt__actions">
+                <button className="prompt-opt__btn prompt-opt__btn--cancel" onClick={() => setPendingOptimization(null)} type="button">
+                  Edit
+                </button>
+                <button
+                  className="prompt-opt__btn prompt-opt__btn--confirm"
+                  onClick={() => { setPrompt(pendingOptimization.optimized); setPendingOptimization(null); }}
+                  type="button"
+                >
+                  Use Prompt
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <SettingsDrawer
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}

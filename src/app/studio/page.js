@@ -12,6 +12,9 @@ import BrandKitsView from "@/components/studio/BrandKitsView";
 import CanvasWorkspace from "@/components/studio/CanvasWorkspace";
 import DirectorWorkspace from "@/components/studio/DirectorWorkspace";
 import AssetLibrary from "@/components/studio/AssetLibrary";
+import MusicStudio from "@/components/studio/MusicStudio";
+import VideoEditStudio from "@/components/studio/VideoEditStudio";
+import AvatarStudio from "@/components/studio/AvatarStudio";
 import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown,
@@ -38,9 +41,12 @@ const TOOLS = [
   { id: "memory", label: "Memory", desc: "Save & reuse characters, styles, assets", Icon: IconStar, color: "#FFD166", group: "AI Agents", badge: null },
   { id: "brands", label: "Brand Kits", desc: "Manage brand identities", Icon: IconImage, color: "#7C3AED", group: "AI Agents", badge: null },
   { id: "assets", label: "Assets", desc: "Media library & asset management", Icon: IconDownload, color: "#00E68A", group: "AI Agents", badge: null },
+  { id: "music", label: "Music", desc: "Suno music & ElevenLabs TTS", Icon: IconMusic, color: "#00E5FF", group: "Generate", badge: "New" },
+  { id: "video-edit", label: "Video Edit", desc: "Runway, Veo extend, Wan V2V", Icon: IconVideo, color: "#7C3AED", group: "Cinematic", badge: "New" },
+  { id: "avatar", label: "AI Avatar", desc: "Kling AI avatar animation", Icon: IconUsers, color: "#FF6B35", group: "Character", badge: "New" },
 ];
 
-export default function StudioPage({ initialTool }) {
+export default function StudioPage({ initialTool, initialModel }) {
   const [activeTab, setActiveTab] = useState(initialTool || "orchestrator");
   const [collapsed, setCollapsed] = useState(false);
   const [favorites, setFavorites] = useState([]);
@@ -244,15 +250,18 @@ export default function StudioPage({ initialTool }) {
                 transition={{ duration: 0.5, ease: EASE }}
                 style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
               >
-                {activeTab === "orchestrator" && <ChatStudio tool="orchestrator" />}
+                {activeTab === "orchestrator" && <ChatStudio tool="orchestrator" initialModel={initialModel} />}
                 {activeTab === "workflows" && <WorkflowBuilder />}
                 {activeTab === "memory" && <ProjectMemory />}
                 {activeTab === "brands" && <BrandKitsView />}
                 {activeTab === "canvas" && <CanvasWorkspace />}
                 {activeTab === "director" && <DirectorWorkspace />}
                 {activeTab === "assets" && <AssetLibrary />}
-                {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && activeTab !== "brands" && activeTab !== "canvas" && activeTab !== "director" && activeTab !== "assets" && (
-                  <ChatStudio tool={activeTab} key={activeTab} />
+                {activeTab === "music" && <MusicStudio />}
+                {activeTab === "video-edit" && <VideoEditStudio />}
+                {activeTab === "avatar" && <AvatarStudio />}
+                {activeTab !== "orchestrator" && activeTab !== "workflows" && activeTab !== "memory" && activeTab !== "brands" && activeTab !== "canvas" && activeTab !== "director" && activeTab !== "assets" && activeTab !== "music" && activeTab !== "video-edit" && activeTab !== "avatar" && (
+                  <ChatStudio tool={activeTab} key={activeTab} initialModel={initialModel} />
                 )}
               </motion.div>
             </AnimatePresence>

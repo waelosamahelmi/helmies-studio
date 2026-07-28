@@ -7,8 +7,8 @@ export async function middleware(request) {
   const needsAuth = protectedPaths.some((p) => pathname.startsWith(p));
   if (!needsAuth) return NextResponse.next();
 
-  const origin = request.nextUrl.origin;
-  const sessionRes = await fetch(`${origin}/api/auth/session`, {
+  const internalUrl = process.env.NEXTAUTH_URL || "http://localhost:3010";
+  const sessionRes = await fetch(internalUrl + "/api/auth/session", {
     headers: { cookie: request.headers.get("cookie") || "" },
     redirect: "manual",
   });

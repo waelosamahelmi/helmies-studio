@@ -12,15 +12,15 @@ function StudioFallback() {
   return <div className="studio__loading"><div className="studio__spinner" />Loading workspace...</div>;
 }
 
-export default function ChatStudio({ tool }) {
+export default function ChatStudio({ tool, initialModel }) {
   if (tool === "image") {
-    return <Suspense fallback={<StudioFallback />}><ImageStudioV2 /></Suspense>;
+    return <Suspense fallback={<StudioFallback />}><ImageStudioV2 initialModel={initialModel} /></Suspense>;
   }
   if (tool === "video") {
-    return <Suspense fallback={<StudioFallback />}><VideoStudioV2 /></Suspense>;
+    return <Suspense fallback={<StudioFallback />}><VideoStudioV2 initialModel={initialModel} /></Suspense>;
   }
   if (tool && tool !== "orchestrator" && TOOL_MODES.includes(tool)) {
-    return <SimpleMode key={tool} tool={tool} />;
+    return <SimpleMode key={tool} tool={tool} initialModel={initialModel} />;
   }
   return <OrchestratorMode />;
 }

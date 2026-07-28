@@ -73,6 +73,9 @@ export default function CanvasEditor({
   const containerRef = useRef(null);
   const fabricRef = useRef(null);
   const canvasRef = useRef(null);
+  const modeRef = useRef(mode);
+  const onModeChangeRef = useRef(onModeChange);
+  const onLayerSelectRef = useRef(onLayerSelect);
   const historyRef = useRef([]);
   const historyIdxRef = useRef(-1);
   const saveTimerRef = useRef(null);
@@ -92,7 +95,7 @@ export default function CanvasEditor({
     let cancelled = false;
 
     (async () => {
-      const fabric = (await import("fabric")).fabric || (await import("fabric")).default;
+      const fabric = await import("fabric");
       if (cancelled) return;
       fabricRef.current = fabric;
 
@@ -120,7 +123,7 @@ export default function CanvasEditor({
         if (obj) {
           const id = obj._helmiesId;
           setSelectedId(id);
-          onLayerSelect?.(id);
+          onLayerSelectRef.current?.(id);
         }
       });
       canvas.on("selection:updated", (e) => {
@@ -128,12 +131,12 @@ export default function CanvasEditor({
         if (obj) {
           const id = obj._helmiesId;
           setSelectedId(id);
-          onLayerSelect?.(id);
+          onLayerSelectRef.current?.(id);
         }
       });
       canvas.on("selection:cleared", () => {
         setSelectedId(null);
-        onLayerSelect?.(null);
+        onLayerSelectRef.current?.(null);
       });
 
       /* ── Object modified — push history ─────────────── */
@@ -157,10 +160,10 @@ export default function CanvasEditor({
 
       /* ── Mouse:down for tool modes ──────────────────── */
       canvas.on("mouse:down", (opt) => {
-        const tool = mode;
+        const tool = modeRef.current;
         if (tool === TOOLS.SELECT) return;
 
-        const pointer = canvas.getPointer(opt.e);
+        const pointer = canvas.getScenePoint(opt.e);
         const fabric = fabricRef.current;
 
         if (tool === TOOLS.ADD_TEXT) {
@@ -201,43 +204,24 @@ export default function CanvasEditor({
           return;
         }
 
-        if (tool === TOOLS.FREE_DRAW) {
-          canvas.isDrawingMode = true;
-          canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
-          canvas.freeDrawingBrush.color = "#FF1B6B";
-          canvas.freeDrawingBrush.width = 4;
-          canvas.on("path:created", (e) => {
-            e.path.set({
-              _helmiesId: generateId(),
-              _helmiesType: OBJECT_TYPES.FREE_DRAW,
-              _helmiesRole: "inpaint_region",
-            });
-            canvas.isDrawingMode = false;
-            onModeChange?.(TOOLS.SELECT);
-          });
-          return;
-        }
+      });
 
-        if (tool === TOOLS.MASK_INCLUDE || tool === TOOLS.MASK_EXCLUDE) {
-          canvas.isDrawingMode = true;
-          const brush = new fabric.PencilBrush(canvas);
-          brush.color = tool === TOOLS.MASK_INCLUDE ? "#FFFFFF" : "#000000";
-          brush.width = 8;
-          canvas.freeDrawingBrush = brush;
-          canvas.on("path:created", (e) => {
-            e.path.set({
-              _helmiesId: generateId(),
-              _helmiesType:
-                tool === TOOLS.MASK_INCLUDE
-                  ? OBJECT_TYPES.MASK_INCLUDE
-                  : OBJECT_TYPES.MASK_EXCLUDE,
-              _helmiesRole: "inpaint_region",
-              opacity: 0.5,
-            });
-            canvas.isDrawingMode = false;
-            onModeChange?.(TOOLS.SELECT);
+      /* ── Path created (for drawing tools) ──────────────── */
+      canvas.on("path:created", (e) => {
+        const tool = modeRef.current;
+        if (tool === TOOLS.FREE_DRAW || tool === TOOLS.MASK_INCLUDE || tool === TOOLS.MASK_EXCLUDE) {
+          e.path.set({
+            _helmiesId: generateId(),
+            _helmiesType:
+              tool === TOOLS.FREE_DRAW
+                ? OBJECT_TYPES.FREE_DRAW
+                : tool === TOOLS.MASK_INCLUDE
+                ? OBJECT_TYPES.MASK_INCLUDE
+                : OBJECT_TYPES.MASK_EXCLUDE,
+            _helmiesRole: "inpaint_region",
+            opacity: tool === TOOLS.FREE_DRAW ? 1 : 0.5,
           });
-          return;
+          onModeChangeRef.current?.(TOOLS.SELECT);
         }
       });
 
@@ -255,18 +239,39 @@ export default function CanvasEditor({
     };
   }, []);
 
+  /* ── Keep modeRef in sync ───────────────────────────── */
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { onModeChangeRef.current = onModeChange; }, [onModeChange]);
+  useEffect(() => { onLayerSelectRef.current = onLayerSelect; }, [onLayerSelect]);
+
   /* ── Mode changes ─────────────────────────────────────── */
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const fabric = fabricRef.current;
 
-    if (mode !== TOOLS.SELECT) {
+    if (mode === TOOLS.SELECT) {
+      canvas.isDrawingMode = false;
+      canvas.selection = true;
+    } else if (mode === TOOLS.FREE_DRAW || mode === TOOLS.MASK_INCLUDE || mode === TOOLS.MASK_EXCLUDE) {
+      canvas.isDrawingMode = true;
+      canvas.selection = false;
+      if (fabric) {
+        const brush = new fabric.PencilBrush(canvas);
+        if (mode === TOOLS.FREE_DRAW) {
+          brush.color = "#FF1B6B";
+          brush.width = 4;
+        } else {
+          brush.color = mode === TOOLS.MASK_INCLUDE ? "#FFFFFF" : "#000000";
+          brush.width = 8;
+        }
+        canvas.freeDrawingBrush = brush;
+      }
+    } else {
       canvas.isDrawingMode = false;
       canvas.selection = false;
-    } else {
-      canvas.selection = true;
     }
-  }, [mode]);
+  }, [mode, fabricRef]);
 
   /* ── Image upload handler ──────────────────────────────── */
   const handleImageUpload = useCallback(
@@ -281,7 +286,7 @@ export default function CanvasEditor({
         if (!file.type.startsWith("image/")) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
-          fabric.Image.fromURL(ev.target.result, (img) => {
+          fabric.Image.fromURL(ev.target.result).then((img) => {
             const maxDim = 400;
             if (img.width > maxDim || img.height > maxDim) {
               const scale = maxDim / Math.max(img.width, img.height);
@@ -480,7 +485,7 @@ export default function CanvasEditor({
     if (obj) {
       const idx = canvas.getObjects().indexOf(obj);
       if (idx < canvas.getObjects().length - 1) {
-        canvas.moveTo(obj, idx + 1);
+        canvas.moveObjectTo(obj, idx + 1);
         canvas.renderAll();
         syncLayers(canvas);
         pushHistory(canvas);
@@ -495,7 +500,7 @@ export default function CanvasEditor({
     if (obj) {
       const idx = canvas.getObjects().indexOf(obj);
       if (idx > 0) {
-        canvas.moveTo(obj, idx - 1);
+        canvas.moveObjectTo(obj, idx - 1);
         canvas.renderAll();
         syncLayers(canvas);
         pushHistory(canvas);
@@ -564,6 +569,33 @@ export default function CanvasEditor({
       applyZoom,
       getZoom: () => zoom,
       addImage: () => document.getElementById("canvas-image-upload")?.click(),
+      addImageFromUrl: async (url) => {
+        const canvas = canvasRef.current;
+        const fabric = fabricRef.current;
+        if (!canvas || !fabric) return;
+        try {
+          const img = await fabric.Image.fromURL(url);
+          const maxDim = 400;
+          if (img.width > maxDim || img.height > maxDim) {
+            const scale = maxDim / Math.max(img.width, img.height);
+            img.scale(scale);
+          }
+          img.set({
+            left: 50 + Math.random() * 200,
+            top: 50 + Math.random() * 200,
+            _helmiesId: generateId(),
+            _helmiesType: OBJECT_TYPES.IMAGE,
+            _helmiesRole: "edit_target",
+          });
+          canvas.add(img);
+          canvas.setActiveObject(img);
+          canvas.renderAll();
+          syncLayers(canvas);
+          pushHistory(canvas);
+        } catch (e) {
+          console.error("addImageFromUrl error:", e);
+        }
+      },
       getCanvas: () => canvasRef.current,
       getFabric: () => fabricRef.current,
     };
@@ -575,8 +607,8 @@ export default function CanvasEditor({
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (!canvas || !container) return;
-      canvas.setWidth(container.clientWidth);
-      canvas.setHeight(container.clientHeight);
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
       canvas.renderAll();
     };
     window.addEventListener("resize", onResize);

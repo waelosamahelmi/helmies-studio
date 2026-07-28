@@ -5,14 +5,34 @@ const CREDIT_TO_EUR = 0.01;
 
 // ── Provider cost → credits with markup ──
 export function calculateCredits(providerCost, markup = DEFAULT_MARKUP) {
+  if (!providerCost || providerCost <= 0) return 1;
   const credits = Math.ceil((providerCost * markup) / CREDIT_TO_EUR);
   return Math.max(1, credits);
+}
+
+// Resolve markup from DB provider config, fall back to default
+async function resolveMarkup(providerName) {
+  if (!providerName) return DEFAULT_MARKUP;
+  try {
+    const config = await prisma.providerConfig.findUnique({ where: { name: providerName } });
+    return config?.markup || DEFAULT_MARKUP;
+  } catch {
+    return DEFAULT_MARKUP;
+  }
 }
 
 // ── Estimate credits for a task before execution ──
 export async function estimateCredits(tool, model, params = {}) {
   const pricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
-  if (pricing) return pricing.creditsCost;
+  if (pricing) {
+    // Recalculate if we have providerCost but stale creditsCost
+    if (pricing.providerCost > 0 && pricing.creditsCost <= 1) {
+      const markup = await resolveMarkup(pricing.providerName);
+      const recalculated = calculateCredits(pricing.providerCost, markup);
+      return recalculated;
+    }
+    return pricing.creditsCost;
+  }
 
   const fallback = getFallbackCost(tool, model, params);
   return fallback;
@@ -47,7 +67,8 @@ export async function syncPricingFromWaveSpeed() {
       const pricing = await fetchWaveSpeedPricing(m.id, {});
       if (!pricing) continue;
       const providerCost = pricing.cost || pricing.total_cost || 0;
-      const creditsCost = calculateCredits(providerCost);
+      const markup = await resolveMarkup("WaveSpeed");
+      const creditsCost = calculateCredits(providerCost, markup);
 
       await prisma.modelPricing.upsert({
         where: { modelId: m.id },

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 const PROVIDER_DOMAINS = [
   "cdn.wavespeed.ai", "cdn.atlascloud.ai",
-  "dashscope.aliyuncs.com", "openrouter.ai",
+  "dashscope.aliyuncs.com", "api.kie.ai",
 ];
 
 export async function GET(req) {

@@ -457,7 +457,7 @@ export async function createProductionPlan(brief, userId) {
 
   let plan;
 
-  const hasLLM = process.env.OPENROUTER_KEY;
+  const hasLLM = process.env.KIE_KEY;
   if (hasLLM) {
     try {
       const systemPrompt = buildSystemPrompt(preset.label, sectionStrategy);
@@ -471,7 +471,7 @@ export async function createProductionPlan(brief, userId) {
       const response = await llmComplete(messages, {
         maxTokens: 4096,
         temperature: 0.4,
-        model: "qwen/qwen-2.5-72b-instruct"
+        model: "google/gemini-2.5-flash-openai"
       });
 
       // Extract JSON from response — handle markdown code blocks

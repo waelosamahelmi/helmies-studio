@@ -18,12 +18,12 @@ export async function POST(req) {
       return NextResponse.json({ error: "Messages required" }, { status: 400 });
     }
 
-    const selectedModel = model || process.env.LLM_MODEL || "qwen/qwen-2.5-72b-instruct";
-    const key = process.env.OPENROUTER_KEY;
+    const selectedModel = model || process.env.LLM_MODEL || "google/gemini-2.5-flash-openai";
+    const key = process.env.KIE_KEY;
 
     if (!key) {
       return new Response(
-        `data: ${JSON.stringify({ type: "token", content: "No LLM configured. Set OPENROUTER_KEY in .env" })}\n\ndata: [DONE]\n\n`,
+        `data: ${JSON.stringify({ type: "token", content: "No LLM configured. Set KIE_KEY in .env" })}\n\ndata: [DONE]\n\n`,
         { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } }
       );
     }
@@ -37,8 +37,8 @@ export async function POST(req) {
     ];
 
     // Try streaming first; fall back to non-streaming if that fails
-    const provider = getProvider("openrouter");
-    const streamRes = await fetch(`${provider.baseUrl}/chat/completions`, {
+    const provider = PROVIDERS.wavespeed;
+    const streamRes = await fetch(`${"https://api.kie.ai/api/v1"}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

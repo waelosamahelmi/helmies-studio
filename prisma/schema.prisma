@@ -212,6 +212,9 @@ model ModelPricing {
   modelId     String   @unique
   modelType   String
   providerName String
+  background   String?
+  backgroundOverlay Float?
+  textColor String? @default("light")
   providerCost Float
   creditsCost Int
   isActive    Boolean  @default(true)
@@ -560,7 +563,6 @@ model VisualAnalysis {
   id          String   @id @default(cuid())
   assetUrl    String   @db.Text
   caption     String?  @db.Text
-  background  String?
   palette     Json?
   regions     Json?
   textRegions Json?
@@ -597,6 +599,57 @@ model Project {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+
+
+model PromoCode {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  type           String    @default("percentage")
+  value          Float
+  eligibility    String    @default("all")
+  maxUses        Int?
+  maxUsesPerUser Int       @default(1)
+  currentUses    Int       @default(0)
+  startsAt       DateTime?
+  expiresAt      DateTime?
+  description    String?
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@schema("public")
+}
+
+model SubscriptionPlan {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  price       Int
+  credits     Int
+  stripePriceId String?
+  features    Json     @default("[]")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@schema("public")
+}
+
+model CreditPack {
+  id          String   @id @default(cuid())
+  name        String
+  credits     Int
+  price       Int
+  stripePriceId String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@schema("public")
 }

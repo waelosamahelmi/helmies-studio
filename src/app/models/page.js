@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
@@ -9,7 +9,18 @@ import { IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS, LIPSYNC
 
 const EASE = [0.32, 0.72, 0, 1];
 
-const ALL_MODELS = [IMAGE_MODELS.map((m) => ({ ...m, type: "image", category: "Text → Image" })),
+const TYPE_TO_TOOL = {
+  image: "image",
+  i2i: "image",
+  video: "video",
+  i2v: "video",
+  v2v: "video",
+  lipsync: "lipsync",
+  recast: "body-swap",
+  audio: "audio",
+};
+
+const ALL_MODELS = [...IMAGE_MODELS.map((m) => ({ ...m, type: "image", category: "Text → Image" })),
   ...I2I_MODELS.map((m) => ({ ...m, type: "i2i", category: "Image → Image" })),
   ...VIDEO_MODELS.map((m) => ({ ...m, type: "video", category: "Text → Video" })),
   ...I2V_MODELS.map((m) => ({ ...m, type: "i2v", category: "Image → Video" })),
@@ -24,6 +35,26 @@ const CATEGORIES = ["All", ...Array.from(new Set(ALL_MODELS.map((m) => m.categor
 export default function ModelsPage() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+  const [backgrounds, setBackgrounds] = useState({});
+
+  useEffect(() => {
+    fetch("/api/admin/models")
+      .then((r) => r.json())
+      .then((d) => {
+        const map = {};
+        (d.models || []).forEach((m) => {
+          if (m.background) {
+            map[m.id] = {
+              url: m.background,
+              overlay: m.backgroundOverlay ?? 0.05,
+              textColor: m.textColor || "light",
+            };
+          }
+        });
+        setBackgrounds(map);
+      })
+      .catch(() => {});
+  }, []);
 
   const filtered = useMemo(() => {
     return ALL_MODELS.filter((m) => {
@@ -84,47 +115,75 @@ export default function ModelsPage() {
         </div>
 
         <div className="models-grid">
-          {filtered.map((m, i) => (
-            <motion.div
-              key={m.id}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-30px" }}
-              transition={{ duration: 0.5, ease: EASE, delay: (i % 6) * 0.04 }}
-              className="model-card bezel"
-            >
-              <div className="bezel__core" style={{ padding: "1.25rem" }}>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-white/40">{m.category}</span>
-                  <span className="pill pill--active" style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem" }}>{m.type}</span>
-                </div>
-                <h3 className="text-base font-bold mb-1">{m.name}</h3>
-                <p className="text-xs text-white/40 mb-3">{m.id}</p>
-                {m.aspectRatios && (
-                  <div className="flex flex-wrap gap-1">
-                    {m.aspectRatios.slice(0, 4).map((ar) => (
-                      <span key={ar} className="text-[10px] text-white/30 bg-white/5 px-1.5 py-0.5 rounded">{ar}</span>
-                    ))}
-                    {m.aspectRatios.length > 4 && <span className="text-[10px] text-white/30">+{m.aspectRatios.length - 4}</span>}
+          {filtered.map((m, i) => {
+            const tool = TYPE_TO_TOOL[m.type] || "image";
+            const bg = backgrounds[m.id];
+            const bgUrl = bg ? bg.url : null;
+            const bgOverlay = bg ? bg.overlay : 0.05;
+            const isDark = bg ? bg.textColor === "dark" : false;
+            const textBase = isDark ? "#111" : "inherit";
+            const textMuted = isDark ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.6)";
+            const textFaint = isDark ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.5)";
+            const badgeBg = isDark ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)";
+            return (
+              <Link key={m.id} href={`/studio/${tool}?model=${m.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-30px" }}
+                  transition={{ duration: 0.5, ease: EASE, delay: (i % 6) * 0.04 }}
+                  className="model-card bezel"
+                  style={{ position: "relative", overflow: "hidden", cursor: "pointer" }}
+                >
+                  {bgUrl && (
+                    <div
+                      style={{
+                        position: "absolute", inset: 0,
+                        backgroundImage: `url(${bgUrl})`,
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                        opacity: bgOverlay === 0 ? 1 : bgOverlay,
+                        transition: "opacity 0.3s",
+                        pointerEvents: "none",
+                        zIndex: 0,
+                      }}
+                      className="model-card__bg"
+                    />
+                  )}
+                  <div className="bezel__core" style={{ padding: "1.25rem", position: "relative", zIndex: 1, color: textBase }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>{m.category}</span>
+                      <span className="pill pill--active" style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem" }}>{m.type}</span>
+                    </div>
+                    <h3 className="text-base font-bold mb-1">{m.name}</h3>
+                    <p className="text-xs mb-3" style={{ color: textMuted }}>{m.id}</p>
+                    {m.aspectRatios && (
+                      <div className="flex flex-wrap gap-1">
+                        {m.aspectRatios.slice(0, 4).map((ar) => (
+                          <span key={ar} className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: textFaint, background: badgeBg }}>{ar}</span>
+                        ))}
+                        {m.aspectRatios.length > 4 && <span className="text-[10px]" style={{ color: textFaint }}>+{m.aspectRatios.length - 4}</span>}
+                      </div>
+                    )}
+                    {m.durations && (
+                      <div className="flex flex-wrap gap-1">
+                        {m.durations.map((d) => (
+                          <span key={d} className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: textFaint, background: badgeBg }}>{d}s</span>
+                        ))}
+                      </div>
+                    )}
+                    {m.resolutions && (
+                      <div className="flex flex-wrap gap-1">
+                        {m.resolutions.map((r) => (
+                          <span key={r} className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: textFaint, background: badgeBg }}>{r}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-                {m.durations && (
-                  <div className="flex flex-wrap gap-1">
-                    {m.durations.map((d) => (
-                      <span key={d} className="text-[10px] text-white/30 bg-white/5 px-1.5 py-0.5 rounded">{d}s</span>
-                    ))}
-                  </div>
-                )}
-                {m.resolutions && (
-                  <div className="flex flex-wrap gap-1">
-                    {m.resolutions.map((r) => (
-                      <span key={r} className="text-[10px] text-white/30 bg-white/5 px-1.5 py-0.5 rounded">{r}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          ))}
+                </motion.div>
+              </Link>
+            );
+          })}
         </div>
 
         {filtered.length === 0 && (
