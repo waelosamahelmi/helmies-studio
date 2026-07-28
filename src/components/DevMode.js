@@ -140,7 +140,6 @@ export default function DevMode() {
                     borderBottom: isHorizontal && tab === t.id ? "2px solid #00ff88" : "none",
                     borderRight: isVertical && tab === t.id ? "2px solid #00ff88" : "none",
                     padding: isVertical ? "5px 6px" : "6px 12px", fontSize: 10, fontWeight: 600, cursor: "pointer",
-                    writingMode: isVertical ? "vertical-rl" : "horizontal-tb",
                   }}>{t.label}</button>
                 ))}
               </div>
