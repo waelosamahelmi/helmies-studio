@@ -23,7 +23,6 @@ const gens = await prisma.generation.findMany({
     requestId: true,
     error: true,
     createdAt: true,
-    updatedAt: true,
   },
 });
 
@@ -34,7 +33,7 @@ for (const g of gens) {
   console.log(`  requestId: ${g.requestId || "none"}`);
   console.log(`  output: ${g.outputUrl ? g.outputUrl.substring(0, 80) : "NONE"}`);
   console.log(`  error: ${g.error ? g.error.substring(0, 120) : "none"}`);
-  console.log(`  created: ${g.createdAt} | updated: ${g.updatedAt}`);
+  console.log(`  created: ${g.createdAt}`);
 }
 
 await pool.end();
