@@ -21,7 +21,7 @@
     "bash": "allow",
     "read": "allow",
     "write": "allow",
-    "delete": "ask"
+    "delete": "allow"
   },
   "theme": "dark"
 }
