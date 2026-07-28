@@ -211,10 +211,10 @@ export default function DevMode() {
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   {[
-                    { label: "PM2 Service", value: "dev-hermes", status: "online" },
-                    { label: "Dashboard", value: "127.0.0.1:9119", status: "online" },
-                    { label: "MCP Server", value: "Available", status: "online" },
-                    { label: "Memory", value: "~243MB", status: "ok" },
+                    { label: "Hermes Agent", value: "v0.17.0 — standby", status: "online" },
+                    { label: "Browser MCP", value: "Playwright + Chromium", status: "online" },
+                    { label: "Opencode AI", value: "v1.18.9 — web UI", status: "online" },
+                    { label: "Terminal", value: "root@helmies-studio", status: "online" },
                   ].map((s) => (
                     <div
                       key={s.label}
@@ -234,14 +234,20 @@ export default function DevMode() {
                   ))}
                 </div>
 
+                <div style={{ marginTop: 8, padding: "12px 16px", background: "rgba(0,255,136,0.06)", borderRadius: 8, border: "1px solid rgba(0,255,136,0.12)", fontSize: 12 }}>
+                  <strong style={{ color: "#00ff88" }}>Browser Access</strong>
+                  <br />
+                  Open the <strong>Opencode</strong> tab and ask: "Check the layout of https://studio.helmies.fi/studio" — it uses Playwright to navigate, screenshot, and inspect pages.
+                  <br /><br />
+                  Or run <code style={{ color: "#ffcc00" }}>hermes chat</code> in Terminal — it can also use the browser MCP.
+                </div>
+
                 <div style={{ marginTop: 8, padding: "12px 16px", background: "rgba(255,204,0,0.08)", borderRadius: 8, border: "1px solid rgba(255,204,0,0.15)", fontSize: 12 }}>
-                  <strong style={{ color: "#ffcc00" }}>Access the dashboard</strong>
+                  <strong style={{ color: "#ffcc00" }}>Hermes Dashboard</strong>
                   <br />
                   SSH tunnel: <code style={{ color: "#00ff88" }}>ssh -L 9119:127.0.0.1:9119 root@69.62.126.13</code>
                   <br />
-                  Then open <code style={{ color: "#00ff88" }}>http://localhost:9119</code> in your browser.
-                  <br /><br />
-                  Or run <code style={{ color: "#ffcc00" }}>hermes chat</code> in the Terminal tab.
+                  Then open <code style={{ color: "#00ff88" }}>http://localhost:9119</code>
                 </div>
 
                 <div style={{ marginTop: "auto", color: "#555", fontSize: 11 }}>
