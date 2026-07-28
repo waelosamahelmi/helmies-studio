@@ -347,19 +347,18 @@ async function executeAudioStep(params) {
 // ── Fallback models per agent type (model + provider pairs) ──
 const FALLBACKS = {
   image: [
-    { model: "flux-dev", provider: "wavespeed" },
-    { model: "flux-schnell", provider: "wavespeed" },
-    { model: "sdxl-image", provider: "atlas" },
+    { model: "flux-dev", provider: "kie" },
+    { model: "nano-banana", provider: "kie" },
+    { model: "qwen-image", provider: "alibaba" },
   ],
   video: [
-    { model: "wan-2.6", provider: "wavespeed" },
-    { model: "hailuo-02", provider: "wavespeed" },
-    { model: "seedance-2.0", provider: "atlas" },
+    { model: "wan-2.6-t2v", provider: "kie" },
+    { model: "hailuo-02-standard", provider: "kie" },
+    { model: "wan-2.6-t2v", provider: "alibaba" },
   ],
   audio: [
-    { model: "suno-v4", provider: "wavespeed" },
-    { model: "suno-v3.5", provider: "wavespeed" },
-    { model: "music-gen", provider: "atlas" },
+    { model: "suno-v4", provider: "kie" },
+    { model: "suno-v4.5", provider: "kie" },
   ],
 };
 

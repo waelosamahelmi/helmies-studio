@@ -15,7 +15,7 @@ export async function POST(req) {
 
     const body = await req.json();
 
-    // Parse both KIE and WaveSpeed callback formats
+    // Parse the KIE callback format (plus generic request_id fields for backward compat)
     const result = extractKieResults(body);
 
     const requestId = result?.taskId || body.request_id || body.data?.request_id || body.taskId || body.data?.taskId;

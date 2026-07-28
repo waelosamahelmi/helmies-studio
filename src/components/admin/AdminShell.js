@@ -311,7 +311,7 @@ function LegacyPricingTab() {
   const [pricing, setPricing] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newPricing, setNewPricing] = useState({
-    modelId: "", modelType: "image", providerName: "WaveSpeed", providerCost: 0, creditsCost: 1,
+    modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1,
   });
 
   const loadPricing = useCallback(() => {
@@ -338,7 +338,7 @@ function LegacyPricingTab() {
     });
     if (res.ok) {
       toast.success("Pricing set");
-      setNewPricing({ modelId: "", modelType: "image", providerName: "WaveSpeed", providerCost: 0, creditsCost: 1 });
+      setNewPricing({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 });
       loadPricing();
     } else {
       toast.error("Failed to set pricing");
@@ -420,7 +420,7 @@ function LegacyProvidersTab() {
       <div className="admin__add-form">
         <h4>Configure Provider</h4>
         <div className="admin__edit-row">
-          <input className="field-input" placeholder="Name (e.g. Atlas)" value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} />
+          <input className="field-input" placeholder="Name (e.g. Alibaba)" value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} />
           <select className="field-select" value={newProvider.type} onChange={(e) => setNewProvider({ ...newProvider, type: e.target.value })}>
             <option>image+video</option><option>image</option><option>video</option><option>llm</option><option>image+video+llm</option>
           </select>

@@ -1,116 +1,24 @@
-import { getProvider, brandError } from "@/lib/providers";
-import { wavespeedSyncImage } from "@/lib/wavespeed";
+import { getProvider, submitOnly, pollProviderResult } from "@/lib/providers";
 
-const DEFAULT_PROVIDER = "wavespeed";
-
-function getKey(provider) {
-  const key = provider?.apiKey || provider?.getKey?.();
-  if (!key) throw new Error("Provider API key is not set");
-  return key;
-}
-
-function getAuthHeaders(provider) {
-  const key = getKey(provider);
-  const headers = { "Content-Type": "application/json" };
-  if (provider.apiVersion >= 3) {
-    headers["Authorization"] = `Bearer ${key}`;
-  } else {
-    headers["x-api-key"] = key;
-    headers["Authorization"] = `Bearer ${key}`;
-  }
-  return headers;
-}
-
-function extractV3Data(body) {
-  if (body && typeof body === "object" && body.code !== undefined && body.data !== undefined) {
-    return body.data;
-  }
-  return body;
-}
-
-async function pollForResult(requestId, maxAttempts = 900, interval = 2000, provider) {
-  const key = getKey(provider);
-  const pollUrl = provider.buildPollUrl
-    ? provider.buildPollUrl(provider.baseUrl, requestId)
-    : `${provider.baseUrl}/api/v3/predictions/${requestId}/result`;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    await new Promise((r) => setTimeout(r, interval));
-    try {
-      const res = await fetch(pollUrl, {
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        signal: AbortSignal.timeout(30000),
-      });
-      if (!res.ok) {
-        if (res.status >= 500) continue;
-        const txt = await res.text();
-        throw new Error(brandError(txt));
-      }
-      const body = await res.json();
-      const data = provider?.apiVersion >= 3 ? extractV3Data(body) : body;
-      const status = data.status?.toLowerCase();
-      if (status === "completed" || status === "succeeded" || status === "success") {
-        return provider?.apiVersion >= 3
-          ? { ...data, url: data.outputs?.[0], outputUrl: data.outputs?.[0] }
-          : data;
-      }
-      if (status === "failed" || status === "error")
-        throw new Error(brandError(data.error || ""));
-    } catch (e) {
-      if (attempt === maxAttempts) throw e;
-    }
-  }
-  throw new Error("Generation timed out");
-}
+const DEFAULT_PROVIDER = "kie";
 
 async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
-  const provider = payload._provider;
-  const baseUrl = provider?.baseUrl || getProvider(DEFAULT_PROVIDER).baseUrl;
-  const key = provider?.apiKey || provider?.getKey?.() || getProvider(DEFAULT_PROVIDER).getKey();
+  const provider = payload._provider || getProvider(DEFAULT_PROVIDER);
   const { _provider, ...rest } = payload;
-  const path = provider?.buildUrl ? provider.buildUrl(endpoint) : `/api/v3/${endpoint}`;
-  const url = `${baseUrl}${path}`;
+  const { requestId, submitData, immediateResult } = await submitOnly(provider, endpoint, { model: endpoint, ...rest });
 
-  const headers = { "Content-Type": "application/json" };
-  const isV3 = provider?.apiVersion >= 3;
-  if (isV3) {
-    headers["Authorization"] = `Bearer ${key}`;
-  } else {
-    headers["x-api-key"] = key;
-    headers["Authorization"] = `Bearer ${key}`;
+  if (immediateResult) {
+    const outputs = immediateResult.outputs || [];
+    return { ...immediateResult, url: outputs[0], outputUrl: outputs[0] };
   }
+  if (!requestId) return submitData;
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(rest),
-      signal: AbortSignal.timeout(30000),
-    });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(brandError(txt));
-  }
-  const body = await res.json();
-  const data = isV3 ? extractV3Data(body) : body;
-  const requestId = data.request_id || data.id;
-  if (!requestId) return data;
-  const result = await pollForResult(requestId, maxAttempts, 2000, provider || getProvider(DEFAULT_PROVIDER));
-  const outputUrl = result.outputs?.[0] || result.url || result.output?.url;
+  const result = await pollProviderResult(provider, requestId, maxAttempts, 2000);
+  const outputUrl = result.outputs?.[0] || result.url;
   return { ...result, url: outputUrl, requestId };
 }
 
 export async function generateImage(params) {
-  const provider = params._provider;
-  const providerName = provider?.name || DEFAULT_PROVIDER;
-
-  if (providerName === "wavespeed" && process.env.WAVESPEED_KEY) {
-    try {
-      return await wavespeedSyncImage(params);
-    } catch {
-      // fall through to submit+poll
-    }
-  }
-
   const endpoint = params.endpoint || params.model;
   const payload = { prompt: params.prompt };
   if (params.aspect_ratio) payload.aspect_ratio = params.aspect_ratio;
@@ -260,24 +168,4 @@ export async function generateMarketingAd(params) {
     video_files: params.video_files || [],
   };
   return submitAndPoll(endpoint, payload, 900);
-}
-
-export async function uploadFile(file) {
-  const provider = getProvider(DEFAULT_PROVIDER);
-  const key = getKey(provider);
-  const url = `${provider.baseUrl}/api/v3/upload_file`;
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}` },
-    body: formData,
-  });
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(brandError(txt));
-  }
-  const body = await res.json();
-  const data = provider?.apiVersion >= 3 ? extractV3Data(body) : body;
-  return data.url || data.file_url || data.data?.url;
 }

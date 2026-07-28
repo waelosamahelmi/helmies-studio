@@ -56,40 +56,6 @@ function getFallbackCost(tool, model, params) {
   return base;
 }
 
-// ── Sync pricing from WaveSpeed v3 API ──
-export async function syncPricingFromWaveSpeed() {
-  const { fetchWaveSpeedModels, fetchWaveSpeedPricing } = await import("@/lib/providers");
-  const models = await fetchWaveSpeedModels();
-  let synced = 0;
-
-  for (const m of models) {
-    try {
-      const pricing = await fetchWaveSpeedPricing(m.id, {});
-      if (!pricing) continue;
-      const providerCost = pricing.cost || pricing.total_cost || 0;
-      const markup = await resolveMarkup("WaveSpeed");
-      const creditsCost = calculateCredits(providerCost, markup);
-
-      await prisma.modelPricing.upsert({
-        where: { modelId: m.id },
-        create: {
-          modelId: m.id,
-          modelType: m.type || "image",
-          providerName: "WaveSpeed",
-          providerCost,
-          creditsCost,
-          isActive: true,
-        },
-        update: { providerCost, creditsCost, isActive: true },
-      });
-      synced++;
-    } catch {
-      continue;
-    }
-  }
-  return synced;
-}
-
 // ── Estimate multi-step agent task ──
 export async function estimateAgentTask(steps) {
   let total = 0;

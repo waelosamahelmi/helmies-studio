@@ -58,7 +58,7 @@ export async function POST(req) {
             affordable: balance >= credits,
           };
         } catch {
-          costs[modelId] = { credits: 1, affordable: true };
+          costs[modelId] = { credits: null, affordable: false, error: "estimate_unavailable" };
         }
       }
     }

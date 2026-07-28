@@ -19,7 +19,7 @@ export default function AdminPanel() {
   const [modelSearch, setModelSearch] = useState("");
   const [auditLogs, setAuditLogs] = useState([]);
   const [editingUser, setEditingUser] = useState(null);
-  const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "WaveSpeed", providerCost: 0, creditsCost: 1 });
+  const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 });
   const [pricingSearch, setPricingSearch] = useState("");
   const [newProvider, setNewProvider] = useState({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true });
   const [newRefund, setNewRefund] = useState({ userId: "", amount: 0, reason: "" });
@@ -85,7 +85,7 @@ export default function AdminPanel() {
         creditsCost: parseInt(newPricing.creditsCost),
       }),
     });
-    if (res.ok) { showToast("Pricing set"); setNewPricing({ modelId: "", modelType: "image", providerName: "WaveSpeed", providerCost: 0, creditsCost: 1 }); loadPricing(); }
+    if (res.ok) { showToast("Pricing set"); setNewPricing({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 }); loadPricing(); }
   };
 
   // ── Providers ──
@@ -309,7 +309,7 @@ export default function AdminPanel() {
               <div className="admin__add-form">
                 <h4>Configure Provider</h4>
                 <div className="admin__edit-row">
-                  <input className="field-input" placeholder="Name (e.g. Atlas)" value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} />
+                  <input className="field-input" placeholder="Name (e.g. Alibaba)" value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} />
                   <select className="field-select" value={newProvider.type} onChange={(e) => setNewProvider({ ...newProvider, type: e.target.value })}><option>image+video</option><option>image</option><option>video</option><option>llm</option><option>image+video+llm</option></select>
                   <input className="field-input" placeholder="API Key" value={newProvider.apiKey} onChange={(e) => setNewProvider({ ...newProvider, apiKey: e.target.value })} />
                   <input className="field-input" placeholder="Base URL" value={newProvider.baseUrl} onChange={(e) => setNewProvider({ ...newProvider, baseUrl: e.target.value })} />
@@ -325,7 +325,7 @@ export default function AdminPanel() {
                     <span className={`admin__badge ${p.isActive ? "enabled" : "disabled"}`}>{p.isActive ? "Active" : "Inactive"}</span>
                   </div>
                 ))}
-                {providers.length === 0 && <p className="admin__empty">No providers configured in DB. Using WaveSpeed default (key from .env).</p>}
+                {providers.length === 0 && <p className="admin__empty">No providers configured in DB. Using KIE default (key from .env).</p>}
               </div>
             </div>
           )}

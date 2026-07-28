@@ -119,7 +119,7 @@ export function extractKieResults(body) {
     }
   }
 
-  // WaveSpeed format (backward compat)
+  // Generic request_id format (backward compat with legacy providers)
   if (body.request_id || body.data?.request_id) {
     return {
       taskId: body.data?.request_id || body.request_id,

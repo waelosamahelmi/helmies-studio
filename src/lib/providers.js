@@ -38,148 +38,7 @@ export async function logProviderError(provider, endpoint, originalError, userId
   }
 }
 
-const MODEL_ENDPOINT_MAP = {
-  // Image T2I
-  "nano-banana": "google/nano-banana/text-to-image",
-  "nano-banana-2-lite": "google/nano-banana-2-lite/text-to-image",
-  "nano-banana-pro": "google/nano-banana-pro/text-to-image",
-  "imagen4": "google/imagen4",
-  "imagen4-fast": "google/imagen4-fast",
-  "imagen4-ultra": "google/imagen4-ultra",
-  "flux-dev": "wavespeed-ai/flux-dev",
-  "flux-schnell": "wavespeed-ai/flux-schnell",
-  "flux-2-dev": "wavespeed-ai/flux-2-dev/text-to-image",
-  "flux-2-pro": "wavespeed-ai/flux-2-pro/text-to-image",
-  "flux-2-flex": "wavespeed-ai/flux-2-flex/text-to-image",
-  "flux-kontext-dev": "wavespeed-ai/flux-kontext-dev",
-  "flux-kontext-pro": "wavespeed-ai/flux-kontext-pro",
-  "midjourney": "midjourney/text-to-image",
-  "gpt-image-1.5": "openai/gpt-image-1.5/text-to-image",
-  "gpt-image-2": "openai/gpt-image-2/text-to-image",
-  "seedream-v4": "bytedance/seedream-v4",
-  "seedream-5-lite": "bytedance/seedream-v5.0-lite",
-  "seedream-5-pro": "bytedance/seedream-v5.0-pro",
-  "qwen-image": "wavespeed-ai/qwen-image/text-to-image",
-  "wan-2.7-image": "alibaba/wan-2.7/text-to-image",
-  "wan-2.7-image-pro": "alibaba/wan-2.7/text-to-image-pro",
-  "grok-imagine-text-to-image": "x-ai/grok-imagine-image/text-to-image",
-  "ideogram-v3": "ideogram-ai/ideogram-v3-balanced",
-  "hunyuan-image-3": "wavespeed-ai/hunyuan-image-3",
-  "kling-text-to-image": "kwaivgi/kling-image-o1",
-  "z-image": "wavespeed-ai/z-image/base",
-  // I2I
-  "flux-kontext-dev-edit": "wavespeed-ai/flux-kontext-dev",
-  "flux-kontext-pro-edit": "wavespeed-ai/flux-kontext-pro/multi",
-  "nano-banana-edit": "google/nano-banana/edit",
-  "nano-banana-pro-edit": "google/nano-banana-pro/edit",
-  "gpt-image-1.5-edit": "openai/gpt-image-1.5/edit",
-  "gpt-image-2-edit": "openai/gpt-image-2/edit",
-  "seedream-v4-edit": "bytedance/seedream-v4/edit",
-  "seedream-5-pro-edit": "bytedance/seedream-v5.0-pro/edit",
-  "kling-image-edit": "kwaivgi/kling-image-o3/edit",
-  "ideogram-v3-edit": "ideogram-ai/ideogram-v3-quality",
-  "ideogram-v3-remix": "ideogram-ai/ideogram-v3-quality",
-  "image-upscale": "pruna-ai/p-image/upscale",
-  "remove-background": "ideogram-ai/remove-background",
-  "crisp-upscale": "recraft-ai/recraft-crisp-upscale",
-  // Video T2V
-  "veo3": "google/veo3/text-to-video",
-  "veo3-fast": "google/veo3-fast/text-to-video",
-  "sora-2": "openai/sora-2/text-to-video",
-  "kling-3-0": "kwaivgi/kling-v3.0-std/text-to-video",
-  "kling-v2.1-master": "kwaivgi/kling-v2.1-t2v-master",
-  "kling-v2.5-turbo-pro": "kwaivgi/kling-v2.5-turbo-pro/text-to-video",
-  "kling-v3-turbo": "kwaivgi/kling-v3-turbo-std/text-to-video",
-  "kling-text-to-video": "kwaivgi/kling-video-o1/text-to-video",
-  "seedance-2": "bytedance/seedance-2.0/text-to-video",
-  "seedance-2-fast": "bytedance/seedance-2.0-fast/text-to-video",
-  "seedance-2-mini": "bytedance/seedance-2.0-mini/text-to-video",
-  "seedance-1.5-pro": "bytedance/seedance-v1.5-pro/text-to-video",
-  "hailuo-02-standard": "minimax/hailuo-02/standard",
-  "hailuo-02-pro": "minimax/hailuo-02/pro",
-  "hailuo-2.3": "minimax/hailuo-2.3/t2v-standard",
-  "wan-2.5-t2v": "alibaba/wan-2.5/text-to-video",
-  "wan-2.6-t2v": "alibaba/wan-2.6/text-to-video",
-  "wan-2.7-t2v": "alibaba/wan-2.7/text-to-video",
-  "grok-imagine-text-to-video": "x-ai/grok-imagine-video/text-to-video",
-  "runway-aleph": "runwayml/gen4-aleph",
-  // I2V
-  "veo3-i2v": "google/veo3/image-to-video",
-  "kling-v2.1-standard-i2v": "kwaivgi/kling-v2.1-i2v-standard",
-  "kling-v2.1-pro-i2v": "kwaivgi/kling-v2.1-i2v-pro",
-  "kling-v2.1-master-i2v": "kwaivgi/kling-v2.1-i2v-master",
-  "kling-v2.5-turbo-pro-i2v": "kwaivgi/kling-v2.5-turbo-pro/image-to-video",
-  "kling-v3-turbo-i2v": "kwaivgi/kling-v3-turbo-std/image-to-video",
-  "kling-image-to-video": "kwaivgi/kling-video-o1/image-to-video",
-  "seedance-2-i2v": "bytedance/seedance-2.0/image-to-video",
-  "seedance-1.5-pro-i2v": "bytedance/seedance-v1.5-pro/image-to-video",
-  "hailuo-02-i2v-standard": "minimax/hailuo-02/i2v-standard",
-  "hailuo-02-i2v-pro": "minimax/hailuo-02/i2v-pro",
-  "hailuo-2.3-i2v": "minimax/hailuo-2.3/i2v-standard",
-  "hailuo-2.3-pro-i2v": "minimax/hailuo-2.3/i2v-pro",
-  "wan-2.5-i2v": "alibaba/wan-2.5/image-to-video",
-  "wan-2.6-i2v": "alibaba/wan-2.6/image-to-video",
-  "wan-2.6-flash-i2v": "alibaba/wan-2.6/image-to-video-flash",
-  "wan-2.7-i2v": "alibaba/wan-2.7/image-to-video",
-  "wan-2.2-turbo-i2v": "wavespeed-ai/wan-2.2/image-to-video",
-  // V2V
-  "wan-2.6-v2v": "alibaba/wan-2.6/image-to-video",
-  "wan-2.6-flash-v2v": "alibaba/wan-2.6/image-to-video-flash",
-  "wan-2.7-video-edit": "alibaba/wan-2.7/video-edit",
-  "video-upscale": "wavespeed-ai/video-upscaler",
-  "kling-ai-avatar-standard": "kwaivgi/kling-v2-ai-avatar-standard",
-  "kling-ai-avatar-pro": "kwaivgi/kling-v2-ai-avatar-pro",
-  "wan-animate-move": "wavespeed-ai/wan-2.2/animate",
-  "wan-animate-replace": "wavespeed-ai/wan-2.2/animate",
-  // Lipsync
-  "wan-speech-to-video": "wavespeed-ai/wan-2.2/speech-to-video",
-  "infinitetalk": "wavespeed-ai/infinitetalk",
-  "volcengine-lipsync": "sync/lipsync-3",
-  // Audio
-  "elevenlabs-tts-turbo": "elevenlabs/turbo-v2.5",
-  "elevenlabs-tts-multilingual": "elevenlabs/multilingual-v2",
-  "elevenlabs-tts-v3": "elevenlabs/eleven-v3",
-  "audio-isolation": "elevenlabs/multilingual-v1",
-  // Extend
-  "veo3-extend": "google/veo3/video-extend",
-  "grok-imagine-extend": "x-ai/grok-imagine-video/video-extend",
-  "runway-extend": "runwayml/gen4-turbo",
-  // Audio downmix
-  "lipsync": "sync/lipsync-3",
-};
-
-// Seedream/Seedance variants
-const SEEDREAM_MAP = {
-  "seedream-v4": "bytedance/seedream-v4",
-  "seedream-5-lite": "bytedance/seedream-v5.0-lite",
-  "seedream-5-pro": "bytedance/seedream-v5.0-pro",
-  "seedream-v4-edit": "bytedance/seedream-v4/edit",
-  "seedream-5-pro-edit": "bytedance/seedream-v5.0-pro/edit",
-};
-
-
 const PROVIDERS = {
-  wavespeed: {
-    name: "WaveSpeed",
-    type: "image+video+audio+lipsync+recast",
-    baseUrl: "https://api.wavespeed.ai",
-    getKey: () => process.env.WAVESPEED_KEY,
-    buildUrl: (endpoint) => {
-      const mapped = MODEL_ENDPOINT_MAP[endpoint] || endpoint;
-      return `/api/v3/${mapped}`;
-    },
-    formatPayload: (model, prompt, params) => {
-      const { endpoint: _ep, callBackUrl: _cb, webhook_url: _wh, ...rest } = params;
-      return { prompt, ...rest };
-    },
-    parseResult: (data) => ({
-      requestId: data.id || data.request_id,
-      status: data.status,
-      outputs: data.outputs || [],
-    }),
-    isSync: false,
-    apiVersion: 3,
-  },
   kie: {
     name: "KIE",
     type: "llm+generation",
@@ -195,9 +54,61 @@ const PROVIDERS = {
       };
     },
     parseResult: (data) => ({
-      requestId: data.data?.taskId || data.data?.request_id,
-      status: data.data?.state || data.status,
+      requestId: data.taskId || data.data?.taskId || data.request_id || data.data?.request_id,
+      status: data.state || data.data?.state || data.status,
       outputs: [],
+    }),
+    buildPollUrl: (requestId) => `/api/v1/jobs/recordInfo?taskId=${requestId}`,
+    parsePoll: (data) => {
+      let outputs = [];
+      if (data.resultJson) {
+        try {
+          const r = typeof data.resultJson === "string" ? JSON.parse(data.resultJson) : data.resultJson;
+          outputs = r.resultUrls || r.result_urls || [];
+        } catch {}
+      }
+      return { status: (data.state || "").toLowerCase(), outputs, error: data.failMsg || data.error };
+    },
+    isSync: false,
+    apiVersion: 1,
+  },
+  alibaba: {
+    name: "Alibaba",
+    type: "image+video",
+    get baseUrl() {
+      const workspaceId = process.env.ALIBABA_WORKSPACE_ID;
+      return workspaceId
+        ? `https://${workspaceId}.eu-central-1.maas.aliyuncs.com/compatible-mode/v1`
+        : "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    },
+    getKey: () => process.env.ALIBABA_KEY,
+    buildUrl: (endpoint) => {
+      const e = (endpoint || "").toLowerCase();
+      if (e.includes("video") || e.includes("t2v") || e.includes("i2v") || e.includes("v2v") || e.startsWith("wan-2")) {
+        return "/video/generations";
+      }
+      return "/images/generations";
+    },
+    formatPayload: (model, prompt, params) => {
+      const { endpoint: _ep, callBackUrl: _cb, webhook_url: _wh, ...rest } = params;
+      return { model, input: { prompt, ...rest } };
+    },
+    parseResult: (data) => {
+      // Image generations return synchronously as an array of { url }
+      if (Array.isArray(data)) {
+        return { requestId: null, status: "succeeded", outputs: data.map((d) => d?.url).filter(Boolean) };
+      }
+      return {
+        requestId: data.task_id || data.id,
+        status: data.status,
+        outputs: data.output ? [data.output.video_url || data.output.url].filter(Boolean) : [],
+      };
+    },
+    buildPollUrl: (requestId) => `/video/generations/${requestId}`,
+    parsePoll: (data) => ({
+      status: (data.status || "").toLowerCase(),
+      outputs: data.output ? [data.output.video_url || data.output.url].filter(Boolean) : [],
+      error: data.error,
     }),
     isSync: false,
     apiVersion: 1,
@@ -216,7 +127,16 @@ const LLM_PROVIDER = {
   },
 };
 
-const DEFAULT_PROVIDER = "wavespeed";
+const DEFAULT_PROVIDER = "kie";
+
+// Map any providerName (DB ModelPricing.providerName, ProviderConfig.name) to an adapter key.
+// Unknown names resolve to KIE (the primary provider) — never to a removed provider.
+function resolveAdapterKey(providerName) {
+  const n = (providerName || "").toLowerCase();
+  if (n.includes("alibaba") || n.includes("qwen") || n.includes("dashscope")) return "alibaba";
+  if (n.includes("kie")) return "kie";
+  return "kie";
+}
 
 export function getProvider(name) {
   return PROVIDERS[name] || PROVIDERS[DEFAULT_PROVIDER];
@@ -232,12 +152,13 @@ export async function resolveProvider(modelId) {
   try {
     const pricing = await prisma.modelPricing.findUnique({ where: { modelId } });
     if (pricing?.providerName) {
-      const name = pricing.providerName.toLowerCase();
-      const p = PROVIDERS[name] || PROVIDERS.wavespeed;
+      const name = resolveAdapterKey(pricing.providerName);
+      const p = PROVIDERS[name];
       return { name, ...p, apiKey: p.getKey() };
     }
   } catch {}
-  return { name: "wavespeed", ...PROVIDERS.wavespeed, apiKey: PROVIDERS.wavespeed.getKey() };
+  const p = PROVIDERS[DEFAULT_PROVIDER];
+  return { name: DEFAULT_PROVIDER, ...p, apiKey: p.getKey() };
 }
 
 export async function submitOnly(providerName, endpoint, payload) {
@@ -274,7 +195,7 @@ export async function submitOnly(providerName, endpoint, payload) {
 
   if (!requestId) {
     if (parsed.outputs && parsed.outputs.length > 0) {
-      return { provider, requestId: null, submitData: result, immediateResult: responseData };
+      return { provider, requestId: null, submitData: result, immediateResult: { ...responseData, outputs: parsed.outputs } };
     }
     if (responseData.outputs && responseData.outputs.length > 0) {
       return { provider, requestId: null, submitData: result, immediateResult: responseData };
@@ -283,6 +204,50 @@ export async function submitOnly(providerName, endpoint, payload) {
   }
 
   return { provider, requestId, submitData: result };
+}
+
+function defaultParsePoll(data) {
+  const outputs = data.outputs || (data.output ? [data.output.video_url || data.output.url].filter(Boolean) : []);
+  return { status: (data.status || data.state || "").toLowerCase(), outputs, error: data.error || data.message };
+}
+
+export async function pollProviderResult(provider, requestId, maxAttempts = 900, interval = 2000) {
+  const key = provider.apiKey || provider.getKey();
+
+  let pollInterval = interval;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await new Promise((r) => setTimeout(r, pollInterval));
+    try {
+      const pollPath = provider.buildPollUrl
+        ? provider.buildPollUrl(requestId)
+        : `/api/v1/jobs/recordInfo?taskId=${requestId}`;
+      const pollRes = await fetch(`${provider.baseUrl}${pollPath}`, {
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!pollRes.ok) {
+        if (pollRes.status >= 500) continue;
+        const txt = await pollRes.text();
+        throw new Error(brandError(txt));
+      }
+      const body = await pollRes.json();
+      const data = body.data || body;
+      const parsed = provider.parsePoll ? provider.parsePoll(data) : defaultParsePoll(data);
+      const status = (parsed.status || "").toLowerCase();
+      if (status === "completed" || status === "succeeded" || status === "success") {
+        const outputs = parsed.outputs || [];
+        return { ...data, outputs, url: outputs[0], outputUrl: outputs[0] };
+      }
+      if (status === "failed" || status === "error" || status === "fail") {
+        throw new Error(brandError(parsed.error || ""));
+      }
+      // pending/waiting/generating/processing — keep polling with gentle backoff
+      pollInterval = Math.min(10000, pollInterval + 1000);
+    } catch (e) {
+      if (attempt === maxAttempts) throw e;
+    }
+  }
+  throw new Error(BRANDED_ERRORS.timeout);
 }
 
 export async function submitAndPoll(providerName, endpoint, payload, maxAttempts = 900, interval = 2000) {
@@ -295,39 +260,7 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
 
   if (!requestId) return submitData;
 
-  const key = provider.apiKey || provider.getKey();
-
-  let pollInterval = interval;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    await new Promise((r) => setTimeout(r, pollInterval));
-    try {
-      const pollUrl = `${provider.baseUrl}/api/v3/predictions/${requestId}/result`;
-      const pollRes = await fetch(pollUrl, {
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        signal: AbortSignal.timeout(30000),
-      });
-      if (!pollRes.ok) {
-        if (pollRes.status >= 500) continue;
-        const txt = await pollRes.text();
-        throw new Error(brandError(txt));
-      }
-      const body = await pollRes.json();
-      const data = body.data || body;
-      const status = (data.status || "").toLowerCase();
-      if (status === "completed" || status === "succeeded" || status === "success") {
-        const outputs = data.outputs || data.output || [];
-        return { ...data, outputs, url: outputs[0], outputUrl: outputs[0] };
-      }
-      if (status === "failed" || status === "error") throw new Error(brandError(data.error || data.message || ""));
-      if (status === "created" || status === "pending" || status === "processing") {
-        pollInterval = Math.min(10000, pollInterval + 1000);
-        continue;
-      }
-    } catch (e) {
-      if (attempt === maxAttempts) throw e;
-    }
-  }
-  throw new Error(BRANDED_ERRORS.timeout);
+  return pollProviderResult(provider, requestId, maxAttempts, interval);
 }
 
 export async function llmComplete(messages, options = {}) {
@@ -397,74 +330,37 @@ export async function llmStream(messages, options = {}) {
   return res.body;
 }
 
-const FALLBACK_CHAIN = ["wavespeed", "kie"];
+// Media provider fallback order: KIE primary, Alibaba secondary.
+const FALLBACK_CHAIN = ["kie", "alibaba"];
+
+// Reads ProviderConfig activity for media adapters only.
+// Returns null when no config rows exist (env-only mode → all providers eligible).
+async function getProviderActivity() {
+  try {
+    const rows = await prisma.providerConfig.findMany({ select: { name: true, isActive: true } });
+    if (!rows.length) return null;
+    const activity = {};
+    for (const row of rows) {
+      const n = (row.name || "").toLowerCase();
+      // Only media adapters participate in the fallback chain; unrelated configs (e.g. OpenRouter) are ignored here.
+      if (n.includes("alibaba") || n.includes("qwen") || n.includes("dashscope")) activity.alibaba = row.isActive;
+      else if (n.includes("kie")) activity.kie = row.isActive;
+    }
+    return activity;
+  } catch {
+    return null;
+  }
+}
 
 export async function resolveProviderWithFallback(modelId) {
   const primary = await resolveProvider(modelId);
+  const activity = await getProviderActivity();
   const chain = [primary.name, ...FALLBACK_CHAIN.filter((n) => n !== primary.name)];
-  return chain.map((name) => {
-    const p = PROVIDERS[name];
-    return p ? { name, ...p, apiKey: p.getKey() } : null;
-  }).filter(Boolean);
-}
-
-export async function fetchWaveSpeedModels() {
-  const key = process.env.WAVESPEED_KEY;
-  if (!key) return [];
-  try {
-    const res = await fetch("https://api.wavespeed.ai/api/v3/models", {
-      headers: { Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) return [];
-    const body = await res.json();
-    if (body.code !== 200) return [];
-    return (body.data || []).map((m) => ({
-      id: m.model_id,
-      name: m.name,
-      basePrice: m.base_price,
-      type: m.type,
-      description: m.description,
-      apiPath: m.api_schema?.api_schemas?.[0]?.api_path || null,
-      apiSchema: m.api_schema?.api_schemas?.[0] || null,
-    }));
-  } catch {
-    return [];
-  }
-}
-
-export async function fetchWaveSpeedPricing(modelId, inputs = {}) {
-  const key = process.env.WAVESPEED_KEY;
-  if (!key) return null;
-  try {
-    const res = await fetch("https://api.wavespeed.ai/api/v3/model/pricing", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model_id: modelId, inputs }),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!res.ok) return null;
-    const body = await res.json();
-    if (body.code !== 200) return null;
-    return body.data;
-  } catch {
-    return null;
-  }
-}
-
-export async function fetchWaveSpeedBalance() {
-  const key = process.env.WAVESPEED_KEY;
-  if (!key) return null;
-  try {
-    const res = await fetch("https://api.wavespeed.ai/api/v3/balance", {
-      headers: { Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return null;
-    const body = await res.json();
-    if (body.code !== 200) return null;
-    return body.data;
-  } catch {
-    return null;
-  }
+  return chain
+    .filter((name) => !activity || activity[name] !== false)
+    .map((name) => {
+      const p = PROVIDERS[name];
+      return p ? { name, ...p, apiKey: p.getKey() } : null;
+    })
+    .filter(Boolean);
 }

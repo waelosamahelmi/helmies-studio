@@ -22,13 +22,22 @@ export async function getWallet(userId) {
 
 // ── Ledger ───────────────────────────────────────────────────
 
-const LEDGER_TYPES = ["signup", "subscription_grant", "topup", "promo", "reservation", "reservation_release", "generation", "refund", "admin_adjustment"];
+const LEDGER_TYPES = ["signup", "subscription_grant", "topup", "promo", "reservation", "reservation_release", "generation", "refund", "admin_adjustment", "migration_opening_balance"];
+
+// Low-level ledger write. CreditLedger columns: walletId, amount, type,
+// description, referenceId, balanceAfter. Always goes through the provided
+// client so it can participate in the caller's transaction.
+function writeLedger(client, walletId, amount, balanceAfter, type, description, referenceId) {
+  return client.creditLedger.create({
+    data: { walletId, amount, type, description, referenceId: referenceId || null, balanceAfter: balanceAfter || 0 },
+  });
+}
 
 export async function addLedgerEntry(userId, delta, balanceAfter, reservedAfter, type, description, refType, refId, metadata = {}) {
   if (!LEDGER_TYPES.includes(type)) throw new Error(`Invalid ledger type: ${type}`);
-  return prisma.creditLedger.create({
-    data: { userId, delta, balanceAfter: balanceAfter || 0, reservedAfter: reservedAfter || 0, type, description, referenceType: refType, referenceId: refId, metadata },
-  });
+  const wallet = await prisma.creditWallet.findUnique({ where: { userId } });
+  if (!wallet) throw new Error(`No credit wallet for user ${userId}`);
+  return writeLedger(prisma, wallet.id, delta, balanceAfter, type, description, refId);
 }
 
 // ── Reservation ──────────────────────────────────────────────
@@ -43,20 +52,28 @@ export async function reserveCredits(userId, amount, jobId, expiresInMinutes = 3
       data: { available: { decrement: amount }, reserved: { increment: amount } },
     });
 
+    // CreditReservation columns: walletId, amount, generationId, status.
+    // The job id is the Generation id and is stored in generationId.
     const reservation = await tx.creditReservation.create({
-      data: { userId, jobId, amount, status: "active", expiresAt: new Date(Date.now() + expiresInMinutes * 60000) },
+      data: { walletId: wallet.id, generationId: jobId, amount, status: "active" },
     });
 
-    await addLedgerEntry(userId, -amount, updated.available, updated.reserved, "reservation", `Reserved for job ${jobId}`, "job", jobId);
+    await writeLedger(tx, wallet.id, -amount, updated.available, "reservation", `Reserved for job ${jobId}`, jobId);
 
     return { wallet: updated, reservation };
   });
 }
 
+async function findActiveReservation(tx, userId, jobId) {
+  return tx.creditReservation.findFirst({
+    where: { wallet: { userId }, generationId: jobId, status: "active" },
+  });
+}
+
 export async function settleReservation(userId, jobId, actualCredits) {
   return prisma.$transaction(async (tx) => {
-    const reservation = await tx.creditReservation.findUnique({ where: { jobId } });
-    if (!reservation || reservation.status !== "active") throw new Error("No active reservation found");
+    const reservation = await findActiveReservation(tx, userId, jobId);
+    if (!reservation) throw new Error("No active reservation found");
 
     const release = reservation.amount - actualCredits;
     const wallet = await tx.creditWallet.update({
@@ -64,12 +81,15 @@ export async function settleReservation(userId, jobId, actualCredits) {
       data: { reserved: { decrement: reservation.amount }, available: { increment: release } },
     });
 
-    await tx.creditReservation.update({ where: { jobId }, data: { status: "settled", settledAt: new Date() } });
+    await tx.creditReservation.update({
+      where: { id: reservation.id },
+      data: { status: "settled", releasedAt: new Date() },
+    });
 
-    await addLedgerEntry(userId, -actualCredits, wallet.available, wallet.reserved, "generation", `Generation job ${jobId}`, "job", jobId);
+    await writeLedger(tx, wallet.id, -actualCredits, wallet.available, "generation", `Generation job ${jobId}`, jobId);
 
     if (release > 0) {
-      await addLedgerEntry(userId, release, wallet.available, wallet.reserved, "reservation_release", `Unused reservation released for job ${jobId}`, "job", jobId);
+      await writeLedger(tx, wallet.id, release, wallet.available, "reservation_release", `Unused reservation released for job ${jobId}`, jobId);
     }
 
     return wallet;
@@ -78,16 +98,19 @@ export async function settleReservation(userId, jobId, actualCredits) {
 
 export async function releaseReservation(userId, jobId) {
   return prisma.$transaction(async (tx) => {
-    const reservation = await tx.creditReservation.findUnique({ where: { jobId } });
-    if (!reservation || reservation.status !== "active") return null;
+    const reservation = await findActiveReservation(tx, userId, jobId);
+    if (!reservation) return null;
 
     const wallet = await tx.creditWallet.update({
       where: { userId },
       data: { reserved: { decrement: reservation.amount }, available: { increment: reservation.amount } },
     });
 
-    await tx.creditReservation.update({ where: { jobId }, data: { status: "released", settledAt: new Date() } });
-    await addLedgerEntry(userId, reservation.amount, wallet.available, wallet.reserved, "reservation_release", `Refund for job ${jobId}`, "job", jobId);
+    await tx.creditReservation.update({
+      where: { id: reservation.id },
+      data: { status: "released", releasedAt: new Date() },
+    });
+    await writeLedger(tx, wallet.id, reservation.amount, wallet.available, "reservation_release", `Refund for job ${jobId}`, jobId);
 
     return wallet;
   });
@@ -102,7 +125,7 @@ export async function grantCredits(userId, amount, type = "admin_adjustment", de
       update: { available: { increment: amount }, lifetime: { increment: amount } },
       create: { userId, available: amount, lifetime: amount },
     });
-    await addLedgerEntry(userId, amount, wallet.available, wallet.reserved, type, description);
+    await writeLedger(tx, wallet.id, amount, wallet.available, type, description, null);
     return wallet;
   });
 }

@@ -62,7 +62,6 @@ export async function POST(req) {
         status: "pending",
         creditsUsed: cost,
         providerCost: dbPricing?.providerCost || 0,
-        providerName: provider?.name || "wavespeed",
       },
     });
 

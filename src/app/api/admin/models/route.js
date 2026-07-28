@@ -58,7 +58,7 @@ export async function POST(req) {
 
     await prisma.modelPricing.upsert({
       where: { modelId },
-      create: { modelId, modelType, providerName: providerName || "WaveSpeed", providerCost: providerCost || 0, creditsCost: creditsCost || 1, isActive: isActive ?? true, background: background || null, backgroundOverlay: backgroundOverlay ?? null, textColor: textColor || null },
+      create: { modelId, modelType, providerName: providerName || "KIE", providerCost: providerCost || 0, creditsCost: creditsCost || 1, isActive: isActive ?? true, background: background || null, backgroundOverlay: backgroundOverlay ?? null, textColor: textColor || null },
       update: updateData,
     });
 
