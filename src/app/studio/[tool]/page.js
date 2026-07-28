@@ -101,6 +101,10 @@ export async function generateMetadata({ params }) {
   };
 }
 
+// Force dynamic rendering — never serve a static prerender for tool pages
+// so the latest component code is always used.
+export const dynamic = "force-dynamic";
+
 export default async function StudioToolPage({ params, searchParams }) {
   const { tool } = await params;
   const initialTool = VALID_TOOLS.includes(tool) ? tool : "image";

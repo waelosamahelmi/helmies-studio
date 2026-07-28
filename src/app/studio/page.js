@@ -56,6 +56,9 @@ const TOOLS = [
   { id: "avatar", label: "AI Avatar", desc: "Kling AI avatar animation", Icon: IconUsers, color: "#FF6B35", group: "Character", badge: "New" },
 ];
 
+// Force dynamic rendering so the latest component code is always served.
+export const dynamic = "force-dynamic";
+
 export default function StudioPage({ initialTool, initialModel }) {
   const [activeTab, setActiveTab] = useState(initialTool || "orchestrator");
   const [collapsed, setCollapsed] = useState(false);
