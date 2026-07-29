@@ -1,6 +1,5 @@
 import { exec } from "child_process";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { auth } from "@/lib/auth";
 
 const DEV_EMAILS = ["waelosamahelmi@gmail.com", "wael@helmies.fi"];
 
@@ -20,7 +19,7 @@ function pm2Logs(source = "helmies-studio", lines = 100) {
 }
 
 export async function GET(req) {
-  const session = await getServerSession(authOptions);
+  const session = await auth();
   if (!session?.user?.email || !DEV_EMAILS.includes(session.user.email)) {
     return Response.json({ error: "Unauthorized" }, { status: 403 });
   }
