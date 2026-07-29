@@ -362,55 +362,70 @@ export function AssetPicker({ assets = [], max = 4, onAdd, onRemove, onSetRole }
 
 // ── StagedProgress ──────────────────────────────────────────
 export function StagedProgress({ stage, progress, message, elapsed }) {
-  const idx = Math.max(0, STAGES.indexOf(stage));
-  const activeIdx = idx === -1 ? 0 : idx;
+  const canvasRef = useRef(null);
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    let frame;
+    let time = 0;
+    const resize = () => {
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.round(canvas.clientWidth * ratio);
+      canvas.height = Math.round(canvas.clientHeight * ratio);
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    };
+    const draw = () => {
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const cx = width / 2;
+      const cy = height / 2;
+      context.clearRect(0, 0, width, height);
+      const halo = context.createRadialGradient(cx, cy, 0, cx, cy, Math.min(width, height) * 0.48);
+      halo.addColorStop(0, "rgba(255,65,111,.24)");
+      halo.addColorStop(.42, "rgba(255,27,107,.08)");
+      halo.addColorStop(1, "rgba(255,27,107,0)");
+      context.fillStyle = halo;
+      context.fillRect(0, 0, width, height);
+      for (let ring = 0; ring < 4; ring++) {
+        const radius = 34 + ring * 28 + Math.sin(time * .018 + ring) * 5;
+        context.beginPath();
+        context.strokeStyle = `rgba(255, ${72 + ring * 24}, ${126 + ring * 16}, ${.4 - ring * .065})`;
+        context.lineWidth = ring === 0 ? 1.6 : .8;
+        context.setLineDash(ring % 2 ? [3, 9] : []);
+        context.arc(cx, cy, radius, time * .008 * (ring % 2 ? -1 : 1), Math.PI * 2 + time * .008);
+        context.stroke();
+      }
+      context.setLineDash([]);
+      for (let point = 0; point < 22; point++) {
+        const angle = point * .83 + time * .006 * (point % 3 + 1);
+        const radius = 25 + (point * 17) % Math.max(48, Math.min(width, height) * .42);
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius * .54;
+        context.beginPath();
+        context.fillStyle = `rgba(255, ${110 + point * 4}, ${155 + point * 3}, ${.25 + (point % 4) * .12})`;
+        context.arc(x, y, 1 + point % 3, 0, Math.PI * 2);
+        context.fill();
+      }
+      time += reduced ? 0 : 1;
+      if (!reduced) frame = requestAnimationFrame(draw);
+    };
+    resize();
+    draw();
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("resize", resize);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, [reduced]);
 
   return (
-    <div className="studio__progress-premium">
-      <div className="studio__progress-stages-premium">
-        {PROGRESS_STAGES.map((s, i) => {
-          const StageIcon = s.icon;
-          const mappedIdx = activeIdx <= 1 ? 0 : activeIdx <= 4 ? 1 : 2;
-          const state = i < mappedIdx ? "done" : i === mappedIdx ? "active" : "idle";
-          return (
-            <div className="studio__progress-stage-premium" key={s.key}>
-              <span
-                className={`studio__progress-stage-icon ${
-                  state === "done"
-                    ? "studio__progress-stage-icon--done"
-                    : state === "active"
-                      ? "studio__progress-stage-icon--active"
-                      : ""
-                }`}
-              >
-                {state === "done" ? "✓" : <StageIcon />}
-              </span>
-              {i < PROGRESS_STAGES.length - 1 && (
-                <span
-                  className={`studio__progress-stage-connector ${
-                    i < mappedIdx
-                      ? "studio__progress-stage-connector--done"
-                      : i === mappedIdx
-                        ? "studio__progress-stage-connector--active"
-                        : ""
-                  }`}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {progress !== undefined && (
-        <div className="studio__progress-bar-premium">
-          <div
-            className="studio__progress-fill-premium"
-            style={{ width: `${Math.round(progress * 100)}%` }}
-          />
-        </div>
-      )}
-
-      <div className="studio__progress-meta">
+    <div className="studio__synthesis">
+      <canvas ref={canvasRef} className="studio__synthesis-canvas" aria-hidden="true" />
+      <div className="studio__synthesis-core" aria-hidden="true"><span /><span /></div>
+      <div className="studio__synthesis-meta">
         <span className="studio__progress-stage-label">
           {STAGE_LABELS[stage] || stage}…
         </span>
@@ -421,8 +436,8 @@ export function StagedProgress({ stage, progress, message, elapsed }) {
           </span>
         )}
       </div>
-
       {message && <p className="studio__progress-msg-premium">{message}</p>}
+      <p className="studio__synthesis-note">The generation engine is resolving composition, motion and output quality.</p>
     </div>
   );
 }

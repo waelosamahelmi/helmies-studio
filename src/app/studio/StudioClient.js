@@ -272,7 +272,10 @@ export default function StudioPage({ initialTool, initialModel }) {
     <MotionConfig reducedMotion="user">
       <div className="grain" aria-hidden="true" />
 
-      <div className="studio">
+      <div className="studio studio--universe">
+        <div className="studio__universe-orbits" aria-hidden="true">
+          <span /><span /><span />
+        </div>
         {/* Mobile backdrop */}
         <AnimatePresence>
           {mobileNavOpen && (
@@ -345,6 +348,9 @@ export default function StudioPage({ initialTool, initialModel }) {
             </div>
 
             <div className="studio__topbar-actions">
+              <div className="studio__universe-status" aria-label="Studio system online">
+                <span /> live system
+              </div>
               <button
                 className="studio__topbar-cmdk"
                 onClick={() => setCmdOpen(true)}
