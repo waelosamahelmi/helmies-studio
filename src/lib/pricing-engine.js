@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { calculateProviderQuote, providerCostToCredits } from "@/lib/model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
 const CREDIT_TO_EUR = 0.01;
@@ -25,6 +26,16 @@ async function resolveMarkup(providerName) {
 export async function estimateCredits(tool, model, params = {}) {
   const pricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
   if (pricing) {
+    if (pricing.pricingRules) {
+      try {
+        const quote = calculateProviderQuote(pricing.pricingRules, params);
+        const markup = await resolveMarkup(pricing.providerName);
+        return providerCostToCredits(quote.providerCost, markup, CREDIT_TO_EUR);
+      } catch {
+        // A parameter-specific rule may require a choice the caller has not made yet.
+        // Fall through to the model's verified default quote rather than treating it as free.
+      }
+    }
     // Recalculate if we have providerCost but stale creditsCost
     if (pricing.providerCost > 0 && pricing.creditsCost <= 1) {
       const markup = await resolveMarkup(pricing.providerName);

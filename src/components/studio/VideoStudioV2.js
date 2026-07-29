@@ -7,6 +7,8 @@ import { VIDEO_MODELS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import Link from "next/link";
+import { useEffect } from "react";
+import { useModelCatalog } from "./useModelCatalog";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -22,17 +24,19 @@ const V2_MODELS = VIDEO_MODELS.map((m) => ({
 }));
 
 export default function VideoStudioV2() {
+  const { models: catalogModels } = useModelCatalog({ modelType: "video", fallback: V2_MODELS });
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(V2_MODELS[0].id);
   const [duration, setDuration] = useState(5);
+  const [resolution, setResolution] = useState("720p");
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [showQuote, setShowQuote] = useState(false);
   const { loading: generating, result, error, elapsed, submit } = useAsyncGeneration();
   const [genStage, setGenStage] = useState("");
 
-  const currentModel = V2_MODELS.find((m) => m.id === model) || V2_MODELS[0];
+  const currentModel = catalogModels.find((m) => m.id === model) || catalogModels[0] || V2_MODELS[0];
   const { cost: estCredits, affordable, balance, shortfall, topUpPacks } = useCreditCost("video", model, {
-    duration, aspect_ratio: aspectRatio,
+    duration, resolution, aspect_ratio: aspectRatio,
   });
 
   const handleGenerate = useCallback(() => {
@@ -42,13 +46,23 @@ export default function VideoStudioV2() {
       endpoint: currentModel.endpoint || model,
       prompt,
       duration,
+      resolution,
       aspect_ratio: aspectRatio,
     });
-  }, [prompt, model, duration, aspectRatio, submit, currentModel]);
+  }, [prompt, model, duration, resolution, aspectRatio, submit, currentModel]);
 
   const credits = estCredits || 0;
   const DURATIONS = currentModel.durations || [3, 5, 10, 15];
   const ASPECTS = currentModel.aspectRatios || ["16:9", "9:16", "1:1"];
+  const RESOLUTIONS = currentModel.resolutions || ["720p"];
+
+  useEffect(() => {
+    if (catalogModels.length && !catalogModels.some((item) => item.id === model)) setModel(catalogModels[0].id);
+  }, [catalogModels, model]);
+
+  useEffect(() => {
+    if (RESOLUTIONS.length && !RESOLUTIONS.includes(resolution)) setResolution(RESOLUTIONS[0]);
+  }, [currentModel, resolution]);
 
   return (
     <div className="studio__workspace">
@@ -56,7 +70,7 @@ export default function VideoStudioV2() {
         <aside className="studio__pane studio__pane--left">
           <div className="studio__section">
             <h3 className="studio__section-title">Model</h3>
-            <ModelSelector models={V2_MODELS} selected={model} onSelect={setModel} recommended={V2_MODELS[0].id} />
+            <ModelSelector models={catalogModels} selected={model} onSelect={setModel} recommended={catalogModels[0]?.id} />
           </div>
 
           <div className="studio__section">
@@ -73,6 +87,15 @@ export default function VideoStudioV2() {
             <div className="studio__chip-group">
               {ASPECTS.map((a) => (
                 <button key={a} onClick={() => setAspectRatio(a)} className={`studio__chip ${aspectRatio === a ? "studio__chip--active" : ""}`}>{a}</button>
+              ))}
+            </div>
+          </div>
+
+          <div className="studio__section">
+            <h3 className="studio__section-title">Resolution</h3>
+            <div className="studio__chip-group">
+              {RESOLUTIONS.map((value) => (
+                <button key={value} onClick={() => setResolution(value)} className={`studio__chip ${resolution === value ? "studio__chip--active" : ""}`}>{value}</button>
               ))}
             </div>
           </div>

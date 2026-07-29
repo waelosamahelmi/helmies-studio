@@ -12,6 +12,7 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
 import Link from "next/link";
+import { useModelCatalog } from "./useModelCatalog";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -31,6 +32,7 @@ export default function ImageStudioV2() {
   const [mode, setMode] = useState("basic");
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
+  const { models: catalogModels } = useModelCatalog({ modelType: "image", fallback: V2_MODELS });
   const [model, setModel] = useState(V2_MODELS[0].id);
   const [aspectRatio, setAspectRatio] = useState("1:1");
   const [resolution, setResolution] = useState("1k");
@@ -44,7 +46,7 @@ export default function ImageStudioV2() {
   const { loading: generating, result, error, elapsed, submit } = useAsyncGeneration();
   const [genStage, setGenStage] = useState("");
 
-  const currentModel = V2_MODELS.find((m) => m.id === model) || V2_MODELS[0];
+  const currentModel = catalogModels.find((m) => m.id === model) || catalogModels[0] || V2_MODELS[0];
   const { cost: estCredits, affordable, balance, shortfall, topUpPacks } = useCreditCost("image", model, {
     aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl,
   });
@@ -58,6 +60,10 @@ export default function ImageStudioV2() {
       setResolution(tiers[0]);
     }
   }, [currentModel, resolution]);
+
+  useEffect(() => {
+    if (catalogModels.length && !catalogModels.some((item) => item.id === model)) setModel(catalogModels[0].id);
+  }, [catalogModels, model]);
 
   const handleAddRefs = useCallback((files) => {
     const newRefs = Array.from(files).map((f, i) => ({
@@ -118,7 +124,7 @@ export default function ImageStudioV2() {
 
           <div className="studio__section">
             <h3 className="studio__section-title">Model</h3>
-            <ModelSelector models={V2_MODELS} selected={model} onSelect={setModel} recommended={V2_MODELS[0].id} />
+            <ModelSelector models={catalogModels} selected={model} onSelect={setModel} recommended={catalogModels[0]?.id} />
           </div>
 
           <div className="studio__section">

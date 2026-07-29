@@ -14,6 +14,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import { defaultSchemaForCapability, inferKieModelFromUrl } from "@/lib/model-catalog-core.mjs";
 import { calculateCredits } from "@/lib/pricing-engine";
 
 const KIE_SITEMAP_URL = "https://docs.kie.ai/sitemap.xml";
@@ -328,17 +329,36 @@ export async function fetchKieModels() {
       if (urlPath.includes("download-url") || urlPath.includes("webhook-verification")) continue;
       if (urlPath.includes("upload-file") || urlPath.includes("quickstart")) continue;
       
-      const modelId = extractModelId(urlPath);
+      const inferred = inferKieModelFromUrl(url);
+      const legacySuite = /^(suno-api|veo3-api|4o-image-api|flux-kontext-api|runway-api)\//.test(urlPath);
+      if (!inferred && !legacySuite) continue;
+      if (/callbacks|details|download|get-|quickstart/.test(urlPath)) continue;
+
+      const modelId = inferred?.modelId || extractModelId(urlPath);
       if (!modelId || seen.has(modelId)) continue;
       
       const provider = extractProvider(urlPath);
       const type = inferModelType(urlPath);
+      if (type === "llm") continue;
+      const capability = inferred?.capability || (
+        type === "image" ? "text-to-image" : type === "i2i" ? "image-to-image" :
+        type === "video" ? "text-to-video" : type === "i2v" ? "image-to-video" :
+        type === "v2v" ? "video-to-video" : type === "lipsync" ? "avatar-video" :
+        type === "audio" ? "audio" : "media"
+      );
       
       seen.add(modelId);
       models.push({
         modelId,
+        providerModelId: inferred?.providerModelId || modelId,
+        endpoint: inferred?.endpoint || modelId,
+        displayName: inferred?.displayName || modelId.split(/[-/]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" "),
         provider: provider.charAt(0).toUpperCase() + provider.slice(1),
         type,
+        capability,
+        inputModalities: inferred?.inputModalities || ["text"],
+        outputModalities: inferred?.outputModalities || [type === "audio" ? "audio" : type.includes("v") || type === "video" || type === "lipsync" ? "video" : "image"],
+        inputSchema: defaultSchemaForCapability(capability),
         docsUrl: url,
       });
     }
@@ -409,33 +429,43 @@ export async function syncKieModels() {
     seenIds.add(model.modelId);
     const providerCost = getPricing(model.modelId, model.type);
     const creditsCost = calculateCredits(providerCost, MARKUP);
+    const pricingRules = { currency: "USD", unit: model.type === "image" || model.type === "i2i" ? "image" : "fixed", rules: [{ price: providerCost }] };
+    const modelData = {
+      modelType: model.type,
+      providerName: "KIE",
+      providerModelId: model.providerModelId,
+      endpoint: model.endpoint,
+      displayName: model.displayName,
+      description: `${model.displayName} via the KIE Market API.`,
+      capability: model.capability,
+      inputModalities: model.inputModalities,
+      outputModalities: model.outputModalities,
+      inputSchema: model.inputSchema,
+      constraints: model.inputSchema?.ui || {},
+      pricingRules,
+      billingUnit: pricingRules.unit,
+      currency: "USD",
+      regions: ["global"],
+      sourceUrl: model.docsUrl,
+      sourceUpdatedAt: new Date(),
+      catalogVersion: `kie-sitemap-${new Date().toISOString().slice(0, 10)}`,
+      managedBySync: true,
+      isDeprecated: false,
+      providerCost,
+      creditsCost,
+      isActive: true,
+    };
     
     if (existingMap.has(model.modelId)) {
-      // Update if price changed
-      const existing_entry = existingMap.get(model.modelId);
-      if (existing_entry.providerCost !== providerCost || existing_entry.creditsCost !== creditsCost) {
-        await prisma.modelPricing.update({
-          where: { modelId: model.modelId },
-          data: {
-            modelType: model.type,
-            providerCost,
-            creditsCost,
-            isActive: true,
-          },
-        });
-        updated++;
-      }
+      await prisma.modelPricing.update({
+        where: { modelId: model.modelId },
+        data: modelData,
+      });
+      updated++;
     } else {
       // Insert new model
       await prisma.modelPricing.create({
-        data: {
-          modelId: model.modelId,
-          modelType: model.type,
-          providerName: "KIE",
-          providerCost,
-          creditsCost,
-          isActive: true,
-        },
+        data: { modelId: model.modelId, ...modelData },
       }).catch(() => {
         // May already exist with different providerName
       });
@@ -449,7 +479,7 @@ export async function syncKieModels() {
     if (!seenIds.has(modelId) && entry.isActive) {
       await prisma.modelPricing.update({
         where: { modelId },
-        data: { isActive: false },
+        data: { isActive: false, isDeprecated: true },
       }).catch(() => {});
       deactivated++;
     }

@@ -4,20 +4,20 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  schemas = ["public", "auth"]
+  schemas  = ["public", "auth"]
 }
 
 model User {
-  id            String             @id @default(cuid())
+  id            String              @id @default(cuid())
   name          String?
-  email         String             @unique
+  email         String              @unique
   emailVerified DateTime?
   image         String?
   passwordHash  String?
-  role          String             @default("user")
-  credits       Int                @default(100)
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
+  role          String              @default("user")
+  credits       Int                 @default(100)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
   accounts      Account[]
   sessions      Session[]
   subscriptions Subscription[]
@@ -51,7 +51,7 @@ model Account {
   scope             String?
   id_token          String? @db.Text
   session_state     String?
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@schema("public")
@@ -77,38 +77,38 @@ model VerificationToken {
 }
 
 model Subscription {
-  id                    String    @id @default(cuid())
-  userId                String    @unique
-  stripeCustomerId      String?   @unique
-  stripeSubscriptionId  String?   @unique
-  stripePriceId         String?
+  id                     String    @id @default(cuid())
+  userId                 String    @unique
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+  stripePriceId          String?
   stripeCurrentPeriodEnd DateTime?
-  plan                  String    @default("free")
-  status                String    @default("active")
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                   String    @default("free")
+  status                 String    @default("active")
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 model Generation {
-  id          String    @id @default(cuid())
-  userId      String
-  tool        String
-  model       String
-  prompt      String    @db.Text
-  params      Json?
-  outputUrl   String?   @db.Text
-  status      String    @default("pending")
-  creditsUsed Int       @default(1)
-  providerCost Float?   @default(0)
-  error       String?   @db.Text
-  requestId   String?
-  workflowId  String?
+  id             String   @id @default(cuid())
+  userId         String
+  tool           String
+  model          String
+  prompt         String   @db.Text
+  params         Json?
+  outputUrl      String?  @db.Text
+  status         String   @default("pending")
+  creditsUsed    Int      @default(1)
+  providerCost   Float?   @default(0)
+  error          String?  @db.Text
+  requestId      String?
+  workflowId     String?
   workflowStepId String?
-  createdAt   DateTime  @default(now())
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
@@ -127,101 +127,124 @@ model CreditTransaction {
 
 // ── AI Agents ──
 model AgentRun {
-  id          String   @id @default(cuid())
-  userId      String
-  agentType   String
-  task        String   @db.Text
-  status      String   @default("pending")
-  creditsEstimated Int  @default(0)
-  creditsUsed Int      @default(0)
-  steps       Json?
-  result      Json?
-  error       String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String   @id @default(cuid())
+  userId           String
+  agentType        String
+  task             String   @db.Text
+  status           String   @default("pending")
+  creditsEstimated Int      @default(0)
+  creditsUsed      Int      @default(0)
+  steps            Json?
+  result           Json?
+  error            String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 // ── Workflows ──
 model Workflow {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
   userId      String
   name        String
   description String?
   steps       Json
-  status      String   @default("draft")
-  isTemplate  Boolean  @default(false)
-  isPublic    Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status      String        @default("draft")
+  isTemplate  Boolean       @default(false)
+  isPublic    Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   runs        WorkflowRun[]
 
   @@schema("public")
 }
 
 model WorkflowRun {
-  id          String   @id @default(cuid())
-  workflowId  String
-  userId      String
-  status      String   @default("pending")
-  inputs      Json?
-  outputs     Json?
-  error       String?  @db.Text
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  workflowId String
+  userId     String
+  status     String   @default("pending")
+  inputs     Json?
+  outputs    Json?
+  error      String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 // ── Project Memory ──
 model ProjectMemory {
-  id          String   @id @default(cuid())
-  userId      String
-  type        String
-  name        String
-  data        Json
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  name      String
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 // ── Admin: Provider config ──
 model ProviderConfig {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  type        String
-  apiKey      String   @db.Text
-  baseUrl     String?
-  isActive    Boolean  @default(true)
-  markup      Float    @default(2.5)
-  config      Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String   @unique
+  type      String
+  apiKey    String   @db.Text
+  baseUrl   String?
+  isActive  Boolean  @default(true)
+  markup    Float    @default(2.5)
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@schema("public")
 }
 
 // ── Admin: Model pricing ──
 model ModelPricing {
-  id          String   @id @default(cuid())
-  modelId     String   @unique
-  modelType   String
-  providerName String
-  background   String?
-  backgroundOverlay Float?
-  textColor String? @default("light")
-  providerCost Float
-  creditsCost Int
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  modelId            String    @unique
+  modelType          String
+  providerName       String
+  providerModelId    String?
+  endpoint           String?
+  displayName        String?
+  description        String?   @db.Text
+  capability         String?
+  inputModalities    Json      @default("[]")
+  outputModalities   Json      @default("[]")
+  inputSchema        Json?
+  constraints        Json?
+  pricingRules       Json?
+  billingUnit        String    @default("fixed")
+  currency           String    @default("USD")
+  regions            Json      @default("[]")
+  sourceUrl          String?   @db.Text
+  sourceUpdatedAt    DateTime?
+  catalogVersion     String?
+  managedBySync      Boolean   @default(false)
+  isDeprecated       Boolean   @default(false)
+  replacementModelId String?
+  sortOrder          Int       @default(0)
+  background         String?
+  backgroundOverlay  Float?
+  textColor          String?   @default("light")
+  providerCost       Float
+  creditsCost        Int
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
+  @@index([providerName, isActive])
+  @@index([capability, isActive])
+  @@index([modelType, isActive])
   @@schema("public")
 }
 
@@ -241,31 +264,31 @@ model FeatureFlag {
 
 // ── Admin: API Keys (user-facing) ──
 model ApiKey {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String
-  keyHash     String   @unique
-  keyPrefix   String
-  lastUsedAt  DateTime?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  keyHash    String    @unique
+  keyPrefix  String
+  lastUsedAt DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 // ── Security: Audit logs ──
 model AuditLog {
-  id          String   @id @default(cuid())
-  userId      String?
-  action      String
-  resource    String?
-  resourceId   String?
-  ip          String?
-  userAgent   String?  @db.Text
-  metadata    Json?
-  createdAt   DateTime @default(now())
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  resource   String?
+  resourceId String?
+  ip         String?
+  userAgent  String?  @db.Text
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@schema("public")
 }
@@ -285,35 +308,35 @@ model RateLimit {
 
 // ── Admin: Refunds ──
 model Refund {
-  id          String   @id @default(cuid())
-  userId      String
+  id           String    @id @default(cuid())
+  userId       String
   generationId String?
-  amount      Int
-  reason      String?
-  status      String   @default("pending")
-  createdAt   DateTime @default(now())
-  processedAt DateTime?
+  amount       Int
+  reason       String?
+  status       String    @default("pending")
+  createdAt    DateTime  @default(now())
+  processedAt  DateTime?
 
   @@schema("public")
 }
 
 // ── Director: Production Pipeline ──
 model DirectorPipeline {
-  id              String   @id @default(cuid())
-  userId          String
-  title           String
-  type            String   @default("music_video")
-  status          String   @default("draft")
-  plan            Json?
-  brief           Json?
-  costEstimate    Json?
+  id                String   @id @default(cuid())
+  userId            String
+  title             String
+  type              String   @default("music_video")
+  status            String   @default("draft")
+  plan              Json?
+  brief             Json?
+  costEstimate      Json?
   validationResults Json?
-  stateMetadata   Json?
-  assembledUrl    String?  @db.Text
-  assemblyMetadata Json?
-  rerunHistory    Json?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  stateMetadata     Json?
+  assembledUrl      String?  @db.Text
+  assemblyMetadata  Json?
+  rerunHistory      Json?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@schema("public")
 }
@@ -338,38 +361,38 @@ model DirectorShot {
 
 // ── Brand Kits ──
 model BrandKit {
-  id               String   @id @default(cuid())
+  id               String       @id @default(cuid())
   userId           String
   name             String
   description      String?
   website          String?
-  primaryColors    Json     @default("[]")
-  secondaryColors  Json     @default("[]")
-  fonts            Json     @default("[]")
-  slogans          Json     @default("[]")
+  primaryColors    Json         @default("[]")
+  secondaryColors  Json         @default("[]")
+  fonts            Json         @default("[]")
+  slogans          Json         @default("[]")
   photographyStyle String?
   toneOfVoice      String?
-  avoid            Json     @default("[]")
-  visualReferences Json     @default("[]")
+  avoid            Json         @default("[]")
+  visualReferences Json         @default("[]")
   fingerprint      Json?
-  enforcement      String   @default("off")
-  isActive         Boolean  @default(true)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enforcement      String       @default("off")
+  isActive         Boolean      @default(true)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   assets           BrandAsset[]
 
   @@schema("public")
 }
 
 model BrandAsset {
-  id          String   @id @default(cuid())
-  brandKitId  String
-  assetId     String
-  role        String   @default("reference")
-  createdAt   DateTime @default(now())
-  brandKit    BrandKit @relation(fields: [brandKitId], references: [id], onDelete: Cascade)
-  asset       Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  brandKitId String
+  assetId    String
+  role       String   @default("reference")
+  createdAt  DateTime @default(now())
+  brandKit   BrandKit @relation(fields: [brandKitId], references: [id], onDelete: Cascade)
+  asset      Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@unique([brandKitId, assetId])
   @@schema("public")
@@ -377,60 +400,60 @@ model BrandAsset {
 
 // ── Canvas Documents ──
 model CanvasDocument {
-  id          String   @id @default(cuid())
-  userId      String
-  name        String   @default("Untitled Canvas")
-  data        Json
-  width       Int      @default(1024)
-  height      Int      @default(1024)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  versions    CanvasVersion[]
+  id        String          @id @default(cuid())
+  userId    String
+  name      String          @default("Untitled Canvas")
+  data      Json
+  width     Int             @default(1024)
+  height    Int             @default(1024)
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions  CanvasVersion[]
 
   @@schema("public")
 }
 
 model CanvasVersion {
-  id          String   @id @default(cuid())
-  documentId  String
-  name        String?
-  data        Json
-  snapshot    String?  @db.Text
-  createdAt   DateTime @default(now())
-  document    CanvasDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  id         String         @id @default(cuid())
+  documentId String
+  name       String?
+  data       Json
+  snapshot   String?        @db.Text
+  createdAt  DateTime       @default(now())
+  document   CanvasDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 // ── Asset Library ──
 model Asset {
-  id            String   @id @default(cuid())
-  userId        String
-  type          String
-  source        String   @default("upload")
-  storageKey    String?
-  url           String?  @db.Text
-  thumbnailUrl  String?  @db.Text
-  name          String?
-  mimeType      String?
-  bytes         Int      @default(0)
-  width         Int?
-  height        Int?
-  duration      Float?
-  model         String?
-  generationId  String?
-  parentAssetId String?
-  metadata      Json?
-  analysis      Json?
-  isFavorite    Boolean  @default(false)
-  isDeleted     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  brandAssets   BrandAsset[]
-  relations     AssetRelation[]  @relation("assetFrom")
+  id               String          @id @default(cuid())
+  userId           String
+  type             String
+  source           String          @default("upload")
+  storageKey       String?
+  url              String?         @db.Text
+  thumbnailUrl     String?         @db.Text
+  name             String?
+  mimeType         String?
+  bytes            Int             @default(0)
+  width            Int?
+  height           Int?
+  duration         Float?
+  model            String?
+  generationId     String?
+  parentAssetId    String?
+  metadata         Json?
+  analysis         Json?
+  isFavorite       Boolean         @default(false)
+  isDeleted        Boolean         @default(false)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brandAssets      BrandAsset[]
+  relations        AssetRelation[] @relation("assetFrom")
   inverseRelations AssetRelation[] @relation("assetTo")
 
   @@schema("public")
@@ -451,109 +474,109 @@ model AssetRelation {
 
 // ── Credit Wallet V2 ──
 model CreditWallet {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  available   Int      @default(0)
-  reserved    Int      @default(0)
-  lifetime    Int      @default(0)
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ledger      CreditLedger[]
+  id           String              @id @default(cuid())
+  userId       String              @unique
+  available    Int                 @default(0)
+  reserved     Int                 @default(0)
+  lifetime     Int                 @default(0)
+  updatedAt    DateTime            @updatedAt
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledger       CreditLedger[]
   reservations CreditReservation[]
 
   @@schema("public")
 }
 
 model CreditLedger {
-  id          String   @id @default(cuid())
-  walletId    String
-  amount      Int
-  type        String
-  description String?
-  referenceId String?
+  id           String       @id @default(cuid())
+  walletId     String
+  amount       Int
+  type         String
+  description  String?
+  referenceId  String?
   balanceAfter Int
-  createdAt   DateTime @default(now())
-  wallet      CreditWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  createdAt    DateTime     @default(now())
+  wallet       CreditWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 model CreditReservation {
-  id          String   @id @default(cuid())
-  walletId    String
-  amount      Int
+  id           String       @id @default(cuid())
+  walletId     String
+  amount       Int
   generationId String?
-  status      String   @default("active")
-  createdAt   DateTime @default(now())
-  releasedAt  DateTime?
-  wallet      CreditWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  status       String       @default("active")
+  createdAt    DateTime     @default(now())
+  releasedAt   DateTime?
+  wallet       CreditWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 // ── CMS ──
 model CmsEntry {
-  id          String   @id @default(cuid())
-  key         String   @unique
-  section     String
-  content     Json
-  status      String   @default("draft")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  revisions   CmsRevision[]
+  id        String        @id @default(cuid())
+  key       String        @unique
+  section   String
+  content   Json
+  status    String        @default("draft")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  revisions CmsRevision[]
 
   @@schema("public")
 }
 
 model CmsRevision {
-  id          String   @id @default(cuid())
-  entryId     String
-  content     Json
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  entry       CmsEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  entryId   String
+  content   Json
+  createdBy String?
+  createdAt DateTime @default(now())
+  entry     CmsEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
 
   @@schema("public")
 }
 
 // ── Announcements ──
 model SiteAnnouncement {
-  id          String   @id @default(cuid())
-  message     String
-  style       String   @default("info")
-  link        String?
-  startDate   DateTime @default(now())
-  endDate     DateTime?
-  audience    String   @default("all")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String    @id @default(cuid())
+  message   String
+  style     String    @default("info")
+  link      String?
+  startDate DateTime  @default(now())
+  endDate   DateTime?
+  audience  String    @default("all")
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@schema("public")
 }
 
 // ── Prompt Intelligence ──
 model PromptGuide {
-  id          String   @id @default(cuid())
-  modelId     String
-  category    String   @default("base")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  versions    PromptGuideVersion[]
+  id        String               @id @default(cuid())
+  modelId   String
+  category  String               @default("base")
+  isActive  Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  versions  PromptGuideVersion[]
 
   @@unique([modelId, category])
   @@schema("public")
 }
 
 model PromptGuideVersion {
-  id          String   @id @default(cuid())
-  guideId     String
-  version     Int
-  content     Json
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  guide       PromptGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
+  id        String      @id @default(cuid())
+  guideId   String
+  version   Int
+  content   Json
+  createdBy String?
+  createdAt DateTime    @default(now())
+  guide     PromptGuide @relation(fields: [guideId], references: [id], onDelete: Cascade)
 
   @@unique([guideId, version])
   @@schema("public")
@@ -562,23 +585,23 @@ model PromptGuideVersion {
 // Per-generation prompt compilation record (spec §33). Stores every pass
 // so generations are reproducible and the Prompt Inspector can replay.
 model PromptCompilation {
-  id            String   @id @default(cuid())
-  generationId  String?
-  userId        String?
-  modelId       String
-  tool          String
-  rawPrompt     String   @db.Text
-  normalized    Json?
-  enrichedCtx   Json?
-  expandedPrompt String? @db.Text
-  dialectPrompt String?  @db.Text
-  finalPrompt   String   @db.Text
-  negativePrompt String? @db.Text
-  guideId       String?
-  guideVersion  Int?
-  warnings      Json?
-  polishMode    String   @default("off")
-  createdAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  generationId   String?
+  userId         String?
+  modelId        String
+  tool           String
+  rawPrompt      String   @db.Text
+  normalized     Json?
+  enrichedCtx    Json?
+  expandedPrompt String?  @db.Text
+  dialectPrompt  String?  @db.Text
+  finalPrompt    String   @db.Text
+  negativePrompt String?  @db.Text
+  guideId        String?
+  guideVersion   Int?
+  warnings       Json?
+  polishMode     String   @default("off")
+  createdAt      DateTime @default(now())
 
   @@index([userId])
   @@index([modelId])
@@ -604,14 +627,14 @@ model VisualAnalysis {
 
 // ── Provider Health ──
 model ProviderIncident {
-  id          String   @id @default(cuid())
-  provider    String
-  type        String
-  status      String   @default("open")
-  message     String?  @db.Text
-  metadata    Json?
-  startedAt   DateTime @default(now())
-  resolvedAt  DateTime?
+  id         String    @id @default(cuid())
+  provider   String
+  type       String
+  status     String    @default("open")
+  message    String?   @db.Text
+  metadata   Json?
+  startedAt  DateTime  @default(now())
+  resolvedAt DateTime?
 
   @@schema("public")
 }
@@ -629,8 +652,6 @@ model Project {
 
   @@schema("public")
 }
-
-
 
 model PromoCode {
   id             String    @id @default(cuid())
@@ -652,31 +673,31 @@ model PromoCode {
 }
 
 model SubscriptionPlan {
-  id          String   @id @default(cuid())
-  name        String
-  slug        String   @unique
-  price       Int
-  credits     Int
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  price         Int
+  credits       Int
   stripePriceId String?
-  features    Json     @default("[]")
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  features      Json     @default("[]")
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@schema("public")
 }
 
 model CreditPack {
-  id          String   @id @default(cuid())
-  name        String
-  credits     Int
-  price       Int
+  id            String   @id @default(cuid())
+  name          String
+  credits       Int
+  price         Int
   stripePriceId String?
-  isActive    Boolean  @default(true)
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@schema("public")
 }

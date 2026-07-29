@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
 
 const BRANDED_ERRORS = {
   rate_limit: "Too many requests. Please wait a moment and try again.",
@@ -82,17 +83,9 @@ const PROVIDERS = {
         : "https://dashscope.aliyuncs.com";
     },
     getKey: () => process.env.ALIBABA_KEY,
-    buildUrl: (endpoint) => {
-      const e = (endpoint || "").toLowerCase();
-      if (e.includes("video") || e.includes("t2v") || e.includes("i2v") || e.includes("v2v") || e.startsWith("wan-2")) {
-        return "/api/v1/services/aigc/video-generation/video-synthesis";
-      }
-      return "/api/v1/services/aigc/text2image/image-synthesis";
-    },
-    formatPayload: (model, prompt, params) => {
-      const { endpoint: _ep, callBackUrl: _cb, webhook_url: _wh, ...rest } = params;
-      return { model, input: { prompt, ...rest } };
-    },
+    headers: { "X-DashScope-Async": "enable" },
+    buildUrl: getAlibabaApiPath,
+    formatPayload: formatAlibabaPayload,
     parseResult: (data) => {
       // Image generations return synchronously as an array of { url }
       if (Array.isArray(data)) {
@@ -179,7 +172,7 @@ export async function submitOnly(providerName, endpoint, payload) {
 
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, ...(provider.headers || {}) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(60000),
   });
@@ -354,7 +347,10 @@ async function getProviderActivity() {
 export async function resolveProviderWithFallback(modelId) {
   const primary = await resolveProvider(modelId);
   const activity = await getProviderActivity();
-  const chain = [primary.name, ...FALLBACK_CHAIN.filter((n) => n !== primary.name)];
+  const catalogModel = await prisma.modelPricing.findUnique({ where: { modelId }, select: { managedBySync: true } }).catch(() => null);
+  // Provider-native catalog endpoints are not portable across KIE and DashScope.
+  // Keep legacy fallback behavior only for old provider-agnostic rows.
+  const chain = catalogModel?.managedBySync ? [primary.name] : [primary.name, ...FALLBACK_CHAIN.filter((n) => n !== primary.name)];
   return chain
     .filter((name) => !activity || activity[name] !== false)
     .map((name) => {

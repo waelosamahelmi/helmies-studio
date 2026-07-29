@@ -9,6 +9,7 @@ import { validateGenerationOutput, logQualityGate } from "@/lib/quality-gate";
 import { authenticateApiKey } from "@/lib/api-key-auth";
 import { storeMedia } from "@/lib/media-storage";
 import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
+import { quoteCatalogModel } from "@/lib/model-catalog";
 
 // Re-mirror the wallet's `available` balance onto the legacy `User.credits`
 // column so existing UI/queries keep showing the right number.
@@ -120,15 +121,23 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     const provider = await resolveProvider(model);
 
     const dbPricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
-    if (dbPricing?.creditsCost) cost = dbPricing.creditsCost;
+    let providerCost = dbPricing?.providerCost || 0;
+    if (dbPricing?.pricingRules) {
+      const catalogQuote = await quoteCatalogModel(model, { ...body, prompt: rawPrompt });
+      if (!catalogQuote.valid) {
+        return NextResponse.json({ error: "Invalid model parameters", details: catalogQuote.errors }, { status: 422 });
+      }
+      cost = catalogQuote.credits;
+      providerCost = catalogQuote.providerCost;
+    } else if (dbPricing?.creditsCost) {
+      cost = dbPricing.creditsCost;
+    }
 
     // Wallet is the source of truth for the balance check.
     const wallet = await getWallet(user.id);
     if (wallet.available < cost) {
       return NextResponse.json({ error: "Insufficient credits", credits: wallet.available, cost }, { status: 402 });
     }
-
-    const providerCost = dbPricing?.providerCost || 0;
 
     const generation = await prisma.generation.create({
       data: {
@@ -155,7 +164,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
 
     try {
       const webhookUrl = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
-      const paramsWithPrompt = { ...body, prompt: finalPrompt, webhook_url: webhookUrl };
+      const paramsWithPrompt = { ...body, model: dbPricing?.providerModelId || model, endpoint: dbPricing?.endpoint || body.endpoint || model, prompt: finalPrompt, webhook_url: webhookUrl };
       // Use the compiled negative prompt from the engine when present.
       if (compiledNegative && !body.negative_prompt && promptType !== "audio") {
         paramsWithPrompt.negative_prompt = compiledNegative;
