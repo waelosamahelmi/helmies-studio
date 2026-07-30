@@ -176,6 +176,8 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       let lastError;
       let successfulProvider = provider;
       const providers = await resolveProviderWithFallback(model);
+      console.error(`[handleGeneration] providers chain for model=${model}:`, providers.map((p) => p.name).join(", "));
+      console.error(`[handleGeneration] paramsWithPrompt:`, { model: paramsWithPrompt.model, endpoint: paramsWithPrompt.endpoint, tool });
 
       for (const prov of providers) {
         try {
