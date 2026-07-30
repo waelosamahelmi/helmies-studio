@@ -208,15 +208,15 @@ export default function AssetLibrary() {
                 </button>
                 {selected.type === "image" && (
                   <>
-                    <button onClick={() => window.open(`/studio/canvas`, "_blank")} className="studio__chip">🖼 Add to Canvas</button>
+                    <button onClick={() => window.open(`/studio/canvas`, "_blank")} className="studio__chip">Add to Canvas</button>
                     <button onClick={() => window.open(`/studio/image`, "_blank")} className="studio__chip">↻ Use as reference</button>
-                    <button onClick={() => window.open(`/studio/lipsync`, "_blank")} className="studio__chip">🗣 Lip Sync</button>
-                    <button onClick={() => window.open(`/studio/body-swap`, "_blank")} className="studio__chip">🎭 Recast</button>
+                    <button onClick={() => window.open(`/studio/lipsync`, "_blank")} className="studio__chip">Lip Sync</button>
+                    <button onClick={() => window.open(`/studio/body-swap`, "_blank")} className="studio__chip">Recast</button>
                   </>
                 )}
                 {selected.type === "video" && (
                   <>
-                    <button onClick={() => window.open(`/studio/body-swap`, "_blank")} className="studio__chip">🎭 Recast</button>
+                    <button onClick={() => window.open(`/studio/body-swap`, "_blank")} className="studio__chip">Recast</button>
                     <button onClick={() => window.open(`/studio/clipping`, "_blank")} className="studio__chip">✂ Clip</button>
                   </>
                 )}
@@ -225,8 +225,8 @@ export default function AssetLibrary() {
                     await apiFetch("/api/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ imageUrl: selected.url }) });
                     toast.success("Analysis queued");
                   } catch { toast.error("Analysis failed"); }
-                }} className="studio__chip">🔍 Analyze</button>
-                <button onClick={() => window.open(`/studio/brands`, "_blank")} className="studio__chip">🏷 Add to Brand Kit</button>
+                }} className="studio__chip">Analyze</button>
+                <button onClick={() => window.open(`/studio/brands`, "_blank")} className="studio__chip">Add to Brand Kit</button>
                 <button onClick={() => deleteAsset(selected.id)} className="studio__chip studio__chip--avoid">Delete</button>
               </div>
             </div>

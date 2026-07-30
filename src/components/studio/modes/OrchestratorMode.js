@@ -13,12 +13,12 @@ const EASE = [0.32, 0.72, 0, 1];
 const SPRING = { type: "spring", stiffness: 420, damping: 30 };
 
 const SUGGESTIONS = [
-  { icon: "🎬", label: "I want to create a luxury perfume commercial" },
-  { icon: "🎨", label: "Design a brand kit for my tech startup" },
-  { icon: "🎵", label: "I need a cinematic trailer with music" },
-  { icon: "📱", label: "Create a social media campaign for my product" },
-  { icon: "🌄", label: "Generate a fantasy landscape image" },
-  { icon: "🎥", label: "Make a video from my photos" },
+  { icon: "01", label: "I want to create a luxury perfume commercial" },
+  { icon: "02", label: "Design a brand kit for my tech startup" },
+  { icon: "03", label: "I need a cinematic trailer with music" },
+  { icon: "04", label: "Create a social media campaign for my product" },
+  { icon: "05", label: "Generate a fantasy landscape image" },
+  { icon: "06", label: "Make a video from my photos" },
 ];
 
 const STATUS_META = {

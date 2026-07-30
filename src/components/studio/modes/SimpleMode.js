@@ -36,45 +36,45 @@ const TOOL_ICONS = {
 
 const TOOL_SUGGESTIONS = {
   image: [
-    { icon: "🎨", label: "A warrior princess in golden armor" },
-    { icon: "🌅", label: "Sunset over futuristic Tokyo skyline" },
-    { icon: "🐉", label: "A dragon wrapped around a medieval castle" },
+    { icon: "IM", label: "A warrior princess in golden armor" },
+    { icon: "IM", label: "Sunset over futuristic Tokyo skyline" },
+    { icon: "IM", label: "A dragon wrapped around a medieval castle" },
   ],
   video: [
-    { icon: "🎬", label: "Drone shot over neon-lit Tokyo at night" },
-    { icon: "🌊", label: "Cinematic wave crashing on rocky shore" },
+    { icon: "VI", label: "Drone shot over neon-lit Tokyo at night" },
+    { icon: "VI", label: "Cinematic wave crashing on rocky shore" },
   ],
   audio: [
-    { icon: "🎵", label: "Epic orchestral with soaring strings" },
-    { icon: "🎹", label: "Lo-fi hip hop for studying" },
+    { icon: "AU", label: "Epic orchestral with soaring strings" },
+    { icon: "AU", label: "Lo-fi hip hop for studying" },
   ],
   cinema: [
-    { icon: "🎥", label: "A lone figure in the rain, neon reflections" },
-    { icon: "🎞️", label: "Close-up of an eye, anamorphic flare" },
+    { icon: "CI", label: "A lone figure in the rain, neon reflections" },
+    { icon: "CI", label: "Close-up of an eye, anamorphic flare" },
   ],
   "vibe-motion": [
-    { icon: "✨", label: "Flowing particles with gradient transitions" },
-    { icon: "🌀", label: "Liquid morphing shapes in pastel colors" },
+    { icon: "MO", label: "Flowing particles with gradient transitions" },
+    { icon: "MO", label: "Liquid morphing shapes in pastel colors" },
   ],
   clipping: [
-    { icon: "✂️", label: "Extract the top 3 viral moments" },
-    { icon: "🔥", label: "Find the funniest 30-second clips" },
+    { icon: "CL", label: "Extract the top 3 viral moments" },
+    { icon: "CL", label: "Find the funniest 30-second clips" },
   ],
   marketing: [
-    { icon: "📢", label: "A UGC ad for a luxury skincare product" },
-    { icon: "💎", label: "Cinematic product reveal with dramatic lighting" },
+    { icon: "AD", label: "A UGC ad for a luxury skincare product" },
+    { icon: "AD", label: "Cinematic product reveal with dramatic lighting" },
   ],
   lipsync: [
-    { icon: "🗣️", label: "Lip sync this portrait to the uploaded audio" },
-    { icon: "🎬", label: "Make this character speak the dialogue" },
+    { icon: "LS", label: "Lip sync this portrait to the uploaded audio" },
+    { icon: "LS", label: "Make this character speak the dialogue" },
   ],
   "body-swap": [
-    { icon: "🎭", label: "Swap the body to match the reference face" },
-    { icon: "🕺", label: "Replace the dancer with the subject" },
+    { icon: "RC", label: "Swap the body to match the reference face" },
+    { icon: "RC", label: "Replace the dancer with the subject" },
   ],
   influencer: [
-    { icon: "📸", label: "A fitness influencer in a sunlit gym" },
-    { icon: "👗", label: "A fashion creator in a Parisian street" },
+    { icon: "IN", label: "A fitness influencer in a sunlit gym" },
+    { icon: "IN", label: "A fashion creator in a Parisian street" },
   ],
 };
 

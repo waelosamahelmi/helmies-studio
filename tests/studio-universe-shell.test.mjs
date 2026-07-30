@@ -24,3 +24,12 @@ test("Command Universe is spatial on desktop and usable on mobile", () => {
   assert.match(css, /@media \(max-width: 760px\)/);
   assert.match(css, /prefers-reduced-motion/);
 });
+
+test("primary Studio suggestions and shared result actions contain no emoji", () => {
+  const files = [
+    "../src/components/studio/modes/OrchestratorMode.js",
+    "../src/components/studio/modes/SimpleMode.js",
+    "../src/components/studio/StudioComponents.js",
+  ].map((file) => fs.readFileSync(new URL(file, import.meta.url), "utf8")).join("\n");
+  assert.doesNotMatch(files, /\p{Extended_Pictographic}/u);
+});

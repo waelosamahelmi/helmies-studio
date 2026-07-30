@@ -517,12 +517,12 @@ export function ResultCard({ result, type = "image", credits, model, actions = [
 
   const defaultActions = [
     { id: "download", label: "Download", icon: "↓" },
-    { id: "canvas", label: "Add to Canvas", icon: "🖼" },
+    { id: "canvas", label: "Add to Canvas", icon: "CA" },
     { id: "reference", label: "Use as reference", icon: "↻" },
-    ...(isVideo || isVideo === false && !isAudio ? [{ id: "animate", label: "Animate", icon: "▶" }] : []),
-    ...(type === "image" ? [{ id: "lipsync", label: "Lip Sync", icon: "🗣" }, { id: "recast", label: "Recast", icon: "🎭" }] : []),
-    { id: "analyze", label: "Analyze", icon: "🔍" },
-    { id: "brand", label: "Add to Brand Kit", icon: "🏷" },
+    ...(isVideo || isVideo === false && !isAudio ? [{ id: "animate", label: "Animate", icon: "AN" }] : []),
+    ...(type === "image" ? [{ id: "lipsync", label: "Lip Sync", icon: "LS" }, { id: "recast", label: "Recast", icon: "RC" }] : []),
+    { id: "analyze", label: "Analyze", icon: "AN" },
+    { id: "brand", label: "Add to Brand Kit", icon: "BK" },
   ];
   const allActions = actions.length ? actions : defaultActions;
 
