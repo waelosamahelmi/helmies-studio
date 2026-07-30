@@ -63,7 +63,7 @@ export default function MobileModelCarousel({
               aria-selected={isActive}
               className={[
                 "v6-mobile-model-carousel__card",
-                isActive && "v6-mobile-model-carousel__card--active",
+                isActive && "v6-active",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -120,8 +120,7 @@ export default function MobileModelCarousel({
               key={i}
               className={[
                 "v6-mobile-model-carousel__dot",
-                m.id === selectedModelId &&
-                  "v6-mobile-model-carousel__dot--active",
+                m.id === selectedModelId && "v6-active",
               ]
                 .filter(Boolean)
                 .join(" ")}

@@ -24,7 +24,7 @@ export default function MobilePanel({ isOpen, onClose, title, children }) {
               <IconClose />
             </button>
           </div>
-          <div className="v6-mobile-panel__body">{children}</div>
+          <div className="v6-mobile-panel__content">{children}</div>
         </motion.div>
       )}
     </AnimatePresence>

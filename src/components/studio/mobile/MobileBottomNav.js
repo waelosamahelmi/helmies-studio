@@ -42,8 +42,8 @@ export default function MobileBottomNav({
             aria-label={tab.label}
             className={[
               "v6-mobile-bottom-nav__tab",
-              isActive && "v6-mobile-bottom-nav__tab--active",
-              isMore && isDrawerOpen && "v6-mobile-bottom-nav__tab--more-open",
+              isActive && "v6-active",
+              isMore && isDrawerOpen && "v6-more-open",
             ]
               .filter(Boolean)
               .join(" ")}
