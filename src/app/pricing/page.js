@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import Link from "next/link";
 import UniverseNav from "@/components/studio/universe/UniverseNav";
 import { IconCheck, IconArrowUpRight, IconBolt } from "@/components/Icons";
-import { CREDIT_PACKS, getCreditPackPriceId } from "@/lib/credit-packs";
+import { CREDIT_PACKS } from "@/lib/credit-packs";
 
 const EASE = [0.32, 0.72, 0, 1];
 

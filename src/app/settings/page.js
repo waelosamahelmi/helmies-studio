@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import CreditTickDown from "@/components/CreditTickDown";
 import { IconBolt, IconArrowUpRight } from "@/components/Icons";
-import { CREDIT_PACKS, getCreditPackPriceId } from "@/lib/credit-packs";
+import { CREDIT_PACKS } from "@/lib/credit-packs";
 import toast from "react-hot-toast";
 
 const EASE = [0.32, 0.72, 0, 1];
@@ -86,6 +86,7 @@ export default function SettingsPage() {
   const [email, setEmail] = useState("");
   const [imageQuality, setImageQuality] = useState("high");
   const [approvalMode, setApprovalMode] = useState("auto");
+  const [billingYearly, setBillingYearly] = useState(false);
 
   const loadKeys = useCallback(() => {
     fetch("/api/user/keys").then((r) => r.json()).then(setKeys).catch(() => {});
@@ -153,16 +154,11 @@ export default function SettingsPage() {
 
   // ── Top-up ──
   const handleTopup = async (packId) => {
-    const priceId = getCreditPackPriceId(packId);
-    if (!priceId) {
-      alert("Credit pack not configured yet.");
-      return;
-    }
     try {
       const res = await fetch("/api/stripe/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ packId }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -176,7 +172,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({ plan: planId, yearly: billingYearly }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;

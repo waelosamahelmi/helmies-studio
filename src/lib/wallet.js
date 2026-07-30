@@ -118,14 +118,14 @@ export async function releaseReservation(userId, jobId) {
 
 // ── Credit Operations ────────────────────────────────────────
 
-export async function grantCredits(userId, amount, type = "admin_adjustment", description = "Admin credit grant") {
+export async function grantCredits(userId, amount, type = "admin_adjustment", description = "Admin credit grant", referenceId = null) {
   return prisma.$transaction(async (tx) => {
     const wallet = await tx.creditWallet.upsert({
       where: { userId },
       update: { available: { increment: amount }, lifetime: { increment: amount } },
       create: { userId, available: amount, lifetime: amount },
     });
-    await writeLedger(tx, wallet.id, amount, wallet.available, type, description, null);
+    await writeLedger(tx, wallet.id, amount, wallet.available, type, description, referenceId);
     return wallet;
   });
 }

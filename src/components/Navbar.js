@@ -27,6 +27,7 @@ const TOOLS = [
 
 const NAV_LINKS = [
   { name: "Studio", href: "/studio" },
+  { name: "Templates", href: "/templates" },
   { name: "Models", href: "/models" },
   { name: "Gallery", href: "/gallery" },
   { name: "Pricing", href: "/pricing" },

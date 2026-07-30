@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { MotionConfig, AnimatePresence } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
 
@@ -72,29 +72,29 @@ const QUICK = ["orchestrator", "image", "video", "director", "canvas", "assets",
 // Tool component resolver
 // ═══════════════════════════════════════════════════════════════════════
 
-function Tool({ id, initialModel }) {
+function Tool({ id, initialModel, templateConfig }) {
   const map = {
     // v6 studio components
-    orchestrator: <OrchestratorStudio tool="orchestrator" initialModel={initialModel} />,
-    image:        <ImageStudio initialModel={initialModel} />,
-    video:        <VideoStudio initialModel={initialModel} />,
-    director:     <DirectorStudio />,
-    audio:        <AudioStudio />,
-    music:        <MusicStudio />,
-    lipsync:      <LipSyncStudio />,
-    "body-swap":  <RecastStudio />,
-    influencer:   <InfluencerStudio />,
-    avatar:       <AvatarStudio />,
-    canvas:       <CanvasStudio />,
-    cinema:       <CinemaStudio />,
-    "vibe-motion":<MotionStudio />,
-    "video-edit": <VideoEditStudio />,
-    clipping:     <ClippingStudio />,
-    marketing:    <MarketingStudio />,
-    workflows:    <WorkflowStudio />,
-    brands:       <BrandKitStudio />,
-    memory:       <MemoryStudio />,
-    assets:       <AssetLibraryStudio />,
+    orchestrator: <OrchestratorStudio tool="orchestrator" initialModel={initialModel} templateConfig={templateConfig} />,
+    image:        <ImageStudio initialModel={initialModel} templateConfig={templateConfig} />,
+    video:        <VideoStudio initialModel={initialModel} templateConfig={templateConfig} />,
+    director:     <DirectorStudio templateConfig={templateConfig} />,
+    audio:        <AudioStudio templateConfig={templateConfig} />,
+    music:        <MusicStudio templateConfig={templateConfig} />,
+    lipsync:      <LipSyncStudio templateConfig={templateConfig} />,
+    "body-swap":  <RecastStudio templateConfig={templateConfig} />,
+    influencer:   <InfluencerStudio templateConfig={templateConfig} />,
+    avatar:       <AvatarStudio templateConfig={templateConfig} />,
+    canvas:       <CanvasStudio templateConfig={templateConfig} />,
+    cinema:       <CinemaStudio templateConfig={templateConfig} />,
+    "vibe-motion":<MotionStudio templateConfig={templateConfig} />,
+    "video-edit": <VideoEditStudio templateConfig={templateConfig} />,
+    clipping:     <ClippingStudio templateConfig={templateConfig} />,
+    marketing:    <MarketingStudio templateConfig={templateConfig} />,
+    workflows:    <WorkflowStudio templateConfig={templateConfig} />,
+    brands:       <BrandKitStudio templateConfig={templateConfig} />,
+    memory:       <MemoryStudio templateConfig={templateConfig} />,
+    assets:       <AssetLibraryStudio templateConfig={templateConfig} />,
   };
 
   return map[id] || map.orchestrator;
@@ -106,6 +106,7 @@ function Tool({ id, initialModel }) {
 
 export default function StudioClient({ initialTool = "orchestrator", initialModel }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // ── state ──
   const [active, setActive] = useState(initialTool);
@@ -115,6 +116,19 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
   const [credits, setCredits] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [admin, setAdmin] = useState(false);
+  const [templateConfig, setTemplateConfig] = useState(null);
+
+  // ── template config loader ──
+  const templateSlug = searchParams.get("template");
+  useEffect(() => {
+    if (!templateSlug) return;
+    let cancelled = false;
+    apiFetch(`/api/templates/${templateSlug}/apply`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (!cancelled && data?.config) setTemplateConfig(data.config); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [templateSlug]);
 
   // ── derived ──
   const quickTools = useMemo(
@@ -219,7 +233,7 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
         }
       >
         <AnimatePresence mode="wait">
-          <Tool key={active} id={active} initialModel={initialModel} />
+          <Tool key={active} id={active} initialModel={initialModel} templateConfig={templateConfig} />
         </AnimatePresence>
       </UniverseShell>
     </MotionConfig>

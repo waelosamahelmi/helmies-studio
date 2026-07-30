@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import { useSession } from "next-auth/react";
 import UniverseNav from "@/components/studio/universe/UniverseNav";
 import { IconBolt, IconArrowUpRight, IconSparkle } from "@/components/Icons";
-import { CREDIT_PACKS, getCreditPackPriceId } from "@/lib/credit-packs";
+import { CREDIT_PACKS } from "@/lib/credit-packs";
 
 const PLANS = [
   {
@@ -113,13 +113,11 @@ export default function BillingPage() {
   };
 
   const handleTopup = async (packId) => {
-    const priceId = getCreditPackPriceId(packId);
-    if (!priceId) return;
     try {
       const res = await fetch("/api/stripe/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ packId }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;

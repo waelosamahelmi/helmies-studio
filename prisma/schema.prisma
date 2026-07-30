@@ -34,7 +34,8 @@ model User {
   assets        Asset[]
   wallet        CreditWallet?
   projects      Project[]
-
+  purchases     TemplatePurchase[]
+ 
   @@schema("public")
 }
 
@@ -698,6 +699,72 @@ model CreditPack {
   sortOrder     Int      @default(0)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+
+  @@schema("public")
+}
+
+// ── Template Marketplace ──
+model Template {
+  id              String              @id @default(cuid())
+  slug            String              @unique
+  name            String
+  description     String?             @db.Text
+  thumbnailUrl    String?             @db.Text
+  category        String              @default("creative")
+  toolType        String              // image, video, director, canvas, cinema, audio, etc.
+  pricingModel    String              @default("subscription") // "subscription" or "onetime"
+  oneTimePrice    Int?                // in cents
+  stripePriceId   String?             // Stripe Price ID for one-time
+  config          Json                // Pre-filled tool settings JSON
+  isPublished     Boolean             @default(false)
+  isFeatured      Boolean             @default(false)
+  usageLimit      String              @default("unlimited") // "once", "unlimited"
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  purchases       TemplatePurchase[]
+
+  @@index([toolType, isPublished])
+  @@index([category])
+  @@schema("public")
+}
+
+model TemplatePurchase {
+  id              String          @id @default(cuid())
+  userId          String
+  templateId      String
+  purchaseType    String          // "subscription_included" | "onetime" | "free"
+  stripeSessionId String?         // Stripe checkout session for one-time
+  stripePricePaid Int?            // Amount paid in cents
+  usageRemaining  Int?            // null=unlimited, 0=exhausted
+  totalUses       Int             @default(0)
+  purchasedAt     DateTime        @default(now())
+  lastUsedAt      DateTime?
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  template        Template        @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  usages          TemplateUsage[]
+
+  @@unique([userId, templateId])
+  @@index([userId])
+  @@schema("public")
+}
+
+model TemplateUsage {
+  id           String           @id @default(cuid())
+  purchaseId   String
+  generationId String?          // Links to Generation record
+  usedAt       DateTime         @default(now())
+  purchase     TemplatePurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+// ── Stripe Webhook Idempotency ──
+model StripeEvent {
+  id            String   @id @default(cuid())
+  stripeEventId String   @unique
+  eventType     String
+  processedAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
 
   @@schema("public")
 }
