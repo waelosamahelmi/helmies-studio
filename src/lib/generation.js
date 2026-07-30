@@ -23,6 +23,7 @@ export async function generateImage(params) {
   const payload = { prompt: params.prompt };
   if (params.aspect_ratio) payload.aspect_ratio = params.aspect_ratio;
   if (params.resolution) payload.resolution = params.resolution.toUpperCase();
+  else if (params.aspect_ratio && !params.image_url) payload.resolution = "1K"; // default for TTI models that require resolution
   if (params.quality) payload.quality = params.quality;
   if (params.width) payload.width = params.width;
   if (params.height) payload.height = params.height;
