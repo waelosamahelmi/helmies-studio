@@ -4,26 +4,53 @@ import { createHash, randomBytes } from "crypto";
 import { writeFile, mkdir, unlink } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { validateOutboundUrl } from "@/lib/net-allowlist";
 
 const execFileAsync = promisify(execFile);
 const MEDIA_DIR = join(process.cwd(), "public", "media");
+
+// Hard caps — this writes attacker-influenced bytes to local disk.
+export const MAX_CLIPS = 40;
+const MAX_BYTES_PER_CLIP = 500 * 1024 * 1024; // 500MB
 
 async function ensureMediaDir() {
   if (!existsSync(MEDIA_DIR)) await mkdir(MEDIA_DIR, { recursive: true });
 }
 
 async function downloadToTemp(url) {
-  const res = await fetch(url, { signal: AbortSignal.timeout(120000) });
+  // SSRF guard: only allowlisted provider hosts (plus our own origin).
+  const check = await validateOutboundUrl(url, { allowSelf: true });
+  if (!check.ok) throw new Error(`Refusing to fetch URL: ${check.error}`);
+
+  const res = await fetch(check.parsed.toString(), { signal: AbortSignal.timeout(120000) });
   if (!res.ok) throw new Error(`Failed to download: ${res.status}`);
+
+  // Reject on the advertised length before buffering when the server gives it.
+  const declared = parseInt(res.headers.get("content-length") || "", 10);
+  if (Number.isFinite(declared) && declared > MAX_BYTES_PER_CLIP) {
+    throw new Error("Clip too large");
+  }
+
   const buffer = Buffer.from(await res.arrayBuffer());
+  if (buffer.length > MAX_BYTES_PER_CLIP) throw new Error("Clip too large");
+
   const hash = createHash("sha256").update(url).digest("hex").slice(0, 8);
-  const ext = url.match(/\.(mp4|webm|mov)/i)?.[1] || "mp4";
+  const ext = check.parsed.pathname.match(/\.(mp4|webm|mov)$/i)?.[1]?.toLowerCase() || "mp4";
   const tmpPath = join(MEDIA_DIR, `_tmp_${hash}_${randomBytes(4).toString("hex")}.${ext}`);
   await writeFile(tmpPath, buffer);
   return tmpPath;
 }
 
 export async function assembleVideos(urls, options = {}) {
+  if (!Array.isArray(urls) || urls.length === 0) throw new Error("No videos to assemble");
+  if (urls.length > MAX_CLIPS) throw new Error(`Too many clips (max ${MAX_CLIPS})`);
+
+  // Validate every URL up-front so nothing is written to disk if any is bad.
+  for (const url of urls) {
+    const check = await validateOutboundUrl(url, { allowSelf: true });
+    if (!check.ok) throw new Error(`Refusing to fetch URL: ${check.error}`);
+  }
+
   await ensureMediaDir();
 
   const transition = options.transition || "fade";

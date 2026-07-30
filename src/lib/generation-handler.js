@@ -10,6 +10,21 @@ import { authenticateApiKey } from "@/lib/api-key-auth";
 import { storeMedia } from "@/lib/media-storage";
 import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
 import { quoteCatalogModel } from "@/lib/model-catalog";
+import {
+  IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS,
+  LIPSYNC_MODELS, AUDIO_MODELS, RECAST_MODELS,
+} from "@/lib/models";
+
+// Server-defined model registry. Together with the ModelPricing table this is
+// the complete set of models a caller may name — anything else is rejected
+// before credits are touched, and the provider endpoint is always taken from
+// here or from the DB, never from the request body.
+const MODEL_REGISTRY = Object.fromEntries(
+  [
+    ...IMAGE_MODELS, ...I2I_MODELS, ...VIDEO_MODELS, ...I2V_MODELS, ...V2V_MODELS,
+    ...LIPSYNC_MODELS, ...AUDIO_MODELS, ...RECAST_MODELS,
+  ].map((m) => [m.id, { endpoint: m.endpoint || m.id, providerModelId: m.endpoint || m.id }]),
+);
 
 // Re-mirror the wallet's `available` balance onto the legacy `User.credits`
 // column so existing UI/queries keep showing the right number.
@@ -121,6 +136,14 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     const provider = await resolveProvider(model);
 
     const dbPricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
+    // A model that is in neither the ModelPricing table nor the static
+    // registry has no trustworthy price and no trustworthy endpoint — refuse
+    // before any credits are reserved, rather than charging the default cost
+    // for an arbitrary client-chosen endpoint.
+    const staticModel = MODEL_REGISTRY[model];
+    if (!dbPricing && !staticModel) {
+      return NextResponse.json({ error: "Unknown model" }, { status: 400 });
+    }
     let providerCost = dbPricing?.providerCost || 0;
     if (dbPricing?.pricingRules) {
       const catalogQuote = await quoteCatalogModel(model, { ...body, prompt: rawPrompt });
@@ -164,7 +187,16 @@ export async function handleGeneration(req, tool, cost, apiFn) {
 
     try {
       const webhookUrl = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
-      const paramsWithPrompt = { ...body, model: dbPricing?.providerModelId || model, endpoint: dbPricing?.endpoint || body.endpoint || model, prompt: finalPrompt, webhook_url: webhookUrl };
+      // The endpoint is server-decided. Never let the request body pick the
+      // provider endpoint — that lets a caller reach an expensive model while
+      // being billed for a cheap one.
+      const paramsWithPrompt = {
+        ...body,
+        model: dbPricing?.providerModelId || staticModel?.providerModelId || model,
+        endpoint: dbPricing?.endpoint || staticModel?.endpoint || model,
+        prompt: finalPrompt,
+        webhook_url: webhookUrl,
+      };
       // Use the compiled negative prompt from the engine when present.
       if (compiledNegative && !body.negative_prompt && promptType !== "audio") {
         paramsWithPrompt.negative_prompt = compiledNegative;
@@ -302,11 +334,11 @@ export async function handleGeneration(req, tool, cost, apiFn) {
         data: { status: "failed", error: brandedMsg },
       });
       // Generation threw: release the full reservation back to the user.
+      // releaseReservation already writes the reservation_release ledger entry.
+      // Writing an extra creditTransaction{type:"refund"} here would
+      // double-count the refund with no matching balance change.
       await releaseReservation(user.id, generation.id).catch(() => {});
       await syncLegacyCredits(user.id);
-      await prisma.creditTransaction.create({
-        data: { userId: user.id, amount: cost, type: "refund", description: `Refund: ${brandedMsg.slice(0, 100)}` },
-      });
       return NextResponse.json({ error: brandedMsg }, { status: 500 });
     }
   } catch (e) {

@@ -1,6 +1,6 @@
-import "@/styles/globals.css";
-import "@/styles/studio-premium.css";
-import "@/styles/studio-universe.css";
+import "@/styles/system.css";
+import "@/styles/studio.css";
+import "@/styles/pages.css";
 import AnnouncementBar from "@/components/AnnouncementBar";
 import Providers from "@/components/Providers";
 
@@ -87,9 +87,12 @@ export const metadata = {
 export const viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  themeColor: "#FF1B6B",
+  // Pinch-zoom stays available — blocking it fails WCAG 1.4.4 and makes the
+  // canvas and timeline tools unusable for anyone who needs to magnify.
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: "cover",
+  themeColor: "#08080C",
 };
 
 export default function RootLayout({ children }) {
@@ -100,23 +103,7 @@ export default function RootLayout({ children }) {
         <link rel="icon" href="/favicon-32x32.png" sizes="32x32" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#FF1B6B" />
         <meta name="msapplication-TileColor" content="#FF1B6B" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-        <script dangerouslySetInnerHTML={{ __html: `
-          document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
-          document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
-          document.addEventListener('gestureend', function(e) { e.preventDefault(); });
-          var lastTouchEnd = 0;
-          document.addEventListener('touchend', function(e) {
-            var now = Date.now();
-            if (now - lastTouchEnd <= 300) e.preventDefault();
-            lastTouchEnd = now;
-          }, { passive: false });
-          document.addEventListener('touchmove', function(e) {
-            if (e.scale && e.scale !== 1) e.preventDefault();
-          }, { passive: false });
-        `}} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -161,10 +148,7 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      <body
-        className="min-h-screen w-full antialiased"
-        style={{ background: "#0A0A0F", color: "#F2F2F7" }}
-      >
+      <body className="min-h-screen w-full antialiased">
         <Providers>
           <AnnouncementBar />
           {children}

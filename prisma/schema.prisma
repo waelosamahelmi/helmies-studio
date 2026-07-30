@@ -612,8 +612,10 @@ model PromptCompilation {
 // ── Visual Intelligence ──
 model VisualAnalysis {
   id          String   @id @default(cuid())
+  userId      String?
   assetUrl    String   @db.Text
   caption     String?  @db.Text
+  background  String?  @db.Text
   palette     Json?
   regions     Json?
   textRegions Json?
@@ -623,6 +625,7 @@ model VisualAnalysis {
   createdAt   DateTime @default(now())
 
   @@index([assetUrl])
+  @@index([userId])
   @@schema("public")
 }
 
@@ -766,5 +769,26 @@ model StripeEvent {
   processedAt   DateTime @default(now())
   createdAt     DateTime @default(now())
 
+  @@schema("public")
+}
+
+// ── Contact form submissions ──
+// There is no mail transport in this deployment, so messages are persisted
+// and read from the admin panel rather than forwarded. Storing them is the
+// difference between a form that works and a form that silently discards.
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String?
+  message   String   @db.Text
+  userId    String?
+  ip        String?
+  userAgent String?  @db.Text
+  status    String   @default("new") // new | read | replied | spam
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([email])
   @@schema("public")
 }

@@ -1,472 +1,1020 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import Navbar from "@/components/Navbar";
-import { IconBolt } from "@/components/Icons";
+/* ══════════════════════════════════════════════════════════════════════════
+   ADMIN — SHARED PARTS + THE SMALL PANELS
+   ──────────────────────────────────────────────────────────────────────────
+   Everything in here talks to a route that exists under /api/admin. Where a
+   route only supports part of a CRUD cycle, the UI says so rather than
+   offering a button that returns 405.
 
-const TABS = ["Overview", "Users", "Models", "Pricing", "Providers", "Analytics", "Margin", "Refunds", "Audit Logs", "Feature Flags"];
+   This module imports nothing from its siblings, so AdminShell and the
+   larger editors can import from it without a cycle.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-export default function AdminPanel() {
-  const [tab, setTab] = useState("Overview");
-  const [data, setData] = useState({ totals: {}, byTool: [] });
-  const [users, setUsers] = useState([]);
-  const [pricing, setPricing] = useState([]);
-  const [providers, setProviders] = useState([]);
-  const [refunds, setRefunds] = useState([]);
-  const [flags, setFlags] = useState([]);
-  const [models, setModels] = useState([]);
-  const [modelFilter, setModelFilter] = useState("all");
-  const [modelSearch, setModelSearch] = useState("");
-  const [auditLogs, setAuditLogs] = useState([]);
-  const [editingUser, setEditingUser] = useState(null);
-  const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 });
-  const [pricingSearch, setPricingSearch] = useState("");
-  const [newProvider, setNewProvider] = useState({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true });
-  const [newRefund, setNewRefund] = useState({ userId: "", amount: 0, reason: "" });
-  const [toast, setToast] = useState(null);
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Confirm, Modal } from "@/components/studio/kit/Sheet";
+import {
+  IcBolt, IcClock, IcHistory, IcInfo, IcMegaphone, IcPersona,
+  IcPlus, IcRefresh, IcSearch, IcShield, IcTrash,
+} from "@/components/studio/kit/Icons";
+import { apiFetch } from "@/lib/client-fetch";
 
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+/* ── Readouts ──────────────────────────────────────────────────────────── */
+const NF = new Intl.NumberFormat("en-US");
+export const num = (v) => NF.format(Number(v) || 0);
+export const eur = (v) => `€${(Number(v) || 0).toFixed(2)}`;
+export const day = (d) =>
+  d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+export const stamp = (d) =>
+  d
+    ? new Date(d).toLocaleString("en-GB", {
+        day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+      })
+    : "—";
 
-  const loadOverview = useCallback(() => {
-    fetch("/api/admin/analytics").then((r) => r.json()).then(setData).catch(() => {});
-  }, []);
-  const loadUsers = useCallback(() => {
-    fetch("/api/admin/users").then((r) => r.json()).then(setUsers).catch(() => {});
-  }, []);
-  const loadPricing = useCallback(() => {
-    fetch("/api/admin/pricing").then((r) => r.json()).then(setPricing).catch(() => {});
-  }, []);
-  const loadProviders = useCallback(() => {
-    fetch("/api/admin/providers").then((r) => r.json()).then(setProviders).catch(() => {});
-  }, []);
-  const loadRefunds = useCallback(() => {
-    fetch("/api/admin/refunds").then((r) => r.json()).then(setRefunds).catch(() => {});
-  }, []);
-  const loadFlags = useCallback(() => {
-    fetch("/api/admin/flags").then((r) => r.json()).then(setFlags).catch(() => {});
-  }, []);
-  const loadModels = useCallback(() => {
-    fetch("/api/admin/models").then((r) => r.json()).then((d) => setModels(d.models || [])).catch(() => {});
-  }, []);
-  const loadAudit = useCallback(() => {
-    fetch("/api/admin/audit").then((r) => r.json()).then(setAuditLogs).catch(() => {});
-  }, []);
+export const asArray = (d) => (Array.isArray(d) ? d : []);
 
-  useEffect(() => { loadOverview(); }, [loadOverview]);
-  useEffect(() => {
-    if (tab === "Users") loadUsers();
-    if (tab === "Pricing") loadPricing();
-    if (tab === "Providers") loadProviders();
-    if (tab === "Refunds") loadRefunds();
-    if (tab === "Feature Flags") loadFlags();
-    if (tab === "Models") loadModels();
-    if (tab === "Audit Logs") loadAudit();
-  }, [tab, loadUsers, loadPricing, loadProviders, loadRefunds, loadFlags, loadModels, loadAudit]);
+/* ── Transport ─────────────────────────────────────────────────────────── */
+export function useResource(path) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  // ── User editing ──
-  const saveUser = async () => {
-    const res = await fetch("/api/admin/users", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: editingUser.id, credits: parseInt(editingUser.credits), role: editingUser.role }),
-    });
-    if (res.ok) { showToast("User updated"); setEditingUser(null); loadUsers(); }
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiFetch(path);
+      setData(await res.json());
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [path]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return { data, loading, error, reload: load };
+}
+
+/* retries: 0 — an admin write must never be replayed behind the operator's back. */
+export async function send(path, method, body) {
+  const res = await apiFetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+    retries: 0,
+  });
+  return res.json().catch(() => ({}));
+}
+
+/* ── Chrome ────────────────────────────────────────────────────────────── */
+export function Panel({ id, title, badge, action, children }) {
+  const key = id || title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return (
+    <section className="pg-panel" aria-labelledby={`p-${key}`}>
+      <div className="pg-panel__head">
+        <h2 id={`p-${key}`}>{title}</h2>
+        <div className="hs-row">
+          {badge && <span className="hs-badge">{badge}</span>}
+          {action}
+        </div>
+      </div>
+      <div className="pg-panel__body">{children}</div>
+    </section>
+  );
+}
+
+export function Fault({ children }) {
+  if (!children) return null;
+  return <p className="hs-notice hs-notice--fault" role="alert">{children}</p>;
+}
+
+export function Note({ children }) {
+  return <p className="hs-notice">{children}</p>;
+}
+
+export function Rows({ n = 4, h = 34 }) {
+  return (
+    <div className="hs-stack" aria-busy="true" style={{ gap: "var(--s-2)" }}>
+      <span className="hs-sr">Loading</span>
+      {Array.from({ length: n }, (_, i) => (
+        <div key={i} className="hs-skel" style={{ height: h }} />
+      ))}
+    </div>
+  );
+}
+
+export function Empty({ icon: Icon = IcInfo, title, children, action }) {
+  return (
+    <div className="hs-empty">
+      <span className="hs-empty__mark"><Icon /></span>
+      <h3>{title}</h3>
+      {children && <p>{children}</p>}
+      {action}
+    </div>
+  );
+}
+
+export function Stats({ items }) {
+  return (
+    <dl className="pg-stats">
+      {items.map((s) => (
+        <div className="pg-stat" key={s.label}>
+          <dt>{s.label}</dt>
+          <dd style={s.tone ? { color: s.tone } : undefined}>{s.value}</dd>
+          {s.sub && <div className="pg-stat__delta">{s.sub}</div>}
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/* head: array of strings, or { key, num } for right-aligned mono columns */
+export function Table({ caption, head, children }) {
+  return (
+    <div className="hs-table-wrap">
+      <table className="hs-table">
+        <caption className="hs-sr">{caption}</caption>
+        <thead>
+          <tr>
+            {head.map((h, i) => {
+              const label = typeof h === "string" ? h : h.key;
+              return (
+                <th key={label || `c${i}`} scope="col" className={h.num ? "hs-num" : undefined}>
+                  {label || <span className="hs-sr">Actions</span>}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
+}
+
+export function Reload({ onClick }) {
+  return (
+    <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={onClick}>
+      <IcRefresh className="hs-icon-sm" />
+      Refresh
+    </button>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   USERS — /api/admin/users  (GET, PATCH { userId, credits, role })
+   ══════════════════════════════════════════════════════════════════════════ */
+export function UsersPanel() {
+  const { data, loading, error, reload } = useResource("/api/admin/users");
+  const users = asArray(data);
+
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(null);
+  const [credits, setCredits] = useState("");
+  const [role, setRole] = useState("user");
+  const [saving, setSaving] = useState(false);
+  const [fault, setFault] = useState("");
+  const [confirmPromote, setConfirmPromote] = useState(false);
+
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter(
+      (u) => (u.email || "").toLowerCase().includes(q) || (u.name || "").toLowerCase().includes(q),
+    );
+  }, [users, query]);
+
+  const open = (u) => {
+    setEditing(u);
+    setCredits(String(u.credits ?? 0));
+    setRole(u.role || "user");
+    setFault("");
   };
 
-  // ── Pricing ──
-  const savePricing = async () => {
-    if (!newPricing.modelId) { showToast("Model ID required"); return; }
-    const res = await fetch("/api/admin/pricing", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...newPricing,
-        providerCost: parseFloat(newPricing.providerCost),
-        creditsCost: parseInt(newPricing.creditsCost),
-      }),
-    });
-    if (res.ok) { showToast("Pricing set"); setNewPricing({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 }); loadPricing(); }
+  const save = async () => {
+    const value = Number(credits);
+    if (!Number.isFinite(value) || value < 0) {
+      setFault("Credits must be zero or a positive whole number.");
+      setConfirmPromote(false);
+      return;
+    }
+    setSaving(true);
+    setFault("");
+    try {
+      await send("/api/admin/users", "PATCH", {
+        userId: editing.id,
+        credits: Math.round(value),
+        role,
+      });
+      setEditing(null);
+      reload();
+    } catch (e) {
+      setFault(e.message);
+    } finally {
+      setSaving(false);
+      setConfirmPromote(false);
+    }
   };
 
-  // ── Providers ──
-  const saveProvider = async () => {
-    if (!newProvider.name) { showToast("Provider name required"); return; }
-    const res = await fetch("/api/admin/providers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...newProvider, markup: parseFloat(newProvider.markup) }),
-    });
-    if (res.ok) { showToast("Provider saved"); setNewProvider({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true }); loadProviders(); }
-  };
-
-  // ── Refunds ──
-  const issueRefund = async () => {
-    if (!newRefund.userId || !newRefund.amount) { showToast("User ID and amount required"); return; }
-    const res = await fetch("/api/admin/refunds", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...newRefund, amount: parseInt(newRefund.amount) }),
-    });
-    if (res.ok) { showToast("Refund issued"); setNewRefund({ userId: "", amount: 0, reason: "" }); loadRefunds(); }
-  };
-
-  // ── Feature flags ──
-  const toggleFlag = async (flag) => {
-    const res = await fetch("/api/admin/flags", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: flag.key, name: flag.name, description: flag.description, enabled: !flag.enabled, config: flag.config }),
-    });
-    if (res.ok) { showToast("Flag toggled"); loadFlags(); }
-  };
-
-  const addFlag = async () => {
-    const key = prompt("Flag key (e.g. enable_workflows):");
-    if (!key) return;
-    const name = prompt("Flag name:");
-    const res = await fetch("/api/admin/flags", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, name: name || key, description: "", enabled: false }),
-    });
-    if (res.ok) { showToast("Flag created"); loadFlags(); }
+  const attemptSave = () => {
+    if (role === "admin" && editing?.role !== "admin") setConfirmPromote(true);
+    else save();
   };
 
   return (
     <>
-      <Navbar />
-      <div className="admin">
-        <div className="admin__header">
-          <h1>Admin Panel</h1>
-          <p>Manage users, credits, pricing, providers, and more.</p>
+      <Panel title="Users" badge={`${num(users.length)} total`} action={<Reload onClick={reload} />}>
+        <Fault>{error}</Fault>
+
+        <div className="hs-field">
+          <label className="hs-label" htmlFor="u-search">Find a user</label>
+          <div style={{ position: "relative" }}>
+            <IcSearch
+              className="hs-icon-sm"
+              style={{ position: "absolute", left: "var(--s-3)", top: "50%", transform: "translateY(-50%)", color: "var(--tx-mute)", pointerEvents: "none" }}
+            />
+            <input
+              id="u-search"
+              className="hs-input"
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Email or name"
+              autoComplete="off"
+              style={{ paddingLeft: "var(--s-8)" }}
+            />
+          </div>
         </div>
 
-        <div className="admin__tabs">
-          {TABS.map((t) => (
-            <button key={t} className={`admin__tab ${tab === t ? "admin__tab--active" : ""}`} onClick={() => setTab(t)}>{t}</button>
-          ))}
+        {loading ? <Rows /> : shown.length === 0 ? (
+          <Empty icon={IcPersona} title={query ? "No user matches that" : "No users yet"}>
+            {query ? "Try part of the email address." : "The first person to sign up becomes the admin."}
+          </Empty>
+        ) : (
+          <Table
+            caption="Registered users"
+            head={["User", "Email", { key: "Credits", num: true }, "Role", { key: "Gens", num: true }, "Joined", {}]}
+          >
+            {shown.map((u) => (
+              <tr key={u.id}>
+                <td style={{ color: "var(--tx)", fontWeight: 500 }}>{u.name || "—"}</td>
+                <td className="hs-mono">{u.email}</td>
+                <td className="hs-num">{num(u.credits)}</td>
+                <td>
+                  <span className={`hs-badge ${u.role === "admin" ? "hs-badge--accent" : ""}`}>{u.role}</span>
+                </td>
+                <td className="hs-num">{num(u._count?.generations)}</td>
+                <td className="hs-mono">{day(u.createdAt)}</td>
+                <td style={{ textAlign: "right" }}>
+                  <button type="button" className="hs-btn hs-btn--sm" onClick={() => open(u)}>Edit</button>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Panel>
+
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={editing ? `Edit ${editing.email}` : ""}
+        footer={
+          <>
+            <button type="button" className="hs-btn hs-btn--ghost" onClick={() => setEditing(null)}>Cancel</button>
+            <button type="button" className="hs-btn hs-btn--primary" onClick={attemptSave} disabled={saving}>
+              {saving && <span className="hs-spin" aria-hidden="true" />}
+              Save changes
+            </button>
+          </>
+        }
+      >
+        <Fault>{fault}</Fault>
+
+        <div className="hs-field">
+          <label className="hs-label" htmlFor="u-credits">Credit balance</label>
+          <input
+            id="u-credits"
+            className="hs-input"
+            type="number"
+            min="0"
+            step="1"
+            value={credits}
+            onChange={(e) => setCredits(e.target.value)}
+            autoComplete="off"
+          />
+          <p className="hs-hint">
+            Sets the balance outright. To add credits and leave a paper trail, issue a refund instead.
+          </p>
         </div>
 
-        {toast && <div className="admin__toast">{toast}</div>}
-
-        <div className="admin__body">
-          {/* ── Overview ── */}
-          {tab === "Overview" && (
-            <div className="admin__overview">
-              <div className="admin__stats">
-                <div className="admin__stat"><span className="admin__stat-label">Users</span><span className="admin__stat-value">{data.totals?.users || 0}</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Generations</span><span className="admin__stat-value">{data.totals?.generations || 0}</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Success Rate</span><span className="admin__stat-value">{data.totals?.successRate || 0}%</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Credits Used</span><span className="admin__stat-value">{data.totals?.creditsUsed || 0}</span></div>
-                <div className="admin__stat admin__stat--revenue"><span className="admin__stat-label">Revenue</span><span className="admin__stat-value">€{(data.totals?.revenue || 0).toFixed(2)}</span></div>
-                <div className="admin__stat admin__stat--profit"><span className="admin__stat-label">Profit</span><span className="admin__stat-value">€{(data.totals?.profit || 0).toFixed(2)}</span></div>
-              </div>
-              <div className="admin__chart">
-                <h3>Usage by Tool (30 days)</h3>
-                <div className="admin__bars">
-                  {(data.byTool || []).map((t) => (
-                    <div key={t.tool} className="admin__bar">
-                      <span className="admin__bar-label">{t.tool}</span>
-                      <span className="admin__bar-track"><span className="admin__bar-fill" style={{ width: `${Math.min(100, (t._count / (data.totals?.generations || 1)) * 100)}%` }} /></span>
-                      <span className="admin__bar-count">{t._count}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Users ── */}
-          {tab === "Users" && (
-            <div>
-              <div className="admin__table-wrap">
-                <table className="admin__table">
-                  <thead><tr><th>Name</th><th>Email</th><th>Credits</th><th>Role</th><th>Gen</th><th>Joined</th><th></th></tr></thead>
-                  <tbody>
-                    {users.map((u) => (
-                      <tr key={u.id}>
-                        <td>{u.name || "—"}</td>
-                        <td>{u.email}</td>
-                        <td><IconBolt /> {u.credits}</td>
-                        <td><span className={`admin__badge ${u.role === "admin" ? "enabled" : "disabled"}`}>{u.role}</span></td>
-                        <td>{u._count?.generations || 0}</td>
-                        <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                        <td><button className="btn btn-sm btn-secondary" onClick={() => setEditingUser({ ...u })}>Edit</button></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {editingUser && (
-                <div className="admin__edit-form">
-                  <h4>Edit: {editingUser.email}</h4>
-                  <div className="admin__edit-row">
-                    <div className="field-group"><label className="field-label">Credits</label><input className="field-input" type="number" value={editingUser.credits} onChange={(e) => setEditingUser({ ...editingUser, credits: e.target.value })} /></div>
-                    <div className="field-group"><label className="field-label">Role</label><select className="field-select" value={editingUser.role} onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}><option value="user">user</option><option value="admin">admin</option></select></div>
-                  </div>
-                  <div className="admin__edit-actions">
-                    <button className="btn btn-primary btn-sm" onClick={saveUser}>Save</button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingUser(null)}>Cancel</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ── Models ── */}
-          {tab === "Models" && (
-            <div>
-              <div className="admin__add-form">
-                <div className="admin__edit-row">
-                  {["all", "image", "i2i", "video", "i2v", "v2v", "lipsync", "recast", "audio"].map((c) => (
-                    <button key={c} className={`pill ${modelFilter === c ? "pill--active" : ""}`} onClick={() => setModelFilter(c)}>{c}</button>
-                  ))}
-                </div>
-                <div className="admin__edit-row" style={{ marginTop: "0.5rem" }}>
-                  <input className="field-input" placeholder="Search models by name or ID..." value={modelSearch} onChange={(e) => setModelSearch(e.target.value)} style={{ width: "100%" }} />
-                </div>
-              </div>
-              <div className="admin__models-count">
-                {models.filter((m) => (modelFilter === "all" || m.category === modelFilter) && (!modelSearch.trim() || m.name?.toLowerCase().includes(modelSearch.toLowerCase()) || m.id?.toLowerCase().includes(modelSearch.toLowerCase()))).length} models
-              </div>
-              <div className="admin__table-wrap">
-                <table className="admin__table">
-                  <thead><tr><th>Model</th><th>Provider</th><th>Category</th><th>Credits</th><th>Cost</th><th>Status</th><th></th></tr></thead>
-                  <tbody>
-                    {models.filter((m) => (modelFilter === "all" || m.category === modelFilter) && (!modelSearch.trim() || m.name?.toLowerCase().includes(modelSearch.toLowerCase()) || m.id?.toLowerCase().includes(modelSearch.toLowerCase()))).map((m) => (
-                      <tr key={m.id}>
-                        <td><strong>{m.name}</strong><br /><span style={{ fontSize: "0.65rem", color: "rgba(242,242,247,0.3)" }}>{m.id}</span></td>
-                        <td>{m.provider}</td>
-                        <td><span className="admin__badge">{m.category}</span></td>
-                        <td>{m.creditsCost ? <><IconBolt /> {m.creditsCost}</> : "default"}</td>
-                        <td>{m.providerCost ? `€${m.providerCost.toFixed(4)}` : "—"}</td>
-                        <td><span className={`admin__badge ${m.isActive ? "enabled" : "disabled"}`}>{m.isActive ? "Active" : "Off"}</span></td>
-                        <td>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={async () => {
-                              await fetch("/api/admin/models", {
-                                method: "POST",
-                                headers: { "Content-Type": "application/json" },
-                                body: JSON.stringify({ modelId: m.id, modelType: m.category, providerName: m.provider, isActive: !m.isActive }),
-                              });
-                              showToast("Model toggled");
-                              loadModels();
-                            }}
-                          >{m.isActive ? "Disable" : "Enable"}</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* ── Pricing ── */}
-          {tab === "Pricing" && (
-            <div>
-              <div className="admin__add-form">
-                <h4>Set Model Pricing</h4>
-                <div className="admin__edit-row">
-                  <input className="field-input" placeholder="Model ID (e.g. flux-dev)" value={newPricing.modelId} onChange={(e) => setNewPricing({ ...newPricing, modelId: e.target.value })} />
-                  <select className="field-select" value={newPricing.modelType} onChange={(e) => setNewPricing({ ...newPricing, modelType: e.target.value })}><option>image</option><option>video</option><option>audio</option><option>lipsync</option></select>
-                  <input className="field-input" placeholder="Provider" value={newPricing.providerName} onChange={(e) => setNewPricing({ ...newPricing, providerName: e.target.value })} />
-                  <input className="field-input" type="number" step="0.0001" placeholder="Cost (€)" value={newPricing.providerCost} onChange={(e) => setNewPricing({ ...newPricing, providerCost: e.target.value })} />
-                  <input className="field-input" type="number" placeholder="Credits" value={newPricing.creditsCost} onChange={(e) => setNewPricing({ ...newPricing, creditsCost: e.target.value })} />
-                  <button className="btn btn-primary btn-sm" onClick={savePricing}>Add/Update</button>
-                </div>
-              </div>
-              <div className="admin__pricing-list">
-                <div className="admin__add-row" style={{ marginBottom: "0.75rem" }}>
-                  <input className="field-input" placeholder="Search model ID, type, or provider..." value={pricingSearch} onChange={(e) => setPricingSearch(e.target.value)} style={{ width: "100%" }} />
-                </div>
-                <p className="admin__empty" style={{ marginBottom: "0.5rem", fontSize: "0.75rem" }}>
-                  {pricing.length} pricing entries{pricingSearch ? ` · ${pricing.filter((p) => (p.modelId?.toLowerCase().includes(pricingSearch.toLowerCase()) || p.modelType?.toLowerCase().includes(pricingSearch.toLowerCase()) || p.providerName?.toLowerCase().includes(pricingSearch.toLowerCase()))).length} matching` : ""}
-                </p>
-                {pricing.filter((p) => {
-                  if (!pricingSearch.trim()) return true;
-                  const q = pricingSearch.toLowerCase();
-                  return p.modelId?.toLowerCase().includes(q) || p.modelType?.toLowerCase().includes(q) || p.providerName?.toLowerCase().includes(q);
-                }).map((p) => (
-                  <div key={p.id} className="admin__pricing-row">
-                    <span><strong>{p.modelId}</strong></span>
-                    <span>{p.modelType}</span>
-                    <span>{p.providerName}</span>
-                    <span>€{p.providerCost?.toFixed(4)}</span>
-                    <span><IconBolt /> {p.creditsCost}</span>
-                    <span className={`admin__badge ${p.isActive ? "enabled" : "disabled"}`}>{p.isActive ? "Active" : "Off"}</span>
-                  </div>
-                ))}
-                {pricing.length === 0 && <p className="admin__empty">No custom pricing set. Using defaults with 2.5x markup.</p>}
-              </div>
-            </div>
-          )}
-
-          {/* ── Providers ── */}
-          {tab === "Providers" && (
-            <div>
-              <div className="admin__add-form">
-                <h4>Configure Provider</h4>
-                <div className="admin__edit-row">
-                  <input className="field-input" placeholder="Name (e.g. Alibaba)" value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} />
-                  <select className="field-select" value={newProvider.type} onChange={(e) => setNewProvider({ ...newProvider, type: e.target.value })}><option>image+video</option><option>image</option><option>video</option><option>llm</option><option>image+video+llm</option></select>
-                  <input className="field-input" placeholder="API Key" value={newProvider.apiKey} onChange={(e) => setNewProvider({ ...newProvider, apiKey: e.target.value })} />
-                  <input className="field-input" placeholder="Base URL" value={newProvider.baseUrl} onChange={(e) => setNewProvider({ ...newProvider, baseUrl: e.target.value })} />
-                  <input className="field-input" type="number" step="0.1" placeholder="Markup" value={newProvider.markup} onChange={(e) => setNewProvider({ ...newProvider, markup: e.target.value })} />
-                  <button className="btn btn-primary btn-sm" onClick={saveProvider}>Save</button>
-                </div>
-              </div>
-              <div className="admin__providers">
-                {providers.map((p) => (
-                  <div key={p.id} className="admin__provider">
-                    <div><strong>{p.name}</strong> <span className="admin__badge">{p.type}</span></div>
-                    <div>Markup: {p.markup}x</div>
-                    <span className={`admin__badge ${p.isActive ? "enabled" : "disabled"}`}>{p.isActive ? "Active" : "Inactive"}</span>
-                  </div>
-                ))}
-                {providers.length === 0 && <p className="admin__empty">No providers configured in DB. Using KIE default (key from .env).</p>}
-              </div>
-            </div>
-          )}
-
-          {/* ── Analytics ── */}
-          {tab === "Analytics" && (
-            <div className="admin__overview">
-              <div className="admin__stats">
-                <div className="admin__stat"><span className="admin__stat-label">Total Gen</span><span className="admin__stat-value">{data.totals?.generations || 0}</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Completed</span><span className="admin__stat-value">{data.totals?.completed || 0}</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Failed</span><span className="admin__stat-value">{data.totals?.failed || 0}</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Provider Cost</span><span className="admin__stat-value">€{(data.totals?.providerCost || 0).toFixed(2)}</span></div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Margin Dashboard ── */}
-          {tab === "Margin" && (
-            <div className="admin__overview">
-              <div className="admin__stats">
-                <div className="admin__stat admin__stat--revenue"><span className="admin__stat-label">Retail Value</span><span className="admin__stat-value">€{(data.totals?.retailValue || 0).toFixed(2)}</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Provider Cost</span><span className="admin__stat-value">€{(data.totals?.providerCost || 0).toFixed(2)}</span></div>
-                <div className="admin__stat admin__stat--profit"><span className="admin__stat-label">Gross Margin</span><span className="admin__stat-value">€{(data.totals?.profit || 0).toFixed(2)}</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Margin %</span><span className="admin__stat-value">{data.totals?.marginPct || 0}%</span></div>
-                <div className="admin__stat"><span className="admin__stat-label">Credits Used</span><span className="admin__stat-value">{data.totals?.creditsUsed || 0}</span></div>
-              </div>
-
-              <div className="admin__chart">
-                <h3>Margin by Tool (30 days)</h3>
-                <div className="admin__table-wrap">
-                  <table className="admin__table">
-                    <thead><tr><th>Tool</th><th>Gens</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Margin %</th></tr></thead>
-                    <tbody>
-                      {(data.marginByTool || []).map((t) => (
-                        <tr key={t.tool}>
-                          <td>{t.tool}</td>
-                          <td>{t.generations}</td>
-                          <td>€{t.revenue.toFixed(2)}</td>
-                          <td>€{t.cost.toFixed(2)}</td>
-                          <td style={{ color: t.margin >= 0 ? "#00d68f" : "#ff3d71" }}>€{t.margin.toFixed(2)}</td>
-                          <td>{t.marginPct}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="admin__chart">
-                <h3>Top Models by Margin (30 days)</h3>
-                <div className="admin__table-wrap">
-                  <table className="admin__table">
-                    <thead><tr><th>Model</th><th>Gens</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Margin %</th></tr></thead>
-                    <tbody>
-                      {(data.modelMargins || []).map((m) => (
-                        <tr key={m.model}>
-                          <td>{m.model}</td>
-                          <td>{m.generations}</td>
-                          <td>€{m.revenue.toFixed(2)}</td>
-                          <td>€{m.cost.toFixed(2)}</td>
-                          <td style={{ color: m.margin >= 0 ? "#00d68f" : "#ff3d71" }}>€{m.margin.toFixed(2)}</td>
-                          <td>{m.marginPct}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {(!data.modelMargins || data.modelMargins.length === 0) && <p className="admin__empty">No generation data yet.</p>}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Refunds ── */}
-          {tab === "Refunds" && (
-            <div>
-              <div className="admin__add-form">
-                <h4>Issue Refund</h4>
-                <div className="admin__edit-row">
-                  <input className="field-input" placeholder="User ID" value={newRefund.userId} onChange={(e) => setNewRefund({ ...newRefund, userId: e.target.value })} />
-                  <input className="field-input" type="number" placeholder="Credits" value={newRefund.amount} onChange={(e) => setNewRefund({ ...newRefund, amount: e.target.value })} />
-                  <input className="field-input" placeholder="Reason" value={newRefund.reason} onChange={(e) => setNewRefund({ ...newRefund, reason: e.target.value })} />
-                  <button className="btn btn-primary btn-sm" onClick={issueRefund}>Issue</button>
-                </div>
-              </div>
-              <div className="admin__refunds">
-                {refunds.map((r) => (
-                  <div key={r.id} className="admin__refund">
-                    <span><IconBolt /> {r.amount}</span>
-                    <span>{r.reason || "No reason"}</span>
-                    <span className={`admin__badge ${r.status === "completed" ? "enabled" : "pending"}`}>{r.status}</span>
-                    <span>{new Date(r.createdAt).toLocaleDateString()}</span>
-                  </div>
-                ))}
-                {refunds.length === 0 && <p className="admin__empty">No refunds yet.</p>}
-              </div>
-            </div>
-          )}
-
-          {/* ── Audit Logs ── */}
-          {tab === "Audit Logs" && (
-            <div className="admin__table-wrap">
-              <table className="admin__table">
-                <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Details</th></tr></thead>
-                <tbody>
-                  {auditLogs.map((log) => (
-                    <tr key={log.id}>
-                      <td style={{ fontSize: "0.7rem" }}>{new Date(log.createdAt).toLocaleString()}</td>
-                      <td>{log.user?.email || "—"}</td>
-                      <td><span className="admin__badge">{log.action}</span></td>
-                      <td>{log.resource || "—"}</td>
-                      <td style={{ fontSize: "0.7rem", color: "rgba(242,242,247,0.4)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.metadata ? JSON.stringify(log.metadata).slice(0, 100) : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {auditLogs.length === 0 && <p className="admin__empty">No audit logs yet.</p>}
-            </div>
-          )}
-
-          {/* ── Feature Flags ── */}
-          {tab === "Feature Flags" && (
-            <div>
-              <div className="admin__add-form">
-                <button className="btn btn-primary btn-sm" onClick={addFlag}>Add Flag</button>
-              </div>
-              <div className="admin__flags">
-                {flags.map((f) => (
-                  <div key={f.id} className="admin__flag">
-                    <div><strong>{f.name}</strong> <span style={{ fontSize: "0.7rem", color: "rgba(242,242,247,0.4)" }}>{f.key}</span></div>
-                    <div style={{ fontSize: "0.75rem", color: "rgba(242,242,247,0.5)" }}>{f.description}</div>
-                    <button className={`admin__toggle ${f.enabled ? "admin__toggle--on" : ""}`} onClick={() => toggleFlag(f)}>
-                      <span className="admin__toggle-knob" />
-                    </button>
-                  </div>
-                ))}
-                {flags.length === 0 && <p className="admin__empty">No feature flags set.</p>}
-              </div>
-            </div>
-          )}
+        <div className="hs-field">
+          <label className="hs-label" htmlFor="u-role">Role</label>
+          <select id="u-role" className="hs-select" value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+          </select>
         </div>
-      </div>
+      </Modal>
+
+      <Confirm
+        open={confirmPromote}
+        onClose={() => setConfirmPromote(false)}
+        onConfirm={save}
+        title="Grant admin access?"
+        body={`${editing?.email || "This user"} will be able to edit pricing, read the audit log, change any balance and issue refunds.`}
+        confirmLabel="Make admin"
+      />
     </>
   );
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   JOBS — /api/admin/jobs  (GET → { jobs, stats })
+   ══════════════════════════════════════════════════════════════════════════ */
+const JOB_TONE = { completed: "hs-badge--signal", failed: "hs-badge--fault", processing: "hs-badge--accent" };
+
+export function JobsPanel() {
+  const { data, loading, error, reload } = useResource("/api/admin/jobs");
+  const jobs = asArray(data?.jobs);
+  const s = data?.stats || {};
+
+  return (
+    <Panel title="Jobs" badge={`${num(jobs.length)} in flight`} action={<Reload onClick={reload} />}>
+      <Fault>{error}</Fault>
+
+      {loading ? <Rows n={3} h={72} /> : (
+        <>
+          <Stats
+            items={[
+              { label: "In queue",  value: num(s.pending) },
+              { label: "Running",   value: num(s.processing) },
+              { label: "Completed", value: num(s.completed), tone: "var(--signal)" },
+              { label: "Failed",    value: num(s.failed), tone: s.failed ? "var(--fault)" : undefined },
+              { label: "All time",  value: num(s.total) },
+            ]}
+          />
+
+          {jobs.length === 0 ? (
+            <Empty icon={IcClock} title="Nothing running">
+              Pending and processing generations appear here the moment they are queued.
+            </Empty>
+          ) : (
+            <Table
+              caption="Pending and processing generations"
+              head={["Job", "Tool", "Model", "User", "Status", { key: "Credits", num: true }, "Started"]}
+            >
+              {jobs.map((j) => (
+                <tr key={j.id}>
+                  <td className="hs-mono">{String(j.id).slice(0, 10)}</td>
+                  <td style={{ color: "var(--tx)" }}>{j.tool}</td>
+                  <td className="hs-mono">{j.model}</td>
+                  <td className="hs-mono">{j.user?.email || "—"}</td>
+                  <td><span className={`hs-badge ${JOB_TONE[j.status] || ""}`}>{j.status}</span></td>
+                  <td className="hs-num">{num(j.creditsUsed)}</td>
+                  <td className="hs-mono">{stamp(j.createdAt)}</td>
+                </tr>
+              ))}
+            </Table>
+          )}
+        </>
+      )}
+    </Panel>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   REFUNDS — /api/admin/refunds  (GET, POST { userId, amount, reason })
+   Issuing one grants real credits, so it goes through Confirm.
+   ══════════════════════════════════════════════════════════════════════════ */
+export function RefundsPanel() {
+  const { data, loading, error, reload } = useResource("/api/admin/refunds");
+  const refunds = asArray(data);
+
+  const [userId, setUserId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [generationId, setGenerationId] = useState("");
+  const [reason, setReason] = useState("");
+  const [errs, setErrs] = useState({});
+  const [fault, setFault] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const ask = (e) => {
+    e.preventDefault();
+    const next = {};
+    if (!userId.trim()) next.userId = "Paste the user id from the Users section.";
+    const value = Number(amount);
+    if (!amount.trim()) next.amount = "How many credits?";
+    else if (!Number.isFinite(value) || value <= 0) next.amount = "Must be a positive number of credits.";
+    setErrs(next);
+    setFault("");
+    if (Object.keys(next).length === 0) setConfirming(true);
+  };
+
+  const issue = async () => {
+    setBusy(true);
+    setFault("");
+    try {
+      await send("/api/admin/refunds", "POST", {
+        userId: userId.trim(),
+        amount: Math.round(Number(amount)),
+        generationId: generationId.trim() || null,
+        reason: reason.trim() || null,
+      });
+      setUserId(""); setAmount(""); setGenerationId(""); setReason("");
+      reload();
+    } catch (e) {
+      setFault(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Panel title="Issue a refund">
+        <Fault>{fault}</Fault>
+
+        <form onSubmit={ask} noValidate>
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="r-user">User id</label>
+            <input
+              id="r-user"
+              className="hs-input hs-mono"
+              value={userId}
+              onChange={(e) => { setUserId(e.target.value); setErrs((p) => ({ ...p, userId: "" })); }}
+              autoComplete="off"
+              placeholder="cl…"
+              aria-invalid={errs.userId ? "true" : undefined}
+              aria-describedby={errs.userId ? "r-user-error" : undefined}
+            />
+            {errs.userId && <p className="hs-error" id="r-user-error">{errs.userId}</p>}
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="r-amount">Credits to return</label>
+            <input
+              id="r-amount"
+              className="hs-input"
+              type="number"
+              min="1"
+              step="1"
+              value={amount}
+              onChange={(e) => { setAmount(e.target.value); setErrs((p) => ({ ...p, amount: "" })); }}
+              aria-invalid={errs.amount ? "true" : undefined}
+              aria-describedby={errs.amount ? "r-amount-error" : undefined}
+            />
+            {errs.amount && <p className="hs-error" id="r-amount-error">{errs.amount}</p>}
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="r-gen">Generation id <span className="hs-mute">(optional)</span></label>
+            <input
+              id="r-gen"
+              className="hs-input hs-mono"
+              value={generationId}
+              onChange={(e) => setGenerationId(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="r-reason">Reason</label>
+            <input
+              id="r-reason"
+              className="hs-input"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              autoComplete="off"
+              placeholder="Provider returned a broken file"
+            />
+            <p className="hs-hint">Written to the wallet ledger and the audit log.</p>
+          </div>
+
+          <button type="submit" className="hs-btn hs-btn--primary" style={{ marginTop: "var(--s-5)" }} disabled={busy}>
+            {busy && <span className="hs-spin" aria-hidden="true" />}
+            Review refund
+          </button>
+        </form>
+      </Panel>
+
+      <Panel title="Refund history" badge={`${num(refunds.length)} records`} action={<Reload onClick={reload} />}>
+        <Fault>{error}</Fault>
+        {loading ? <Rows /> : refunds.length === 0 ? (
+          <Empty icon={IcHistory} title="No refunds issued">
+            Every refund you grant is recorded here with who, how much and why.
+          </Empty>
+        ) : (
+          <Table caption="Refunds" head={["Issued", "User", { key: "Credits", num: true }, "Reason", "Status"]}>
+            {refunds.map((r) => (
+              <tr key={r.id}>
+                <td className="hs-mono">{stamp(r.createdAt)}</td>
+                <td className="hs-mono">{r.userId}</td>
+                <td className="hs-num" style={{ color: "var(--signal)" }}>+{num(r.amount)}</td>
+                <td>{r.reason || "—"}</td>
+                <td>
+                  <span className={`hs-badge ${r.status === "completed" ? "hs-badge--signal" : "hs-badge--caution"}`}>
+                    {r.status}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Panel>
+
+      <Confirm
+        open={confirming}
+        onClose={() => setConfirming(false)}
+        onConfirm={issue}
+        title="Issue this refund?"
+        body={`${num(amount)} credits land in ${userId.trim()} immediately and cannot be taken back from this screen.`}
+        confirmLabel="Issue refund"
+        danger={false}
+      />
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PROVIDER HEALTH — /api/admin/provider-health
+   Returns { healthy, activeIncidents, providerCount } — not a per-provider
+   list, which is what the previous screen tried to render.
+   ══════════════════════════════════════════════════════════════════════════ */
+export function ProviderHealthPanel() {
+  const { data, loading, error, reload } = useResource("/api/admin/provider-health");
+  const incidents = asArray(data?.activeIncidents);
+  const healthy = data?.healthy;
+
+  return (
+    <Panel title="Provider health" action={<Reload onClick={reload} />}>
+      <Fault>{error}</Fault>
+
+      {loading ? <Rows n={2} h={72} /> : (
+        <>
+          <div className="hs-row" style={{ gap: "var(--s-3)" }}>
+            <span className={`hs-dot ${healthy ? "hs-dot--signal" : "hs-dot--fault"}`} />
+            <strong style={{ fontSize: "var(--t-md)" }}>
+              {healthy
+                ? "All providers nominal"
+                : `${num(incidents.length)} open incident${incidents.length === 1 ? "" : "s"}`}
+            </strong>
+          </div>
+
+          <Stats
+            items={[
+              { label: "Providers priced", value: num(data?.providerCount) },
+              {
+                label: "Open incidents",
+                value: num(incidents.length),
+                tone: incidents.length ? "var(--fault)" : "var(--signal)",
+              },
+            ]}
+          />
+
+          {incidents.length === 0 ? (
+            <Empty icon={IcShield} title="Nothing is on fire">
+              Incidents opened by the generation pipeline show up here with the provider and the reason.
+            </Empty>
+          ) : (
+            <Table caption="Open provider incidents" head={["Provider", "Type", "Message", "Started"]}>
+              {incidents.map((i) => (
+                <tr key={i.id}>
+                  <td style={{ color: "var(--tx)", fontWeight: 500 }}>{i.provider}</td>
+                  <td><span className="hs-badge hs-badge--fault">{i.type}</span></td>
+                  <td>{i.message || "—"}</td>
+                  <td className="hs-mono">{stamp(i.startedAt)}</td>
+                </tr>
+              ))}
+            </Table>
+          )}
+        </>
+      )}
+    </Panel>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AUDIT LOG — /api/admin/audit  (GET, newest 200)
+   ══════════════════════════════════════════════════════════════════════════ */
+export function AuditPanel() {
+  const { data, loading, error, reload } = useResource("/api/admin/audit");
+  const logs = asArray(data);
+  const [action, setAction] = useState("all");
+
+  const actions = useMemo(
+    () => ["all", ...Array.from(new Set(logs.map((l) => l.action))).sort()],
+    [logs],
+  );
+  const shown = action === "all" ? logs : logs.filter((l) => l.action === action);
+
+  return (
+    <Panel title="Audit log" badge={`${num(logs.length)} newest`} action={<Reload onClick={reload} />}>
+      <Fault>{error}</Fault>
+
+      {loading ? <Rows /> : logs.length === 0 ? (
+        <Empty icon={IcHistory} title="Nothing logged yet">
+          Pricing changes, flag toggles, refunds and user edits are written here as they happen.
+        </Empty>
+      ) : (
+        <>
+          <div className="hs-chips" role="group" aria-label="Filter by action">
+            {actions.map((a) => (
+              <button key={a} type="button" className="hs-chip" aria-pressed={action === a} onClick={() => setAction(a)}>
+                {a}
+              </button>
+            ))}
+          </div>
+
+          <Table caption="Admin audit log" head={["Time", "Who", "Action", "Resource", "Detail"]}>
+            {shown.map((l) => (
+              <tr key={l.id}>
+                <td className="hs-mono">{stamp(l.createdAt)}</td>
+                <td className="hs-mono">{l.user?.email || "system"}</td>
+                <td><span className="hs-badge">{l.action}</span></td>
+                <td className="hs-mono">{l.resource ? `${l.resource}${l.resourceId ? `/${l.resourceId}` : ""}` : "—"}</td>
+                <td
+                  className="hs-mono"
+                  style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                >
+                  {l.metadata ? JSON.stringify(l.metadata) : "—"}
+                </td>
+              </tr>
+            ))}
+          </Table>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   FEATURE FLAGS — /api/admin/flags  (GET, POST upsert)
+   ══════════════════════════════════════════════════════════════════════════ */
+export function FlagsPanel() {
+  const { data, loading, error, reload } = useResource("/api/admin/flags");
+  const flags = asArray(data);
+
+  const [fault, setFault] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ key: "", name: "", description: "" });
+  const [errs, setErrs] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  const toggle = async (f) => {
+    setFault("");
+    try {
+      await send("/api/admin/flags", "POST", {
+        key: f.key, name: f.name, description: f.description,
+        enabled: !f.enabled, config: f.config,
+      });
+      reload();
+    } catch (e) {
+      setFault(e.message);
+    }
+  };
+
+  const create = async (e) => {
+    e.preventDefault();
+    const next = {};
+    if (!/^[a-z0-9_]+$/.test(form.key)) next.key = "Lowercase letters, numbers and underscores only.";
+    if (!form.name.trim()) next.name = "Give it a name people will recognise.";
+    setErrs(next);
+    if (Object.keys(next).length) return;
+
+    setBusy(true);
+    setFault("");
+    try {
+      await send("/api/admin/flags", "POST", { ...form, enabled: false });
+      setForm({ key: "", name: "", description: "" });
+      setCreating(false);
+      reload();
+    } catch (err) {
+      setFault(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <Panel
+        title="Feature flags"
+        badge={`${num(flags.filter((f) => f.enabled).length)} on`}
+        action={
+          <>
+            <button type="button" className="hs-btn hs-btn--sm" onClick={() => setCreating(true)}>
+              <IcPlus className="hs-icon-sm" />
+              New flag
+            </button>
+            <Reload onClick={reload} />
+          </>
+        }
+      >
+        <Fault>{fault}</Fault>
+        <Fault>{error}</Fault>
+
+        {loading ? <Rows /> : flags.length === 0 ? (
+          <Empty
+            icon={IcBolt}
+            title="No flags yet"
+            action={
+              <button type="button" className="hs-btn hs-btn--primary" onClick={() => setCreating(true)}>
+                Create the first flag
+              </button>
+            }
+          >
+            Flags let you ship a feature dark and switch it on without a deploy.
+          </Empty>
+        ) : (
+          <div>
+            {flags.map((f) => (
+              <div className="pg-kv" key={f.id}>
+                <div>
+                  <div className="pg-kv__k">
+                    {f.name} <span className="hs-mono hs-mute">{f.key}</span>
+                  </div>
+                  {f.description && <div className="pg-kv__sub">{f.description}</div>}
+                </div>
+                <button
+                  type="button"
+                  className="hs-switch"
+                  role="switch"
+                  aria-checked={f.enabled}
+                  aria-label={`${f.name} — ${f.enabled ? "on" : "off"}`}
+                  onClick={() => toggle(f)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+
+      <Modal
+        open={creating}
+        onClose={() => setCreating(false)}
+        title="New feature flag"
+        footer={
+          <>
+            <button type="button" className="hs-btn hs-btn--ghost" onClick={() => setCreating(false)}>Cancel</button>
+            <button type="submit" form="flag-form" className="hs-btn hs-btn--primary" disabled={busy}>
+              {busy && <span className="hs-spin" aria-hidden="true" />}
+              Create flag
+            </button>
+          </>
+        }
+      >
+        <form id="flag-form" onSubmit={create} noValidate>
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="f-key">Key</label>
+            <input
+              id="f-key"
+              className="hs-input hs-mono"
+              value={form.key}
+              onChange={(e) => {
+                setForm({ ...form, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") });
+                setErrs((p) => ({ ...p, key: "" }));
+              }}
+              placeholder="enable_workflows"
+              autoComplete="off"
+              aria-invalid={errs.key ? "true" : undefined}
+              aria-describedby={errs.key ? "f-key-error" : undefined}
+            />
+            {errs.key && <p className="hs-error" id="f-key-error">{errs.key}</p>}
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="f-name">Name</label>
+            <input
+              id="f-name"
+              className="hs-input"
+              value={form.name}
+              onChange={(e) => { setForm({ ...form, name: e.target.value }); setErrs((p) => ({ ...p, name: "" })); }}
+              autoComplete="off"
+              aria-invalid={errs.name ? "true" : undefined}
+              aria-describedby={errs.name ? "f-name-error" : undefined}
+            />
+            {errs.name && <p className="hs-error" id="f-name-error">{errs.name}</p>}
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="f-desc">Description</label>
+            <input
+              id="f-desc"
+              className="hs-input"
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              autoComplete="off"
+            />
+            <p className="hs-hint">New flags start switched off.</p>
+          </div>
+        </form>
+      </Modal>
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ANNOUNCEMENTS — /api/admin/announcements  (GET, POST, PATCH, DELETE ?id=)
+   Drives the bar at the top of every page.
+   ══════════════════════════════════════════════════════════════════════════ */
+const STYLES = ["info", "success", "warning"];
+const AUDIENCES = ["all", "free", "paid"];
+
+export function AnnouncementsPanel() {
+  const { data, loading, error, reload } = useResource("/api/admin/announcements");
+  const items = asArray(data);
+
+  const [form, setForm] = useState({
+    message: "", style: "info", link: "", startDate: "", endDate: "", audience: "all",
+  });
+  const [errs, setErrs] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [fault, setFault] = useState("");
+  const [pendingDelete, setPendingDelete] = useState(null);
+
+  const create = async (e) => {
+    e.preventDefault();
+    const next = {};
+    if (!form.message.trim()) next.message = "Write the line people will read.";
+    else if (form.message.trim().length > 140) next.message = "Keep it under 140 characters — it sits on one line.";
+    setErrs(next);
+    if (Object.keys(next).length) return;
+
+    setBusy(true);
+    setFault("");
+    try {
+      await send("/api/admin/announcements", "POST", {
+        message: form.message.trim(),
+        style: form.style,
+        link: form.link.trim() || null,
+        startDate: form.startDate || null,
+        endDate: form.endDate || null,
+        audience: form.audience,
+      });
+      setForm({ message: "", style: "info", link: "", startDate: "", endDate: "", audience: "all" });
+      reload();
+    } catch (err) {
+      setFault(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const toggle = async (a) => {
+    setFault("");
+    try {
+      await send("/api/admin/announcements", "PATCH", { id: a.id, isActive: !a.isActive });
+      reload();
+    } catch (e) {
+      setFault(e.message);
+    }
+  };
+
+  const remove = async (id) => {
+    setFault("");
+    try {
+      await send(`/api/admin/announcements?id=${encodeURIComponent(id)}`, "DELETE");
+      reload();
+    } catch (e) {
+      setFault(e.message);
+    }
+  };
+
+  return (
+    <>
+      <Panel title="New announcement">
+        <Fault>{fault}</Fault>
+
+        <form onSubmit={create} noValidate>
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="a-message">Message</label>
+            <input
+              id="a-message"
+              className="hs-input"
+              value={form.message}
+              onChange={(e) => { setForm({ ...form, message: e.target.value }); setErrs((p) => ({ ...p, message: "" })); }}
+              maxLength={200}
+              autoComplete="off"
+              placeholder="Veo 3 is live in the video studio."
+              aria-invalid={errs.message ? "true" : undefined}
+              aria-describedby={errs.message ? "a-message-error" : "a-message-hint"}
+            />
+            {errs.message
+              ? <p className="hs-error" id="a-message-error">{errs.message}</p>
+              : <p className="hs-hint" id="a-message-hint"><span className="hs-mono">{form.message.length}</span> / 140 characters</p>}
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="a-link">Link <span className="hs-mute">(optional)</span></label>
+            <input
+              id="a-link"
+              className="hs-input"
+              value={form.link}
+              onChange={(e) => setForm({ ...form, link: e.target.value })}
+              autoComplete="off"
+              placeholder="/models"
+            />
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="a-style">Style</label>
+            <select id="a-style" className="hs-select" value={form.style} onChange={(e) => setForm({ ...form, style: e.target.value })}>
+              {STYLES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="a-audience">Audience</label>
+            <select id="a-audience" className="hs-select" value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value })}>
+              {AUDIENCES.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="a-start">Starts</label>
+            <input id="a-start" className="hs-input" type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+            <p className="hs-hint">Leave empty to start immediately.</p>
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="a-end">Ends</label>
+            <input id="a-end" className="hs-input" type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} />
+            <p className="hs-hint">Leave empty to run until you switch it off.</p>
+          </div>
+
+          <button type="submit" className="hs-btn hs-btn--primary" style={{ marginTop: "var(--s-5)" }} disabled={busy}>
+            {busy && <span className="hs-spin" aria-hidden="true" />}
+            Publish announcement
+          </button>
+        </form>
+      </Panel>
+
+      <Panel title="Announcements" badge={`${num(items.length)} total`} action={<Reload onClick={reload} />}>
+        <Fault>{error}</Fault>
+        {loading ? <Rows /> : items.length === 0 ? (
+          <Empty icon={IcMegaphone} title="Nothing announced">
+            The bar at the top of the site stays empty until you publish something here.
+          </Empty>
+        ) : (
+          <Table caption="Site announcements" head={["Message", "Style", "Window", "Live", {}]}>
+            {items.map((a) => (
+              <tr key={a.id}>
+                <td style={{ color: "var(--tx)" }}>
+                  {a.message}
+                  {a.link && <div className="hs-mono hs-mute" style={{ fontSize: "var(--t-micro)" }}>{a.link}</div>}
+                </td>
+                <td><span className="hs-badge">{a.style}</span></td>
+                <td className="hs-mono">{day(a.startDate)} → {a.endDate ? day(a.endDate) : "open"}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="hs-switch"
+                    role="switch"
+                    aria-checked={a.isActive}
+                    aria-label={`${a.message} — ${a.isActive ? "live" : "hidden"}`}
+                    onClick={() => toggle(a)}
+                  />
+                </td>
+                <td style={{ textAlign: "right" }}>
+                  <button type="button" className="hs-btn hs-btn--danger hs-btn--sm" onClick={() => setPendingDelete(a)}>
+                    <IcTrash className="hs-icon-sm" />
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Panel>
+
+      <Confirm
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => remove(pendingDelete.id)}
+        title="Delete this announcement?"
+        body={
+          pendingDelete
+            ? `"${pendingDelete.message}" is removed for good. To take it off the site without losing it, switch it off instead.`
+            : ""
+        }
+        confirmLabel="Delete"
+      />
+    </>
+  );
+}
+
+export const PANELS = {
+  users: UsersPanel,
+  jobs: JobsPanel,
+  refunds: RefundsPanel,
+  health: ProviderHealthPanel,
+  audit: AuditPanel,
+  flags: FlagsPanel,
+  announcements: AnnouncementsPanel,
+};
+
+export default PANELS;

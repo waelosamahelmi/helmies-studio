@@ -1,417 +1,657 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { motion } from "framer-motion";
-import StudioLayout from "./v6/StudioLayout";
-import ModelSelector from "./v6/ModelSelector";
-import PromptDock from "./v6/PromptDock";
-import StageArea from "./v6/StageArea";
-import { useModelCatalog } from "@/components/studio/useModelCatalog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Brief, ModelPicker, Sheet,
+  Field, Group, Segmented, Chips, Slider, Dropzone, Specs,
+  clock, mediaUrl,
+  IcMic, IcPlay, IcPause, IcSettings, IcDownload, IcExternal, IcRefresh,
+} from "@/components/studio/kit";
+import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
-import { apiFetch } from "@/lib/client-fetch";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 import { matchesGroup } from "@/lib/capability-groups";
 
-/* ── Inline SVGs ── */
-const IconMusic = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-  </svg>
-);
-const IconMic = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" /><path d="M19 10v2a7 7 0 01-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" />
-  </svg>
-);
-const IconTool = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z" />
-  </svg>
-);
-const IconBolt = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="13,2 3,14 12,14 11,22 21,10 12,10" />
-  </svg>
-);
-const IconDownload = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7,10 12,15 17,10" /><line x1="12" y1="15" x2="12" y2="3" />
-  </svg>
-);
-const IconRefresh = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23,4 23,10 17,10" /><polyline points="1,20 1,14 7,14" /><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-  </svg>
-);
-const IconUpload = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17,8 12,3 7,8" /><line x1="12" y1="3" x2="12" y2="15" />
-  </svg>
-);
-const IconClock = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" />
-  </svg>
-);
-const IconPlay = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="5,3 19,12 5,21" />
-  </svg>
-);
-const IconSearch = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-  </svg>
-);
+/* ══════════════════════════════════════════════════════════════════════════
+   AUDIO — speech and sound design, on the .st-wave archetype
+   ──────────────────────────────────────────────────────────────────────────
+   Music lives in its own tool. This one covers the two jobs where the source
+   of truth is a voice or an effect: read this text aloud, or make this sound.
 
-/* ── Sub-mode definitions ── */
-const SUB_MODES = [
-  { id: "music", label: "Music", desc: "Compose original tracks", icon: IconMusic },
-  { id: "tts", label: "Voice / TTS", desc: "Text to speech synthesis", icon: IconMic },
-  { id: "tools", label: "Tools", desc: "Isolate & process audio", icon: IconTool },
-];
+   Fixed in this rebuild:
+   · `hasVoice` / `hasStability` / `hasSimilarity` / `hasSpeed` gated the whole
+     TTS panel, and the live catalog never emits them (see model-catalog.js
+     `serializeCatalogModel` — it emits id, capability, credits, schema,
+     constraints, pricing… and no `has*` flag at all). Every one of those
+     controls was dead. They are now gated on the model's own input schema,
+     which the catalog does emit, with "no schema" meaning "show it".
+   · `error` from useAsyncGeneration was computed and never rendered, so a
+     failed job just stopped with no explanation. It is rendered now.
+   · `elapsed` was unused. The transport row shows it while a job runs.
+   · The result was an <audio controls> with ten decorative bars beside it.
+     The waveform is now the real signal.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Voice options for TTS ── */
+const BARS = 120;
+
+/* Deterministic stand-in, seeded by the track's own duration. Provider CDNs
+   frequently answer without an Access-Control-Allow-Origin header, so the
+   decode below throws and we cannot know the real peaks. Rather than draw a
+   lie that changes on every render, we draw the same shape for the same
+   track: bar count still maps to time, so scrubbing stays truthful. */
+function placeholderPeaks(duration) {
+  const seed = Math.max(1, Math.round((duration || 30) * 1000));
+  return Array.from({ length: BARS }, (_, i) => {
+    const n = Math.sin((i + 1) * 12.9898 + seed * 0.0001) * 43758.5453;
+    const noise = n - Math.floor(n);
+    const envelope = Math.sin((Math.PI * (i + 0.5)) / BARS);
+    return 0.16 + 0.74 * noise * (0.4 + 0.6 * envelope);
+  });
+}
+
+/* Real peaks: fetch the bytes, decode them, downsample to BARS buckets. */
+function useWaveform(url) {
+  const [peaks, setPeaks] = useState(null);
+  const [real, setReal] = useState(false);
+
+  useEffect(() => {
+    if (!url) { setPeaks(null); setReal(false); return undefined; }
+    let alive = true;
+    setPeaks(null);
+    setReal(false);
+
+    (async () => {
+      let ctx = null;
+      try {
+        const Ctx = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+        if (!Ctx) throw new Error("No AudioContext");
+        const res = await fetch(url, { mode: "cors" });
+        const bytes = await res.arrayBuffer();
+        ctx = new Ctx();
+        const buffer = await ctx.decodeAudioData(bytes);
+        const data = buffer.getChannelData(0);
+        const block = Math.max(1, Math.floor(data.length / BARS));
+        const out = new Array(BARS);
+        let top = 0;
+        for (let i = 0; i < BARS; i++) {
+          let sum = 0;
+          const start = i * block;
+          for (let j = 0; j < block; j++) sum += Math.abs(data[start + j] || 0);
+          out[i] = sum / block;
+          if (out[i] > top) top = out[i];
+        }
+        if (!alive) return;
+        setPeaks(top > 0 ? out.map((v) => v / top) : out);
+        setReal(true);
+      } catch {
+        /* Cross-origin or unsupported codec — the caller falls back to
+           placeholderPeaks(duration) once the <audio> reports a duration. */
+        if (alive) { setPeaks(null); setReal(false); }
+      } finally {
+        ctx?.close?.();
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [url]);
+
+  return { peaks, real };
+}
+
+/* Playback. `currentTime` drives the playhead on the frame, not on the
+   4-per-second `timeupdate` event, so the head does not stutter. */
+function useTransport(url) {
+  const ref = useRef(null);
+  const raf = useRef(0);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => { setPlaying(false); setCurrent(0); setDuration(0); }, [url]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const meta = () => setDuration(Number.isFinite(el.duration) ? el.duration : 0);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onEnd = () => { setPlaying(false); setCurrent(0); };
+    const onTime = () => setCurrent(el.currentTime || 0);
+    el.addEventListener("loadedmetadata", meta);
+    el.addEventListener("durationchange", meta);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("ended", onEnd);
+    el.addEventListener("timeupdate", onTime);
+    return () => {
+      el.removeEventListener("loadedmetadata", meta);
+      el.removeEventListener("durationchange", meta);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("ended", onEnd);
+      el.removeEventListener("timeupdate", onTime);
+    };
+  }, [url]);
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    const tick = () => {
+      if (ref.current) setCurrent(ref.current.currentTime || 0);
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [playing]);
+
+  const toggle = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.paused) el.play().catch(() => setPlaying(false));
+    else el.pause();
+  }, []);
+
+  const seek = useCallback((ratio) => {
+    const el = ref.current;
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    const t = Math.min(el.duration, Math.max(0, ratio * el.duration));
+    el.currentTime = t;
+    setCurrent(t);
+  }, []);
+
+  return { ref, playing, current, duration, toggle, seek };
+}
+
+/* ── Waveform display ──────────────────────────────────────────────────── */
+function Waveform({ peaks, progress = 0, onSeek, muted = false, label = "Waveform" }) {
+  const box = useRef(null);
+  const [count, setCount] = useState(BARS);
+
+  /* One bar per 6px of frame. The shared CSS caps a bar at 4px and sets a 2px
+     gap, so at this density the strip is exactly as wide as the frame at every
+     screen size. That matters: the playhead and the click-to-seek both
+     measure the frame, so a strip that stopped short of it would put the
+     playhead to the right of the sample it points at. */
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry?.contentRect?.width || 0;
+      setCount(Math.max(24, Math.min(240, Math.floor(w / 6) || 24)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* Resample the decoded peaks onto the bars that actually fit */
+  const bars = useMemo(() => {
+    const src = peaks && peaks.length ? peaks : null;
+    if (!src) return new Array(count).fill(0.12);
+    return Array.from({ length: count }, (_, i) => {
+      const a = Math.floor((i * src.length) / count);
+      const b = Math.min(src.length, Math.max(a + 1, Math.floor(((i + 1) * src.length) / count)));
+      let sum = 0;
+      for (let j = a; j < b; j++) sum += src[j];
+      return sum / (b - a);
+    });
+  }, [peaks, count]);
+
+  const seekAt = (clientX) => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!rect?.width || !onSeek) return;
+    onSeek(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)));
+  };
+
+  return (
+    <div
+      ref={box}
+      className="st-wf"
+      role={onSeek ? "slider" : "img"}
+      aria-label={label}
+      aria-valuenow={onSeek ? Math.round(progress * 100) : undefined}
+      aria-valuemin={onSeek ? 0 : undefined}
+      aria-valuemax={onSeek ? 100 : undefined}
+      tabIndex={onSeek ? 0 : -1}
+      style={{ cursor: onSeek ? "pointer" : "default", opacity: muted ? 0.45 : 1 }}
+      onClick={(e) => seekAt(e.clientX)}
+      onKeyDown={(e) => {
+        if (!onSeek) return;
+        if (e.key === "ArrowRight") { e.preventDefault(); onSeek(Math.min(1, progress + 0.02)); }
+        if (e.key === "ArrowLeft") { e.preventDefault(); onSeek(Math.max(0, progress - 0.02)); }
+      }}
+    >
+      {bars.map((h, i) => (
+        <i
+          key={i}
+          className={i / bars.length < progress ? "is-played" : ""}
+          style={{ "--h": `${Math.round(6 + h * 86)}%` }}
+        />
+      ))}
+      {progress > 0 && <span className="st-wf__head" style={{ left: `${progress * 100}%` }} />}
+    </div>
+  );
+}
+
+/* ── Transport row ─────────────────────────────────────────────────────── */
+function Transport({ playing, current, duration, onToggle, onSeek, disabled }) {
+  const bar = useRef(null);
+  const p = duration > 0 ? Math.min(1, current / duration) : 0;
+
+  return (
+    <div className="st-transport">
+      <button
+        type="button"
+        className="st-transport__play"
+        onClick={onToggle}
+        disabled={disabled}
+        aria-label={playing ? "Pause" : "Play"}
+      >
+        {playing ? <IcPause className="hs-icon-sm" /> : <IcPlay className="hs-icon-sm" />}
+      </button>
+
+      <span className="st-transport__time">{clock(current)}</span>
+
+      <div
+        ref={bar}
+        className="st-transport__bar"
+        role="progressbar"
+        aria-label="Playback position"
+        aria-valuenow={Math.round(p * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        onClick={(e) => {
+          const rect = bar.current?.getBoundingClientRect();
+          if (!rect?.width || disabled) return;
+          onSeek?.(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)));
+        }}
+      >
+        <i style={{ width: `${p * 100}%` }} />
+      </div>
+
+      <span className="st-transport__time">{duration > 0 ? clock(duration) : "--:--"}</span>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Catalog capability reading
+   ──────────────────────────────────────────────────────────────────────────
+   `serializeCatalogModel` emits `schema` (the model's own input schema) and
+   useModelCatalog derives `durations` / `resolutions` / `maxImages` from it.
+   Those are the only capability signals that exist at runtime. A model with
+   no schema tells us nothing, so we show the control rather than hide it —
+   the provider ignores a field it does not take.
+   ══════════════════════════════════════════════════════════════════════════ */
+function offers(model, ...fields) {
+  const declared = model?.schema?.fields;
+  if (!declared) return true;
+  return fields.some((f) => !!declared[f]);
+}
+
 const VOICES = [
-  { id: "rachel", name: "Rachel", desc: "Warm, natural female", gender: "female" },
-  { id: "domi", name: "Domi", desc: "Calm, steady female", gender: "female" },
-  { id: "bella", name: "Bella", desc: "Expressive female", gender: "female" },
-  { id: "elli", name: "Elli", desc: "Youthful female", gender: "female" },
-  { id: "antoni", name: "Antoni", desc: "Deep, confident male", gender: "male" },
-  { id: "josh", name: "Josh", desc: "Friendly male", gender: "male" },
-  { id: "arnold", name: "Arnold", desc: "Authoritative male", gender: "male" },
-  { id: "sam", name: "Sam", desc: "Balanced male", gender: "male" },
+  { id: "rachel", label: "Rachel", desc: "Warm, unhurried, mid-range" },
+  { id: "domi", label: "Domi", desc: "Steady and even, low affect" },
+  { id: "bella", label: "Bella", desc: "Bright, expressive, quick" },
+  { id: "elli", label: "Elli", desc: "Young, light, conversational" },
+  { id: "antoni", label: "Antoni", desc: "Deep, measured, assured" },
+  { id: "josh", label: "Josh", desc: "Open, friendly, everyday" },
+  { id: "arnold", label: "Arnold", desc: "Hard consonants, commanding" },
+  { id: "sam", label: "Sam", desc: "Neutral, unaccented, clean" },
 ];
 
-/* ── Music style tags ── */
-const MUSIC_STYLES = [
-  "cinematic", "synthwave", "80s", "orchestral", "electronic", "ambient",
-  "lofi", "hip-hop", "rock", "jazz", "pop", "classical", "trap", "EDM",
+const SPEECH_EXAMPLES = [
+  "Welcome back. Let's pick up where we left off.",
+  "In 1911, the harbour froze for the first time in a century.",
+  "Three things changed this quarter, and only one of them mattered.",
+  "Press and hold to record. Release to send.",
 ];
 
-/* ── Audio/TTS prompt suggestions ── */
-const AUDIO_SUGGESTIONS = [
-  "Epic orchestral score with soaring strings and thunderous drums",
-  "Lo-fi chill beats for late night studying, warm vinyl crackle",
-  "Dark synthwave with driving bass and neon atmosphere",
-  "A peaceful ambient soundscape for meditation, soft pads",
-  "80s retro pop with punchy drums and catchy synth melody",
-  "Cinematic trailer music with dramatic build-up and powerful brass",
+const SOUND_EXAMPLES = [
+  "Heavy wooden door closing in a stone corridor, long tail",
+  "Rain on a car roof, distant traffic, no music",
+  "Single metallic impact, tuned low, short decay",
+  "Crowd murmur in a large hall, indistinct speech",
 ];
 
-/* ══════════════════════════════════════════════════════════════ */
-export default function AudioStudio() {
-  const [subMode, setSubMode] = useState("music");
-  const [prompt, setPrompt] = useState("");
-  const [style, setStyle] = useState("");
-  const [title, setTitle] = useState("");
-  const [negativeTags, setNegativeTags] = useState("");
-  const [duration, setDuration] = useState(30);
-  const [instrumental, setInstrumental] = useState(false);
-  const [vocalGender, setVocalGender] = useState("female");
-  const [voice, setVoice] = useState(null);
+export default function AudioStudio({ initialModel, templateConfig, onCreditsChanged }) {
+  const [mode, setMode] = useState("speech");
+  const [modelId, setModelId] = useState(initialModel || null);
+  const [text, setText] = useState("");
+  const [voice, setVoice] = useState("");
   const [stability, setStability] = useState(0.5);
   const [similarity, setSimilarity] = useState(0.75);
   const [speed, setSpeed] = useState(1);
-  const [audioUrl, setAudioUrl] = useState(null);
-  const [genStage, setGenStage] = useState("");
-  const [styleSearch, setStyleSearch] = useState("");
+  const [duration, setDuration] = useState(null);
+  const [source, setSource] = useState(null);
+  const [sheet, setSheet] = useState(false);
 
-  const { models: catalogModels, loading: modelsLoading } = useModelCatalog({});
-  const audioModels = useMemo(() => catalogModels.filter((m) => matchesGroup(m, "audio")), [catalogModels]);
-  const { loading, result, error, elapsed, submit } = useAsyncGeneration();
-  const isMobile = useIsMobile();
+  const { models, loading: loadingModels } = useModelCatalog({});
+  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
 
-  const subModels = useMemo(() => {
-    switch (subMode) {
-      case "music": return audioModels.filter(m => m.capability === "audio" && m.provider?.toLowerCase() === "suno");
-      case "tts": return audioModels.filter(m => m.capability === "text-to-speech");
-      case "tools": return audioModels.filter(m => m.capability === "audio" && m.provider?.toLowerCase() !== "suno");
-      default: return audioModels;
-    }
-  }, [subMode, audioModels]);
+  /* Capability filtering goes through the group map, then splits on the
+     scalar `capability` the catalog genuinely populates. Suno is the music
+     provider and has its own tool, so it is excluded here rather than shown
+     twice under a name that does not describe what it does. */
+  const available = useMemo(() => {
+    const pool = (models || []).filter((m) => matchesGroup(m, "audio"));
+    if (mode === "speech") return pool.filter((m) => m.capability === "text-to-speech");
+    return pool.filter(
+      (m) => m.capability === "audio" && !String(m.provider || "").toLowerCase().includes("suno"),
+    );
+  }, [models, mode]);
 
-  const [selectedModelId, setSelectedModelId] = useState(null);
+  const model = available.find((m) => m.id === modelId) || available[0] || null;
 
   useEffect(() => {
-    if (subModels.length) setSelectedModelId(subModels[0].id);
-  }, [subModels]);
+    if (available.length && !available.some((m) => m.id === modelId)) setModelId(available[0].id);
+  }, [available, modelId]);
 
-  const currentModel = subModels.find((m) => m.id === selectedModelId) || subModels[0] || audioModels[0] || {};
-  const { cost, affordable, shortfall } = useCreditCost("audio", selectedModelId, { duration, prompt });
+  useEffect(() => {
+    if (!templateConfig) return;
+    if (templateConfig.prompt) setText(templateConfig.prompt);
+    if (templateConfig.voice) setVoice(templateConfig.voice);
+    if (templateConfig.model) setModelId(templateConfig.model);
+    if (templateConfig.mode) setMode(templateConfig.mode);
+  }, [templateConfig]);
 
-  const handleGenerate = useCallback(() => {
-    if (!prompt.trim()) return;
-    if (!affordable) return;
-    setGenStage("preparing");
-    const params = {
-      endpoint: currentModel.endpoint || selectedModelId, prompt, duration,
-      ...(currentModel.hasVoice && voice ? { voice } : {}),
-      ...(currentModel.hasStability ? { stability } : {}),
-      ...(currentModel.hasSimilarity ? { similarity } : {}),
-      ...(currentModel.hasSpeed ? { speed } : {}),
-      ...(currentModel.hasInstrumental ? { instrumental } : {}),
-      ...(currentModel.hasVocalGender ? { vocal_gender: vocalGender } : {}),
-      ...(currentModel.hasStyle && style ? { style } : {}),
-      ...(currentModel.hasTitle && title ? { title } : {}),
-      ...(currentModel.hasNegativeTags && negativeTags ? { negative_tags: negativeTags } : {}),
-      ...(audioUrl ? { audio_url: audioUrl } : {}),
-    };
-    submit("audio", selectedModelId, params);
-  }, [prompt, selectedModelId, currentModel, duration, voice, stability, similarity, speed, instrumental, vocalGender, style, title, negativeTags, audioUrl, affordable, submit]);
+  /* `durations` is always an array — [] when the model does not offer a
+     choice. This is the real field the old `hasDuration`-style flags never
+     were, so the control appears exactly when the model can honour it. */
+  const durations = model?.durations?.length ? model.durations.map(Number).filter(Number.isFinite) : [];
 
-  const handleUpload = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const fd = new FormData(); fd.append("file", file);
-    try { const r = await apiFetch("/api/upload", { method: "POST", body: fd }); const d = await r.json(); if (d.url) setAudioUrl(d.url); } catch {}
-  }, []);
+  useEffect(() => {
+    if (!durations.length) { setDuration(null); return; }
+    if (!durations.includes(duration)) setDuration(durations[0]);
+  }, [durations, duration]);
 
-  const handleNew = useCallback(() => { setGenStage(""); setPrompt(""); setStyle(""); setTitle(""); setNegativeTags(""); setAudioUrl(null); }, []);
-  const handleDownload = useCallback(() => { const url = result?.url || result?.outputUrl || result; if (url && typeof url === "string") window.open(url, "_blank"); }, [result]);
+  const isSpeech = mode === "speech";
+  const wantsVoice = isSpeech && offers(model, "voice", "voice_id");
+  const wantsTone = isSpeech && offers(model, "stability", "similarity_boost", "speed");
 
-  const filteredStyles = MUSIC_STYLES.filter(s => !styleSearch || s.toLowerCase().includes(styleSearch.toLowerCase()));
-  const durationMax = subMode === "tts" ? 60 : 300;
+  /* Same params, same tool string, as the submit below — a mismatch would
+     quote one price and charge another. */
+  const costParams = useMemo(() => ({
+    prompt: text,
+    ...(duration != null ? { duration } : {}),
+    ...(source?.url ? { audio_url: source.url } : {}),
+  }), [text, duration, source]);
 
-  /* ── Controls ── */
+  const { cost, affordable, balance, shortfall } = useCreditCost("audio", model?.id || "", costParams);
+
+  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
+
+  const url = mediaUrl(result);
+  const { peaks, real } = useWaveform(url);
+  const { ref, playing, current, duration: playLength, toggle, seek } = useTransport(url);
+  const shownPeaks = peaks || (playLength ? placeholderPeaks(playLength) : null);
+  const progress = playLength > 0 ? Math.min(1, current / playLength) : 0;
+
+  const generate = useCallback(() => {
+    if (!model || !text.trim()) return;
+    submit("audio", model.id, {
+      endpoint: model.endpoint || model.id,
+      prompt: text.trim(),
+      ...(wantsVoice && voice ? { voice } : {}),
+      ...(wantsTone ? { stability, similarity_boost: similarity, speed } : {}),
+      ...(duration != null ? { duration } : {}),
+      ...(source?.url ? { audio_url: source.url } : {}),
+    });
+  }, [model, text, submit, wantsVoice, voice, wantsTone, stability, similarity, speed, duration, source]);
+
+  /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      {/* Sub-mode tabs */}
-      {isMobile ? (
-        <MobileChipScroller items={SUB_MODES.map(sm => ({ label: sm.label, value: sm.id }))} selectedValue={subMode} onSelect={setSubMode} />
-      ) : (
-        <div className="v6-segmented" style={{ marginBottom: 16 }}>
-          {SUB_MODES.map((sm) => {
-            const Icon = sm.icon; const active = subMode === sm.id;
-            return (
-              <button key={sm.id} className={`v6-segmented-tab${active ? " v6-active" : ""}`}
-                style={{ flex: 1, border: 0, background: active ? "var(--v6-surface)" : "transparent", padding: "9px 6px", borderRadius: 8, fontSize: 11, color: active ? "var(--v6-text)" : "var(--v6-muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}
-                onClick={() => setSubMode(sm.id)}>
-                <Icon /> {sm.label}
-              </button>
-            );
-          })}
-        </div>
+    <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+      <Field label="Job">
+        <Segmented
+          label="Audio job"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "speech", label: "Speech" },
+            { value: "sound", label: "Sound design" },
+          ]}
+        />
+      </Field>
+
+      <ModelPicker
+        models={available}
+        value={model?.id}
+        onSelect={setModelId}
+        loading={loadingModels}
+        label={isSpeech ? "Voice model" : "Sound model"}
+        emptyHint={
+          isSpeech
+            ? "No text-to-speech models in the catalog yet."
+            : "No sound models in the catalog yet."
+        }
+      />
+
+      {wantsVoice && (
+        <Field label="Voice" hint="Pick a timbre. Models that ship their own cast ignore this.">
+          <Chips
+            label="Voice"
+            scroll
+            value={voice}
+            onChange={(v) => setVoice(v === voice ? "" : v)}
+            options={VOICES.map((v) => ({ value: v.id, label: v.label, title: v.desc }))}
+          />
+        </Field>
       )}
 
-      {/* Music mode */}
-      {subMode === "music" && (
-        <>
-          <div className="v6-field">
-            <label className="v6-field-label">Style tags</label>
-            <div className="v6-field" style={{ marginBottom: 6 }}>
-              <div style={{ position: "relative" }}>
-                <IconSearch style={{ width: 12, height: 12, position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--v6-muted)" }} />
-                <input className="v6-input" style={{ paddingLeft: 26 }} value={styleSearch} onChange={(e) => setStyleSearch(e.target.value)} placeholder="Filter styles..." />
-              </div>
+      {wantsTone && (
+        <Group label="Delivery">
+          <Slider
+            label="Stability"
+            value={stability}
+            onChange={setStability}
+            min={0} max={1} step={0.05}
+            format={(n) => n.toFixed(2)}
+          />
+          <Slider
+            label="Similarity"
+            value={similarity}
+            onChange={setSimilarity}
+            min={0} max={1} step={0.05}
+            format={(n) => n.toFixed(2)}
+          />
+          <Slider
+            label="Speed"
+            value={speed}
+            onChange={setSpeed}
+            min={0.7} max={1.2} step={0.05}
+            format={(n) => `${n.toFixed(2)}×`}
+          />
+          <span className="hs-hint">
+            Low stability varies the read more. High similarity holds the voice closer to its
+            reference.
+          </span>
+        </Group>
+      )}
+
+      {durations.length > 0 && (
+        <Field label="Length" hint="Lengths this model offers.">
+          <Chips
+            label="Length"
+            value={duration}
+            onChange={setDuration}
+            options={durations.map((d) => ({ value: d, label: `${d}s` }))}
+          />
+        </Field>
+      )}
+
+      {!isSpeech && (
+        <Field label="Source track" hint="Optional. Attach a file to isolate, clean or re-shape.">
+          <Dropzone
+            value={null}
+            onChange={setSource}
+            accept="audio/*"
+            label={source ? "Replace the source track" : "Drop an audio file or browse"}
+            hint="MP3 or WAV"
+          />
+          {source && (
+            <div className="hs-row hs-row--between" style={{ marginTop: "var(--s-2)" }}>
+              <span className="hs-hint" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                {source.name || "Source track"}
+              </span>
+              <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => setSource(null)}>
+                Remove
+              </button>
             </div>
-            {isMobile ? (
-              <MobileChipScroller items={filteredStyles.map(s => ({ label: s, value: s }))} selectedValue={style} onSelect={setStyle} />
-            ) : (
-              <div className="v6-style-chip-grid">
-                {filteredStyles.map((s) => {
-                  const active = style.toLowerCase().includes(s.toLowerCase());
-                  const styleColors = { cinematic: "#c084fc", synthwave: "#f472b6", electronic: "#60a5fa", orchestral: "#fbbf24", ambient: "#65dca6", lofi: "#fb923c", "hip-hop": "#facc15", rock: "#ef4444", jazz: "#a78bfa", pop: "#f472b6", classical: "#94a3b8", trap: "#f87171", EDM: "#38bdf8" };
-                  const dotColor = styleColors[s] || "var(--v6-accent)";
-                  return (
-                    <button key={s} className={`v6-style-chip${active ? " v6-active" : ""}`} onClick={() => setStyle((prev) => { const parts = prev.split(",").map(p => p.trim()).filter(Boolean); const idx = parts.findIndex(p => p.toLowerCase() === s.toLowerCase()); if (idx >= 0) parts.splice(idx, 1); else parts.push(s); return parts.join(", "); })}>
-                      <span className="v6-style-dot" style={{ background: dotColor }} /> {s}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          )}
+        </Field>
+      )}
 
-          <div className="v6-field"><label className="v6-field-label">Title</label><input className="v6-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Give your track a name" /></div>
-          <div className="v6-field"><label className="v6-field-label">Lyrics / Prompt</label><textarea className="v6-textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Write lyrics or describe the music you want to create\u2026" /></div>
+      <Group label="This render">
+        <Specs
+          rows={[
+            { k: "Job", v: isSpeech ? "Speech" : "Sound" },
+            { k: "Model", v: model?.displayName || model?.name },
+            { k: "Voice", v: wantsVoice ? (VOICES.find((v) => v.id === voice)?.label || "Model default") : null },
+            { k: "Len", v: duration != null ? `${duration}s` : null },
+            { k: "Src", v: source ? "Attached" : null },
+          ]}
+        />
+      </Group>
+    </div>
+  );
 
-          <div className="v6-field">
-            <label className="v6-field-label">Vocal Gender</label>
-            <div className="v6-segmented">
-              {[{ id: "female", label: "Female", icon: "v6-gender-female" }, { id: "male", label: "Male", icon: "v6-gender-male" }].map((g) => (
-                <button key={g.id} className={vocalGender === g.id ? "v6-active" : ""} onClick={() => setVocalGender(g.id)} disabled={instrumental} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, flex: 1 }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"><circle cx="12" cy="8" r="5"/>{g.id === "female" ? <><line x1="12" y1="13" x2="12" y2="22"/><line x1="9" y1="17" x2="15" y2="17"/></> : <><line x1="12" y1="13" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></>}</svg>
-                  {g.label}
+  /* ── Body ─────────────────────────────────────────────────────────────── */
+  const settings = [
+    model?.displayName || model?.name,
+    wantsVoice && voice ? VOICES.find((v) => v.id === voice)?.label : null,
+    duration != null ? `${duration}s` : null,
+  ].filter(Boolean).join(" · ");
+
+  const body = (
+    <div className="st-wave__body">
+      {error && (
+        <p className="hs-notice hs-notice--fault" role="alert">
+          {error} Adjust the settings and run it again, or pick another model.
+        </p>
+      )}
+
+      <div className="hs-row hs-row--between">
+        <span className="hs-eyebrow">
+          {generating ? "Rendering" : url ? "Generated" : isSpeech ? "Speech" : "Sound design"}
+        </span>
+        <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+          {generating
+            ? `${String(stage || "working").replace(/_/g, " ")} · ${clock(elapsed)}`
+            : settings || "No model selected"}
+        </span>
+      </div>
+
+      <Waveform
+        peaks={shownPeaks}
+        progress={progress}
+        onSeek={url ? seek : undefined}
+        muted={!url}
+        label={url ? "Generated audio waveform" : "Empty waveform"}
+      />
+
+      <Transport
+        playing={playing}
+        current={current}
+        duration={playLength}
+        onToggle={toggle}
+        onSeek={seek}
+        disabled={!url}
+      />
+
+      {url && !real && (
+        <span className="hs-hint" style={{ textAlign: "center" }}>
+          The waveform is an estimate — this browser was not allowed to read the file to draw its
+          peaks. Playback, the playhead and the timecode are exact.
+        </span>
+      )}
+
+      {/* The element the transport drives. No `crossOrigin` — asking for CORS
+          on a host that does not send it would block playback outright. */}
+      <audio ref={ref} src={url || undefined} preload="metadata" style={{ display: "none" }} />
+
+      {url ? (
+        <div className="hs-row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
+          <a className="hs-btn hs-btn--sm" href={url} download target="_blank" rel="noopener noreferrer">
+            <IcDownload className="hs-icon-sm" /> Download
+          </a>
+          <a className="hs-btn hs-btn--ghost hs-btn--sm" href={url} target="_blank" rel="noopener noreferrer">
+            <IcExternal className="hs-icon-sm" /> Open
+          </a>
+          <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={reset}>
+            <IcRefresh className="hs-icon-sm" /> Start over
+          </button>
+          <span className="hs-mono" style={{ marginLeft: "auto", fontSize: 10, color: "var(--tx-mute)" }}>
+            {result?.creditsUsed != null ? `${result.creditsUsed} cr` : ""}
+            {result?.elapsed != null ? ` · ${result.elapsed}s` : ""}
+          </span>
+        </div>
+      ) : (
+        !generating && (
+          <div className="hs-empty">
+            <span className="hs-empty__mark"><IcMic /></span>
+            <h3>{isSpeech ? "Write the line to be spoken" : "Describe the sound"}</h3>
+            <p>
+              {isSpeech
+                ? "Punctuation is direction: commas breathe, full stops land. Pick a voice on the left, then write the script below."
+                : "Name the object, the space and the tail. \"Door closing in a stone corridor\" beats \"nice door sound\"."}
+            </p>
+            <div className="hs-chips" style={{ justifyContent: "center", marginTop: "var(--s-2)" }}>
+              {(isSpeech ? SPEECH_EXAMPLES : SOUND_EXAMPLES).map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  className="hs-chip"
+                  style={{ fontFamily: "var(--ff-ui)", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis" }}
+                  title={e}
+                  onClick={() => setText(e)}
+                >
+                  {e.length > 44 ? `${e.slice(0, 44)}…` : e}
                 </button>
               ))}
             </div>
           </div>
-
-          <button className="v6-toggle" onClick={() => setInstrumental(!instrumental)} style={{ marginBottom: 12 }}>
-            <div className={`v6-toggle-track${instrumental ? " v6-on" : ""}`}><div className="v6-toggle-thumb" /></div>
-            <span className="v6-toggle-label">Instrumental only</span>
-          </button>
-
-          <div className="v6-field"><label className="v6-field-label">Negative tags</label><input className="v6-input" value={negativeTags} onChange={(e) => setNegativeTags(e.target.value)} placeholder="Tags to avoid" /></div>
-        </>
-      )}
-
-      {/* TTS mode */}
-      {subMode === "tts" && (
-        <>
-          {currentModel.hasVoice && (
-            <div className="v6-field">
-              <label className="v6-field-label">Voice</label>
-              {isMobile ? (
-                <MobileChipScroller items={VOICES.map(v => ({ label: `${v.name} \u2014 ${v.desc}`, value: v.id }))} selectedValue={voice} onSelect={setVoice} />
-              ) : (
-                <div className="v6-voice-grid" style={{ marginTop: 6 }}>
-                  {VOICES.map((v) => {
-                    const active = voice === v.id;
-                    return (
-                      <div key={v.id} className={`v6-voice-card${active ? " v6-active" : ""}`} onClick={() => setVoice(v.id)}>
-                        <button className="v6-voice-play" onClick={(e) => { e.stopPropagation(); }}><IconPlay /></button>
-                        <div>
-                          <div className="v6-voice-name">{v.name}</div>
-                          <div className="v6-voice-desc">{v.desc}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          <div className="v6-field"><label className="v6-field-label">Text to speak</label><textarea className="v6-textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="Enter the text you want to turn into speech\u2026" /></div>
-
-          {currentModel.hasStability && (
-            <div className="v6-field">
-              <div className="v6-range-row"><span className="v6-muted v6-tiny">Stability</span><span className="v6-mono v6-tiny">{stability.toFixed(2)}</span></div>
-              <input type="range" min={0} max={1} step={0.05} value={stability} onChange={(e) => setStability(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--v6-accent)" }} />
-            </div>
-          )}
-          {currentModel.hasSimilarity && (
-            <div className="v6-field">
-              <div className="v6-range-row"><span className="v6-muted v6-tiny">Similarity</span><span className="v6-mono v6-tiny">{similarity.toFixed(2)}</span></div>
-              <input type="range" min={0} max={1} step={0.05} value={similarity} onChange={(e) => setSimilarity(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--v6-accent)" }} />
-            </div>
-          )}
-          {currentModel.hasSpeed && (
-            <div className="v6-field">
-              <div className="v6-range-row"><span className="v6-muted v6-tiny">Speed</span><span className="v6-mono v6-tiny">{speed.toFixed(2)}</span></div>
-              <input type="range" min={0.7} max={1.2} step={0.05} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--v6-accent)" }} />
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Tools mode */}
-      {subMode === "tools" && (
-        <div className="v6-field">
-          <label className="v6-field-label">Audio file to isolate</label>
-          <label className="v6-upload-drop"><input type="file" accept="audio/*" onChange={handleUpload} style={{ display: "none" }} /><IconUpload />{audioUrl ? "File loaded \u2014 tap to change" : "Choose audio file"}</label>
-          {audioUrl && <div style={{ fontSize: 11, color: "var(--v6-good)", marginTop: 4 }}>Loaded \u2713</div>}
-        </div>
-      )}
-
-      {/* Duration slider */}
-      {subMode !== "tools" && (
-        <div className="v6-field">
-          {isMobile && (
-            <MobileChipScroller
-              items={[
-                { label: "15s", value: 15 }, { label: "30s", value: 30 }, { label: "45s", value: 45 },
-                { label: "60s", value: 60 }, { label: "90s", value: 90 }, { label: "120s", value: 120 },
-                { label: "180s", value: 180 }, { label: "300s", value: 300 },
-              ]}
-              selectedValue={duration}
-              onSelect={(v) => setDuration(v)}
-            />
-          )}
-          <div className="v6-range-row">
-            <span className="v6-muted" style={{ fontSize: 11 }}>Duration</span>
-            <span className="v6-mono" style={{ fontSize: 11, fontWeight: 600 }}>{duration}s</span>
-          </div>
-          <div className="v6-timeline-bar">
-            <input type="range" min={5} max={durationMax} step={5} value={duration} onChange={(e) => setDuration(Number(e.target.value))} style={{ flex: 1, accentColor: "var(--v6-accent)" }} />
-          </div>
-          <div className="v6-timeline-ticks">
-            {Array.from({ length: 5 }).map((_, i) => (<span key={i}>{Math.round(durationMax * (i / 4))}s</span>))}
-          </div>
-        </div>
+        )
       )}
     </div>
   );
 
-  /* ── Center ── */
-  const centerContent = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        {loading ? (
-          <StageArea generating={true} stage={genStage} model={currentModel.name} onCancel={handleNew} />
-        ) : result ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24, padding: "40px 20px", flex: 1 }}>
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }} style={{ width: "100%", maxWidth: 460 }}>
-              {/* Waveform visualization */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 16 }}>
-                <div className="v6-waveform">
-                  {Array.from({ length: 10 }).map((_, i) => (<div key={i} className="v6-wave-bar" />))}
-                </div>
-              </div>
+  return (
+    <div className="st-wave">
+      <aside className="st-wave__controls" aria-label="Settings">{controls}</aside>
 
-              <div style={{ borderRadius: 12, overflow: "hidden" }}>
-                <audio controls style={{ width: "100%", borderRadius: 10 }} src={result?.url || result?.outputUrl || result} />
-              </div>
+      <div className="st-wave__main">
+        {body}
 
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center", marginTop: 16 }}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{result?.name || title || "Generated audio"}</div>
-                <div style={{ fontSize: 12, color: "var(--v6-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                  <IconBolt />{result?.creditsUsed ?? cost ?? "\u2014"} credits <span style={{ margin: "0 4px", opacity: 0.2 }}>\u00b7</span> <IconClock />{elapsed}s
-                </div>
-                <div style={{ fontSize: 11, color: "var(--v6-muted)" }}>{currentModel.name} \u00b7 {currentModel.provider}</div>
-              </div>
+        <div className="st-panel-tabs">
+          <button type="button" className="hs-btn hs-btn--sm" onClick={() => setSheet(true)}>
+            <IcSettings className="hs-icon-sm" /> Settings
+          </button>
+        </div>
 
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-                <button className="v6-btn v6-primary" onClick={handleDownload}><IconDownload /> Download</button>
-                <button className="v6-btn" onClick={handleNew}><IconRefresh /> New</button>
-              </div>
-            </motion.div>
-          </div>
-        ) : (
-          <StageArea toolLabel="Audio Studio"
-            toolDesc={subMode === "tts" ? "Generate speech and voiceovers with natural-sounding TTS." : subMode === "tools" ? "Isolate vocals or process audio files." : "Generate music, songs, and soundtracks from a prompt."}
-            toolIcon={<IconMusic />}
-            suggestions={AUDIO_SUGGESTIONS}
-            onSuggestionClick={(s) => setPrompt(s)}
-          />
-        )}
+        <Brief
+          value={text}
+          onChange={setText}
+          onSubmit={generate}
+          onCancel={cancel}
+          generating={generating}
+          stage={stage}
+          disabled={!model}
+          cost={cost || 0}
+          balance={balance}
+          affordable={affordable}
+          shortfall={shortfall}
+          maxChars={isSpeech ? 5000 : 600}
+          submitLabel={isSpeech ? "Speak" : "Render"}
+          placeholder={
+            isSpeech
+              ? "Write the script exactly as it should be read."
+              : "Describe the sound: the object, the space, the tail."
+          }
+        />
       </div>
 
-      <PromptDock value={prompt} onChange={setPrompt} onSubmit={handleGenerate} cost={cost} generating={loading} stage={genStage} icon="bolt" />
+      <Sheet open={sheet} onClose={() => setSheet(false)} title="Settings">
+        {controls}
+      </Sheet>
     </div>
   );
-
-  /* ── Inspector ── */
-  const inspector = (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      {isMobile ? (
-        <MobileModelCarousel models={subModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} />
-      ) : (
-        <ModelSelector models={subModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} label="Audio models" />
-      )}
-      {selectedModelId && (
-        <div className="v6-quote" style={{ marginTop: 14 }}>
-          <div className="v6-quote-row"><span className="v6-muted">Model</span><strong>{currentModel.name}</strong></div>
-          <div className="v6-quote-row"><span className="v6-muted">Provider</span><strong>{currentModel.provider}</strong></div>
-          {currentModel.speedTier && <div className="v6-quote-row"><span className="v6-muted">Speed</span><strong>{currentModel.speedTier === "premium" ? "Premium" : currentModel.speedTier === "fast" ? "Fast" : currentModel.speedTier}</strong></div>}
-          <div className="v6-section-rule" style={{ margin: "8px 0" }} />
-          <div className="v6-quote-row"><span className="v6-muted">Cost</span><strong><IconBolt /> {cost != null ? `${cost} credits` : "\u2014"}</strong></div>
-          {shortfall > 0 && <div style={{ fontSize: 11, color: "var(--v6-bad)", marginTop: 4, textAlign: "right" }}>Need {shortfall} more credits</div>}
-          {duration > 0 && <div className="v6-quote-row"><span className="v6-muted">Duration</span><strong>{duration}s</strong></div>}
-        </div>
-      )}
-      {prompt && (
-        <div style={{ marginTop: 12 }}>
-          <div className="v6-eyebrow">Prompt</div>
-          <div className="v6-quote" style={{ marginTop: 6, fontSize: 11, color: "var(--v6-muted)", lineHeight: 1.5 }}>{prompt}</div>
-        </div>
-      )}
-    </div>
-  );
-
-  return <StudioLayout controls={controls} inspector={inspector}>{centerContent}</StudioLayout>;
 }

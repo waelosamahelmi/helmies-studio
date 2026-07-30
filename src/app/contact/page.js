@@ -1,323 +1,245 @@
 "use client";
 
+/* ══════════════════════════════════════════════════════════════════════════
+   CONTACT
+   ──────────────────────────────────────────────────────────────────────────
+   There is no /api/contact route in this codebase — the previous version of
+   this page POSTed to one and every submission 404'd silently. So the form
+   is honest about what it does: it validates, picks the right inbox for the
+   topic, and hands a fully composed message to the user's mail client. The
+   raw addresses are on the page too, for anyone without one.
+   ══════════════════════════════════════════════════════════════════════════ */
+
 import { useState } from "react";
-import { motion } from "framer-motion";
+import Link from "next/link";
 import Navbar from "@/components/Navbar";
-import { IconArrowUpRight, IconMail, IconCheck, IconChevron } from "@/components/Icons";
-import { useIsMobile } from "@/lib/use-media-query";
+import Footer from "@/components/Footer";
+import { IcCheck, IcCopy, IcExternal, IcClock } from "@/components/studio/kit/Icons";
 
-const EASE = [0.32, 0.72, 0, 1];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const SUBJECTS = [
-  "General Inquiry",
-  "Billing",
-  "Technical Support",
-  "Feature Request",
-  "Other",
+/* Each topic goes to the inbox that can actually answer it. */
+const TOPICS = [
+  { id: "general",   label: "General question",  to: "hello@helmies.fi" },
+  { id: "billing",   label: "Billing or credits", to: "hello@helmies.fi" },
+  { id: "technical", label: "Something is broken", to: "hello@helmies.fi" },
+  { id: "feature",   label: "Feature request",   to: "hello@helmies.fi" },
+  { id: "privacy",   label: "Privacy or my data", to: "privacy@helmies.fi" },
+  { id: "legal",     label: "Legal",             to: "legal@helmies.fi" },
 ];
 
-function validateEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
+const DIRECT = [
+  { address: "hello@helmies.fi",   what: "Support, billing, everything else" },
+  { address: "privacy@helmies.fi", what: "Data access, deletion, GDPR requests" },
+  { address: "legal@helmies.fi",   what: "Terms, licensing, takedowns" },
+];
 
 export default function ContactPage() {
-  const isMobile = useIsMobile();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [subject, setSubject] = useState("");
+  const [topic, setTopic] = useState("");
   const [message, setMessage] = useState("");
   const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [submitError, setSubmitError] = useState("");
+  const [handed, setHanded] = useState(null);   // { to, subject, body }
+  const [copied, setCopied] = useState(false);
+
+  const clear = (key) => setErrors((p) => ({ ...p, [key]: "" }));
 
   const validate = () => {
     const errs = {};
-    if (!name.trim()) errs.name = "Name is required";
-    if (!email.trim()) {
-      errs.email = "Email is required";
-    } else if (!validateEmail(email)) {
-      errs.email = "Please enter a valid email address";
-    }
-    if (!subject) errs.subject = "Please select a subject";
-    if (!message.trim()) {
-      errs.message = "Message is required";
-    } else if (message.trim().length < 10) {
-      errs.message = "Message must be at least 10 characters";
-    }
+    if (!name.trim()) errs.name = "Tell us who you are.";
+    if (!email.trim()) errs.email = "We need an address to reply to.";
+    else if (!EMAIL_RE.test(email.trim())) errs.email = "That does not look like an email address.";
+    if (!topic) errs.topic = "Pick a topic so it reaches the right inbox.";
+    if (!message.trim()) errs.message = "Write your question.";
+    else if (message.trim().length < 10) errs.message = "A few more words will get you a better answer.";
     return errs;
   };
 
-  const handleSubmit = async (e) => {
+  const submit = (e) => {
     e.preventDefault();
-    setSubmitError("");
     const errs = validate();
     setErrors(errs);
-    if (Object.keys(errs).length > 0) return;
+    if (Object.keys(errs).length) return;
 
-    setLoading(true);
+    const picked = TOPICS.find((t) => t.id === topic);
+    const subject = `[${picked.label}] from ${name.trim()}`;
+    const body = `${message.trim()}\n\n—\n${name.trim()}\n${email.trim()}`;
+
+    setHanded({ to: picked.to, subject, body });
+    setCopied(false);
+    window.location.href =
+      `mailto:${picked.to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  const copy = async () => {
     try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), email: email.trim(), subject, message: message.trim() }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to send message. Please try again.");
-      }
-      setSubmitted(true);
-    } catch (err) {
-      setSubmitError(err.message || "Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
+      await navigator.clipboard.writeText(`To: ${handed.to}\nSubject: ${handed.subject}\n\n${handed.body}`);
+      setCopied(true);
+    } catch {
+      setCopied(false);
     }
   };
 
-  if (submitted) {
-    return (
-      <>
-        <Navbar />
-        <div className="grain" aria-hidden="true" />
-        <motion.div
-          className="page"
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, ease: EASE }}
-        >
-          <div className="page__head">
-            <div className="eyebrow mb-5">Contact</div>
-            <h1 className="page__title">
-              Get in <em>touch</em>
-            </h1>
-          </div>
-          <div className="v6-contact">
-            <div className="v6-contact-success">
-              <div className="v6-contact-success-icon">
-                <IconCheck />
-              </div>
-              <h2
-                style={{
-                  fontSize: "1.5rem",
-                  fontWeight: 700,
-                  letterSpacing: "-0.02em",
-                  marginBottom: "0.75rem",
-                }}
-              >
-                Message sent
-              </h2>
-              <p style={{ fontSize: "0.9rem", color: "rgba(242,242,247,0.55)", lineHeight: 1.6 }}>
-                Thank you for reaching out. We typically respond within 24 hours on business days.
-              </p>
-            </div>
-          </div>
-        </motion.div>
-      </>
-    );
-  }
-
   return (
     <>
+      <a className="hs-skip" href="#main">Skip to content</a>
       <Navbar />
-      <div className="grain" aria-hidden="true" />
 
-      <motion.div
-        className="page"
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, ease: EASE }}
-      >
-        <div className="page__head">
-          <div className="eyebrow mb-5">Contact</div>
-          <h1 className="page__title">
-            Get in <em>touch</em>
-          </h1>
-          <p className="page__sub">
-            Have a question or need help? Send us a message and we&rsquo;ll get back to you as
-            soon as possible.
+      <main id="main" className="hs-wrap hs-wrap--narrow hs-section--tight">
+        <header className="hs-head">
+          <span className="hs-eyebrow">Contact</span>
+          <h1 style={{ fontSize: "var(--t-2xl)" }}>Write to us</h1>
+          <p>
+            A person reads every message. Answers usually land within one working day.
+            Quick questions are often already covered in the{" "}
+            <Link href="/faq" style={{ color: "var(--filament-lit)", textDecoration: "underline", textUnderlineOffset: 3 }}>FAQ</Link>.
           </p>
-        </div>
+        </header>
 
-        <div className="v6-contact">
-          <form className="v6-contact-form" onSubmit={handleSubmit} noValidate>
-            {/* Name */}
-            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: isMobile ? "14px 16px" : "0.875rem 1rem" }}>
-              <label
-                htmlFor="contact-name"
-                style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(242,242,247,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}
-              >
-                Name
-              </label>
-              <input
-                id="contact-name"
-                type="text"
-                placeholder="Your name"
-                value={name}
-                onChange={(e) => { setName(e.target.value); setErrors((p) => ({ ...p, name: "" })); }}
-                autoComplete="name"
-                style={isMobile ? { fontSize: 16, minHeight: 44 } : {}}
-              />
-              {errors.name && <p className="v6-contact-error">{errors.name}</p>}
+        <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+          <section className="pg-panel" aria-labelledby="h-form">
+            <div className="pg-panel__head">
+              <h2 id="h-form">Compose a message</h2>
+              <span className="hs-badge"><IcClock className="hs-icon-sm" /> ~1 working day</span>
             </div>
 
-            {/* Email */}
-            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: isMobile ? "14px 16px" : "0.875rem 1rem" }}>
-              <label
-                htmlFor="contact-email"
-                style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(242,242,247,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}
-              >
-                Email
-              </label>
-              <input
-                id="contact-email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: "" })); }}
-                autoComplete="email"
-                style={isMobile ? { fontSize: 16, minHeight: 44 } : {}}
-              />
-              {errors.email && <p className="v6-contact-error">{errors.email}</p>}
-            </div>
-
-            {/* Subject */}
-            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: isMobile ? "14px 16px" : "0.875rem 1rem" }}>
-              <label
-                htmlFor="contact-subject"
-                style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(242,242,247,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}
-              >
-                Subject
-              </label>
-              <div style={{ position: "relative" }}>
-                <select
-                  id="contact-subject"
-                  value={subject}
-                  onChange={(e) => { setSubject(e.target.value); setErrors((p) => ({ ...p, subject: "" })); }}
-                  style={isMobile ? { minHeight: 44, fontSize: 16 } : {}}
-                >
-                  <option value="" disabled>
-                    Select a topic...
-                  </option>
-                  {SUBJECTS.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  style={{
-                    position: "absolute",
-                    right: "0.5rem",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    width: "1rem",
-                    height: "1rem",
-                    color: "rgba(242,242,247,0.3)",
-                    pointerEvents: "none",
-                  }}
-                >
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
-              </div>
-              {errors.subject && <p className="v6-contact-error">{errors.subject}</p>}
-            </div>
-
-            {/* Message */}
-            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: isMobile ? "14px 16px" : "0.875rem 1rem" }}>
-              <label
-                htmlFor="contact-message"
-                style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(242,242,247,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}
-              >
-                Message
-              </label>
-              <textarea
-                id="contact-message"
-                placeholder="Tell us how we can help..."
-                rows={5}
-                value={message}
-                onChange={(e) => { setMessage(e.target.value); setErrors((p) => ({ ...p, message: "" })); }}
-                style={isMobile ? { fontSize: 16 } : {}}
-              />
-              {errors.message && <p className="v6-contact-error">{errors.message}</p>}
-            </div>
-
-            {/* Submit Error */}
-            {submitError && (
-              <p className="v6-contact-error" style={{ textAlign: "center" }}>
-                {submitError}
-              </p>
-            )}
-
-            {/* Submit Button */}
-            <button
-              className="btn btn-primary"
-              type="submit"
-              disabled={loading}
-              style={{ alignSelf: "flex-start" }}
-            >
-              {loading ? (
-                <span
-                  className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"
-                  style={{ display: "inline-block", marginRight: "0.5rem" }}
-                />
-              ) : (
-                <>
-                  Send message
-                  <span className="btn__icon">
-                    <IconArrowUpRight />
-                  </span>
-                </>
+            <div className="pg-panel__body">
+              {handed && (
+                <div className="hs-notice hs-notice--signal" role="status">
+                  <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)", minWidth: 0 }}>
+                    <strong>Your mail app should have opened with the message ready to send.</strong>
+                    <span>
+                      If nothing happened, copy it and send it to{" "}
+                      <span className="hs-mono">{handed.to}</span> yourself.
+                    </span>
+                    <div className="hs-row">
+                      <button type="button" className="hs-btn hs-btn--sm" onClick={copy}>
+                        {copied ? <IcCheck className="hs-icon-sm" /> : <IcCopy className="hs-icon-sm" />}
+                        {copied ? "Copied" : "Copy the message"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
-            </button>
-          </form>
 
-          {/* Alternative Contact */}
-          <div className="v6-contact-alt">
-            <p
-              style={{
-                fontSize: "0.8rem",
-                fontWeight: 600,
-                color: "rgba(242,242,247,0.4)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-                marginBottom: "1rem",
-              }}
-            >
-              Or reach us directly
-            </p>
-            <div className="v6-contact-alt-row">
-              <IconMail />
-              <a
-                href="mailto:hello@helmies.fi"
-                style={{ color: "rgba(242,242,247,0.8)", textDecoration: "none" }}
-              >
-                hello@helmies.fi
-              </a>
+              <form onSubmit={submit} noValidate>
+                <div className="hs-field">
+                  <label className="hs-label" htmlFor="c-name">Your name</label>
+                  <input
+                    id="c-name"
+                    className="hs-input"
+                    type="text"
+                    value={name}
+                    onChange={(e) => { setName(e.target.value); clear("name"); }}
+                    autoComplete="name"
+                    required
+                    aria-invalid={errors.name ? "true" : undefined}
+                    aria-describedby={errors.name ? "c-name-error" : undefined}
+                  />
+                  {errors.name && <p className="hs-error" id="c-name-error">{errors.name}</p>}
+                </div>
+
+                <div className="hs-field">
+                  <label className="hs-label" htmlFor="c-email">Your email</label>
+                  <input
+                    id="c-email"
+                    className="hs-input"
+                    type="email"
+                    inputMode="email"
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); clear("email"); }}
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    required
+                    aria-invalid={errors.email ? "true" : undefined}
+                    aria-describedby={errors.email ? "c-email-error" : undefined}
+                  />
+                  {errors.email && <p className="hs-error" id="c-email-error">{errors.email}</p>}
+                </div>
+
+                <div className="hs-field">
+                  <label className="hs-label" htmlFor="c-topic">Topic</label>
+                  <select
+                    id="c-topic"
+                    className="hs-select"
+                    value={topic}
+                    onChange={(e) => { setTopic(e.target.value); clear("topic"); }}
+                    required
+                    aria-invalid={errors.topic ? "true" : undefined}
+                    aria-describedby={errors.topic ? "c-topic-error" : "c-topic-hint"}
+                  >
+                    <option value="" disabled>Choose one</option>
+                    {TOPICS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                  {errors.topic
+                    ? <p className="hs-error" id="c-topic-error">{errors.topic}</p>
+                    : <p className="hs-hint" id="c-topic-hint">
+                        {topic
+                          ? <>Goes to <span className="hs-mono">{TOPICS.find((t) => t.id === topic).to}</span>.</>
+                          : "Each topic has its own inbox."}
+                      </p>}
+                </div>
+
+                <div className="hs-field">
+                  <label className="hs-label" htmlFor="c-message">Message</label>
+                  <textarea
+                    id="c-message"
+                    className="hs-textarea"
+                    rows={6}
+                    value={message}
+                    onChange={(e) => { setMessage(e.target.value); clear("message"); }}
+                    required
+                    aria-invalid={errors.message ? "true" : undefined}
+                    aria-describedby={errors.message ? "c-message-error" : "c-message-hint"}
+                    placeholder="What happened, what you expected, and — if it is a generation problem — the model and the tool."
+                  />
+                  {errors.message
+                    ? <p className="hs-error" id="c-message-error">{errors.message}</p>
+                    : <p className="hs-hint" id="c-message-hint">
+                        <span className="hs-mono">{message.trim().length}</span> characters. Detail speeds up the answer.
+                      </p>}
+                </div>
+
+                <button type="submit" className="hs-btn hs-btn--primary hs-btn--lg" style={{ marginTop: "var(--s-5)" }}>
+                  Open in my mail app
+                  <IcExternal className="hs-icon-sm" />
+                </button>
+              </form>
             </div>
-            <div className="v6-contact-alt-row">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ width: "1rem", height: "1rem", color: "rgba(242,242,247,0.3)", flexShrink: 0 }}
-              >
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-              <span>We typically respond within 24 hours on business days.</span>
+          </section>
+
+          <section className="pg-panel" aria-labelledby="h-direct">
+            <div className="pg-panel__head">
+              <h2 id="h-direct">Straight to the inbox</h2>
             </div>
-          </div>
+            <div className="pg-panel__body">
+              <div>
+                {DIRECT.map((d) => (
+                  <div className="pg-kv" key={d.address}>
+                    <div>
+                      <div className="pg-kv__k">
+                        <a
+                          href={`mailto:${d.address}`}
+                          className="hs-mono"
+                          style={{ textDecoration: "underline", textUnderlineOffset: 3 }}
+                        >
+                          {d.address}
+                        </a>
+                      </div>
+                      <div className="pg-kv__sub">{d.what}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="hs-hint">Helmies Oy, Finland. We reply from the same address you write to.</p>
+            </div>
+          </section>
         </div>
-      </motion.div>
+      </main>
+
+      <Footer />
     </>
   );
 }

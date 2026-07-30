@@ -20,9 +20,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
-.env
-.env*.local
+# local env files — ignore every .env variant (.env.production, .env.staging, …)
+.env*
+!.env.example
 
 # typescript
 *.tsbuildinfo

@@ -1,13 +1,22 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import Navbar from "@/components/Navbar";
-import { IconSearch, IconChevron } from "@/components/Icons";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileChipScroller } from "@/components/studio/mobile";
+/* ══════════════════════════════════════════════════════════════════════════
+   FAQ
+   ──────────────────────────────────────────────────────────────────────────
+   Search + category filter over one flat list, rendered as a .pg-faq
+   accordion. Answers that quote plan sizes read them from plan-constants,
+   so the FAQ cannot drift from what the checkout actually sells.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const EASE = [0.32, 0.72, 0, 1];
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import { IcSearch, IcChevron, IcClose } from "@/components/studio/kit/Icons";
+import { SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
+
+const NF = new Intl.NumberFormat("en-US");
+const n = (v) => NF.format(v);
 
 const CATEGORIES = ["All", "General", "Credits & Pricing", "Generation", "Technical", "Account"];
 
@@ -42,7 +51,7 @@ const FAQS = [
     category: "Credits & Pricing",
     question: "What subscription plans are available?",
     answer:
-      "We offer four subscription tiers: Free (10 credits/mo), Starter (500 credits/mo at €24/mo), Studio (1,500 credits/mo at €49/mo), and Pro (5,000 credits/mo at €99/mo). Yearly billing saves you 20%. Every plan gives you access to all 70+ models and all 13 studios.",
+      `We offer four subscription tiers: Free (${n(SUBSCRIPTION_CREDITS.free)} credits/mo), Starter (${n(SUBSCRIPTION_CREDITS.starter)} credits/mo at €24/mo), Studio (${n(SUBSCRIPTION_CREDITS.studio)} credits/mo at €49/mo), and Pro (${n(SUBSCRIPTION_CREDITS.pro)} credits/mo at €99/mo). Yearly billing saves you 20%. Every plan gives you access to all 70+ models and all 13 studios.`,
   },
   {
     category: "Credits & Pricing",
@@ -121,176 +130,170 @@ const FAQS = [
   },
 ];
 
-export default function FAQPage() {
-  const isMobile = useIsMobile();
-  const [search, setSearch] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
-  const [openItems, setOpenItems] = useState(new Set());
+const COUNTS = FAQS.reduce((acc, f) => ({ ...acc, [f.category]: (acc[f.category] || 0) + 1 }), {});
+
+const SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQS.map((f) => ({
+    "@type": "Question",
+    name: f.question,
+    acceptedAnswer: { "@type": "Answer", text: f.answer },
+  })),
+};
+
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+export default function FaqPage() {
+  const [query, setQuery] = useState("");
+  const [category, setCategory] = useState("All");
+  const [open, setOpen] = useState(() => new Set());
 
   const filtered = useMemo(() => {
-    return FAQS.filter((faq) => {
-      if (activeCategory !== "All" && faq.category !== activeCategory) return false;
-      if (search.trim()) {
-        const q = search.toLowerCase();
-        return (
-          faq.question.toLowerCase().includes(q) ||
-          faq.answer.toLowerCase().includes(q)
-        );
-      }
-      return true;
+    const q = query.trim().toLowerCase();
+    return FAQS.filter((f) => {
+      if (category !== "All" && f.category !== category) return false;
+      if (!q) return true;
+      return f.question.toLowerCase().includes(q) || f.answer.toLowerCase().includes(q);
     });
-  }, [search, activeCategory]);
+  }, [query, category]);
 
-  const toggleItem = useCallback((index) => {
-    setOpenItems((prev) => {
+  const toggle = (key) =>
+    setOpen((prev) => {
       const next = new Set(prev);
-      if (next.has(index)) {
-        next.delete(index);
-      } else {
-        next.add(index);
-      }
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
-  }, []);
 
-  const counts = useMemo(() => {
-    const c = {};
-    FAQS.forEach((faq) => {
-      c[faq.category] = (c[faq.category] || 0) + 1;
-    });
-    return c;
-  }, []);
+  const filtering = query.trim() !== "" || category !== "All";
 
   return (
     <>
+      <a className="hs-skip" href="#main">Skip to content</a>
       <Navbar />
-      <div className="grain" aria-hidden="true" />
 
-      <motion.div
-        className="page"
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.7, ease: EASE }}
-      >
-        <div className="page__head">
-          <div className="eyebrow mb-5">Help Center</div>
-          <h1 className="page__title">
-            Frequently <em>Asked</em> Questions
-          </h1>
-          <p className="page__sub">
-            Find answers to common questions about Helmies Studio.
+      <main id="main" className="hs-wrap hs-wrap--narrow hs-section--tight">
+        <header className="hs-head">
+          <span className="hs-eyebrow">Help</span>
+          <h1 style={{ fontSize: "var(--t-2xl)" }}>Frequently asked questions</h1>
+          <p>
+            How credits, models, files and billing actually work. If your question is not
+            here, <Link href="/contact" style={{ color: "var(--filament-lit)", textDecoration: "underline", textUnderlineOffset: 3 }}>write to us</Link>.
           </p>
-        </div>
+        </header>
 
-        {/* Search */}
-        <div className="v6-faq-search">
-          <div className="field" style={{ maxWidth: isMobile ? "100%" : 560, margin: "0 auto" }}>
-            <span className="field__icon">
-              <IconSearch />
-            </span>
-            <input
-              type="text"
-              placeholder="Search FAQ..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={isMobile ? { height: 44, fontSize: 14 } : {}}
-            />
+        <div className="hs-stack" style={{ marginBottom: "var(--s-6)" }}>
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="faq-search">Search</label>
+            <div style={{ position: "relative" }}>
+              <IcSearch
+                className="hs-icon-sm"
+                style={{
+                  position: "absolute", left: "var(--s-3)", top: "50%",
+                  transform: "translateY(-50%)", color: "var(--tx-mute)", pointerEvents: "none",
+                }}
+              />
+              <input
+                id="faq-search"
+                className="hs-input"
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="credits, resolution, refund…"
+                autoComplete="off"
+                style={{ paddingLeft: "var(--s-8)" }}
+              />
+            </div>
+          </div>
+
+          <div className="hs-chips" role="group" aria-label="Filter by category">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className="hs-chip"
+                aria-pressed={category === c}
+                onClick={() => setCategory(c)}
+              >
+                {c}
+                {c !== "All" && <span className="hs-mute">{COUNTS[c] || 0}</span>}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Category pills */}
-        {isMobile ? (
-          <div style={{ marginBottom: 16 }}>
-            <MobileChipScroller
-              items={CATEGORIES.map((cat) => ({ label: `${cat}${cat !== "All" ? ` (${counts[cat] || 0})` : ""}`, value: cat }))}
-              selectedValue={activeCategory}
-              onSelect={setActiveCategory}
-            />
+        <p className="hs-hint" role="status" style={{ marginBottom: "var(--s-3)" }}>
+          <span className="hs-mono">{filtered.length}</span> of <span className="hs-mono">{FAQS.length}</span> questions
+        </p>
+
+        {filtered.length === 0 ? (
+          <div className="hs-empty">
+            <span className="hs-empty__mark"><IcSearch /></span>
+            <h2 style={{ fontSize: "var(--t-lg)", fontWeight: 600 }}>Nothing matches that</h2>
+            <p>Clear the filters to see all {FAQS.length} questions, or ask us directly.</p>
+            <div className="hs-row">
+              <button
+                type="button"
+                className="hs-btn"
+                onClick={() => { setQuery(""); setCategory("All"); }}
+              >
+                <IcClose className="hs-icon-sm" />
+                Clear filters
+              </button>
+              <Link href="/contact" className="hs-btn hs-btn--primary">Ask us</Link>
+            </div>
           </div>
         ) : (
-        <div className="v6-faq-categories" style={{ justifyContent: "center" }}>
-          {CATEGORIES.map((cat) => (
-            <button
-              key={cat}
-              className={`pill ${activeCategory === cat ? "pill--active" : ""}`}
-              onClick={() => setActiveCategory(cat)}
-            >
-              {cat}
-              {cat !== "All" && (
-                <span className="pill__count">{counts[cat] || 0}</span>
-              )}
-            </button>
-          ))}
-        </div>
+          <div className="pg-faq">
+            {filtered.map((f) => {
+              const id = slug(f.question);
+              const isOpen = open.has(id);
+              return (
+                <div key={id} className="pg-faq__item">
+                  <h2 style={{ margin: 0 }}>
+                    <button
+                      type="button"
+                      className="pg-faq__q"
+                      aria-expanded={isOpen}
+                      aria-controls={`faq-a-${id}`}
+                      id={`faq-q-${id}`}
+                      onClick={() => toggle(id)}
+                    >
+                      <span>{f.question}</span>
+                      <IcChevron />
+                    </button>
+                  </h2>
+                  {isOpen && (
+                    <div className="pg-faq__a" id={`faq-a-${id}`} role="region" aria-labelledby={`faq-q-${id}`}>
+                      {f.answer}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
 
-        {/* FAQ items */}
-        <div className="v6-faq">
-          {filtered.length === 0 ? (
-            <div className="v6-faq-empty">
-              <svg
-                className="v6-faq-empty-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="11" cy="11" r="7" />
-                <path d="M21 21l-4.5-4.5" />
-              </svg>
-              <p>No FAQ items match your search.</p>
-            </div>
-          ) : (
-            filtered.map((faq, i) => {
-              const isOpen = openItems.has(i);
-              return (
-                <motion.div
-                  key={i}
-                  className={`v6-faq-item ${isOpen ? "v6-faq-item--open" : ""}`}
-                  initial={{ opacity: 0, y: 16 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-20px" }}
-                  transition={{ duration: 0.5, ease: EASE, delay: i * 0.03 }}
-                >
-                  <button
-                    className="v6-faq-question"
-                    onClick={() => toggleItem(i)}
-                    aria-expanded={isOpen}
-                  >
-                    <span>{faq.question}</span>
-                    <svg
-                      className="v6-faq-chevron"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M6 9l6 6 6-6" />
-                    </svg>
-                  </button>
-                  <AnimatePresence initial={false}>
-                    {isOpen && (
-                      <motion.div
-                        className="v6-faq-answer"
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.35, ease: EASE }}
-                      >
-                        <div className="v6-faq-answer-inner">{faq.answer}</div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              );
-            })
-          )}
-        </div>
-      </motion.div>
+        {filtering && filtered.length > 0 && (
+          <button
+            type="button"
+            className="hs-btn hs-btn--ghost hs-btn--sm"
+            style={{ marginTop: "var(--s-5)" }}
+            onClick={() => { setQuery(""); setCategory("All"); }}
+          >
+            <IcClose className="hs-icon-sm" />
+            Clear filters
+          </button>
+        )}
+      </main>
+
+      <Footer />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(SCHEMA) }}
+      />
     </>
   );
 }

@@ -1,285 +1,159 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
-  IconMegaphone, IconMic, IconUsers, IconCrown, IconArrowUpRight, IconMenu, IconClose, IconBolt, IconPlay, IconDownload,
-} from "@/components/Icons";
-import { useIsMobile } from "@/lib/use-media-query";
+import { Sheet } from "@/components/studio/kit/Sheet";
+import { byGroup } from "@/components/studio/kit/tools";
+import { IcMenu, IcBolt, IcChevronRight } from "@/components/studio/kit/Icons";
 
-const TOOLS = [
-  { id: "image", label: "Image", desc: "Text-to-image & image-to-image", Icon: IconImage, color: "#FF1B6B" },
-  { id: "video", label: "Video", desc: "Text, image & video-to-video", Icon: IconVideo, color: "#7C3AED" },
-  { id: "audio", label: "Audio", desc: "Music, voice & sound effects", Icon: IconMusic, color: "#00E5FF" },
-  { id: "cinema", label: "Cinema", desc: "Cinematic camera controls", Icon: IconCamera, color: "#FF6B35" },
-  { id: "vibe-motion", label: "Motion", desc: "Motion graphics & remix", Icon: IconFilm, color: "#FFD166" },
-  { id: "clipping", label: "Clipping", desc: "AI highlight extraction", Icon: IconCut, color: "#00E68A" },
-  { id: "marketing", label: "Marketing", desc: "UGC video ads & product shots", Icon: IconMegaphone, color: "#FF1B6B" },
-  { id: "canvas", label: "Canvas", desc: "Visual composition & mask editor", Icon: IconImage, color: "#FF6B35" },
-  { id: "director", label: "Director", desc: "Multi-shot video production", Icon: IconPlay, color: "#E040FB" },
-  { id: "assets", label: "Assets", desc: "Media library & management", Icon: IconDownload, color: "#00E68A" },
-  { id: "lipsync", label: "Lip Sync", desc: "Sync audio to portrait or video", Icon: IconMic, color: "#7C3AED" },
-  { id: "body-swap", label: "Body Swap", desc: "Recast faces into any scene", Icon: IconUsers, color: "#00E5FF" },
-  { id: "influencer", label: "Influencer", desc: "Build AI personas", Icon: IconCrown, color: "#FF6B35" },
+const LINKS = [
+  { href: "/studio",    label: "Studio" },
+  { href: "/models",    label: "Models" },
+  { href: "/templates", label: "Templates" },
+  { href: "/gallery",   label: "Gallery" },
+  { href: "/pricing",   label: "Pricing" },
 ];
-
-const NAV_LINKS = [
-  { name: "Studio", href: "/studio" },
-  { name: "Templates", href: "/templates" },
-  { name: "Models", href: "/models" },
-  { name: "Gallery", href: "/gallery" },
-  { name: "Pricing", href: "/pricing" },
-];
-
-const EASE = [0.32, 0.72, 0, 1];
 
 export default function Navbar() {
-  const isMobile = useIsMobile();
   const pathname = usePathname();
-  const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [megaOpen, setMegaOpen] = useState(false);
+  const [stuck, setStuck] = useState(false);
+  const [open, setOpen] = useState(false);
   const [session, setSession] = useState(null);
-  const megaRef = useRef(null);
-  const touchStartY = useRef(0);
-  const sheetRef = useRef(null);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 24);
+    const onScroll = () => setStuck(window.scrollY > 8);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   useEffect(() => {
-    fetch("/api/auth/session").then((r) => r.json()).then(setSession).catch(() => {});
+    let dead = false;
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((d) => { if (!dead) setSession(d); })
+      .catch(() => {});
+    return () => { dead = true; };
   }, [pathname]);
 
-  const isAdmin = session?.user?.role === "admin";
-  const isAuthed = !!session?.user;
+  useEffect(() => { setOpen(false); }, [pathname]);
 
-  useEffect(() => {
-    const handler = (e) => { if (megaRef.current && !megaRef.current.contains(e.target)) setMegaOpen(false); };
-    window.addEventListener("click", handler);
-    return () => window.removeEventListener("click", handler);
-  }, []);
-
-  useEffect(() => {
-    setMegaOpen(false);
-    setMobileOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    document.body.style.overflow = mobileOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [mobileOpen]);
-
-  // Swipe-to-dismiss touch handlers for mobile sheet
-  const handleSheetTouchStart = useCallback((e) => {
-    touchStartY.current = e.touches[0].clientY;
-  }, []);
-
-  const handleSheetTouchMove = useCallback((e) => {
-    if (touchStartY.current === 0) return;
-    const deltaY = e.touches[0].clientY - touchStartY.current;
-    if (deltaY > 80) {
-      setMobileOpen(false);
-      touchStartY.current = 0;
-    }
-  }, []);
-
-  const handleSheetTouchEnd = useCallback(() => {
-    touchStartY.current = 0;
-  }, []);
+  const authed = !!session?.user;
+  const admin = session?.user?.role === "admin";
+  const groups = byGroup();
 
   return (
     <>
-      <nav className={`nav ${scrolled ? "nav--scrolled" : ""}`} ref={megaRef}>
-        <div className="nav__inner">
-          {!pathname?.startsWith("/studio") ? (
-            <Link href="/" className="nav__logo" aria-label="Helmies Studio home">
-              <img src="/ico.svg" alt="" className="nav__logo-mark" />
-              <span className="nav__logo-text">Studio</span>
-            </Link>
-          ) : (
-            <span className="nav__logo-spacer" aria-hidden="true" />
-          )}
+      <header className={`pg-nav${stuck ? " is-stuck" : ""}`}>
+        <nav className="pg-nav__in" aria-label="Main">
+          <Link href="/" className="pg-logo" aria-label="Helmies Studio home">
+            <img src="/ico.svg" alt="" width={24} height={24} />
+            <strong>Helmies</strong>
+            <span>Studio</span>
+          </Link>
 
-          <div className="nav__links">
-            <div className="relative" onMouseEnter={() => setMegaOpen(true)}>
-              <button
-                className={`nav__link ${pathname?.startsWith("/studio") ? "nav__link--active" : ""}`}
-                onClick={() => setMegaOpen((v) => !v)}
-              >
-                Studio
-              </button>
-              <AnimatePresence>
-                {megaOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                    transition={{ duration: 0.4, ease: EASE }}
-                    className="nav__mega"
-                    onMouseLeave={() => setMegaOpen(false)}
-                  >
-                    <div className="flex items-center justify-between mb-5 pb-4 border-b border-white/10 px-3">
-                      <div>
-                        <h3 className="text-base font-bold tracking-tight">13 Helmies Studios</h3>
-                        <p className="text-[11px] text-white/40 mt-1">One subscription. Every studio. Zero filters.</p>
-                      </div>
-                      <Link href="/studio" className="btn btn-sm btn-primary">
-                        Open Studio
-                        <span className="btn__icon"><IconArrowUpRight /></span>
-                      </Link>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1 px-1">
-                      {TOOLS.map(({ id, label, desc, Icon, color }) => (
-                        <Link
-                          key={id}
-                          href={`/studio/${id}`}
-                          className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/[0.04] transition-colors duration-500"
-                          style={{ transitionTimingFunction: "cubic-bezier(0.32,0.72,0,1)" }}
-                        >
-                          <span
-                            className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                            style={{ background: `${color}12`, color, border: `1px solid ${color}28` }}
-                          >
-                            <Icon />
-                          </span>
-                          <div className="min-w-0">
-                            <div className="text-[13px] font-semibold text-white truncate">{label}</div>
-                            <div className="text-[11px] text-white/40 truncate">{desc}</div>
-                          </div>
-                        </Link>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-            {NAV_LINKS.slice(1).map((l) => (
+          <div className="pg-nav__links">
+            {LINKS.map((l) => (
               <Link
-                key={l.name}
+                key={l.href}
                 href={l.href}
-                className={`nav__link ${pathname === l.href ? "nav__link--active" : ""}`}
+                className="pg-nav__link"
+                aria-current={pathname === l.href || pathname?.startsWith(`${l.href}/`) ? "page" : undefined}
               >
-                {l.name}
+                {l.label}
               </Link>
             ))}
           </div>
 
-          <div className="nav__actions">
-            {isAdmin && (
-              <Link href="/admin" className="nav__link hidden md:inline-flex" style={{ color: "#FF1B6B" }}>
+          <div className="pg-nav__actions">
+            {admin && (
+              <Link href="/admin" className="pg-nav__link pg-nav__desk" style={{ color: "var(--filament-lit)" }}>
                 Admin
               </Link>
             )}
-            {isAuthed ? (
-              <Link href="/studio" className="btn btn-sm btn-primary hidden md:inline-flex">
-                Studio
-                <span className="btn__icon"><IconBolt /></span>
-              </Link>
+
+            {authed ? (
+              <>
+                <Link href="/settings" className="pg-nav__link pg-nav__desk">Account</Link>
+                <Link href="/studio" className="hs-btn hs-btn--primary hs-btn--sm">
+                  Open studio
+                  <IcBolt className="hs-icon-sm" />
+                </Link>
+              </>
             ) : (
               <>
-                <Link href="/login" className="nav__link hidden md:inline-flex">Sign In</Link>
-                <Link href="/login" className="btn btn-sm btn-primary hidden md:inline-flex">
+                <Link href="/login" className="pg-nav__link pg-nav__desk">Sign in</Link>
+                <Link href="/login?new=1" className="hs-btn hs-btn--primary hs-btn--sm">
                   Start free
-                  <span className="btn__icon"><IconBolt /></span>
                 </Link>
               </>
             )}
+
             <button
-              className="nav__burger md:hidden"
-              onClick={() => setMobileOpen(true)}
+              type="button"
+              className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon pg-nav__burger"
+              onClick={() => setOpen(true)}
               aria-label="Open menu"
-              aria-expanded={mobileOpen}
+              aria-expanded={open}
             >
-              <IconMenu />
+              <IcMenu className="hs-icon" />
             </button>
           </div>
-        </div>
-      </nav>
+        </nav>
+      </header>
 
-      {/* Mobile slide-up sheet */}
-      <AnimatePresence>
-        {mobileOpen && (
-          <>
-            <motion.div
-              className="nav__backdrop md:hidden"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              onClick={() => setMobileOpen(false)}
-            />
-            <motion.div
-              className="nav__sheet md:hidden"
-              ref={sheetRef}
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ duration: 0.45, ease: EASE }}
-              onClick={(e) => e.stopPropagation()}
-              onTouchStart={handleSheetTouchStart}
-              onTouchMove={handleSheetTouchMove}
-              onTouchEnd={handleSheetTouchEnd}
-            >
-              <div className="nav__sheet-handle" />
-              <div
-                className="nav__sheet-close"
-                onClick={() => setMobileOpen(false)}
-                style={isMobile ? { width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center" } : {}}
+      <Sheet open={open} onClose={() => setOpen(false)} title="Menu">
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-5)" }}>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {LINKS.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={() => setOpen(false)}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  minHeight: 48, padding: "0 var(--s-1)",
+                  borderBottom: "1px solid var(--line)",
+                  fontSize: "var(--t-md)", fontWeight: 500,
+                }}
               >
-                <IconClose />
-              </div>
-              <div className="nav__sheet-content">
-                {NAV_LINKS.map((l, i) => (
-                  <motion.div
-                    key={l.name}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.4, ease: EASE, delay: 0.05 * i + 0.15 }}
+                {l.label}
+                <IcChevronRight className="hs-icon-sm" style={{ color: "var(--tx-mute)" }} />
+              </Link>
+            ))}
+          </div>
+
+          {groups.map((g) => (
+            <section key={g.id}>
+              <span className="hs-label">{g.label}</span>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: "var(--s-2)" }}>
+                {g.tools.map(({ id, label, icon: Icon }) => (
+                  <Link
+                    key={id}
+                    href={`/studio/${id}`}
+                    onClick={() => setOpen(false)}
+                    className="hs-card"
+                    style={{ padding: "var(--s-3)", display: "flex", alignItems: "center", gap: "var(--s-2)" }}
                   >
-                    <Link href={l.href} className="nav__sheet-link" onClick={() => setMobileOpen(false)}
-                      style={isMobile ? { minHeight: 44, display: "flex", alignItems: "center" } : {}}
-                    >
-                      {l.name}
-                      <IconArrowUpRight />
-                    </Link>
-                  </motion.div>
+                    <Icon className="hs-icon-sm" style={{ color: "var(--tx-mute)" }} />
+                    <span style={{ fontSize: "var(--t-tiny)", fontWeight: 500 }}>{label}</span>
+                  </Link>
                 ))}
-                <div className="nav__sheet-divider" />
-                <div className="nav__sheet-studios">
-                  <p className="nav__sheet-label">Studios</p>
-                  <div className="nav__sheet-grid">
-                    {TOOLS.map(({ id, label, Icon, color }) => (
-                      <Link
-                        key={id}
-                        href={`/studio/${id}`}
-                        className="nav__studio-chip"
-                        onClick={() => setMobileOpen(false)}
-                      >
-                        <span className="nav__studio-icon" style={{ background: `${color}18`, color }}>
-                          <Icon />
-                        </span>
-                        <span>{label}</span>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-                <Link href="/login" className="btn btn-primary btn-lg w-full justify-center mt-6" onClick={() => setMobileOpen(false)}>
-                  Start free
-                  <span className="btn__icon"><IconBolt /></span>
-                </Link>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+            </section>
+          ))}
+
+          <Link
+            href={authed ? "/studio" : "/login?new=1"}
+            className="hs-btn hs-btn--primary hs-btn--lg hs-btn--block"
+            onClick={() => setOpen(false)}
+          >
+            {authed ? "Open studio" : "Start free"}
+            <IcBolt className="hs-icon-sm" />
+          </Link>
+        </div>
+      </Sheet>
     </>
   );
 }

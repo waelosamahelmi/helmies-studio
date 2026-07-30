@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserWithCredits, debitCredits } from "@/lib/session";
+import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
+import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
+import { checkRateLimit } from "@/lib/security";
 import { resolveProvider, brandError, submitOnly } from "@/lib/providers";
 import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
 import { applyMemoryToPrompt } from "@/lib/memory";
@@ -26,12 +28,30 @@ const MODEL_REGISTRY = Object.fromEntries(
   ALL_MODELS.map((m) => [m.id, { endpoint: m.endpoint, providerModelId: m.endpoint || m.id }]),
 );
 
+// Mirror the wallet's `available` onto the legacy User.credits column so the
+// existing UI keeps showing the right number.
+async function syncLegacyCredits(userId) {
+  try {
+    const w = await getWallet(userId);
+    await prisma.user.update({ where: { id: userId }, data: { credits: w.available } });
+  } catch {}
+}
+
 export async function POST(req) {
+  // Declared outside the try so the catch below can reference it — optional
+  // chaining does not guard an undeclared binding, and the ReferenceError was
+  // masking every real error with an opaque 500.
+  let body = null;
   try {
     const user = await getCurrentUserWithCredits();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const body = await req.json();
+    const rl = await checkRateLimit(user.id, "/api/generate/async");
+    if (!rl.allowed) {
+      return NextResponse.json({ error: "Rate limited", retryAfter: rl.retryAfter }, { status: 429 });
+    }
+
+    body = await req.json();
     const { tool, model, prompt, ...params } = body;
 
     if (!model) return NextResponse.json({ error: "Model required" }, { status: 400 });
@@ -48,8 +68,10 @@ export async function POST(req) {
       providerCost = quote.providerCost;
     }
 
-    if (user.credits < cost) {
-      return NextResponse.json({ error: "Insufficient credits", credits: user.credits, cost }, { status: 402 });
+    // Wallet is the source of truth for the balance check.
+    const wallet = await getWallet(user.id);
+    if (wallet.available < cost) {
+      return NextResponse.json({ error: "Insufficient credits", credits: wallet.available, cost }, { status: 402 });
     }
 
     let finalPrompt = prompt || "";
@@ -66,7 +88,10 @@ export async function POST(req) {
 
     const webhookUrl = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
     const staticModel = MODEL_REGISTRY[model];
-    const endpoint = dbPricing?.endpoint || params.endpoint || staticModel?.endpoint || model;
+    // Server-decided endpoint. `params.endpoint` is deliberately NOT consulted
+    // — same hole as generation-handler: a caller could target an arbitrary
+    // provider endpoint while being billed for the cheap default.
+    const endpoint = dbPricing?.endpoint || staticModel?.endpoint || model;
     const { endpoint: _ep, ...cleanParams } = params;
     const providerModelId = dbPricing?.providerModelId || staticModel?.providerModelId || model;
     const payload = { ...cleanParams, model: providerModelId, prompt: finalPrompt, endpoint, callBackUrl: webhookUrl };
@@ -88,9 +113,30 @@ export async function POST(req) {
       },
     });
 
-    await debitCredits(user.id, cost);
+    // Reserve (not debit) so a submission failure is refundable. debitCredits
+    // is non-refundable — a failed submitOnly charged the user for nothing.
+    try {
+      await reserveCredits(user.id, cost, generation.id);
+    } catch (reserveErr) {
+      await prisma.generation.update({
+        where: { id: generation.id },
+        data: { status: "failed", error: reserveErr.message },
+      });
+      return NextResponse.json({ error: reserveErr.message, credits: wallet.available, cost }, { status: 402 });
+    }
 
-    const { requestId } = await submitOnly(provider, endpoint, payload);
+    let requestId;
+    try {
+      ({ requestId } = await submitOnly(provider, endpoint, payload));
+    } catch (submitErr) {
+      await releaseReservation(user.id, generation.id).catch(() => {});
+      await syncLegacyCredits(user.id);
+      await prisma.generation.update({
+        where: { id: generation.id },
+        data: { status: "failed", error: brandError(submitErr.message) },
+      }).catch(() => {});
+      return NextResponse.json({ error: brandError(submitErr.message) }, { status: 500 });
+    }
 
     if (requestId) {
       await prisma.generation.update({
@@ -99,13 +145,18 @@ export async function POST(req) {
       });
     }
 
+    // Submission accepted — settle at the quoted cost. The completion webhook
+    // refunds if the job later fails.
+    const settled = await settleReservation(user.id, generation.id, cost).catch(() => null);
+    await syncLegacyCredits(user.id);
+
     return NextResponse.json({
       success: true,
       generationId: generation.id,
       requestId,
       status: "pending",
       creditsUsed: cost,
-      remainingCredits: user.credits - cost,
+      remainingCredits: settled?.available ?? (wallet.available - cost),
       pollUrl: `/api/generations/status?id=${generation.id}`,
     });
   } catch (e) {

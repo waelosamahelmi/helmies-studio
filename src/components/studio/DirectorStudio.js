@@ -1,795 +1,794 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Sheet, SpendMeter, Field, Chips, clock,
+  IcFilm, IcSettings, IcRefresh, IcPlus, IcExternal, IcImage, IcVideo, IcClose, IcBolt,
+} from "@/components/studio/kit";
 import { apiFetch } from "@/lib/client-fetch";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { PRODUCTION_TYPE_PRESETS } from "@/lib/director-constants";
 
-/* ── Inline SVG Icons (v6 style: 24x24, stroke currentColor, strokeWidth 1.7) ── */
+/* ══════════════════════════════════════════════════════════════════════════
+   DIRECTOR — .st-board
+   ──────────────────────────────────────────────────────────────────────────
+   A film is a sequence of shots, so the interface is that sequence: one
+   horizontal strip, numbered, that stacks vertically below 900px. The board
+   head carries the production and its real totals; the foot carries the
+   brief, the total spend and the single commit action.
 
-const IconSpark = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6.4-4.8-6.4 4.8 2.4-7.2-6-4.8h7.6z" />
-  </svg>
-);
+   Fixed in this rewrite:
+   · `MobileModelCarousel` was imported and never rendered.
+   · `approvalMode` and `outputFormat` were rendered as selects and sent to
+     nothing — /api/director/plan reads only concept, style, mood, title,
+     duration, platform, type, shots, model, and /api/director/execute reads
+     only planId and autoAssemble. Both controls are cut, along with the
+     `onFailure` select (the execute route never forwards `stopOnFailure`),
+     the aspect field and the brand-kit select (the plan route drops both).
+   · Production types were `short_form / cinematic / commercial / social_media`
+     — none of which exist in PRODUCTION_TYPE_PRESETS, so every plan silently
+     fell back to the music-video preset. The list is now built from the
+     presets themselves.
+   · `if (!res.ok)` guards were dead code: apiFetch throws on any non-2xx.
+   · The cost readout added `assemblyCost` on top of `totalCredits`, which
+     already includes it.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const IconBolt = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="13,2 3,14 12,14 11,22 21,10 12,10" />
-  </svg>
-);
-
-const IconCheck = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20,6 9,17 4,12" />
-  </svg>
-);
-
-const IconCross = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-
-const IconClock = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" />
-  </svg>
-);
-
-const IconPlay = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="5,3 19,12 5,21" />
-  </svg>
-);
-
-const IconRefresh = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23,4 23,10 17,10" /><polyline points="1,20 1,14 7,14" />
-    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-  </svg>
-);
-
-const IconDownload = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7,10 12,15 17,10" /><line x1="12" y1="15" x2="12" y2="3" />
-  </svg>
-);
-
-const IconHash = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" />
-  </svg>
-);
-
-const IconList = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
-  </svg>
-);
-
-const IconAlert = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-  </svg>
-);
-
-/* ── Status Badge ── */
-function StatusBadge({ status }) {
-  const colors = {
-    draft: "#6b7280", planning: "#60a5fa", awaiting_approval: "#facc15", quoted: "#c084fc",
-    queued: "#94a3b8", generating_images: "#facc15", generating_video: "#f472b6", generating_audio: "#a78bfa",
-    quality_check: "#c084fc", assembling: "#fb923c", completed: "#4ade80",
-    paused: "#fbbf24", failed: "#ef4444", cancelled: "#9ca3af",
-    pending: "#6b7280",
-  };
-  const color = colors[status] || colors.pending;
-  const label = (status || "pending").replace(/_/g, " ");
-  return (
-    <span
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 4, fontSize: "0.6rem",
-        padding: "2px 7px", borderRadius: 100, fontWeight: 700,
-        textTransform: "uppercase", letterSpacing: "0.06em",
-        background: `${color}20`, color, border: `1px solid ${color}30`,
-      }}
-    >
-      <span style={{ width: 5, height: 5, borderRadius: "50%", background: color, flexShrink: 0 }} />
-      {label}
-    </span>
-  );
-}
-
-/* ── Production Type Definitions ── */
-const PRODUCTION_TYPES = [
-  { id: "music_video", label: "Music Video" },
-  { id: "short_form", label: "Short Form" },
-  { id: "cinematic", label: "Cinematic" },
-  { id: "commercial", label: "Commercial" },
-  { id: "social_media", label: "Social Media" },
-];
+const TYPES = Object.entries(PRODUCTION_TYPE_PRESETS).map(([value, preset]) => ({
+  value,
+  label: preset.label,
+}));
 
 const PLATFORMS = [
-  { id: "instagram", label: "Instagram", ratio: "9:16" },
-  { id: "tiktok", label: "TikTok", ratio: "9:16" },
-  { id: "youtube", label: "YouTube", ratio: "16:9" },
-  { id: "youtube_shorts", label: "Shorts", ratio: "9:16" },
-  { id: "twitter", label: "X", ratio: "16:9" },
-  { id: "linkedin", label: "LinkedIn", ratio: "1:1" },
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "youtube", label: "YouTube" },
+  { value: "youtube_shorts", label: "Shorts" },
+  { value: "x", label: "X" },
+  { value: "linkedin", label: "LinkedIn" },
 ];
 
-const ON_FAILURE_OPTIONS = [
-  { id: "stop", label: "Stop pipeline on first failure" },
-  { id: "skip", label: "Skip failed shots, continue" },
-  { id: "retry", label: "Retry once, then skip" },
+const DURATIONS = [15, 30, 60, 90, 120, 180, 300].map((v) => ({ value: v, label: `${v}s` }));
+
+const STARTERS = [
+  {
+    title: "Cosmic Dancer",
+    concept: "A dancer drifts through zero gravity inside a nebula, dust turning with every movement. Neon silhouette against deep violet.",
+  },
+  {
+    title: "Urban Noir",
+    concept: "A figure in a wet overcoat walks rain-slicked streets under failing neon. Long shadows, smoke, 1940s framing with a cyberpunk palette.",
+  },
+  {
+    title: "Product Reel",
+    concept: "Macro passes over a steel watch case. Hard light rakes across the polished surfaces, slow motion, shallow depth of field.",
+  },
+  {
+    title: "Four Seasons",
+    concept: "One tree through a full year. Frost to blossom to dust to snow, morning mist resolving into a low gold sun.",
+  },
 ];
 
-const BRIEF_IDEAS = [
-  { title: "Cosmic Dancer", concept: "A dancer floats through zero gravity inside a nebula, stars swirling with each movement. Neon silhouette against cosmic dust." },
-  { title: "Urban Noir", concept: "A detective walks rain-slicked streets under flickering neon signs. Long shadows, cigarette smoke, 1940s atmosphere meets cyberpunk." },
-  { title: "Product Reel", concept: "Cinematic close-ups of a luxury watch. Light caresses the polished surfaces. Slow motion, macro lens, dramatic score." },
-  { title: "Nature Awakens", concept: "Time-lapse journey from frozen winter to blooming spring. A single tree through four seasons, morning mist to golden sunset." },
-];
+const DONE = new Set(["completed", "complete", "done", "succeeded", "success"]);
+const FAILED = new Set(["failed", "error", "cancelled", "canceled"]);
+const WORKING = new Set([
+  "processing", "running", "generating", "generating_images", "generating_video",
+  "generating_audio", "assembling", "quality_check", "executing",
+]);
 
-/* ══════════════════════════════════════════════════════════════ */
-export default function DirectorStudio() {
-  /* ── State ── */
-  const isMobile = useIsMobile();
-  const [brief, setBrief] = useState({
-    concept: "", title: "", type: "short_form", platform: "youtube",
-    style: "", mood: "", duration: 30,
-  });
+function railClass(status) {
+  const s = String(status || "").toLowerCase();
+  if (DONE.has(s)) return "is-done";
+  if (FAILED.has(s)) return "is-failed";
+  if (WORKING.has(s)) return "is-running";
+  return "is-queued";
+}
+
+const label = (s) => String(s || "").replace(/_/g, " ");
+const credits = (n) => (n == null ? "—" : Number(n).toLocaleString("en-US"));
+
+/* The plan route returns the planner's own envelope, so `plan` may be either
+   the plan itself or a wrapper around it. Read both rather than trusting one. */
+function readPlan(data) {
+  const plan =
+    data?.plan && Array.isArray(data.plan.shots) ? data.plan
+    : data?.plan?.plan && Array.isArray(data.plan.plan.shots) ? data.plan.plan
+    : Array.isArray(data?.shots) ? data
+    : null;
+  return {
+    plan,
+    costEstimate: data?.costEstimate || data?.plan?.costEstimate || null,
+    pipelineId: data?.pipelineId || data?.plan?.pipelineId || data?.plan?.id || null,
+  };
+}
+
+/* Execution reports arrive in two shapes: the executor's own
+   {shotId, success, imageUrl, videoUrl, error} and the pipeline record's
+   {id, index, status, imageResult, videoResult, error}. */
+function readRun(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const status =
+    entry.status ||
+    (entry.success === true ? "completed" : entry.success === false ? "failed" : null);
+  return {
+    id: entry.shotId || entry.id || null,
+    index: entry.index ?? entry.shotIndex ?? null,
+    status,
+    imageUrl: entry.imageUrl || entry.imageResult?.url || entry.imageResult?.rawUrl || null,
+    videoUrl: entry.videoUrl || entry.videoResult?.url || entry.videoResult?.rawUrl || null,
+    error: entry.error || null,
+  };
+}
+
+export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
+  /* Brief — every field below is sent to /api/director/plan */
+  const [title, setTitle] = useState("");
+  const [concept, setConcept] = useState("");
+  const [type, setType] = useState("music_video");
+  const [platform, setPlatform] = useState("youtube");
+  const [duration, setDuration] = useState(PRODUCTION_TYPE_PRESETS.music_video.defaultDuration);
+  const [style, setStyle] = useState("");
+  const [mood, setMood] = useState("");
+
+  /* Board */
+  const [outline, setOutline] = useState([]);   // shots the user sketches first
   const [plan, setPlan] = useState(null);
   const [costEstimate, setCostEstimate] = useState(null);
+  const [pipelineId, setPipelineId] = useState(null);
   const [pipelineStatus, setPipelineStatus] = useState(null);
-  const [mode, setMode] = useState("brief");
-  const [activePipelineId, setActivePipelineId] = useState(null);
-  const [shots, setShots] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [approvalMode, setApprovalMode] = useState("auto");
-  const [onFailure, setOnFailure] = useState("skip");
-  const [outputFormat, setOutputFormat] = useState("mp4");
-  const [pipelines, setPipelines] = useState([]);
-  const [brandContext, setBrandContext] = useState(null);
+  const [runShots, setRunShots] = useState([]);
+  const [assembledUrl, setAssembledUrl] = useState(null);
+  const [active, setActive] = useState(null);
+
+  /* Session */
+  const [recent, setRecent] = useState([]);
+  const [balance, setBalance] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(null);       // "plan" | "execute" | null
+  const [rerunning, setRerunning] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const pollRef = useRef(null);
+  const seq = useRef(0);
+  const chosenDuration = useRef(false);
 
-  /* ── Load pipelines ── */
+  const stopPoll = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+  useEffect(() => () => stopPoll(), [stopPoll]);
+
+  /* ── Balance: the meter needs a real number to measure against ────────── */
+  const loadBalance = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/credits");
+      const data = await res.json();
+      setBalance(typeof data?.credits === "number" ? data.credits : null);
+    } catch { /* the meter falls back to cost-only */ }
+  }, []);
+  useEffect(() => { loadBalance(); }, [loadBalance]);
+
+  /* ── Earlier productions ──────────────────────────────────────────────── */
+  const loadRecent = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/director/status");
+      const data = await res.json();
+      setRecent(Array.isArray(data?.pipelines) ? data.pipelines : []);
+    } catch { /* the picker stays empty */ }
+  }, []);
+  useEffect(() => { loadRecent(); }, [loadRecent]);
+
+  /* A template arrives after mount — apply it once */
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await apiFetch("/api/director/status");
-        const data = await res.json();
-        if (data.pipelines) setPipelines(data.pipelines);
-      } catch {}
-    })();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    if (!templateConfig) return;
+    const t = templateConfig;
+    if (t.concept || t.prompt) setConcept(t.concept || t.prompt);
+    if (t.title) setTitle(t.title);
+    if (t.type && PRODUCTION_TYPE_PRESETS[t.type]) setType(t.type);
+    if (t.platform) setPlatform(t.platform);
+    if (t.duration) { chosenDuration.current = true; setDuration(Number(t.duration)); }
+    if (t.style) setStyle(t.style);
+    if (t.mood) setMood(t.mood);
+  }, [templateConfig]);
+
+  /* Duration follows the production type until someone picks one */
+  useEffect(() => {
+    if (chosenDuration.current) return;
+    const preset = PRODUCTION_TYPE_PRESETS[type];
+    if (preset?.defaultDuration) setDuration(preset.defaultDuration);
+  }, [type]);
+
+  /* ── Status polling ───────────────────────────────────────────────────── */
+  const refresh = useCallback(async (id) => {
+    if (!id) return null;
+    const res = await apiFetch(`/api/director/status?pipelineId=${encodeURIComponent(id)}`, { retries: 0 });
+    const data = await res.json();
+    const p = data?.pipeline;
+    if (!p) return null;
+
+    if (p.status) setPipelineStatus(p.status);
+    const planned = p.plan?.shots ? p.plan : p.plan?.plan?.shots ? p.plan.plan : null;
+    if (planned) setPlan(planned);
+    if (p.costEstimate) setCostEstimate(p.costEstimate);
+    if (p.assembledUrl) setAssembledUrl(p.assembledUrl);
+    if (Array.isArray(p.shots)) setRunShots(p.shots);
+    if (p.brief) {
+      if (p.brief.title) setTitle(p.brief.title);
+      if (p.brief.concept) setConcept(p.brief.concept);
+      if (p.brief.type && PRODUCTION_TYPE_PRESETS[p.brief.type]) setType(p.brief.type);
+    }
+    return p;
   }, []);
 
-  /* ── Helpers ── */
-  const updateBrief = (field, value) => {
-    setBrief((prev) => {
-      const next = { ...prev, [field]: value };
-      if (field === "platform") {
-        const p = PLATFORMS.find((x) => x.id === value);
-        if (p) next.aspectRatio = p.ratio;
-      }
-      return next;
-    });
-  };
+  const startPoll = useCallback((id) => {
+    stopPoll();
+    const tick = async () => {
+      try {
+        const p = await refresh(id);
+        const s = String(p?.status || "").toLowerCase();
+        if (DONE.has(s) || FAILED.has(s)) {
+          stopPoll();
+          onCreditsChanged?.();
+          loadBalance();
+        }
+      } catch { /* transient — the next tick tries again */ }
+    };
+    pollRef.current = setInterval(tick, 3000);
+    tick();
+  }, [refresh, stopPoll, onCreditsChanged, loadBalance]);
 
-  const fillBriefIdea = (idea) => {
-    setBrief((prev) => ({ ...prev, title: idea.title, concept: idea.concept }));
-  };
-
-  const formatCredits = (n) => (n != null ? `${n} credits` : "\u2014");
-  const aspectRatio = brief.aspectRatio || PLATFORMS.find((p) => p.id === brief.platform)?.ratio || "16:9";
-  const completedShots = shots.filter((s) => s.status === "completed").length;
-  const shotProgressPct = shots.length > 0 ? Math.round((completedShots / shots.length) * 100) : 0;
-
-  /* ── Build Production Plan ── */
-  const handleCreatePlan = async () => {
-    if (!brief.concept && !brief.title) { setError("Provide a concept or title"); return; }
-    setLoading(true); setError(null);
+  /* ── Build the shot plan ──────────────────────────────────────────────── */
+  const buildPlan = useCallback(async () => {
+    if (!concept.trim() && !title.trim()) {
+      setError("Write a concept or a title before building the plan.");
+      return;
+    }
+    const run = ++seq.current;
+    setBusy("plan");
+    setError("");
     try {
       const res = await apiFetch("/api/director/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          concept: brief.concept, title: brief.title, type: brief.type,
-          platform: brief.platform, duration: brief.duration, style: brief.style,
-          mood: brief.mood, aspectRatio, brandKit: brandContext,
+          concept, title, type, platform, duration, style, mood,
+          shots: outline.map((s, i) => ({ index: i, title: s.title, description: s.line })),
         }),
+        timeout: 180000,
+        retries: 0,
       });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.error || "Failed"); }
       const data = await res.json();
-      setPlan(data.plan);
-      setCostEstimate(data.costEstimate);
-      setActivePipelineId(data.pipelineId);
-      setShots(data.plan?.shots || []);
-      setMode("plan");
-    } catch (e) { setError(e.message); } finally { setLoading(false); }
-  };
+      if (seq.current !== run) return;
 
-  /* ── Execute Pipeline ── */
-  const handleExecute = async () => {
-    if (!activePipelineId) return;
-    setLoading(true); setError(null); setMode("execute");
+      const read = readPlan(data);
+      if (!read.plan) throw new Error("The planner returned no shots. Add more detail to the concept and try again.");
+
+      setPlan(read.plan);
+      setCostEstimate(read.costEstimate);
+      setPipelineId(read.pipelineId);
+      setPipelineStatus("planning");
+      setRunShots([]);
+      setAssembledUrl(null);
+      loadRecent();
+    } catch (e) {
+      if (seq.current === run) setError(e?.message || "The plan could not be built.");
+    } finally {
+      if (seq.current === run) setBusy(null);
+    }
+  }, [concept, title, type, platform, duration, style, mood, outline, loadRecent]);
+
+  /* ── Execute the pipeline ─────────────────────────────────────────────── */
+  const execute = useCallback(async () => {
+    if (!pipelineId) return;
+    const run = ++seq.current;
+    setBusy("execute");
+    setError("");
     setPipelineStatus("queued");
+    startPoll(pipelineId);
     try {
       const res = await apiFetch("/api/director/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: activePipelineId, stopOnFailure: onFailure === "stop" }),
+        body: JSON.stringify({ planId: pipelineId }),
+        timeout: 1800000,
+        retries: 0,
       });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.error || "Execution failed"); }
       const data = await res.json();
-      if (data.success) {
-        setPipelineStatus("completed");
-        setShots(data.results || []);
+      if (seq.current !== run) return;
+
+      if (Array.isArray(data?.results)) setRunShots(data.results);
+      if (data?.assembledUrl) setAssembledUrl(data.assembledUrl);
+      if (data?.success) {
+        setPipelineStatus(data.status || "completed");
       } else {
         setPipelineStatus("failed");
-        setError(data.error || "Execution failed");
+        setError(data?.error || "The pipeline stopped before every shot rendered.");
       }
-    } catch (e) { setError(e.message); setPipelineStatus("failed"); } finally { setLoading(false); }
-  };
+    } catch (e) {
+      if (seq.current !== run) return;
+      setPipelineStatus("failed");
+      setError(e?.message || "The pipeline could not be started.");
+    } finally {
+      if (seq.current === run) {
+        setBusy(null);
+        stopPoll();
+        onCreditsChanged?.();
+        loadBalance();
+      }
+    }
+  }, [pipelineId, startPoll, stopPoll, onCreditsChanged, loadBalance]);
 
-  /* ── Polling ── */
-  const startPolling = useCallback((pipelineId) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    const poll = async () => {
-      try {
-        const res = await apiFetch(`/api/director/status?pipelineId=${pipelineId}`);
-        const data = await res.json();
-        if (!data.pipeline) return;
-        setPipelineStatus(data.pipeline.status);
-        setShots(data.pipeline.shots || []);
-        if (["completed", "failed", "cancelled"].includes(data.pipeline.status)) {
-          clearInterval(pollRef.current); pollRef.current = null;
-          if (data.pipeline.status === "completed") setPipelineStatus("completed");
-        }
-      } catch {}
-    };
-    pollRef.current = setInterval(poll, 3000);
-    poll();
-  }, []);
-
-  /* ── Load existing pipeline ── */
-  const handleLoadPipeline = async (pipelineId) => {
-    if (!pipelineId) return;
-    setLoading(true); setError(null);
-    try {
-      const res = await apiFetch(`/api/director/status?pipelineId=${pipelineId}`);
-      const data = await res.json();
-      if (!data.pipeline) throw new Error("Pipeline not found");
-      setActivePipelineId(pipelineId);
-      setPlan(data.pipeline.plan);
-      setCostEstimate(data.pipeline.costEstimate);
-      setPipelineStatus(data.pipeline.status);
-      setShots(data.pipeline.shots || []);
-      if (data.pipeline.brief) setBrief((prev) => ({ ...prev, ...data.pipeline.brief }));
-      const st = data.pipeline.status;
-      if (st === "completed" || st === "failed") setMode("execute");
-      else if (["generating_images", "generating_video", "generating_audio", "assembling", "queued"].includes(st)) {
-        setMode("execute"); startPolling(pipelineId);
-      } else setMode("plan");
-    } catch (e) { setError(e.message); } finally { setLoading(false); }
-  };
-
-  /* ── Rerun a shot ── */
-  const handleRerunShot = async (shotId, rerunType = "full") => {
-    setError(null);
+  /* ── Re-run one shot ──────────────────────────────────────────────────── */
+  const rerun = useCallback(async (shotId, rerunType) => {
+    if (!pipelineId || !shotId) return;
+    setRerunning(`${shotId}:${rerunType}`);
+    setError("");
     try {
       const res = await apiFetch("/api/director/rerun", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: activePipelineId, shotId, rerunType }),
+        body: JSON.stringify({ planId: pipelineId, shotId, rerunType }),
+        timeout: 1800000,
+        retries: 0,
       });
-      if (!res.ok) { const err = await res.json(); throw new Error(err.error || "Rerun failed"); }
-      if (activePipelineId) {
-        const sr = await apiFetch(`/api/director/status?pipelineId=${activePipelineId}`);
-        const sd = await sr.json();
-        if (sd.pipeline) setShots(sd.pipeline.shots || []);
+      const data = await res.json();
+      const result = data?.result;
+      if (result) {
+        setRunShots((prev) => {
+          const next = prev.slice();
+          const at = next.findIndex((r) => (r.shotId || r.id) === shotId);
+          const merged = { ...(at >= 0 ? next[at] : { shotId }), ...result, status: "completed", success: true };
+          if (at >= 0) next[at] = merged; else next.push(merged);
+          return next;
+        });
       }
-    } catch (e) { setError(e.message); }
+      refresh(pipelineId).catch(() => {});
+      onCreditsChanged?.();
+      loadBalance();
+    } catch (e) {
+      setError(e?.message || `Shot ${shotId} could not be re-run.`);
+    } finally {
+      setRerunning(null);
+    }
+  }, [pipelineId, refresh, onCreditsChanged, loadBalance]);
+
+  /* ── Load an earlier production ───────────────────────────────────────── */
+  const load = useCallback(async (id) => {
+    if (!id) return;
+    setBusy("plan");
+    setError("");
+    setSettingsOpen(false);
+    try {
+      const p = await refresh(id);
+      if (!p) throw new Error("That production is no longer available.");
+      setPipelineId(id);
+      const s = String(p.status || "").toLowerCase();
+      if (WORKING.has(s) || s === "queued") startPoll(id);
+    } catch (e) {
+      setError(e?.message || "That production could not be opened.");
+    } finally {
+      setBusy(null);
+    }
+  }, [refresh, startPoll]);
+
+  const reset = useCallback(() => {
+    seq.current += 1;
+    stopPoll();
+    setPlan(null);
+    setCostEstimate(null);
+    setPipelineId(null);
+    setPipelineStatus(null);
+    setRunShots([]);
+    setAssembledUrl(null);
+    setOutline([]);
+    setError("");
+    setBusy(null);
+    setActive(null);
+  }, [stopPoll]);
+
+  /* ── Outline editing (pre-plan shots, sent as `shots`) ────────────────── */
+  const addShot = () => setOutline((prev) => [...prev, { id: `o${Date.now()}${prev.length}`, title: "", line: "" }]);
+  const editShot = (id, patch) => setOutline((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  const dropShot = (id) => setOutline((prev) => prev.filter((s) => s.id !== id));
+
+  /* ── The board ────────────────────────────────────────────────────────── */
+  const runIndex = useMemo(() => {
+    const map = new Map();
+    runShots.forEach((entry, i) => {
+      const r = readRun(entry);
+      if (!r) return;
+      if (r.id) map.set(r.id, r);
+      map.set(`#${r.index ?? i}`, r);
+    });
+    return map;
+  }, [runShots]);
+
+  const cards = useMemo(() => {
+    const shots = plan?.shots || [];
+    return shots.map((shot, i) => {
+      const run = runIndex.get(shot.id) || runIndex.get(`#${shot.index ?? i}`) || null;
+      const shotCost =
+        costEstimate?.shotCosts?.find((c) => c.shotId === shot.id)?.total ??
+        costEstimate?.shotCosts?.[i]?.total ?? null;
+      return {
+        key: shot.id || `shot-${i}`,
+        id: shot.id || null,
+        no: i + 1,
+        title: shot.title || `Shot ${i + 1}`,
+        section: shot.section || "shot",
+        durationSec: shot.durationSec ?? null,
+        line: shot.videoStrategy?.prompt || shot.sceneGoal || shot.narrativeRole || shot.environment || "",
+        camera: [shot.camera?.framing, shot.camera?.lens, shot.camera?.movement].filter(Boolean).join(" · "),
+        continuity: (shot.continuity || []).join(", ") || shot.continuityTracker?.previousEndingFrame || "",
+        status: run?.status || (pipelineStatus === "planning" || !pipelineStatus ? "draft" : "queued"),
+        imageUrl: run?.imageUrl || null,
+        videoUrl: run?.videoUrl || null,
+        error: run?.error || null,
+        cost: shotCost,
+      };
+    });
+  }, [plan, runIndex, costEstimate, pipelineStatus]);
+
+  const totalCost = costEstimate?.totalCredits ?? null;
+  const totalDuration = useMemo(() => {
+    const shots = plan?.shots || [];
+    if (shots.length) return shots.reduce((sum, s) => sum + (Number(s.durationSec) || 0), 0);
+    return 0;
+  }, [plan]);
+  const completed = cards.filter((c) => DONE.has(String(c.status).toLowerCase())).length;
+
+  const affordable = balance == null || totalCost == null || totalCost <= balance;
+  const shortfall = balance == null || totalCost == null ? 0 : Math.max(0, totalCost - balance);
+
+  const status = String(pipelineStatus || "").toLowerCase();
+  const running = busy === "execute" || WORKING.has(status) || status === "queued";
+  const finished = DONE.has(status) && !!plan;
+
+  const phase = !plan ? "brief" : finished ? "done" : running ? "running" : "plan";
+
+  const primary = {
+    brief: { text: busy === "plan" ? "Planning" : "Build shot plan", run: buildPlan },
+    plan: { text: "Execute production", run: execute },
+    running: { text: label(pipelineStatus) || "Working", run: null },
+    done: { text: "New production", run: reset },
+  }[phase];
+
+  const meterCost = phase === "brief" ? 0 : totalCost || 0;
+  const meterLabel = phase === "done" ? "Spent" : phase === "brief" ? "Estimate" : "Production";
+
+  const disabled =
+    !!busy ||
+    (phase === "brief" && !concept.trim() && !title.trim()) ||
+    (phase === "plan" && (!pipelineId || !affordable));
+
+  const onBriefKey = (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && primary.run && !disabled) {
+      e.preventDefault();
+      primary.run();
+    }
   };
 
-  /* ── Estimated runtime ── */
-  const estimatedRuntime = plan ? Math.ceil((plan.shots?.length || 0) * 8 / 60) : 0;
-
-  /* ── Node positions with stagger ── */
-  const nodePositions = (shots.length > 0)
-    ? shots.map((_, i) => {
-        const cols = Math.ceil(Math.sqrt(shots.length));
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        return {
-          left: `${5 + col * ((90 - 5) / Math.max(cols, 1))}%`,
-          top: `${10 + row * ((80 - 10) / Math.ceil(shots.length / Math.max(cols, 1)))}%`,
-        };
-      })
-    : [];
-
-  /* ═══════════════════ RENDER: Brief Panel (Left) ═══════════════ */
-  const renderBriefPanel = () => (
-    <div className="v6-builder-panel v6-entrance-fade" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="v6-eyebrow">Production Brief</div>
-
-      {/* Title */}
-      <div className="v6-field">
-        <label className="v6-field-label">Title</label>
-        <input
-          className="v6-input"
-          value={brief.title}
-          onChange={(e) => updateBrief("title", e.target.value)}
-          placeholder="e.g. Midnight Drive \u2014 Official Music Video"
-        />
-      </div>
-
-      {/* Type + Platform */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div className="v6-field">
-          <label className="v6-field-label">Type</label>
-          {isMobile ? (
-            <MobileChipScroller items={PRODUCTION_TYPES.map(t => ({ label: t.label, value: t.id }))} selectedValue={brief.type} onSelect={(v) => updateBrief("type", v)} />
-          ) : (
-            <div className="v6-select-wrap">
-              <select className="v6-select" value={brief.type} onChange={(e) => updateBrief("type", e.target.value)}>
-                {PRODUCTION_TYPES.map((t) => (<option key={t.id} value={t.id}>{t.label}</option>))}
-              </select>
-            </div>
-          )}
-        </div>
-        <div className="v6-field">
-          <label className="v6-field-label">Platform</label>
-          {isMobile ? (
-            <MobileChipScroller items={PLATFORMS.map(p => ({ label: p.label, value: p.id }))} selectedValue={brief.platform} onSelect={(v) => updateBrief("platform", v)} />
-          ) : (
-            <div className="v6-select-wrap">
-              <select className="v6-select" value={brief.platform} onChange={(e) => updateBrief("platform", e.target.value)}>
-                {PLATFORMS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
-              </select>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Duration + Aspect */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div className="v6-field">
-          <label className="v6-field-label">Duration (sec)</label>
-          {isMobile ? (
-            <MobileChipScroller items={[{ label: "15s", value: 15 }, { label: "30s", value: 30 }, { label: "60s", value: 60 }, { label: "90s", value: 90 }, { label: "120s", value: 120 }, { label: "180s", value: 180 }, { label: "300s", value: 300 }]} selectedValue={brief.duration} onSelect={(v) => updateBrief("duration", v)} />
-          ) : (
-            <input className="v6-input" type="number" value={brief.duration} onChange={(e) => updateBrief("duration", parseInt(e.target.value) || 30)} min={5} max={600} />
-          )}
-        </div>
-        <div className="v6-field">
-          <label className="v6-field-label">Aspect</label>
-          <input className="v6-input" value={aspectRatio} readOnly style={{ opacity: 0.6 }} />
-        </div>
-      </div>
-
-      {/* Style + Mood */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-        <div className="v6-field">
-          <label className="v6-field-label">Visual Style</label>
-          <input className="v6-input" value={brief.style} onChange={(e) => updateBrief("style", e.target.value)} placeholder="Cyberpunk anime, noir thriller..." />
-        </div>
-        <div className="v6-field">
-          <label className="v6-field-label">Mood / Tone</label>
-          <input className="v6-input" value={brief.mood} onChange={(e) => updateBrief("mood", e.target.value)} placeholder="Dark, atmospheric, hopeful..." />
-        </div>
-      </div>
-
-      {/* Concept */}
-      <div className="v6-field" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <label className="v6-field-label">Creative Concept</label>
-        <textarea
-          className="v6-textarea"
-          value={brief.concept}
-          onChange={(e) => updateBrief("concept", e.target.value)}
-          placeholder="Describe your vision\u2026\n\nA lone traveler walks through neon-lit streets at midnight, chasing a memory that keeps slipping away\u2026"
-          style={{ flex: 1 }}
-        />
-      </div>
-
-      {/* Brand context */}
-      <div className="v6-field">
-        <label className="v6-field-label">Brand Context</label>
-        <div className="v6-select-wrap">
-          <select className="v6-select" value={brandContext?.id || ""} onChange={(e) => setBrandContext(e.target.value ? { id: e.target.value } : null)}>
-            <option value="">No brand kit</option>
-            <option value="brand_1">Helmies Studio</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Budget quote */}
-      {costEstimate && (
-        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="v6-quote" style={{ borderColor: "color-mix(in srgb, var(--v6-accent), var(--v6-line) 50%)" }}>
-          <div className="v6-quote-row"><span className="v6-muted">Budget Quote</span></div>
-          <div className="v6-quote-row">
-            <strong>Planned</strong>
-            <strong style={{ color: "var(--v6-accent)", fontFamily: "var(--v6-mono)" }}>{formatCredits(costEstimate.totalCredits)}</strong>
-          </div>
-          <div className="v6-quote-row">
-            <span className="v6-muted">Max ({costEstimate.shotCount} shots)</span>
-            <span className="v6-muted">{formatCredits((costEstimate.totalCredits || 0) + (costEstimate.assemblyCost || 0))}</span>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Build button */}
-      <button className="v6-btn v6-primary" onClick={handleCreatePlan} disabled={loading} style={{ width: "100%" }}>
-        <IconSpark /> {loading ? "Planning\u2026" : "Build Production Plan"}
-      </button>
-      <span className="v6-kbd-hint" style={{ textAlign: "center" }}>Shift + Enter to execute</span>
-
-      {/* Load existing */}
-      {pipelines.length > 0 && (
-        <div className="v6-field">
-          <label className="v6-field-label">Load Pipeline</label>
-          <div className="v6-select-wrap">
-            <select className="v6-select" defaultValue="" onChange={(e) => e.target.value && handleLoadPipeline(e.target.value)}>
-              <option value="" disabled>Select a pipeline\u2026</option>
-              {pipelines.map((p) => (<option key={p.id} value={p.id}>{p.title} ({p.status})</option>))}
-            </select>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  /* ═══════════════════ RENDER: Center Panel ═══════════════ */
-  const renderCenterPanel = () => (
-    <div className="v6-builder-panel" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Header bar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <div className="v6-eyebrow">{mode === "execute" ? "Pipeline" : "Production Plan"}</div>
-          <h3 style={{ margin: "4px 0 0", fontSize: 16, fontWeight: 700, letterSpacing: "-0.02em" }}>
-            {brief.title || plan?.conceptSummary?.slice(0, 40) || "Untitled Production"}
-          </h3>
-        </div>
-        {mode === "plan" && plan && (
-          <button className="v6-btn v6-primary" onClick={handleExecute} disabled={loading}>
-            <IconPlay /> Execute Pipeline
-          </button>
-        )}
-        {mode === "execute" && pipelineStatus === "completed" && (
-          <button className="v6-btn" onClick={() => { setMode("brief"); setPlan(null); setCostEstimate(null); setPipelineStatus(null); setShots([]); }}>
-            <IconRefresh /> New Production
-          </button>
-        )}
-      </div>
-
-      {/* ── Plan Mode: Node Canvas with stagger ── */}
-      {mode === "plan" && plan && (
-        <div className="v6-node-canvas" style={{ flex: 1, borderRadius: 10 }}>
-          {shots.map((shot, i) => {
-            const pos = nodePositions[i] || { left: "10%", top: `${10 + i * 15}%` };
-            return (
-              <motion.div
-                key={shot.id}
-                className="v6-node"
-                style={{ left: pos.left, top: pos.top }}
-                initial={{ opacity: 0, scale: 0.9, y: 8 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                transition={{ delay: i * 0.08, duration: 0.35, ease: "easeOut" }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                  <span style={{
-                    width: 18, height: 18, borderRadius: 5, background: "var(--v6-accent)",
-                    color: "#fff", fontSize: 9, fontWeight: 800, display: "grid", placeItems: "center", flexShrink: 0
-                  }}>{i + 1}</span>
-                  <strong>{shot.title || `Shot ${i + 1}`}</strong>
-                </div>
-                <p>{shot.section} \u00b7 {shot.durationSec}s</p>
-                <p>{shot.camera?.framing} \u00b7 {shot.camera?.lens}</p>
-                <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                  <StatusBadge status="draft" />
-                  <span style={{ fontSize: 9, color: "var(--v6-muted)", display: "flex", alignItems: "center", gap: 2 }}>
-                    <IconBolt />{costEstimate?.shotCosts?.[i]?.total || "?"}c
-                  </span>
-                </div>
-              </motion.div>
-            );
-          })}
-          {/* Connecting lines */}
-          {shots.length > 1 && shots.slice(0, -1).map((_, i) => {
-            const a = nodePositions[i]; const b = nodePositions[i + 1];
-            if (!a || !b) return null;
-            const angle = Math.atan2(parseFloat(b.top) - parseFloat(a.top), parseFloat(b.left) - parseFloat(a.left)) * (180 / Math.PI);
-            const len = Math.sqrt(Math.pow(parseFloat(b.left) - parseFloat(a.left), 2) + Math.pow(parseFloat(b.top) - parseFloat(a.top), 2));
-            return (
-              <div key={`line-${i}`} style={{
-                position: "absolute", left: a.left, top: a.top, width: `${len}%`,
-                transform: `rotate(${angle}deg)`, transformOrigin: "0 0",
-                borderTop: "1px dashed var(--v6-line)", opacity: 0.5, pointerEvents: "none",
-              }} />
-            );
-          })}
-        </div>
-      )}
-
-      {/* ── Execute Mode: Shot Cards ── */}
-      {mode === "execute" && (
-        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-          {/* Progress bar */}
-          {shots.length > 0 && (
-            <div className="v6-progress-bar-wrap">
-              <IconList />
-              <div className="v6-progress-bar">
-                <div className="v6-progress-fill" style={{ width: `${shotProgressPct}%` }} />
-              </div>
-              <span className="v6-progress-label">{completedShots}/{shots.length}</span>
-            </div>
-          )}
-
-          {shots.length === 0 && !loading && (
-            <div className="v6-empty-state" style={{ flex: 1 }}>
-              <div className="v6-empty-orbit"><IconPlay /></div>
-              <p className="v6-muted">Pipeline is queued. Shots will appear as they generate.</p>
-            </div>
-          )}
-
-          <div className="v6-stagger" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {shots.map((shot, i) => {
-              const status = shot.status || "pending";
-              const imageUrl = shot.imageResult?.url || shot.imageResult?.rawUrl;
-              const videoUrl = shot.videoResult?.url || shot.videoResult?.rawUrl;
-              const statusColors = {
-                completed: "var(--v6-good)", failed: "var(--v6-bad)",
-                processing: "var(--v6-warn)", generating_images: "var(--v6-warn)",
-                generating_video: "var(--v6-warn)", pending: "var(--v6-muted)",
-              };
-              const barColor = statusColors[status] || "var(--v6-muted)";
-
-              return (
-                <div key={shot.id || i} className="v6-shot-card" style={{ animationDelay: `${i * 0.05}s` }}>
-                  {/* Status bar */}
-                  <div className="v6-shot-status-bar" style={{ background: barColor }} />
-
-                  {/* Thumbnail */}
-                  <div className="v6-shot-thumb">
-                    {imageUrl
-                      ? <img src={imageUrl} alt="" />
-                      : videoUrl
-                        ? <video src={videoUrl} muted />
-                        : <IconHash style={{ width: 18, height: 18, color: "var(--v6-line)" }} />
-                    }
-                    <span className="v6-shot-number">#{i + 1}</span>
-                  </div>
-
-                  {/* Info */}
-                  <div className="v6-shot-info">
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <strong>{shot.title || shot.plan?.title || `Shot ${i + 1}`}</strong>
-                      <StatusBadge status={status} />
-                    </div>
-                    {shot.section && <p>{shot.section} \u00b7 {shot.durationSec}s \u00b7 {shot.camera?.framing}</p>}
-                    {shot.error && <p style={{ color: "var(--v6-bad)", fontSize: 10, margin: 0 }}>{shot.error.slice(0, 100)}</p>}
-                    {shot.videoResult?.prompt && (
-                      <p style={{ fontSize: 10, color: "var(--v6-muted)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {shot.videoResult.prompt.slice(0, 80)}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Rerun actions */}
-                  {(status === "completed" || status === "failed") && (
-                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                      <button className="v6-btn v6-ghost v6-sm v6-tooltip" data-tooltip="Rerun image" onClick={() => handleRerunShot(shot.id, "image")}>Img</button>
-                      <button className="v6-btn v6-ghost v6-sm v6-tooltip" data-tooltip="Rerun video" onClick={() => handleRerunShot(shot.id, "video")}>Vid</button>
-                      <button className="v6-btn v6-primary v6-sm" onClick={() => handleRerunShot(shot.id, "full")}>All</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Completed banner */}
-          {pipelineStatus === "completed" && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-              style={{ padding: 14, borderRadius: 10, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.15)", marginTop: 4 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <IconCheck style={{ width: 16, height: 16, color: "#4ade80" }} />
-                <strong style={{ color: "#4ade80", fontSize: 13 }}>Production Complete</strong>
-              </div>
-              <p style={{ fontSize: 11, color: "var(--v6-muted)", margin: 0 }}>
-                {completedShots}/{shots.length} shots rendered{costEstimate && ` \u00b7 Total: ${formatCredits(costEstimate.totalCredits)}`}
-              </p>
-            </motion.div>
-          )}
-
-          {/* Generating state */}
-          {pipelineStatus && pipelineStatus !== "completed" && pipelineStatus !== "failed" && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16 }}>
-              <div className="v6-typing-dots"><span /><span /><span /></div>
-              <span className="v6-muted" style={{ fontSize: 12 }}>
-                {pipelineStatus.replace(/_/g, " ")}{pipelineStatus === "queued" ? " \u00b7 Starting soon\u2026" : ""}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Empty plan state with brief ideas ── */}
-      {mode === "plan" && !plan && (
-        <div className="v6-empty-state" style={{ flex: 1 }}>
-          <div className="v6-empty-orbit"><IconSpark /></div>
-          <h2>Create your first production</h2>
-          <p>Fill in the production brief and build a shot-by-shot plan, or start from one of these ideas.</p>
-          <div className="v6-brief-ideas">
-            {BRIEF_IDEAS.map((idea, i) => (
-              <motion.button
-                key={i}
-                className="v6-brief-idea"
-                onClick={() => fillBriefIdea(idea)}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.08 }}
-              >
-                <strong style={{ display: "block", fontSize: 10, marginBottom: 2, color: "var(--v6-text)" }}>{idea.title}</strong>
-                {idea.concept.slice(0, 90)}\u2026
-              </motion.button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  /* ═══════════════════ RENDER: Guardrails Panel (Right) ═══════════════ */
-  const renderGuardrailsPanel = () => (
-    <div className="v6-builder-panel v6-entrance-fade" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div className="v6-eyebrow">Guardrails</div>
-
-      {/* Approval mode */}
-      <div className="v6-field">
-        <label className="v6-field-label">Approval Mode</label>
-        <div className="v6-select-wrap">
-          <select className="v6-select" value={approvalMode} onChange={(e) => setApprovalMode(e.target.value)}>
-            <option value="auto">Auto-approve all shots</option>
-            <option value="manual">Manual review per shot</option>
-            <option value="critical">Review only key shots</option>
-          </select>
-        </div>
-      </div>
-
-      {/* On-failure behavior */}
-      <div className="v6-field">
-        <label className="v6-field-label">On Failure</label>
-        <div className="v6-select-wrap">
-          <select className="v6-select" value={onFailure} onChange={(e) => setOnFailure(e.target.value)}>
-            {ON_FAILURE_OPTIONS.map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
-          </select>
-        </div>
-      </div>
-
-      {/* Output format */}
-      <div className="v6-field">
-        <label className="v6-field-label">Output Format</label>
-        <div className="v6-select-wrap">
-          <select className="v6-select" value={outputFormat} onChange={(e) => setOutputFormat(e.target.value)}>
-            <option value="mp4">MP4 (H.264)</option>
-            <option value="webm">WebM</option>
-            <option value="individual">Individual clips</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="v6-section-rule" />
-
-      {/* Pipeline Metrics */}
-      <div className="v6-eyebrow">Pipeline Metrics</div>
-      <div className="v6-metric-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
-        <div className="v6-metric" style={{ padding: 12 }}>
-          <span>State</span>
-          <motion.strong
-            key={pipelineStatus || mode}
-            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
-            style={{ fontSize: 12, textTransform: "capitalize", marginTop: 4, display: "block" }}
-          >
-            {pipelineStatus ? pipelineStatus.replace(/_/g, " ") : (mode === "brief" ? "Draft" : mode === "plan" ? "Planning" : "Active")}
-          </motion.strong>
-        </div>
-        <div className="v6-metric" style={{ padding: 12 }}>
-          <span>Shots</span>
-          <motion.strong
-            key={shots.length}
-            initial={{ scale: 1.2 }} animate={{ scale: 1 }}
-            style={{ fontSize: 18, marginTop: 4, display: "block", letterSpacing: "-0.03em" }}
-          >
-            {plan ? plan.shots?.length || shots.length : 0}
-          </motion.strong>
-        </div>
-        <div className="v6-metric" style={{ padding: 12 }}>
-          <span>Runtime</span>
-          <strong style={{ fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
-            <IconClock /> ~{estimatedRuntime}m
-          </strong>
-        </div>
-        <div className="v6-metric" style={{ padding: 12 }}>
-          <span>Budget</span>
-          <strong style={{ fontSize: 12, marginTop: 4, color: "var(--v6-accent)", display: "flex", alignItems: "center", gap: 4 }}>
-            <IconBolt /> {costEstimate ? costEstimate.totalCredits : "\u2014"}
-          </strong>
-        </div>
-      </div>
-
-      {/* Shot Breakdown */}
-      {shots.length > 0 && pipelineStatus === "completed" && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ marginTop: 8 }}>
-          <div className="v6-eyebrow">Shot Breakdown</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
-            {shots.slice(0, 6).map((shot, i) => (
-              <div key={shot.id || i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <StatusBadge status={shot.status || "pending"} />
-                <span style={{ fontSize: 11 }}>{shot.title || `Shot ${i + 1}`}</span>
-              </div>
-            ))}
-            {shots.length > 6 && <span className="v6-muted v6-tiny" style={{ marginLeft: 8 }}>+{shots.length - 6} more shots</span>}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Error display */}
-      {error && (
-        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
-          style={{ padding: 10, borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: 11, color: "#ef4444", display: "flex", alignItems: "flex-start", gap: 6 }}>
-          <IconAlert style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} /> {error}
-        </motion.div>
-      )}
-    </div>
-  );
-
-  /* ═══════════════════ RENDER: Header ── */
-  const renderHeader = () => (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-      <div>
-        <h1 style={{ fontSize: 20, fontWeight: 800, fontFamily: "var(--font-display, inherit)", letterSpacing: "-0.03em", margin: 0 }}>
-          Director Studio
-        </h1>
-        <p style={{ fontSize: 12, margin: "4px 0 0", color: "var(--v6-muted)" }}>
-          Multi-shot production pipeline director
-        </p>
-      </div>
-      <div style={{ display: "flex", gap: 4 }}>
-        {["brief", "plan", "execute"].map((m) => (
-          <motion.span
-            key={m}
-            whileTap={{ scale: 0.95 }}
-            style={{
-              fontSize: 10, fontWeight: 600, padding: "4px 12px", borderRadius: 100, cursor: "pointer",
-              background: mode === m ? "var(--v6-accent)" : "var(--v6-surface2)",
-              color: mode === m ? "var(--v6-accent-text)" : "var(--v6-muted)",
-              textTransform: "capitalize", letterSpacing: "0.04em",
-              transition: "all 0.2s",
-            }}
-          >
-            {m}
-          </motion.span>
-        ))}
-      </div>
-    </div>
-  );
-
-  /* ═══════════════════ RENDER ── */
+  /* ── Render ───────────────────────────────────────────────────────────── */
   return (
-    <div style={{ height: "100%", padding: 18, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      {renderHeader()}
-      <div className="v6-builder-grid" style={{ flex: 1, minHeight: 0 }}>
-        {renderBriefPanel()}
-        {renderCenterPanel()}
-        {renderGuardrailsPanel()}
+    <div className="st-board">
+      <header className="st-board__head">
+        <div style={{ minWidth: 0 }}>
+          <span className="hs-eyebrow">Director</span>
+          <h2 className="st-board__title">{title.trim() || plan?.conceptSummary?.slice(0, 48) || "Untitled production"}</h2>
+        </div>
+
+        {pipelineStatus && (
+          <span className={`hs-badge${finished ? " hs-badge--signal" : FAILED.has(status) ? " hs-badge--fault" : running ? " hs-badge--caution" : ""}`}>
+            {label(pipelineStatus)}
+          </span>
+        )}
+
+        <div className="st-board__stats" style={{ marginLeft: "auto" }}>
+          <span>Shots <b>{cards.length || outline.length || 0}</b></span>
+          <span>Runtime <b>{clock(totalDuration || (plan ? 0 : duration))}</b></span>
+          <span>Cost <b>{credits(totalCost)}</b></span>
+          {(running || finished) && <span>Rendered <b>{completed}/{cards.length}</b></span>}
+        </div>
+
+        {assembledUrl && (
+          <a className="hs-btn hs-btn--sm" href={assembledUrl} target="_blank" rel="noopener noreferrer">
+            <IcExternal className="hs-icon-sm" /> Open the film
+          </a>
+        )}
+
+        <button type="button" className="hs-btn hs-btn--sm" onClick={() => setSettingsOpen(true)}>
+          <IcSettings className="hs-icon-sm" /> Production
+        </button>
+      </header>
+
+      <div className="st-board__strip" aria-label="Shot board">
+        {/* Planned shots — order is the film, so the slate number is earned */}
+        {cards.map((card) => (
+          <article
+            key={card.key}
+            className={`st-shot${active === card.key ? " is-active" : ""}`}
+            onFocus={() => setActive(card.key)}
+            onMouseEnter={() => setActive(card.key)}
+          >
+            <span className={`st-shot__state ${railClass(card.status)}`} aria-hidden="true" />
+
+            <header className="st-shot__slate">
+              <span className="st-shot__no">{String(card.no).padStart(2, "0")}</span>
+              <span>{label(card.section)}</span>
+              <span className="st-shot__dur">{card.durationSec != null ? `${card.durationSec}s` : "—"}</span>
+            </header>
+
+            <div className={`st-shot__frame${card.videoUrl || card.imageUrl ? "" : " is-empty"}`}>
+              {card.videoUrl ? (
+                <video src={card.videoUrl} muted playsInline loop preload="metadata" />
+              ) : card.imageUrl ? (
+                <img src={card.imageUrl} alt={`Shot ${card.no}`} />
+              ) : (
+                <IcFilm style={{ width: 22, height: 22 }} />
+              )}
+            </div>
+
+            <div className="st-shot__body">
+              <strong style={{ fontSize: "var(--t-sm)", fontWeight: 600 }}>{card.title}</strong>
+              {card.line && <p className="st-shot__line">{card.line}</p>}
+              {card.camera && <span className="hs-hint">{card.camera}</span>}
+              {card.continuity && <span className="hs-hint">Continuity: {card.continuity}</span>}
+              {card.error && <span className="hs-error">{card.error}</span>}
+            </div>
+
+            <footer className="st-shot__foot">
+              <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+                {label(card.status)}
+              </span>
+              <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-dim)", marginLeft: "auto" }}>
+                {card.cost != null ? `${credits(card.cost)} cr` : "—"}
+              </span>
+
+              {pipelineId && card.id && (
+                <>
+                  <button
+                    type="button"
+                    className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                    data-tip="Re-run the still"
+                    aria-label={`Re-run the still for shot ${card.no}`}
+                    onClick={() => rerun(card.id, "image")}
+                    disabled={!!rerunning || running}
+                  >
+                    {rerunning === `${card.id}:image` ? <span className="hs-spin" /> : <IcImage className="hs-icon-sm" />}
+                  </button>
+                  <button
+                    type="button"
+                    className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                    data-tip="Re-run the motion"
+                    aria-label={`Re-run the motion for shot ${card.no}`}
+                    onClick={() => rerun(card.id, "video")}
+                    disabled={!!rerunning || running}
+                  >
+                    {rerunning === `${card.id}:video` ? <span className="hs-spin" /> : <IcVideo className="hs-icon-sm" />}
+                  </button>
+                  <button
+                    type="button"
+                    className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                    data-tip="Re-run the whole shot"
+                    aria-label={`Re-run shot ${card.no}`}
+                    onClick={() => rerun(card.id, "full")}
+                    disabled={!!rerunning || running}
+                  >
+                    {rerunning === `${card.id}:full` ? <span className="hs-spin" /> : <IcRefresh className="hs-icon-sm" />}
+                  </button>
+                </>
+              )}
+            </footer>
+          </article>
+        ))}
+
+        {/* Sketched shots — sent to the planner as `shots` */}
+        {!plan && outline.map((shot, i) => (
+          <article key={shot.id} className="st-shot">
+            <span className="st-shot__state is-queued" aria-hidden="true" />
+            <header className="st-shot__slate">
+              <span className="st-shot__no">{String(i + 1).padStart(2, "0")}</span>
+              <span>sketch</span>
+              <button
+                type="button"
+                className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
+                style={{ marginLeft: "auto" }}
+                onClick={() => dropShot(shot.id)}
+                aria-label={`Remove shot ${i + 1}`}
+              >
+                <IcClose className="hs-icon-sm" />
+              </button>
+            </header>
+
+            <div className="st-shot__frame is-empty"><IcFilm style={{ width: 22, height: 22 }} /></div>
+
+            <div className="st-shot__body">
+              <input
+                className="hs-input"
+                value={shot.title}
+                onChange={(e) => editShot(shot.id, { title: e.target.value })}
+                placeholder={`Shot ${i + 1}`}
+                aria-label={`Title for shot ${i + 1}`}
+              />
+              <textarea
+                className="hs-input hs-textarea"
+                style={{ minHeight: 64 }}
+                value={shot.line}
+                onChange={(e) => editShot(shot.id, { line: e.target.value })}
+                placeholder="What happens in this shot"
+                aria-label={`Description for shot ${i + 1}`}
+              />
+            </div>
+          </article>
+        ))}
+
+        {/* Add a shot to the outline. Once a plan exists the planner owns the
+            sequence, so the affordance goes away rather than lying. */}
+        {!plan && (
+          <button type="button" className="st-shot st-shot--add" onClick={addShot}>
+            <IcPlus />
+            <span style={{ fontSize: "var(--t-tiny)" }}>Add a shot</span>
+          </button>
+        )}
+
+        {!plan && outline.length === 0 && (
+          <div style={{ alignSelf: "center", maxWidth: 300, display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+            <p className="hs-hint" style={{ lineHeight: 1.6 }}>
+              Write the concept below and build the plan, or sketch the shots yourself first.
+              Start from one of these:
+            </p>
+            <div className="hs-chips">
+              {STARTERS.map((s) => (
+                <button
+                  key={s.title}
+                  type="button"
+                  className="hs-chip"
+                  onClick={() => { setTitle(s.title); setConcept(s.concept); }}
+                >
+                  {s.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
+      <div className="st-board__foot">
+        {error && (
+          <p className="hs-notice hs-notice--fault" style={{ marginBottom: "var(--s-3)" }} role="alert">
+            {error}
+          </p>
+        )}
+
+        <div className="st-brief">
+          <textarea
+            value={concept}
+            onChange={(e) => setConcept(e.target.value.slice(0, 2000))}
+            onKeyDown={onBriefKey}
+            rows={2}
+            placeholder="Describe the film. Subject, setting, light, and how it should move."
+            aria-label="Production concept"
+            disabled={phase === "running"}
+          />
+          <div className="st-brief__foot">
+            <div className="st-brief__tools">
+              <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => setSettingsOpen(true)}>
+                <IcSettings className="hs-icon-sm" />
+                {(PRODUCTION_TYPE_PRESETS[type]?.label || type)} · {duration}s
+              </button>
+              {plan && phase !== "running" && (
+                <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={buildPlan} disabled={!!busy}>
+                  <IcRefresh className="hs-icon-sm" /> Re-plan
+                </button>
+              )}
+            </div>
+            <span className="st-brief__count">{concept.length}/2000</span>
+          </div>
+        </div>
+
+        <div className="st-spend">
+          <SpendMeter
+            cost={meterCost}
+            balance={balance}
+            affordable={affordable}
+            shortfall={shortfall}
+            label={meterLabel}
+          />
+          <button
+            type="button"
+            className="hs-btn hs-btn--primary hs-btn--lg"
+            onClick={() => primary.run?.()}
+            disabled={disabled || !primary.run}
+            title={
+              phase === "brief" ? "Build the shot plan (Ctrl+Enter)"
+              : phase === "plan" ? (affordable ? "Render every shot" : "Not enough credits for this plan")
+              : undefined
+            }
+          >
+            {busy || phase === "running" ? <span className="hs-spin" /> : <IcBolt className="hs-icon-sm" />}
+            {primary.text}
+            {phase === "plan" && totalCost != null && <span className="hs-btn__cost">{totalCost}</span>}
+          </button>
+        </div>
+      </div>
+
+      <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Production">
+        <div className="hs-stack">
+          <Field label="Title">
+            {(id) => (
+              <input
+                id={id}
+                className="hs-input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Midnight drive"
+              />
+            )}
+          </Field>
+
+          <Field label="Type" hint="Sets the shot structure and the default models.">
+            <Chips options={TYPES} value={type} onChange={setType} scroll />
+          </Field>
+
+          <Field label="Platform">
+            <Chips options={PLATFORMS} value={platform} onChange={setPlatform} scroll />
+          </Field>
+
+          <Field label="Target duration" hint="The planner divides this into 3–8 second shots.">
+            <Chips
+              options={DURATIONS}
+              value={duration}
+              onChange={(v) => { chosenDuration.current = true; setDuration(Number(v)); }}
+              scroll
+            />
+          </Field>
+
+          <Field label="Visual style">
+            {(id) => (
+              <input
+                id={id}
+                className="hs-input"
+                value={style}
+                onChange={(e) => setStyle(e.target.value)}
+                placeholder="Anamorphic, high contrast, film grain"
+              />
+            )}
+          </Field>
+
+          <Field label="Mood">
+            {(id) => (
+              <input
+                id={id}
+                className="hs-input"
+                value={mood}
+                onChange={(e) => setMood(e.target.value)}
+                placeholder="Restless, cold, hopeful at the end"
+              />
+            )}
+          </Field>
+
+          {recent.length > 0 && (
+            <Field label="Earlier productions">
+              <div className="hs-stack" style={{ gap: "var(--s-2)" }}>
+                {recent.slice(0, 8).map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className="hs-btn hs-btn--sm hs-btn--block"
+                    onClick={() => load(p.id)}
+                    style={{ justifyContent: "space-between" }}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {p.title || p.name || p.id}
+                    </span>
+                    <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+                      {label(p.status) || "saved"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </Field>
+          )}
+        </div>
+      </Sheet>
     </div>
   );
 }

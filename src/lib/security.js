@@ -1,14 +1,37 @@
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 
+// NOTE: checkRateLimit is a no-op for any endpoint missing from this map, so a
+// key must exist for every path passed to it. generation-handler.js builds
+// `/api/generate/${tool}` for every tool in the registry.
 const RATE_LIMITS = {
+  // Image-class tools
   "/api/generate/image": { window: 60000, max: 20 },
+  "/api/generate/i2i": { window: 60000, max: 20 },
+  "/api/generate/marketing": { window: 60000, max: 20 },
+  "/api/generate/influencer": { window: 60000, max: 20 },
+  // Video-class tools (expensive)
   "/api/generate/video": { window: 60000, max: 5 },
+  "/api/generate/i2v": { window: 60000, max: 5 },
+  "/api/generate/v2v": { window: 60000, max: 5 },
+  "/api/generate/cinema": { window: 60000, max: 5 },
+  "/api/generate/recast": { window: 60000, max: 5 },
+  "/api/generate/motion": { window: 60000, max: 5 },
+  "/api/generate/clipping": { window: 60000, max: 5 },
   "/api/generate/lipsync": { window: 60000, max: 5 },
+  // Audio
   "/api/generate/audio": { window: 60000, max: 10 },
+  // Async submission path
+  "/api/generate/async": { window: 60000, max: 20 },
+  // Non-generation endpoints
+  "/api/analyze": { window: 60000, max: 20 },
+  "/api/prompt": { window: 60000, max: 30 },
   "/api/agent": { window: 60000, max: 10 },
   "/api/workflow": { window: 60000, max: 5 },
+  "/api/workflow/regen": { window: 60000, max: 10 },
   "/api/upload": { window: 60000, max: 30 },
+  // Public form — keyed by IP for signed-out visitors.
+  "/api/contact": { window: 600000, max: 5 },
 };
 
 // ── RBAC ──

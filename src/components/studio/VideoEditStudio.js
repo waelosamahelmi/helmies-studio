@@ -1,154 +1,282 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { motion } from "framer-motion";
-import { StudioLayout, ModelSelector, PromptDock, StageArea } from "./v6";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Workspace, Brief, ModelPicker, Stage, Idle,
+  Field, Group, Segmented, Chips, RatioPicker, Dropzone, Specs,
+  IcScissors,
+} from "@/components/studio/kit";
+import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
-import { useModelCatalog } from "./useModelCatalog";
-import { apiFetch } from "@/lib/client-fetch";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 import { matchesGroup } from "@/lib/capability-groups";
 
-/* ── Inline SVGs ── */
-const IconVideo = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>);
-const IconBolt = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10" /></svg>);
-const IconUpload = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17,8 12,3 7,8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>);
-const IconImage = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>);
+/* ══════════════════════════════════════════════════════════════════════════
+   VIDEO EDIT — work on footage you already have
+   ──────────────────────────────────────────────────────────────────────────
+   Three jobs, one source clip: carry the shot further, change its pace, or
+   change its look. The job you pick decides which controls are live and how
+   the brief is written — it is never sent as an invented API field.
 
-const EDIT_SUGGESTIONS = [
-  "Add cinematic motion blur and dramatic color grading",
-  "Change lighting to warm golden hour, soft shadows",
-  "Transform the scene to a futuristic cyberpunk city",
-  "Add gentle slow motion and dreamy atmosphere",
-  "Change season to winter with falling snow particles",
+   Fixed in this rebuild:
+   · `error` was computed and never rendered, so a rejected clip looked
+     identical to a clip still uploading.
+   · `elapsed` was unused; the render state now shows real elapsed time.
+   · The inspector reported "Type: Extension" from `isExtend`, a flag that
+     only exists on the static fallback list — always false against the live
+     catalog. Replaced with the job the user actually chose.
+   · Duration and ratio now follow the selected model.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const JOBS = {
+  restyle: {
+    label: "Restyle",
+    title: "Restyle footage",
+    idle: "Load a clip, then describe the treatment. The cut and the performance stay; grade, texture and world change.",
+    placeholder: "Describe the look: grade, texture, weather, era.",
+    examples: [
+      "Cool night grade, sodium practicals, rain on every surface",
+      "16mm texture, warm highlights, gentle halation on the speculars",
+      "Overcast winter, desaturated, breath visible in the air",
+    ],
+  },
+  extend: {
+    label: "Extend",
+    title: "Carry the shot on",
+    idle: "Load a clip, choose how much longer it should run, then describe what happens next. The model continues from the final frame.",
+    placeholder: "Describe what happens after the clip ends.",
+    examples: [
+      "The camera keeps pushing in as she turns toward the window",
+      "The car clears frame right and the street settles back to empty",
+      "The light drops another stop and the practicals take over",
+    ],
+  },
+  retime: {
+    label: "Retime",
+    title: "Change the pace",
+    idle: "Load a clip and choose a speed. The speed is written into the brief for you — describe what the retimed clip should feel like.",
+    placeholder: "Describe the retimed clip: what slows down, what stays sharp.",
+    examples: [
+      "Keep the motion blur natural, no strobing on the fast pans",
+      "Hold the audio-driven cuts on the beat",
+      "Ease into the slow section rather than cutting to it",
+    ],
+  },
+};
+
+const SPEEDS = [
+  { value: "0.25", label: "0.25×", prompt: "extreme slow motion, quarter speed, smooth interpolation" },
+  { value: "0.5", label: "0.5×", prompt: "slow motion, half speed, smooth interpolation" },
+  { value: "1", label: "1×", prompt: "" },
+  { value: "2", label: "2×", prompt: "double speed, brisk pacing" },
+  { value: "4", label: "4×", prompt: "time-lapse, quadruple speed" },
 ];
 
-export default function VideoEditStudio() {
-  const isMobile = useIsMobile();
-  const { models: rawModels } = useModelCatalog({});
-  const MODELS = useMemo(() => {
-    // Video-edit pool: v2v group (video-to-video / v2v / video-upscale)
-    // plus any model carrying an explicit "video-edit" capability.
-    return rawModels
-      .filter((m) => matchesGroup(m, "v2v") || m.capability === "video-edit")
-      .map((m) => { const tier = m.speedTier || (m.id?.includes("flash") ? "fast" : m.id?.includes("pro") || m.id?.includes("veo3") || m.id?.includes("aleph") ? "premium" : "standard"); return { id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: tier, aspectRatios: m.aspectRatios, durations: m.durations, isExtend: m.isExtend, endpoint: m.endpoint }; });
-  }, [rawModels]);
+const FALLBACK_RATIOS = ["16:9", "9:16", "1:1"];
 
-  const [model, setModel] = useState("");
-  useEffect(() => { if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) setModel(MODELS[0].id); }, [MODELS, model]);
+export default function VideoEditStudio({ initialModel, templateConfig, onCreditsChanged }) {
+  const [job, setJob] = useState("restyle");
+  const [modelId, setModelId] = useState(initialModel || null);
   const [prompt, setPrompt] = useState("");
-  const [duration, setDuration] = useState(5);
-  const [aspectRatio, setAspectRatio] = useState("16:9");
-  const [videoUrl, setVideoUrl] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [videoFile, setVideoFile] = useState(null);
+  const [source, setSource] = useState(null);
+  const [ratio, setRatio] = useState("16:9");
+  const [duration, setDuration] = useState(0);
+  const [speed, setSpeed] = useState("0.5");
 
-  const { loading, result, error, elapsed, submit } = useAsyncGeneration();
-  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
-  const supportsDuration = Array.isArray(currentModel.durations) && currentModel.durations.length > 0;
-  const ASPECTS = currentModel.aspectRatios || ["16:9", "9:16", "1:1"];
-  const DURATIONS = supportsDuration ? currentModel.durations : [];
-  const { cost, affordable, shortfall, balance } = useCreditCost("v2v", model, { duration, video_url: videoUrl });
+  const { models, loading: loadingModels } = useModelCatalog({});
+  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
 
-  const handleUpload = useCallback(async (file) => {
-    if (!file) return; setUploading(true);
-    setVideoFile(URL.createObjectURL(file));
-    const fd = new FormData(); fd.append("file", file);
-    try { const r = await apiFetch("/api/upload", { method: "POST", body: fd }); const d = await r.json(); if (d.url) setVideoUrl(d.url); } catch {}
-    setUploading(false);
-  }, []);
+  /* v2v covers video-to-video and video-upscale; some rows carry an explicit
+     "video-edit" capability that is not in any group yet. */
+  const available = useMemo(
+    () => (models || []).filter((m) => matchesGroup(m, "v2v") || m.capability === "video-edit"),
+    [models],
+  );
 
-  const handleGenerate = useCallback(() => {
-    if (!prompt.trim() || !videoUrl || loading) return;
-    submit("v2v", model, { endpoint: currentModel.endpoint || model, prompt: prompt.trim(), video_url: videoUrl, duration: supportsDuration ? duration : undefined, aspect_ratio: aspectRatio });
-  }, [prompt, videoUrl, loading, model, currentModel, duration, supportsDuration, aspectRatio, submit]);
+  const model = available.find((m) => m.id === modelId) || available[0] || null;
 
-  const handleDownload = () => { if (result?.url) window.open(result.url, "_blank"); };
-  const handleNew = () => { setPrompt(""); setVideoUrl(null); setVideoFile(null); };
+  useEffect(() => {
+    if (available.length && !available.some((m) => m.id === modelId)) {
+      setModelId(available[0].id);
+    }
+  }, [available, modelId]);
 
-  /* ── Controls ── */
+  useEffect(() => {
+    if (!templateConfig) return;
+    if (templateConfig.prompt) setPrompt(templateConfig.prompt);
+    if (templateConfig.aspect_ratio) setRatio(templateConfig.aspect_ratio);
+    if (templateConfig.duration) setDuration(Number(templateConfig.duration));
+    if (templateConfig.model) setModelId(templateConfig.model);
+    if (templateConfig.mode) setJob(templateConfig.mode);
+  }, [templateConfig]);
+
+  const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
+  const durations = useMemo(
+    () => (model?.durations || []).map(Number).filter((n) => Number.isFinite(n) && n > 0),
+    [model],
+  );
+
+  /* Drop settings the chosen model does not offer */
+  useEffect(() => {
+    if (ratios.length && !ratios.includes(ratio)) setRatio(ratios[0]);
+  }, [ratios, ratio]);
+  useEffect(() => {
+    if (!durations.length) { if (duration) setDuration(0); return; }
+    if (!durations.includes(Number(duration))) setDuration(durations[0]);
+  }, [durations, duration]);
+
+  const { cost, affordable, balance, shortfall } = useCreditCost("v2v", model?.id || "", {
+    duration: duration || undefined,
+    aspect_ratio: ratio,
+    video_url: source?.url,
+  });
+
+  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
+
+  const copy = JOBS[job];
+  const missingSource = !source?.url;
+  const speedNote = job === "retime" ? SPEEDS.find((s) => s.value === speed)?.prompt : "";
+
+  const brief = useMemo(
+    () => [speedNote, prompt.trim()].filter(Boolean).join(". "),
+    [speedNote, prompt],
+  );
+
+  const generate = useCallback(() => {
+    if (!model || missingSource) return;
+    const params = {
+      endpoint: model.endpoint || model.id,
+      prompt: brief,
+      video_url: source.url,
+      aspect_ratio: ratio,
+    };
+    if (duration) params.duration = Number(duration);
+    submit("v2v", model.id, params);
+  }, [model, missingSource, submit, brief, source, ratio, duration]);
+
+  /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
-    <div className="v6-control-stack">
-      {isMobile ? (
-        <MobileModelCarousel models={MODELS} selectedModelId={model} onSelect={setModel} />
-      ) : (
-        <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Video Edit Models" />
+    <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+      <Field label="Job">
+        <Segmented
+          label="Edit job"
+          value={job}
+          onChange={setJob}
+          options={Object.entries(JOBS).map(([value, j]) => ({ value, label: j.label }))}
+        />
+      </Field>
+
+      <Field
+        label="Source clip"
+        hint={missingSource ? "Everything here works on one clip." : source.name}
+        error={missingSource && prompt.trim() ? "Load a clip before generating." : undefined}
+      >
+        <Dropzone
+          value={source}
+          onChange={setSource}
+          accept="video/*"
+          label="Drop a clip or browse"
+          hint="MP4, MOV or WebM"
+        />
+      </Field>
+
+      {job === "retime" && (
+        <Field label="Speed" hint="Written into the brief so the model retimes rather than resamples.">
+          <Chips label="Speed" options={SPEEDS} value={speed} onChange={setSpeed} scroll />
+        </Field>
       )}
 
-      {/* Video upload */}
-      <div className="v6-field">
-        <label className="v6-field-label">Source Video</label>
-        <label className="v6-upload-drop" style={{ minHeight: 100, cursor: uploading ? "wait" : "pointer", opacity: uploading ? 0.5 : 1 }}>
-          <input type="file" accept="video/*" onChange={(e) => handleUpload(e.target.files?.[0])} hidden disabled={uploading} />
-          {videoFile ? (
-            <div style={{ width: "100%", borderRadius: 8, overflow: "hidden", border: "1px solid var(--v6-line)" }}>
-              <video src={videoFile} muted style={{ width: "100%", maxHeight: 100, objectFit: "cover", borderRadius: 6 }} />
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 6, background: "var(--v6-surface)" }}>
-                <IconVideo style={{ width: 14, height: 14 }} />
-                <span style={{ color: "var(--v6-good)", fontSize: 11 }}>Video ready \u2713</span>
-              </div>
-            </div>
-          ) : (
-            <><IconUpload /><span>Upload source video</span><span className="v6-file-types">MP4, MOV, WebM \u00b7 Max 500MB</span></>
-          )}
-        </label>
-      </div>
-
-      {/* Duration (if supported) */}
-      {supportsDuration && DURATIONS.length > 0 && (
-        <div className="v6-field">
-          <label className="v6-field-label">Duration</label>
-          {isMobile ? (
-            <MobileChipScroller items={DURATIONS.map((d) => ({ label: `${d}s`, value: d }))} selectedValue={duration} onSelect={setDuration} />
-          ) : (
-            <div className="v6-segmented">{DURATIONS.map((d) => (<button key={d} className={duration === d ? "v6-active" : ""} onClick={() => setDuration(d)}>{d}s</button>))}</div>
-          )}
-        </div>
+      {durations.length > 1 && (
+        <Field
+          label={job === "extend" ? "Added length" : "Output length"}
+          hint={job === "extend" ? "How much further the shot runs." : "Lengths this model renders."}
+        >
+          <Chips
+            label="Duration"
+            options={durations.map((d) => ({ value: d, label: `${d}s` }))}
+            value={duration}
+            onChange={(v) => setDuration(Number(v))}
+            compare={(a, b) => Number(a) === Number(b)}
+            scroll
+          />
+        </Field>
       )}
 
-      {/* Aspect ratio */}
-      <div className="v6-field">
-        <label className="v6-field-label">Aspect Ratio</label>
-        {isMobile ? (
-          <MobileChipScroller items={ASPECTS.map((a) => ({ label: a, value: a }))} selectedValue={aspectRatio} onSelect={setAspectRatio} />
-        ) : (
-          <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}</div>
-        )}
-      </div>
-
-      {/* Edit suggestions */}
-      <div className="v6-field">
-        <label className="v6-field-label">Edit Ideas</label>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{EDIT_SUGGESTIONS.map((s) => (<button key={s} className="v6-chip" onClick={() => setPrompt(s)} style={{ justifyContent: "flex-start", textAlign: "left", width: "100%", fontSize: 11, lineHeight: 1.4 }}>{s}</button>))}</div>
-      </div>
+      <Field label="Aspect ratio">
+        <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
+      </Field>
     </div>
   );
 
-  /* ── Inspector ── */
+  /* ── Inspector ────────────────────────────────────────────────────────── */
   const inspector = (
-    <div className="v6-control-stack">
-      <div className="v6-panel-title"><h3>Status</h3><span className={`v6-status${loading ? " v6-processing" : prompt && videoUrl ? "" : " v6-failed"}`}>{loading ? "Processing" : prompt && videoUrl ? "Ready" : "Incomplete"}</span></div>
-      <div className="v6-quote">
-        <div className="v6-quote-row"><span className="v6-muted">Model</span><strong>{currentModel.displayName}</strong></div>
-        <div className="v6-quote-row"><span className="v6-muted">Provider</span><strong>{currentModel.provider}</strong></div>
-        {currentModel.isExtend && <div className="v6-quote-row"><span className="v6-muted">Type</span><strong>Extension</strong></div>}
-        {supportsDuration && <div className="v6-quote-row"><span className="v6-muted">Duration</span><strong>{duration}s</strong></div>}
-        <div className="v6-quote-row"><span className="v6-muted">Aspect</span><strong>{aspectRatio}</strong></div>
-        <div className="v6-quote-row"><span className="v6-muted">Cost</span><strong><IconBolt /> {cost ?? "\u2026"} credits</strong></div>
-        {balance > 0 && <div className="v6-quote-row"><span className="v6-muted">Balance</span><span className="v6-balance"><IconBolt /> {balance}</span></div>}
-        {shortfall > 0 && <div style={{ fontSize: 10, color: "var(--v6-bad)", marginTop: 4 }}>Need {shortfall} more credits</div>}
+    <div className="hs-stack" style={{ gap: "var(--s-5)", minHeight: 0 }}>
+      <ModelPicker
+        models={available}
+        value={model?.id}
+        onSelect={setModelId}
+        loading={loadingModels}
+        emptyHint="No video-editing models in the catalog yet."
+      />
+
+      <Group label="This pass">
+        <Specs
+          rows={[
+            { k: "Job", v: copy.label },
+            { k: "Clip", v: source ? "Loaded" : "None" },
+            { k: "Ratio", v: ratio },
+            { k: "Length", v: duration ? `${duration}s` : "Model default" },
+            { k: "Speed", v: job === "retime" ? `${speed}×` : null },
+          ]}
+        />
+      </Group>
+    </div>
+  );
+
+  const idle = (
+    <Idle
+      icon={<IcScissors />}
+      title={copy.title}
+      description={copy.idle}
+      examples={copy.examples}
+      onExample={(e) => setPrompt((p) => (p ? `${p}. ${e}` : e))}
+    />
+  );
+
+  return (
+    <Workspace controls={controls} inspector={inspector} inspectorLabel="Model">
+      <div className="st-work__stage">
+        <Stage
+          generating={generating}
+          result={result}
+          error={error}
+          stage={stage}
+          elapsed={elapsed}
+          ratio={ratio}
+          model={model?.displayName || model?.name}
+          settings={[copy.label, ratio, duration ? `${duration}s` : null].filter(Boolean).join(" · ")}
+          onCancel={cancel}
+          onRetry={generate}
+          onNew={reset}
+          idle={idle}
+        />
       </div>
-    </div>
-  );
 
-  const center = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      <StageArea generating={loading} result={result} model={currentModel.displayName} toolLabel="Video Edit Studio" toolDesc="Upload a source clip, describe how to edit it, and pick a model. Restyle scenes, extend clips, or transform footage." toolIcon={<IconVideo />} onDownload={handleDownload} onNew={handleNew} />
-      <PromptDock value={prompt} onChange={(v) => setPrompt(v.slice(0, 2000))} onSubmit={handleGenerate} cost={cost} generating={loading} stage={loading ? "generating" : undefined} />
-    </div>
+      <Brief
+        value={prompt}
+        onChange={setPrompt}
+        onSubmit={generate}
+        onCancel={cancel}
+        generating={generating}
+        stage={stage}
+        disabled={!model || missingSource}
+        cost={cost || 0}
+        balance={balance}
+        affordable={affordable}
+        shortfall={shortfall}
+        placeholder={copy.placeholder}
+        submitLabel={copy.label}
+      />
+    </Workspace>
   );
-
-  return <StudioLayout controls={controls} inspector={inspector}>{center}</StudioLayout>;
 }

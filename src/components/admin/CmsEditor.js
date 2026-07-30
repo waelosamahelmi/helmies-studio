@@ -1,330 +1,310 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { IconClose, IconCheck, IconEye } from "@/components/Icons";
-import toast from "react-hot-toast";
+/* ══════════════════════════════════════════════════════════════════════════
+   ADMIN — CMS CONTENT
+   ──────────────────────────────────────────────────────────────────────────
+   /api/admin/cms-content: GET, POST { key, section, content }, PATCH { id, content }.
+   /api/admin/cms-content/publish: POST { id, key } — flips the entry to
+   published, drops any sibling with the same key back to draft, and writes
+   a revision snapshot.
 
-const EASE = [0.32, 0.72, 0, 1];
+   `content` is a Json column, so an entry may hold a plain string or a
+   structure. The editor shows whichever it is and stores JSON back as JSON.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-// Default content keys that should exist on the landing page
-const DEFAULT_CONTENT_KEYS = [
-  { key: "hero.title", label: "Hero Title", section: "Hero", type: "text" },
-  { key: "hero.subtitle", label: "Hero Subtitle", section: "Hero", type: "textarea" },
-  { key: "hero.cta.primary", label: "Primary CTA Text", section: "Hero", type: "text" },
-  { key: "hero.cta.secondary", label: "Secondary CTA Text", section: "Hero", type: "text" },
-  { key: "features.headline", label: "Features Headline", section: "Features", type: "text" },
-  { key: "features.description", label: "Features Description", section: "Features", type: "textarea" },
-  { key: "pricing.headline", label: "Pricing Headline", section: "Pricing", type: "text" },
-  { key: "pricing.description", label: "Pricing Description", section: "Pricing", type: "textarea" },
-  { key: "faq.headline", label: "FAQ Headline", section: "FAQ", type: "text" },
-  { key: "footer.tagline", label: "Footer Tagline", section: "Footer", type: "text" },
-  { key: "social.title", label: "Social Share Title", section: "SEO", type: "text" },
-  { key: "social.description", label: "Social Share Description", section: "SEO", type: "textarea" },
-];
+import { useMemo, useState } from "react";
+import { Confirm, Modal } from "@/components/studio/kit/Sheet";
+import {
+  Empty, Fault, Note, Panel, Reload, Rows, Table,
+  asArray, num, send, stamp, useResource,
+} from "./AdminPanel";
+import { IcPlus, IcText } from "@/components/studio/kit/Icons";
+
+/* Json column in, textarea out. */
+function toText(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  try {
+    return JSON.stringify(content, null, 2);
+  } catch {
+    return String(content);
+  }
+}
+
+/* Textarea in, Json column out — structured only when it really is JSON. */
+function toContent(text) {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return { ok: true, value: JSON.parse(trimmed) };
+    } catch (e) {
+      return { ok: false, error: `That looks like JSON but will not parse: ${e.message}` };
+    }
+  }
+  return { ok: true, value: text };
+}
 
 export default function CmsEditor() {
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [editingKey, setEditingKey] = useState(null);
-  const [editValue, setEditValue] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [publishing, setPublishing] = useState(false);
-  const [hasDraft, setHasDraft] = useState(false);
-  const [previewMode, setPreviewMode] = useState(false);
+  const { data, loading, error, reload } = useResource("/api/admin/cms-content");
+  const entries = asArray(data);
 
-  const loadContent = useCallback(() => {
-    setLoading(true);
-    fetch("/api/admin/cms-content")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        const items = Array.isArray(data) ? data : data.entries || data.content || [];
-        setEntries(items);
-        setHasDraft(items.some((e) => e.status === "draft"));
-      })
-      .catch(() => {
-        // API may not exist yet — initialize with empty defaults
-        setEntries(
-          DEFAULT_CONTENT_KEYS.map((k) => ({
-            key: k.key,
-            label: k.label,
-            section: k.section,
-            type: k.type,
-            value: "",
-            status: "draft",
-          }))
-        );
-        setHasDraft(true);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  const [editing, setEditing] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ key: "", section: "general", content: "" });
+  const [errs, setErrs] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [fault, setFault] = useState("");
+  const [publishing, setPublishing] = useState(null);
 
-  useEffect(() => { loadContent(); }, [loadContent]);
+  const drafts = useMemo(() => entries.filter((e) => e.status !== "published").length, [entries]);
 
-  const startEdit = (entry) => {
-    setEditingKey(entry.key);
-    setEditValue(entry.value || "");
+  const openEdit = (entry) => {
+    setEditing(entry);
+    setDraft(toText(entry.content));
+    setErrs({});
+    setFault("");
   };
 
-  const cancelEdit = () => {
-    setEditingKey(null);
-    setEditValue("");
-  };
-
-  const saveEntry = async (entry) => {
-    setSaving(true);
+  const save = async () => {
+    const parsed = toContent(draft);
+    if (!parsed.ok) {
+      setErrs({ content: parsed.error });
+      return;
+    }
+    setBusy(true);
+    setFault("");
     try {
-      const res = await fetch("/api/admin/cms-content", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: entry.key, value: editValue, label: entry.label, section: entry.section, type: entry.type }),
+      await send("/api/admin/cms-content", "PATCH", { id: editing.id, content: parsed.value });
+      setEditing(null);
+      reload();
+    } catch (e) {
+      setFault(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const create = async (e) => {
+    e.preventDefault();
+    const next = {};
+    if (!/^[a-z0-9.\-_]+$/.test(form.key)) next.key = "Lowercase letters, numbers, dots, dashes and underscores.";
+    if (!form.section.trim()) next.section = "Group it under a section.";
+    const parsed = toContent(form.content);
+    if (!parsed.ok) next.content = parsed.error;
+    setErrs(next);
+    if (Object.keys(next).length) return;
+
+    setBusy(true);
+    setFault("");
+    try {
+      await send("/api/admin/cms-content", "POST", {
+        key: form.key,
+        section: form.section.trim(),
+        content: parsed.value,
       });
-      if (res.ok) {
-        toast.success(`"${entry.label}" saved as draft`);
-        setEditingKey(null);
-        setEditValue("");
-        loadContent();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || "Save failed");
-      }
-    } catch (e) {
-      toast.error(`Save failed: ${e.message}`);
+      setForm({ key: "", section: "general", content: "" });
+      setCreating(false);
+      reload();
+    } catch (err) {
+      setFault(err.message);
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   };
 
-  const publishAll = async () => {
-    setPublishing(true);
+  const publish = async (entry) => {
+    setFault("");
     try {
-      const res = await fetch("/api/admin/cms-content/publish", { method: "POST" });
-      if (res.ok) {
-        toast.success("All drafts published!");
-        setHasDraft(false);
-        loadContent();
-      } else {
-        const err = await res.json().catch(() => ({}));
-        toast.error(err.error || "Publish failed");
-      }
+      await send("/api/admin/cms-content/publish", "POST", { id: entry.id, key: entry.key });
+      reload();
     } catch (e) {
-      toast.error(`Publish failed: ${e.message}`);
-    } finally {
-      setPublishing(false);
+      setFault(e.message);
     }
   };
-
-  // Group entries by section
-  const sections = {};
-  for (const entry of entries) {
-    const sec = entry.section || "General";
-    if (!sections[sec]) sections[sec] = [];
-    sections[sec].push(entry);
-  }
-
-  if (loading) {
-    return (
-      <div className="admin__empty">
-        <p>Loading content…</p>
-      </div>
-    );
-  }
 
   return (
-    <div>
-      {/* Toolbar */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "0.5rem" }}>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-          <h3 style={{ fontSize: "1rem" }}>Website Content Editor</h3>
-          <span className={`admin__badge ${hasDraft ? "pending" : "enabled"}`}>
-            {hasDraft ? "Drafts pending" : "Published"}
-          </span>
-        </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <button
-            className={`btn btn-sm ${previewMode ? "btn-primary" : "btn-secondary"}`}
-            onClick={() => setPreviewMode(!previewMode)}
-            title="Toggle preview mode"
-          >
-            <IconEye style={{ display: "inline", width: 14, height: 14, marginRight: 4 }} />
-            {previewMode ? "Editing" : "Preview"}
-          </button>
-          {hasDraft && (
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={publishAll}
-              disabled={publishing}
-            >
-              {publishing ? "Publishing…" : "Publish All"}
+    <>
+      <Panel
+        title="Website content"
+        badge={`${num(entries.length)} entries · ${num(drafts)} draft`}
+        action={
+          <>
+            <button type="button" className="hs-btn hs-btn--sm" onClick={() => setCreating(true)}>
+              <IcPlus className="hs-icon-sm" />
+              New entry
             </button>
-          )}
-        </div>
-      </div>
+            <Reload onClick={reload} />
+          </>
+        }
+      >
+        <Fault>{fault}</Fault>
+        <Fault>{error}</Fault>
 
-      {/* Content sections */}
-      {Object.entries(sections).length === 0 ? (
-        <div className="admin__chart" style={{ textAlign: "center", padding: "2rem" }}>
-          <p style={{ color: "rgba(242,242,247,0.5)", fontSize: "0.85rem", marginBottom: "0.5rem" }}>
-            No content entries configured.
-          </p>
-          <p style={{ color: "rgba(242,242,247,0.35)", fontSize: "0.75rem" }}>
-            API endpoint: <code style={{ background: "rgba(255,255,255,0.05)", padding: "0.15rem 0.4rem", borderRadius: "0.25rem" }}>/api/admin/cms-content</code>
-          </p>
-        </div>
-      ) : (
-        Object.entries(sections).map(([sectionName, sectionEntries]) => (
-          <div key={sectionName} style={{ marginBottom: "1.5rem" }}>
-            <h4
-              style={{
-                fontSize: "0.75rem",
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-                color: "rgba(242,242,247,0.4)",
-                marginBottom: "0.75rem",
-                paddingBottom: "0.4rem",
-                borderBottom: "1px solid rgba(255,255,255,0.06)",
-              }}
-            >
-              {sectionName}
-            </h4>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-              {sectionEntries.map((entry) => {
-                const isEditing = editingKey === entry.key;
-                const status = entry.status || (entry.value ? "published" : "draft");
-
-                return (
-                  <div
-                    key={entry.key}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      padding: "0.75rem 1rem",
-                      background: isEditing ? "rgba(124,58,237,0.06)" : "rgba(255,255,255,0.02)",
-                      border: `1px solid ${isEditing ? "rgba(124,58,237,0.15)" : "rgba(255,255,255,0.06)"}`,
-                      borderRadius: "0.5rem",
-                      gap: "0.75rem",
-                      transition: "all 0.2s ease",
-                    }}
-                  >
-                    {/* Label */}
-                    <div style={{ minWidth: 140, flexShrink: 0 }}>
-                      <div style={{ fontSize: "0.8rem", fontWeight: 500 }}>{entry.label}</div>
-                      <div style={{ fontSize: "0.65rem", color: "rgba(242,242,247,0.35)", fontFamily: "monospace" }}>
-                        {entry.key}
-                      </div>
-                    </div>
-
-                    {/* Value / Editor */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {isEditing ? (
-                        entry.type === "textarea" ? (
-                          <textarea
-                            className="field-input"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            rows={3}
-                            style={{
-                              fontSize: "0.8rem",
-                              padding: "0.4rem 0.6rem",
-                              width: "100%",
-                              resize: "vertical",
-                              fontFamily: "inherit",
-                            }}
-                            placeholder={`Enter ${entry.label.toLowerCase()}…`}
-                          />
-                        ) : (
-                          <input
-                            className="field-input"
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            style={{ fontSize: "0.8rem", padding: "0.4rem 0.6rem", width: "100%" }}
-                            placeholder={`Enter ${entry.label.toLowerCase()}…`}
-                          />
-                        )
-                      ) : previewMode ? (
-                        <div
-                          style={{
-                            padding: "0.5rem 0.75rem",
-                            background: "rgba(0,0,0,0.2)",
-                            borderRadius: "0.35rem",
-                            fontSize: "0.85rem",
-                            color: "rgba(242,242,247,0.85)",
-                            minHeight: entry.type === "textarea" ? "3rem" : "auto",
-                            whiteSpace: entry.type === "textarea" ? "pre-wrap" : "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {entry.value || (
-                            <span style={{ color: "rgba(242,242,247,0.2)", fontStyle: "italic" }}>
-                              Empty — click Edit to add content
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <div
-                          style={{
-                            fontSize: "0.8rem",
-                            color: entry.value ? "rgba(242,242,247,0.8)" : "rgba(242,242,247,0.2)",
-                            padding: "0.25rem 0",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            maxWidth: "100%",
-                          }}
-                        >
-                          {entry.value || "—"}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Status badge + Actions */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
-                      <span
-                        className={`admin__badge ${status === "published" ? "enabled" : status === "draft" ? "pending" : "disabled"}`}
-                        style={{ fontSize: "0.6rem" }}
+        {loading ? <Rows /> : entries.length === 0 ? (
+          <Empty
+            icon={IcText}
+            title="No content entries"
+            action={
+              <button type="button" className="hs-btn hs-btn--primary" onClick={() => setCreating(true)}>
+                Create the first entry
+              </button>
+            }
+          >
+            Entries are keyed strings the site can read instead of hardcoding copy.
+          </Empty>
+        ) : (
+          <Table caption="CMS entries" head={["Key", "Section", "Content", "Status", "Updated", {}]}>
+            {entries.map((e) => {
+              const preview = toText(e.content).replace(/\s+/g, " ").slice(0, 60);
+              return (
+                <tr key={e.id}>
+                  <td className="hs-mono" style={{ color: "var(--tx)" }}>{e.key}</td>
+                  <td><span className="hs-badge">{e.section}</span></td>
+                  <td style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {preview || <span className="hs-mute">empty</span>}
+                  </td>
+                  <td>
+                    <span className={`hs-badge ${e.status === "published" ? "hs-badge--signal" : "hs-badge--caution"}`}>
+                      {e.status}
+                    </span>
+                  </td>
+                  <td className="hs-mono">{stamp(e.updatedAt)}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <button type="button" className="hs-btn hs-btn--sm" onClick={() => openEdit(e)}>Edit</button>
+                    {e.status !== "published" && (
+                      <button
+                        type="button"
+                        className="hs-btn hs-btn--primary hs-btn--sm"
+                        style={{ marginLeft: "var(--s-2)" }}
+                        onClick={() => setPublishing(e)}
                       >
-                        {status}
-                      </span>
-                      {isEditing ? (
-                        <div style={{ display: "flex", gap: "0.3rem" }}>
-                          <button
-                            className="btn btn-primary btn-sm"
-                            onClick={() => saveEntry(entry)}
-                            disabled={saving}
-                            style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
-                          >
-                            {saving ? "…" : "Save"}
-                          </button>
-                          <button
-                            className="btn btn-sm btn-secondary"
-                            onClick={cancelEdit}
-                            style={{ fontSize: "0.7rem", padding: "0.2rem 0.5rem" }}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          className="btn btn-sm btn-secondary"
-                          onClick={() => startEdit(entry)}
-                          style={{ fontSize: "0.7rem", padding: "0.25rem 0.5rem" }}
-                        >
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                        Publish
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </Table>
+        )}
+
+        <Note>Editing saves a draft. Nothing reaches the public site until you publish it.</Note>
+      </Panel>
+
+      {/* Edit */}
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={editing ? `Edit ${editing.key}` : ""}
+        footer={
+          <>
+            <button type="button" className="hs-btn hs-btn--ghost" onClick={() => setEditing(null)}>Cancel</button>
+            <button type="button" className="hs-btn hs-btn--primary" onClick={save} disabled={busy}>
+              {busy && <span className="hs-spin" aria-hidden="true" />}
+              Save draft
+            </button>
+          </>
+        }
+      >
+        <Fault>{fault}</Fault>
+        <div className="hs-field">
+          <label className="hs-label" htmlFor="cms-content">Content</label>
+          <textarea
+            id="cms-content"
+            className="hs-textarea"
+            rows={12}
+            value={draft}
+            onChange={(e) => { setDraft(e.target.value); setErrs({}); }}
+            spellCheck
+            aria-invalid={errs.content ? "true" : undefined}
+            aria-describedby={errs.content ? "cms-content-error" : "cms-content-hint"}
+          />
+          {errs.content
+            ? <p className="hs-error" id="cms-content-error">{errs.content}</p>
+            : <p className="hs-hint" id="cms-content-hint">
+                Starts with <code>{"{"}</code> or <code>[</code> and it is stored as JSON. Anything else is stored as plain text.
+              </p>}
+        </div>
+      </Modal>
+
+      {/* Create */}
+      <Modal
+        open={creating}
+        onClose={() => setCreating(false)}
+        title="New content entry"
+        footer={
+          <>
+            <button type="button" className="hs-btn hs-btn--ghost" onClick={() => setCreating(false)}>Cancel</button>
+            <button type="submit" form="cms-form" className="hs-btn hs-btn--primary" disabled={busy}>
+              {busy && <span className="hs-spin" aria-hidden="true" />}
+              Create entry
+            </button>
+          </>
+        }
+      >
+        <form id="cms-form" onSubmit={create} noValidate>
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="cms-key">Key</label>
+            <input
+              id="cms-key"
+              className="hs-input hs-mono"
+              value={form.key}
+              onChange={(e) => { setForm({ ...form, key: e.target.value.toLowerCase().replace(/[^a-z0-9.\-_]/g, "") }); setErrs((p) => ({ ...p, key: "" })); }}
+              autoComplete="off"
+              placeholder="hero.title"
+              aria-invalid={errs.key ? "true" : undefined}
+              aria-describedby={errs.key ? "cms-key-error" : "cms-key-hint"}
+            />
+            {errs.key
+              ? <p className="hs-error" id="cms-key-error">{errs.key}</p>
+              : <p className="hs-hint" id="cms-key-hint">Must be unique across the whole site.</p>}
           </div>
-        ))
-      )}
-    </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="cms-section">Section</label>
+            <input
+              id="cms-section"
+              className="hs-input"
+              value={form.section}
+              onChange={(e) => { setForm({ ...form, section: e.target.value }); setErrs((p) => ({ ...p, section: "" })); }}
+              autoComplete="off"
+              placeholder="hero"
+              aria-invalid={errs.section ? "true" : undefined}
+              aria-describedby={errs.section ? "cms-section-error" : undefined}
+            />
+            {errs.section && <p className="hs-error" id="cms-section-error">{errs.section}</p>}
+          </div>
+
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="cms-new-content">Content</label>
+            <textarea
+              id="cms-new-content"
+              className="hs-textarea"
+              rows={8}
+              value={form.content}
+              onChange={(e) => { setForm({ ...form, content: e.target.value }); setErrs((p) => ({ ...p, content: "" })); }}
+              aria-invalid={errs.content ? "true" : undefined}
+              aria-describedby={errs.content ? "cms-new-content-error" : undefined}
+            />
+            {errs.content && <p className="hs-error" id="cms-new-content-error">{errs.content}</p>}
+          </div>
+        </form>
+      </Modal>
+
+      <Confirm
+        open={!!publishing}
+        onClose={() => setPublishing(null)}
+        onConfirm={() => publish(publishing)}
+        title="Publish this entry?"
+        body={
+          publishing
+            ? `${publishing.key} goes live immediately and any other entry with the same key drops back to draft. A revision snapshot is kept.`
+            : ""
+        }
+        confirmLabel="Publish"
+        danger={false}
+      />
+    </>
   );
 }

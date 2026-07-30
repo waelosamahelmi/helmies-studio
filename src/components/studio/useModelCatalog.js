@@ -22,14 +22,19 @@ function optionsFromSchema(model) {
   };
 }
 
-export function useModelCatalog({ modelType, capability, fallback = [] } = {}) {
-  const [remote, setRemote] = useState([]);
+/* The catalog is identical for every consumer, so fetch it once per page and
+   share it. Without this, ten mounted tools each issued their own request. */
+const EMPTY = [];
+const cache = new Map();
+
+export function useModelCatalog({ modelType, capability, fallback = EMPTY } = {}) {
+  const [remote, setRemote] = useState(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
+
     // No modelType → fetch the FULL catalog (no query param). Studios then
     // filter client-side via capability groups (see lib/capability-groups.js),
     // because DB modelType values are fragmented across the catalog.
@@ -37,17 +42,43 @@ export function useModelCatalog({ modelType, capability, fallback = [] } = {}) {
     if (modelType) qs.set("type", modelType);
     if (capability) qs.set("capability", capability);
     const query = qs.toString();
-    apiFetch(query ? `/api/models/catalog?${query}` : "/api/models/catalog")
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Catalog unavailable");
-        return response.json();
-      })
-      .then((data) => { if (active) setRemote((data.models || []).map(optionsFromSchema)); })
-      .catch((catalogError) => { if (active) setError(catalogError.message); })
+    const url = query ? `/api/models/catalog?${query}` : "/api/models/catalog";
+
+    const cached = cache.get(url);
+    if (cached?.data) {
+      setRemote(cached.data);
+      setError(null);
+      setLoading(false);
+      return () => { active = false; };
+    }
+
+    setLoading(true);
+
+    // apiFetch throws on any non-2xx, so there is no `res.ok` branch to write.
+    const request =
+      cached?.promise ||
+      apiFetch(url)
+        .then((r) => r.json())
+        .then((d) => {
+          const models = (d.models || []).map(optionsFromSchema);
+          cache.set(url, { data: models });
+          return models;
+        })
+        .catch((e) => {
+          cache.delete(url);
+          throw e;
+        });
+
+    if (!cached) cache.set(url, { promise: request });
+
+    request
+      .then((models) => { if (active) { setRemote(models); setError(null); } })
+      .catch((e) => { if (active) setError(e.message || "Catalog unavailable"); })
       .finally(() => { if (active) setLoading(false); });
+
     return () => { active = false; };
   }, [modelType, capability]);
 
-  const models = useMemo(() => remote.length ? remote : fallback, [remote, fallback]);
+  const models = useMemo(() => (remote.length ? remote : fallback), [remote, fallback]);
   return { models, loading, error, source: remote.length ? "catalog" : "fallback" };
 }

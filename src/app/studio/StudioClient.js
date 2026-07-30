@@ -1,20 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { MotionConfig, AnimatePresence } from "framer-motion";
+import { MotionConfig } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
-import { useIsMobile } from "@/lib/use-media-query";
 
-// ── Universe Shell (v6) ──
-import UniverseShell from "@/components/studio/universe/UniverseShell";
-import InstrumentOrbit from "@/components/studio/universe/InstrumentOrbit";
-import RecentConstellation from "@/components/studio/universe/RecentConstellation";
+import Shell from "@/components/studio/kit/Shell";
+import { TOOL_IDS } from "@/components/studio/kit/tools";
+import CommandPalette from "@/components/studio/CommandPalette";
+import ErrorBoundary from "@/components/studio/v6/ErrorBoundary";
 
-// ── Mobile Components ──
-import { MobileBottomNav, MobileToolDrawer } from "@/components/studio/mobile";
-
-// ── v6 Studio Components ──
 import OrchestratorStudio from "@/components/studio/OrchestratorStudio";
 import ImageStudio from "@/components/studio/ImageStudio";
 import VideoStudio from "@/components/studio/VideoStudio";
@@ -36,237 +31,144 @@ import BrandKitStudio from "@/components/studio/BrandKitStudio";
 import MemoryStudio from "@/components/studio/MemoryStudio";
 import AssetLibraryStudio from "@/components/studio/AssetLibraryStudio";
 
-// ── Icons ──
-import {
-  IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
-  IconMegaphone, IconMic, IconUsers, IconCrown, IconStar, IconBolt,
-  IconSparkle, IconPlay, IconDownload, IconSettings, IconShield,
-} from "@/components/Icons";
-
-// ═══════════════════════════════════════════════════════════════════════
-// Tool registry — all 20 creative instruments
-// ═══════════════════════════════════════════════════════════════════════
-
-const TOOLS = [
-  ["orchestrator", "Agent",      "Plan and execute creative productions",      IconSparkle,  "create"],
-  ["image",        "Image",      "Generate and transform images",              IconImage,    "create"],
-  ["video",        "Video",      "Generate and transform video",               IconVideo,    "create"],
-  ["director",     "Director",   "Plan and execute multi-shot films",          IconPlay,     "create"],
-  ["audio",        "Audio",      "Generate voice and sound",                   IconMusic,    "create"],
-  ["music",        "Music",      "Compose music and speech",                   IconMusic,    "create"],
-  ["lipsync",      "Lip Sync",   "Synchronize speech and performance",         IconMic,      "create"],
-  ["body-swap",    "Recast",     "Transfer identity into a scene",             IconUsers,    "create"],
-  ["influencer",   "Influencer", "Build consistent AI personas",               IconCrown,    "create"],
-  ["avatar",       "AI Avatar",  "Animate a speaking portrait",                IconUsers,    "create"],
-  ["canvas",       "Canvas",     "Compose, mask, and refine visually",         IconImage,    "create"],
-  ["cinema",       "Cinema",     "Direct cameras, lenses, and light",          IconCamera,   "create"],
-  ["vibe-motion",  "Motion",     "Animate visual source material",             IconFilm,     "create"],
-  ["video-edit",   "Video Edit", "Extend and transform footage",               IconVideo,    "create"],
-  ["clipping",     "Clipping",   "Find and produce editorial highlights",      IconCut,      "create"],
-  ["marketing",    "Marketing",  "Produce campaign deliverables",              IconMegaphone,"create"],
-  ["workflows",    "Workflows",  "Connect repeatable creative pipelines",      IconBolt,     "build"],
-  ["brands",       "Brand Kits", "Control identity and visual guardrails",     IconImage,    "build"],
-  ["memory",       "Projects",   "Reuse characters, styles, and memory",       IconStar,     "build"],
-  ["assets",       "Assets",     "Manage production media",                    IconDownload, "build"],
-].map(([id, label, desc, Icon, group]) => ({ id, label, desc, Icon, group }));
-
-const QUICK = ["orchestrator", "image", "video", "director", "canvas", "assets", "workflows", "brands"];
-
-// ═══════════════════════════════════════════════════════════════════════
-// Tool component resolver
-// ═══════════════════════════════════════════════════════════════════════
-
-function Tool({ id, initialModel, templateConfig }) {
-  const map = {
-    // v6 studio components
-    orchestrator: <OrchestratorStudio tool="orchestrator" initialModel={initialModel} templateConfig={templateConfig} />,
-    image:        <ImageStudio initialModel={initialModel} templateConfig={templateConfig} />,
-    video:        <VideoStudio initialModel={initialModel} templateConfig={templateConfig} />,
-    director:     <DirectorStudio templateConfig={templateConfig} />,
-    audio:        <AudioStudio templateConfig={templateConfig} />,
-    music:        <MusicStudio templateConfig={templateConfig} />,
-    lipsync:      <LipSyncStudio templateConfig={templateConfig} />,
-    "body-swap":  <RecastStudio templateConfig={templateConfig} />,
-    influencer:   <InfluencerStudio templateConfig={templateConfig} />,
-    avatar:       <AvatarStudio templateConfig={templateConfig} />,
-    canvas:       <CanvasStudio templateConfig={templateConfig} />,
-    cinema:       <CinemaStudio templateConfig={templateConfig} />,
-    "vibe-motion":<MotionStudio templateConfig={templateConfig} />,
-    "video-edit": <VideoEditStudio templateConfig={templateConfig} />,
-    clipping:     <ClippingStudio templateConfig={templateConfig} />,
-    marketing:    <MarketingStudio templateConfig={templateConfig} />,
-    workflows:    <WorkflowStudio templateConfig={templateConfig} />,
-    brands:       <BrandKitStudio templateConfig={templateConfig} />,
-    memory:       <MemoryStudio templateConfig={templateConfig} />,
-    assets:       <AssetLibraryStudio templateConfig={templateConfig} />,
-  };
-
-  return map[id] || map.orchestrator;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// StudioClient — root studio experience
-// ═══════════════════════════════════════════════════════════════════════
+const TOOL_COMPONENTS = {
+  orchestrator: OrchestratorStudio,
+  image: ImageStudio,
+  video: VideoStudio,
+  director: DirectorStudio,
+  audio: AudioStudio,
+  music: MusicStudio,
+  lipsync: LipSyncStudio,
+  "body-swap": RecastStudio,
+  influencer: InfluencerStudio,
+  avatar: AvatarStudio,
+  canvas: CanvasStudio,
+  cinema: CinemaStudio,
+  "vibe-motion": MotionStudio,
+  "video-edit": VideoEditStudio,
+  clipping: ClippingStudio,
+  marketing: MarketingStudio,
+  workflows: WorkflowStudio,
+  brands: BrandKitStudio,
+  memory: MemoryStudio,
+  assets: AssetLibraryStudio,
+};
 
 export default function StudioClient({ initialTool = "orchestrator", initialModel }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const isMobile = useIsMobile();
+  const params = useSearchParams();
 
-  // ── state ──
-  const [active, setActive] = useState(initialTool);
-  const [indexOpen, setIndexOpen] = useState(false);
-  const [commandOpen, setCommandOpen] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [assets, setAssets] = useState([]);
+  const [active, setActive] = useState(TOOL_IDS.includes(initialTool) ? initialTool : "orchestrator");
   const [credits, setCredits] = useState(null);
-  const [pendingCount, setPendingCount] = useState(0);
-  const [admin, setAdmin] = useState(false);
+  const [running, setRunning] = useState(0);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [templateConfig, setTemplateConfig] = useState(null);
 
-  // ── template config loader ──
-  const templateSlug = searchParams.get("template");
+  /* Follow the route when it changes from outside (back button, deep link) */
+  useEffect(() => {
+    if (TOOL_IDS.includes(initialTool)) setActive(initialTool);
+  }, [initialTool]);
+
+  const select = useCallback((id) => {
+    if (!TOOL_IDS.includes(id) || id === active) return;
+    setActive(id);
+    router.push(`/studio/${id}`, { scroll: false });
+  }, [active, router]);
+
+  /* A template preloads a tool's settings */
+  const templateSlug = params.get("template");
   useEffect(() => {
     if (!templateSlug) return;
-    let cancelled = false;
+    let dead = false;
     apiFetch(`/api/templates/${templateSlug}/apply`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (!cancelled && data?.config) setTemplateConfig(data.config); })
+      .then((r) => r.json())
+      .then((d) => { if (!dead && d?.config) setTemplateConfig(d.config); })
       .catch(() => {});
-    return () => { cancelled = true; };
+    return () => { dead = true; };
   }, [templateSlug]);
 
-  // ── derived ──
-  const quickTools = useMemo(
-    () => QUICK.map((id) => TOOLS.find((t) => t.id === id)).filter(Boolean),
-    [],
-  );
-
-  const destinations = useMemo(
-    () => [
-      { label: "Generations", desc: "Generation history and active jobs", href: "/gallery",           Icon: IconImage },
-      { label: "Settings",    desc: "Account and generation defaults",    href: "/settings",          Icon: IconSettings },
-      { label: "Billing",     desc: "Credits and subscription",          href: "/settings?tab=billing", Icon: IconBolt },
-      ...(admin ? [{ label: "Admin", desc: "Operations control", href: "/admin", Icon: IconShield }] : []),
-    ],
-    [admin],
-  );
-
-  // ── navigation ──
-  const select = (id) => {
-    setActive(id);
-    setIndexOpen(false);
-    router.push(`/studio/${id}`, { scroll: false });
-  };
-
-  // sync active tool when route changes externally
-  useEffect(() => { setActive(initialTool); }, [initialTool]);
-
-  // ── data fetching ──
-  useEffect(() => {
-    Promise.allSettled([
-      apiFetch("/api/assets?limit=5").then((r) => (r.ok ? r.json() : {})),
-      apiFetch("/api/credits").then((r) => (r.ok ? r.json() : {})),
-      apiFetch("/api/auth/session").then((r) => (r.ok ? r.json() : {})),
-    ]).then(([a, c, s]) => {
-      if (a.status === "fulfilled") setAssets((a.value.assets || []).filter((item) => item.url || item.outputUrl));
-      if (c.status === "fulfilled") setCredits(c.value.credits);
-      if (s.status === "fulfilled") setAdmin(s.value?.user?.role === "admin");
-    });
+  /* Credit balance — refreshed whenever a generation settles */
+  const loadCredits = useCallback(() => {
+    apiFetch("/api/credits")
+      .then((r) => r.json())
+      .then((d) => setCredits(d?.credits ?? null))
+      .catch(() => {});
   }, []);
 
-  // ── generation status polling ──
   useEffect(() => {
+    loadCredits();
+    const onSettled = () => loadCredits();
+    window.addEventListener("generation:settled", onSettled);
+    return () => window.removeEventListener("generation:settled", onSettled);
+  }, [loadCredits]);
+
+  /* Running jobs — polled while the tab is visible, paused when it is not */
+  useEffect(() => {
+    let dead = false;
     let timer;
-    let stopped = false;
 
-    const poll = async () => {
-      try {
-        const response = await apiFetch("/api/generations/status?limit=50");
-        const data = await response.json();
-        if (!stopped) {
-          setPendingCount(
-            (data.generations || []).filter((job) =>
-              ["pending", "processing"].includes(job.status),
-            ).length,
-          );
-        }
-      } catch {
-        /* ignore polling errors */
+    const tick = async () => {
+      if (document.visibilityState === "visible") {
+        try {
+          const r = await apiFetch("/api/generations/status?limit=50", { retries: 0 });
+          const d = await r.json();
+          if (!dead) {
+            const n = (d.generations || []).filter((g) =>
+              ["pending", "processing", "queued", "running"].includes(g.status),
+            ).length;
+            setRunning((prev) => {
+              if (prev > 0 && n === 0) window.dispatchEvent(new Event("generation:settled"));
+              return n;
+            });
+          }
+        } catch { /* transient — try again next tick */ }
       }
-      if (!stopped) timer = window.setTimeout(poll, 10_000);
+      if (!dead) timer = setTimeout(tick, 10000);
     };
 
-    poll();
-    return () => {
-      stopped = true;
-      window.clearTimeout(timer);
-    };
+    tick();
+    return () => { dead = true; clearTimeout(timer); };
   }, []);
 
-  // ── keyboard shortcut: Ctrl+K → command palette ──
+  /* ⌘K / Ctrl+K */
   useEffect(() => {
-    const handler = (event) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        if (isMobile) {
-          setDrawerOpen((v) => !v);
-        } else {
-          setCommandOpen((v) => !v);
-        }
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
       }
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [isMobile]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-  // ═══════════════════════════════════════════════════════════════════
-  // Render
-  // ═══════════════════════════════════════════════════════════════════
+  const Tool = TOOL_COMPONENTS[active] || OrchestratorStudio;
 
   return (
     <MotionConfig reducedMotion="user">
-      <UniverseShell
+      <Shell
+        active={active}
+        onSelect={select}
+        onCommand={() => setPaletteOpen(true)}
         credits={credits}
-        pendingCount={pendingCount}
-        onCommand={() => setCommandOpen(true)}
-        orbit={
-          isMobile ? null : (
-            <InstrumentOrbit
-              tools={quickTools}
-              active={active}
-              onSelect={select}
-              onOpenIndex={() => setIndexOpen(true)}
-            />
-          )
-        }
-        recents={
-          <RecentConstellation assets={assets} onOpen={() => select("assets")} />
-        }
+        running={running}
       >
-        <AnimatePresence mode="wait">
-          <Tool key={active} id={active} initialModel={initialModel} templateConfig={templateConfig} />
-        </AnimatePresence>
+        <ErrorBoundary key={active}>
+          <Tool
+            tool={active}
+            initialModel={initialModel}
+            templateConfig={templateConfig}
+            onCreditsChanged={loadCredits}
+          />
+        </ErrorBoundary>
+      </Shell>
 
-        {/* ── Mobile navigation ── */}
-        {isMobile && (
-          <>
-            <MobileBottomNav
-              activeTool={active}
-              onSelect={(id) => { select(id); }}
-              onOpenDrawer={() => setDrawerOpen(true)}
-              isDrawerOpen={drawerOpen}
-            />
-            <MobileToolDrawer
-              isOpen={drawerOpen}
-              onClose={() => setDrawerOpen(false)}
-              activeTool={active}
-              onSelect={(id) => { select(id); }}
-              tools={TOOLS}
-            />
-          </>
-        )}
-      </UniverseShell>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onSelect={select}
+        active={active}
+      />
     </MotionConfig>
   );
 }

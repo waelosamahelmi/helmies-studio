@@ -23,9 +23,12 @@ export async function GET(req, { params }) {
     }
 
     const ext = path.extname(safeName).toLowerCase();
+    // NOTE: ".svg" is deliberately absent. SVG served as image/svg+xml on this
+    // origin is a stored-XSS primitive; unknown extensions fall through to
+    // application/octet-stream and are never rendered as active content.
     const mimeTypes = {
       ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-      ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+      ".gif": "image/gif", ".webp": "image/webp",
       ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
       ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg",
       ".pdf": "application/pdf", ".json": "application/json",
@@ -35,6 +38,8 @@ export async function GET(req, { params }) {
       headers: {
         "Content-Type": mimeTypes[ext] || "application/octet-stream",
         "Cache-Control": "public, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
       },
     });
   } catch {

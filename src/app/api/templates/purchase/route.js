@@ -37,9 +37,10 @@ export async function POST(req) {
 
     // ── Subscription-based templates ──
     if (template.pricingModel === "subscription") {
-      // Check user has active subscription
+      // Require a genuinely paid, active subscription. "free" and "payg" rows
+      // exist purely to hold a Stripe customer id and carry no entitlement.
       const sub = await prisma.subscription.findUnique({ where: { userId } });
-      if (!sub || sub.status !== "active") {
+      if (!sub || sub.status !== "active" || sub.plan === "free" || sub.plan === "payg") {
         return NextResponse.json({ error: "Active subscription required" }, { status: 402 });
       }
 

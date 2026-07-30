@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { extractBrandFingerprint } from "@/lib/brand-engine";
 
@@ -14,8 +15,9 @@ export async function POST(req) {
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-    // Verify ownership
-    const { prisma } = await import("@/lib/prisma");
+    // Verify ownership. This previously did `const { prisma } = await
+    // import("@/lib/prisma")`, but that module only has a default export, so
+    // `prisma` was undefined and the route threw on every call.
     const brand = await prisma.brandKit.findFirst({ where: { id, userId: user.id } });
     if (!brand) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

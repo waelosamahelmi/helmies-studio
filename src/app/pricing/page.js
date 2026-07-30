@@ -1,164 +1,198 @@
-"use client";
-
-import { useState } from "react";
-import { motion } from "framer-motion";
 import Link from "next/link";
-import UniverseNav from "@/components/studio/universe/UniverseNav";
-import { IconCheck, IconArrowUpRight, IconBolt } from "@/components/Icons";
-import { CREDIT_PACKS } from "@/lib/credit-packs";
-import { SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import PricingPlans, { PricingFaq } from "./PricingClient";
+import { CREDIT_COSTS } from "@/lib/plan-constants";
 
-const EASE = [0.32, 0.72, 0, 1];
+const SITE = process.env.NEXTAUTH_URL || "https://studio.helmies.fi";
 
-// Single source of truth: credits.js SUBSCRIPTION_CREDITS
-const { free: f, starter: s, studio: st, pro: p } = SUBSCRIPTION_CREDITS;
-const fmt = (n) => `${n} credits/mo`;
-const ff = (n) => `${n} credits monthly`;
+export const metadata = {
+  title: "Pricing — plans, credits and what a run costs",
+  description:
+    "Helmies Studio pricing in credits. Plans from €0 to €99/mo with 100–10,000 credits a cycle, one-off top-up packs from €9, and the credit cost of every kind of run.",
+  keywords: [
+    "AI studio pricing",
+    "AI image generator pricing",
+    "AI video generator cost",
+    "AI credits",
+    "Helmies Studio pricing",
+    "AI subscription plans",
+  ],
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    url: `${SITE}/pricing`,
+    siteName: "Helmies Studio",
+    title: "Pricing — plans, credits and what a run costs | Helmies Studio",
+    description:
+      "Plans from €0 to €99/mo with 100–10,000 credits a cycle, one-off top-up packs from €9, and the credit cost of every kind of run.",
+    images: [{ url: "/og-image.png", width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pricing — Helmies Studio",
+    description: "Plans, one-off credit packs, and the credit cost of every kind of run.",
+    images: ["/og-image-twitter.png"],
+  },
+  alternates: { canonical: `${SITE}/pricing` },
+};
 
-const SUBSCRIPTIONS_MONTHLY = [
-  { id: "free",    name: "Free",    price: "€0",  period: "forever", credits: fmt(f),  desc: "Try every studio. No card required.", features: [ff(f),  "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
-  { id: "starter", name: "Starter", price: "€24", period: "/mo",     credits: fmt(s),  desc: "For testing the waters.",          features: [ff(s),  "All studios unlocked", "HD resolution", "Cancel anytime", "Email support"], cta: "Subscribe", popular: false },
-  { id: "studio",  name: "Studio",  price: "€49", period: "/mo",     credits: fmt(st), desc: "For regular creators who ship.",   features: [ff(st), "All studios unlocked", "4K downloads", "Generation archive", "Priority queue", "Email support"], cta: "Subscribe", popular: true },
-  { id: "pro",     name: "Pro",     price: "€99", period: "/mo",     credits: fmt(p),  desc: "Power users and small teams.",       features: [ff(p),  "Priority queue", "Batch exports", "API access", "Dedicated support"], cta: "Subscribe", popular: false },
+/* Baseline cost per kind of run, straight from CREDIT_COSTS. Ordered cheapest
+   first so the table reads as a price list, which is what it is. */
+const RUNS = [
+  { key: "image", label: "Image", note: "One still from a text brief", href: "/studio/image" },
+  { key: "i2i", label: "Image edit", note: "Re-render a still you supply", href: "/studio/image" },
+  { key: "influencer", label: "Persona shot", note: "A character that holds across frames", href: "/studio/influencer" },
+  { key: "cinema", label: "Cinema frame", note: "A still with lens and light direction", href: "/studio/cinema" },
+  { key: "audio", label: "Audio", note: "Speech, music or a sound bed", href: "/studio/audio" },
+  { key: "clipping", label: "Clipping", note: "Cut the moments out of a long video", href: "/studio/clipping" },
+  { key: "lipsync", label: "Lip sync", note: "Match a performance to a voice track", href: "/studio/lipsync" },
+  { key: "motion", label: "Motion", note: "Animate a still or restyle motion", href: "/studio/vibe-motion" },
+  { key: "v2v", label: "Video → video", note: "Restyle footage you supply", href: "/studio/video-edit" },
+  { key: "video", label: "Video", note: "Motion from a text brief", href: "/studio/video" },
+  { key: "i2v", label: "Image → video", note: "Motion from a still you supply", href: "/studio/video" },
+  { key: "recast", label: "Recast", note: "Place an identity into another scene", href: "/studio/body-swap" },
+  { key: "marketing", label: "Marketing", note: "A campaign deliverable set", href: "/studio/marketing" },
 ];
 
-const SUBSCRIPTIONS_YEARLY = [
-  { id: "free",    name: "Free",    price: "€0",  period: "forever", credits: fmt(f),  desc: "Try every studio. No card required.", features: [ff(f),  "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
-  { id: "starter", name: "Starter", price: "€19", period: "/mo", billed: "Billed €228/yr", credits: fmt(s),  desc: "For testing the waters.",          features: [ff(s),  "All studios unlocked", "HD resolution", "Cancel anytime", "Email support"], cta: "Subscribe", popular: false },
-  { id: "studio",  name: "Studio",  price: "€39", period: "/mo", billed: "Billed €468/yr", credits: fmt(st), desc: "For regular creators who ship.",   features: [ff(st), "All studios unlocked", "4K downloads", "Generation archive", "Priority queue", "Email support"], cta: "Subscribe", popular: true },
-  { id: "pro",     name: "Pro",     price: "€79", period: "/mo", billed: "Billed €948/yr", credits: fmt(p),  desc: "Power users and small teams.",       features: [ff(p),  "Priority queue", "Batch exports", "API access", "Dedicated support"], cta: "Subscribe", popular: false },
+const FAQ = [
+  {
+    q: "What is a credit?",
+    a: "Credits are the only unit of spend in the studio. Every model in the catalog carries a credit price, and the studio quotes the exact cost of a run before you start it. There is no second currency and no per-model subscription.",
+  },
+  {
+    q: "Do credits expire?",
+    a: "No. A plan adds its credits to your balance on every billing cycle and a top-up pack adds to the same balance. Nothing is reset at the end of a month, so an unused cycle carries forward.",
+  },
+  {
+    q: "Plan or pack — which do I want?",
+    a: "A plan bills on a cycle, adds credits every cycle, and unlocks the templates marked as plan-included. A pack is one payment for a fixed number of credits and carries no template access. Packs are the cheaper per credit at the top end; plans are cheaper per credit at every tier above Starter.",
+  },
+  {
+    q: "What happens when the balance runs out?",
+    a: "The run is blocked before it starts. You are never charged for a generation you cannot afford, and you are never billed for a failed one — credits held for a job that fails are returned to the balance.",
+  },
+  {
+    q: "Which models does a plan include?",
+    a: "All of them. Every plan, Free included, reaches the whole catalog. Plans differ only in how many credits arrive each cycle. The catalog page lists the credit price of each model.",
+  },
+  {
+    q: "Can I cancel?",
+    a: "Yes. Open the billing portal from this page or from your account settings and cancel there. Credits already on your balance stay, including the ones the last cycle added.",
+  },
 ];
-
-const PACKS = CREDIT_PACKS;
 
 export default function PricingPage() {
-  const [yearly, setYearly] = useState(false);
-  const subscriptions = yearly ? SUBSCRIPTIONS_YEARLY : SUBSCRIPTIONS_MONTHLY;
-
-  const handleCheckout = async (plan, yearly) => {
-    try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan, yearly }),
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-    } catch (e) {
-      // silently fail — user will see Stripe error page
-    }
-  };
-
-  const handleTopup = async (packId) => {
-    try {
-      const res = await fetch("/api/stripe/topup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packId }),
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-    } catch (e) {
-      // silently fail — user will see Stripe error page
-    }
+  const faqLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQ.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
   };
 
   return (
-    <div className="universe-page-shell">
-      <UniverseNav />
-      <div className="universe-page-shell__content">
-        <div className="page__head">
-          <div className="eyebrow mb-5">Pricing</div>
-          <h1 className="page__title">Pricing that <em>scales</em> with you.</h1>
-          <p className="page__sub">Monthly subscriptions or one-off credits. Start free, scale when you're ready.</p>
-        </div>
+    <>
+      <a href="#main" className="hs-skip">Skip to content</a>
+      <Navbar />
 
-        {/* SUBSCRIPTIONS */}
-        <div className="mb-24">
-          <div className="pricing-toggle" style={{ justifyContent: "center", marginBottom: "2rem" }}>
-            <span className={`pricing-toggle__label ${!yearly ? "pricing-toggle__label--active" : ""}`}>Monthly</span>
-            <button className={`pricing-toggle__switch ${yearly ? "pricing-toggle__switch--on" : ""}`} onClick={() => setYearly(!yearly)}>
-              <span className="pricing-toggle__knob" />
-            </button>
-            <span className={`pricing-toggle__label ${yearly ? "pricing-toggle__label--active" : ""}`}>Yearly <span className="pricing-toggle__badge">-20%</span></span>
+      <main id="main">
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <section className="hs-section hs-section--tight">
+          <div className="hs-wrap">
+            <header className="pg-head">
+              <span className="hs-eyebrow">Pricing</span>
+              <h1>One balance. Every model has a price on it.</h1>
+              <p>
+                You buy credits, either on a cycle or as a one-off pack, and spend them
+                across the whole catalog. The cost of a run is quoted before it starts and
+                returned to the balance if it fails.
+              </p>
+            </header>
           </div>
+        </section>
 
-          <h2 className="text-3xl font-bold tracking-tight text-center mb-10">Monthly <em className="italic" style={{ color: "#FF1B6B" }}>subscriptions</em></h2>
-          <div className="pricing-grid">
-            {subscriptions.map((s, i) => (
-              <motion.div
-                key={s.id}
-                initial={{ opacity: 0, y: 40 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-40px" }}
-                transition={{ duration: 0.8, ease: EASE, delay: i * 0.08 }}
-                className={`bezel price ${s.popular ? "price--popular" : ""}`}
-              >
-                {s.popular && <div className="price__badge">Most Popular</div>}
-                <div className="price__core bezel__core">
-                  <div className="price__name">{s.name}</div>
-                  <div className="price__amount">
-                    <span className="price__num">{s.price}</span>
-                    <span className="price__period">{s.period}</span>
-                  </div>
-                  {s.billed && <div className="price__billed" style={{ fontSize: "0.7rem", color: "rgba(242,242,247,0.4)", marginBottom: 8 }}>{s.billed}</div>}
-                  <div className="price__credits"><IconBolt /> {s.credits}</div>
-                  <p className="text-[13px] text-white/50 mb-4 leading-relaxed">{s.desc}</p>
-                  <ul className="price__features">
-                    {s.features.map((f) => (
-                      <li key={f}><IconCheck />{f}</li>
-                    ))}
-                  </ul>
-                  {s.id === "free" ? (
-                    <Link href="/login" className={`btn ${s.popular ? "btn-primary" : "btn-secondary"}`}>
-                      {s.cta}
-                      <span className="btn__icon"><IconArrowUpRight /></span>
-                    </Link>
-                  ) : (
-                    <button className={`btn ${s.popular ? "btn-primary" : "btn-secondary"}`} onClick={() => handleCheckout(s.id, yearly)}>
-                      {s.cta}
-                      <span className="btn__icon"><IconArrowUpRight /></span>
-                    </button>
-                  )}
-                </div>
-              </motion.div>
-            ))}
+        {/* ── Plans and packs ────────────────────────────────────────────── */}
+        <section className="hs-section--tight">
+          <div className="hs-wrap">
+            <PricingPlans />
           </div>
-        </div>
+        </section>
 
-        {/* TOP-UP PACKS */}
-        <div>
-          <div className="text-center mb-10">
-            <h2 className="text-3xl font-bold tracking-tight">Or grab a <em className="italic" style={{ color: "#FF1B6B" }}>quick pack</em></h2>
-            <p className="text-sm text-white/40 mt-3">One-off purchases · no subscription · credits never expire</p>
+        {/* ── What a run costs ───────────────────────────────────────────── */}
+        <section className="hs-section hs-section--tight" aria-labelledby="runs-h">
+          <div className="hs-wrap">
+            <div className="hs-head">
+              <h2 id="runs-h">What a run costs</h2>
+              <p>
+                Baselines, in credits. The exact price depends on the model, the resolution
+                and the duration you choose — the catalog lists each model, and the studio
+                quotes the run before you spend.
+              </p>
+            </div>
+
+            <div className="hs-table-wrap">
+              <table className="hs-table">
+                <caption className="hs-sr">Baseline credit cost of each kind of run</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Run</th>
+                    <th scope="col" className="hs-num">Credits</th>
+                    <th scope="col">What it produces</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {RUNS.map((r) => (
+                    <tr key={r.key}>
+                      <th scope="row">
+                        <Link href={r.href}>{r.label}</Link>
+                      </th>
+                      <td className="hs-num" style={{ color: "var(--filament-lit)", fontWeight: 600 }}>
+                        {CREDIT_COSTS[r.key]?.default ?? "—"}
+                      </td>
+                      <td>{r.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="hs-hint" style={{ marginTop: "var(--s-4)" }}>
+              <Link href="/models" style={{ color: "var(--filament-lit)", textDecoration: "underline", textUnderlineOffset: 3 }}>
+                See the per-model prices in the catalog
+              </Link>
+            </p>
           </div>
-          <div className="packs">
-            {PACKS.map((p, i) => (
-              <motion.div
-                key={p.id}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-30px" }}
-                transition={{ duration: 0.7, ease: EASE, delay: i * 0.07 }}
-                className={`bezel pack ${p.popular ? "price--popular" : ""}`}
-              >
-                <div className="pack__core bezel__core">
-                  <div className="pack__row">
-                    <span className="pack__name">{p.name}</span>
-                    <span className="pack__price">{p.price}</span>
-                  </div>
-                  <div className="pack__credits"><IconBolt /> {p.credits} credits</div>
-                  <p className="pack__desc">{p.pricePerCredit}</p>
-                  <button className="btn btn-secondary" onClick={() => handleTopup(p.id)}>
-                    Buy
-                    <span className="btn__icon"><IconArrowUpRight /></span>
-                  </button>
-                </div>
-              </motion.div>
-            ))}
+        </section>
+
+        {/* ── FAQ ────────────────────────────────────────────────────────── */}
+        <section className="hs-section hs-section--tight" aria-labelledby="faq-h">
+          <div className="hs-wrap hs-wrap--narrow">
+            <div className="hs-head">
+              <h2 id="faq-h">Questions people actually ask</h2>
+            </div>
+            <PricingFaq items={FAQ} />
+
+            <div className="pg-head__row" style={{ marginTop: "var(--s-8)" }}>
+              <Link href="/login?new=1" className="hs-btn hs-btn--primary hs-btn--lg">
+                Start with 100 free credits
+              </Link>
+              <Link href="/contact" className="hs-btn hs-btn--outline hs-btn--lg">
+                Ask about volume
+              </Link>
+            </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </section>
+      </main>
+
+      <Footer />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
+      />
+    </>
   );
 }

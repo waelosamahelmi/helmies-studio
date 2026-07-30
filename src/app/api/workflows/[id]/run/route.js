@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
+import { checkRateLimit } from "@/lib/security";
 import { executeWorkflow, deleteWorkflow, updateWorkflow, publishWorkflow } from "@/lib/workflows";
 
 export async function POST(req, { params }) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+    const rl = await checkRateLimit(user.id, "/api/workflow");
+    if (!rl.allowed) return NextResponse.json({ error: "Rate limited", retryAfter: rl.retryAfter }, { status: 429 });
 
     const { inputs } = await req.json();
     const result = await executeWorkflow(params.id, user.id, inputs || {});

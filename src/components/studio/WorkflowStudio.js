@@ -1,478 +1,903 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
-import { useModelCatalog } from "@/components/studio/useModelCatalog";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileChipScroller } from "@/components/studio/mobile";
 import { matchesGroup } from "@/lib/capability-groups";
+import { useModelCatalog } from "./useModelCatalog";
+import {
+  Sheet, SpendMeter, Field, Group, Chips, RatioPicker, Specs,
+  IcFlow, IcPlay, IcPlus, IcTrash, IcRefresh, IcCheck, IcAlert, IcExternal,
+  IcImage, IcVideo, IcMusic, IcMegaphone, IcGrid, IcBrain, IcUpload, IcLayers,
+  IcChevron, IcChevronLeft,
+} from "@/components/studio/kit";
 
-/* ── Inline SVG Icons (v6 style: 24×24, strokeWidth 1.7) ── */
-const IconPrompt = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6.4-4.8-6.4 4.8 2.4-7.2-6-4.8h7.6z" />
-  </svg>
-);
-const IconImageGen = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-    <circle cx="8.5" cy="8.5" r="1.5" />
-    <polyline points="21 15 16 10 5 21" />
-  </svg>
-);
-const IconVideoGen = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="23 7 16 12 23 17 23 7" />
-    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-  </svg>
-);
-const IconAudioGen = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 18V5l12-2v13" />
-    <circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-  </svg>
-);
-const IconQualityGate = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-  </svg>
-);
-const IconBrand = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-    <line x1="12" y1="8" x2="12" y2="16" />
-    <line x1="8" y1="12" x2="16" y2="12" />
-  </svg>
-);
-const IconSave = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
-    <polyline points="17 21 17 13 7 13 7 21" />
-    <polyline points="7 3 7 8 15 8" />
-  </svg>
-);
-const IconTemplate = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="7" height="7" />
-    <rect x="14" y="3" width="7" height="7" />
-    <rect x="3" y="14" width="7" height="7" />
-    <rect x="14" y="14" width="7" height="7" />
-  </svg>
-);
-const IconPublish = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="2" x2="12" y2="19" />
-    <polyline points="19 12 12 19 5 12" />
-    <line x1="9" y1="19" x2="15" y2="22" />
-  </svg>
-);
-const IconRun = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="5 3 19 12 5 21 5 3" />
-  </svg>
-);
-const IconTrash = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-  </svg>
-);
-const IconRefresh = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 4 23 10 17 10" />
-    <polyline points="1 20 1 14 7 14" />
-    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-  </svg>
-);
-const IconBolt = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10" />
-  </svg>
-);
-const IconCheck = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-);
-const IconClose = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="18" y1="6" x2="6" y2="18" />
-    <line x1="6" y1="6" x2="18" y2="18" />
-  </svg>
-);
-const IconMove = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="5 9 2 12 5 15" /><polyline points="9 5 12 2 15 5" />
-    <polyline points="15 19 12 22 9 19" /><polyline points="19 9 22 12 19 15" />
-    <line x1="2" y1="12" x2="22" y2="12" /><line x1="12" y1="2" x2="12" y2="22" />
-  </svg>
-);
-const IconPlus = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-  </svg>
-);
-const IconUpload = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-    <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
-  </svg>
-);
+/* ══════════════════════════════════════════════════════════════════════════
+   WORKFLOWS — .st-flow
+   ──────────────────────────────────────────────────────────────────────────
+   A pipeline is a straight line: step one feeds step two. So it is drawn as
+   a chain, top to bottom, with the connector carrying the direction. Saved
+   workflows sit on the left. Each step shows what it costs, quoted by the
+   pricing API — the run price is the sum of those quotes, never a guess.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Step type palette ── */
-const STEP_TYPES = [
-  { id: "prompt_compile", label: "Prompt Compiler", desc: "Craft and optimize generation prompts", icon: IconPrompt, color: "#A855F7" },
-  { id: "image_gen", label: "Image Generation", desc: "Create images with AI models", icon: IconImageGen, color: "#4ADE80" },
-  { id: "video_gen", label: "Video Generation", desc: "Generate video clips from text or frames", icon: IconVideoGen, color: "#60A5FA" },
-  { id: "audio_gen", label: "Audio Generation", desc: "Synthesize voice, music, and sound effects", icon: IconAudioGen, color: "#FACC15" },
-  { id: "quality_gate", label: "Quality Gate", desc: "Validate outputs against quality thresholds", icon: IconQualityGate, color: "#FB923C" },
-  { id: "brand_compliance", label: "Brand Compliance", desc: "Ensure outputs match brand guidelines", icon: IconBrand, color: "#F472B6" },
-  { id: "save_project", label: "Save to Project", desc: "Persist outputs to project memory", icon: IconSave, color: "#34D399" },
+/* The engine (lib/agents.js → executeStep) understands exactly these agents.
+   The previous build offered seven invented types — prompt_compile,
+   quality_gate, brand_compliance and friends — saved them as the step's
+   `agent`, and every run then died on "Unknown agent". Only real agents now. */
+const STEP_KINDS = [
+  { id: "image", label: "Image", desc: "Generate or edit an image", icon: IcImage, group: ["tti", "iti"] },
+  { id: "video", label: "Video", desc: "Generate a video clip", icon: IcVideo, group: ["ttv", "i2v"] },
+  { id: "audio", label: "Audio", desc: "Generate music, voice or sound", icon: IcMusic, group: ["audio"] },
+  { id: "marketing", label: "Marketing", desc: "Write campaign copy or an ad", icon: IcMegaphone, group: [] },
+  { id: "website", label: "Website", desc: "Build a page from a brief", icon: IcGrid, group: [] },
+  { id: "coding", label: "Code", desc: "Write or explain code", icon: IcBrain, group: [] },
 ];
 
-/* ── Helpers ── */
-function createStep(typeId) {
-  const type = STEP_TYPES.find((t) => t.id === typeId) || STEP_TYPES[0];
+const KIND_IDS = STEP_KINDS.map((k) => k.id);
+const kindOf = (id) => STEP_KINDS.find((k) => k.id === id) || null;
+
+/* Workflows saved by the old builder used these ids. Translate on load so
+   existing records still open instead of silently failing at run time. */
+const LEGACY_KINDS = { image_gen: "image", video_gen: "video", audio_gen: "audio" };
+
+const pad = (n) => String(n).padStart(2, "0");
+const isUrl = (s) => typeof s === "string" && /^(https?:\/\/|\/)/.test(s.trim());
+const isVideoUrl = (u) => /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u) || u.includes("/video/");
+const isAudioUrl = (u) => /\.(mp3|wav|ogg|m4a|flac)(\?|$)/i.test(u);
+
+let seq = 0;
+const newStep = (kind) => {
+  const preset = kindOf(kind) || STEP_KINDS[0];
+  seq += 1;
   return {
-    id: `step-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    type: typeId, name: type.label,
-    config: { model: "", prompt: "", inputSource: "previous", onFailure: "stop", params: {} },
-    position: { x: 60, y: 60 + Math.random() * 200 },
+    key: `s${Date.now().toString(36)}${seq}`,
+    kind: preset.id,
+    name: preset.label,
+    model: "",
+    prompt: "",
+    aspect: "",
+    negative: "",
+    duration: null,
+  };
+};
+
+function stepParams(step) {
+  const params = { prompt: step.prompt || "" };
+  if (step.model) { params.model = step.model; params.endpoint = step.model; }
+  if (step.aspect) params.aspect_ratio = step.aspect;
+  if (step.negative) params.negative_prompt = step.negative;
+  if (step.duration) params.duration = step.duration;
+  return params;
+}
+
+const toApiStep = (step) => ({ agent: step.kind, task: step.name || kindOf(step.kind)?.label || step.kind, params: stepParams(step) });
+
+function fromApiStep(raw, i) {
+  const kind = LEGACY_KINDS[raw?.agent] || raw?.agent || "image";
+  const params = raw?.params || {};
+  seq += 1;
+  return {
+    key: `l${i}${seq}`,
+    kind,
+    name: raw?.task || kindOf(kind)?.label || `Step ${i + 1}`,
+    model: params.model || params.endpoint || "",
+    prompt: params.prompt || "",
+    aspect: params.aspect_ratio || "",
+    negative: params.negative_prompt || "",
+    duration: typeof params.duration === "number" ? params.duration : null,
   };
 }
 
-const FAILURE_BEHAVIORS = [
-  { value: "stop", label: "Stop workflow" },
-  { value: "skip", label: "Skip step" },
-  { value: "retry", label: "Retry once" },
-];
-const INPUT_SOURCES = [
-  { value: "previous", label: "Previous step" },
-  { value: "workflow", label: "Workflow input" },
-  { value: "none", label: "None" },
-];
+const signature = (name, steps) => JSON.stringify({ name, steps: steps.map(toApiStep) });
 
-/* ══════════════════════════════════════════════════════════════ */
-export default function WorkflowStudio() {
+/* ── Saved list, shown in the side panel and in the narrow-screen sheet ─── */
+function WorkflowList({ workflows, templates, currentId, onOpen, onNew }) {
+  return (
+    <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+      <Group
+        label="Your workflows"
+        right={
+          <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={onNew}>
+            <IcPlus className="hs-icon-sm" /> New
+          </button>
+        }
+      >
+        {workflows.length === 0 ? (
+          <p className="hs-hint">
+            Nothing saved yet. Build a chain on the right and save it to run it again later.
+          </p>
+        ) : (
+          <div className="hs-stack" style={{ gap: "var(--s-2)" }}>
+            {workflows.map((wf) => (
+              <button
+                key={wf.id}
+                type="button"
+                className={`st-flow__wf${wf.id === currentId ? " is-active" : ""}`}
+                onClick={() => onOpen(wf)}
+                aria-current={wf.id === currentId ? "true" : undefined}
+              >
+                <b>{wf.name || "Untitled"}</b>
+                <span>
+                  {wf.steps?.length || 0} {wf.steps?.length === 1 ? "step" : "steps"}
+                  {wf.isPublic ? " · published" : ""}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Group>
+
+      {templates.length > 0 && (
+        <Group label="Templates">
+          <div className="hs-stack" style={{ gap: "var(--s-2)" }}>
+            {templates.map((tpl) => (
+              <button key={tpl.id} type="button" className="st-flow__wf" onClick={() => onOpen(tpl, true)}>
+                <b>{tpl.name || "Untitled"}</b>
+                <span>{tpl.steps?.length || 0} steps · template</span>
+              </button>
+            ))}
+          </div>
+        </Group>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+export default function WorkflowStudio({ onCreditsChanged }) {
   const [workflows, setWorkflows] = useState([]);
   const [templates, setTemplates] = useState([]);
-  const [currentWorkflow, setCurrentWorkflow] = useState(null);
+  const [current, setCurrent] = useState(null);
+  const [name, setName] = useState("Untitled workflow");
   const [steps, setSteps] = useState([]);
-  const [connections, setConnections] = useState([]);
-  const [selectedStepId, setSelectedStepId] = useState(null);
-  const [executing, setExecuting] = useState(false);
-  const [runResult, setRunResult] = useState(null);
-  const [runStatus, setRunStatus] = useState({});
-  const [workspaceName, setWorkspaceName] = useState("Untitled Workflow");
-  const [execProgress, setExecProgress] = useState(null); // { current, total }
-  const [undoStack, setUndoStack] = useState([]);
-  const [connectingFrom, setConnectingFrom] = useState(null);
+  const [savedSig, setSavedSig] = useState(null);
 
-  const { models: catalogModels } = useModelCatalog({});
-  // Image/video-gen step model picker: merge tti + iti capability groups.
-  const imageModels = useMemo(() => catalogModels.filter((m) => matchesGroup(m, "tti") || matchesGroup(m, "iti")), [catalogModels]);
-  const isMobile = useIsMobile();
-  const [draggingNodeId, setDraggingNodeId] = useState(null);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const canvasRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const [editing, setEditing] = useState(null);      // step key
+  const [listOpen, setListOpen] = useState(false);
 
-  /* ── Load workflows ── */
-  const loadWorkflows = useCallback(async () => {
-    try { const res = await fetch("/api/workflows"); const data = await res.json(); if (Array.isArray(data)) setWorkflows(data); } catch {}
+  const [busy, setBusy] = useState("");              // "" | "save" | "run" | "publish"
+  const [regenAt, setRegenAt] = useState(null);      // index of the step being rerun
+  const [result, setResult] = useState(null);        // { ok, stepStatus, error, creditsUsed, outputs }
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  const [balance, setBalance] = useState(null);
+  const [quote, setQuote] = useState({ perStep: [], total: null, quoting: false });
+
+  const { models } = useModelCatalog({});
+  const nameRef = useRef(null);
+
+  /* ── Load saved workflows and templates ─────────────────────────────── */
+  const loadLists = useCallback(async () => {
+    try {
+      const [mine, tpl] = await Promise.all([
+        apiFetch("/api/workflows").then((r) => r.json()),
+        apiFetch("/api/workflows?type=templates").then((r) => r.json()),
+      ]);
+      setWorkflows(Array.isArray(mine) ? mine : []);
+      setTemplates(Array.isArray(tpl) ? tpl : []);
+    } catch (err) {
+      setError(err?.message || "Could not load your saved workflows.");
+    }
   }, []);
-  const loadTemplates = useCallback(async () => {
-    try { const res = await fetch("/api/workflows?type=templates"); const data = await res.json(); if (Array.isArray(data)) setTemplates(data); } catch {}
+
+  const loadBalance = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/credits", { retries: 0 });
+      const data = await res.json();
+      setBalance(typeof data?.credits === "number" ? data.credits : null);
+    } catch {
+      /* Leave the balance unknown rather than showing a number we cannot vouch for. */
+    }
   }, []);
-  useEffect(() => { loadWorkflows(); loadTemplates(); }, [loadWorkflows, loadTemplates]);
 
-  /* ── Step management ── */
-  const pushUndo = useCallback((snapshot) => { setUndoStack(prev => [...prev.slice(-19), snapshot]); }, []);
-  const addStep = useCallback((typeId) => {
-    pushUndo({ steps, connections });
-    setSteps(prev => [...prev, createStep(typeId)]);
-  }, [steps, connections, pushUndo]);
-  const removeStep = useCallback((id) => {
-    pushUndo({ steps, connections });
-    setSteps(prev => prev.filter(s => s.id !== id));
-    setConnections(prev => prev.filter(c => c.from !== id && c.to !== id));
-    if (selectedStepId === id) setSelectedStepId(null);
-  }, [selectedStepId, steps, connections, pushUndo]);
-  const updateStep = useCallback((id, patch) => { setSteps(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s)); }, []);
-  const updateStepConfig = useCallback((id, key, value) => { setSteps(prev => prev.map(s => s.id === id ? { ...s, config: { ...s.config, [key]: value } } : s)); }, []);
+  useEffect(() => { loadLists(); loadBalance(); }, [loadLists, loadBalance]);
 
-  /* ── Connections ── */
-  const addConnection = useCallback((from, to) => {
-    if (from === to) return;
-    pushUndo({ steps, connections });
-    setConnections(prev => { if (prev.find(c => c.from === from && c.to === to)) return prev; return [...prev.filter(c => c.from !== from), { from, to }]; });
-  }, [steps, connections, pushUndo]);
+  /* ── Cost: one quote per step, from the pricing API ─────────────────── */
+  const quoteKey = useMemo(
+    () => JSON.stringify(steps.map((s) => [s.kind, s.model, s.aspect, s.duration])),
+    [steps],
+  );
 
-  /* ── Drag & drop nodes ── */
-  const handleNodeMouseDown = useCallback((e, nodeId) => {
-    e.stopPropagation(); const nodeEl = e.currentTarget; const rect = nodeEl.getBoundingClientRect();
-    setDraggingNodeId(nodeId); setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  }, []);
   useEffect(() => {
-    if (!draggingNodeId) return;
-    const handleMove = (e) => { const canvas = canvasRef.current; if (!canvas) return; const cr = canvas.getBoundingClientRect(); setSteps(prev => prev.map(s => s.id === draggingNodeId ? { ...s, position: { x: Math.max(0, e.clientX - cr.left - dragOffset.x), y: Math.max(0, e.clientY - cr.top - dragOffset.y) } } : s)); };
-    const handleUp = () => setDraggingNodeId(null);
-    window.addEventListener("mousemove", handleMove); window.addEventListener("mouseup", handleUp);
-    return () => { window.removeEventListener("mousemove", handleMove); window.removeEventListener("mouseup", handleUp); };
-  }, [draggingNodeId, dragOffset]);
+    if (!steps.length) { setQuote({ perStep: [], total: null, quoting: false }); return; }
+    let dead = false;
+    /* Drop the previous figures immediately — a stale price beside a changed
+       step is worse than no price at all. */
+    setQuote({ perStep: [], total: null, quoting: true });
 
-  /* ── Connection clicking ── */
-  const handlePortClick = useCallback((e, nodeId) => {
-    e.stopPropagation();
-    if (connectingFrom === null) setConnectingFrom(nodeId);
-    else { addConnection(connectingFrom, nodeId); setConnectingFrom(null); }
-  }, [connectingFrom, addConnection]);
+    const timer = setTimeout(async () => {
+      try {
+        const quoted = await Promise.all(
+          steps.map(async (step) => {
+            const res = await apiFetch("/api/estimate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ tool: step.kind, model: step.model || step.kind, params: stepParams(step) }),
+              retries: 0,
+            });
+            const data = await res.json();
+            return typeof data?.credits === "number" ? data.credits : null;
+          }),
+        );
+        if (dead) return;
+        const total = quoted.length && quoted.every((c) => typeof c === "number")
+          ? quoted.reduce((a, b) => a + b, 0)
+          : null;
+        setQuote({ perStep: quoted, total, quoting: false });
+      } catch {
+        if (!dead) setQuote({ perStep: [], total: null, quoting: false });
+      }
+    }, 400);
 
-  /* ── Keyboard shortcuts ── */
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); saveWorkflow(); }
-      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); }
-      if (e.key === "Delete" || e.key === "Backspace") { if (selectedStepId) { e.preventDefault(); removeStep(selectedStepId); } }
-    };
-    window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler);
-  }, [selectedStepId]);
+    return () => { dead = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey]);
 
-  const handleUndo = useCallback(() => {
-    setUndoStack(prev => { if (!prev.length) return prev; const snapshot = prev[prev.length - 1]; setSteps(snapshot.steps); setConnections(snapshot.connections); return prev.slice(0, -1); });
+  /* ── Step editing ───────────────────────────────────────────────────── */
+  /* Any structural change invalidates the last run's per-step ticks. */
+  const resetRun = useCallback(() => setResult(null), []);
+
+  const addStep = useCallback((kind) => {
+    setSteps((prev) => [...prev, newStep(kind)]);
+    resetRun();
+    setNotice("");
+  }, [resetRun]);
+
+  const changeStep = useCallback((key, change) => {
+    setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, ...change } : s)));
   }, []);
 
-  /* ── JSON Export / Import ── */
-  const handleExportJSON = useCallback(() => {
-    const data = { name: workspaceName, steps: steps.map(s => ({ id: s.id, type: s.type, name: s.name, config: s.config, position: s.position })), connections };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `${workspaceName.replace(/\s+/g,"_")}.workflow.json`; a.click(); URL.revokeObjectURL(a.href);
-  }, [workspaceName, steps, connections]);
-  const handleImportJSON = useCallback(() => { fileInputRef.current?.click(); }, []);
-  const handleFileImport = useCallback((e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader(); reader.onload = (ev) => { try { const data = JSON.parse(ev.target.result); if (data.name) setWorkspaceName(data.name); if (Array.isArray(data.steps)) setSteps(data.steps.map((s, i) => ({ ...s, id: s.id || `step-${Date.now()}-${i}`, position: s.position || { x: 60, y: 60 + i * 130 } }))); if (Array.isArray(data.connections)) setConnections(data.connections); } catch {} }; reader.readAsText(file); e.target.value = "";
+  const removeStep = useCallback((key) => {
+    setSteps((prev) => prev.filter((s) => s.key !== key));
+    setEditing((cur) => (cur === key ? null : cur));
+    resetRun();
+  }, [resetRun]);
+
+  const moveStep = useCallback((key, delta) => {
+    setSteps((prev) => {
+      const i = prev.findIndex((s) => s.key === key);
+      const j = i + delta;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+    resetRun();
+  }, [resetRun]);
+
+  /* ── Open a saved workflow or template ──────────────────────────────── */
+  const open = useCallback((wf, asCopy = false) => {
+    const loaded = (Array.isArray(wf?.steps) ? wf.steps : []).map(fromApiStep);
+    const nextName = asCopy ? `${wf?.name || "Untitled"} copy` : wf?.name || "Untitled workflow";
+    setCurrent(asCopy ? null : wf);
+    setName(nextName);
+    setSteps(loaded);
+    setSavedSig(asCopy ? null : signature(nextName.trim(), loaded));
+    setEditing(null);
+    setListOpen(false);
+    setResult(null);
+    setError("");
+    setNotice(asCopy ? "Template loaded. Save it to make it yours." : "");
   }, []);
 
-  /* ── Save / Load / Execute (preserved) ── */
-  const saveWorkflow = useCallback(async () => {
-    if (!workspaceName || steps.length === 0) return;
-    const stepData = steps.map(s => ({ agent: s.type, task: s.name, params: { model: s.config.model || "", prompt: s.config.prompt || "", inputSource: s.config.inputSource, onFailure: s.config.onFailure, ...s.config.params } }));
-    try { const res = await apiFetch("/api/workflows", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: workspaceName, description: "", steps: stepData }) }); const data = await res.json(); if (data.workflow) setCurrentWorkflow(data.workflow); await loadWorkflows(); } catch {}
-  }, [workspaceName, steps, loadWorkflows]);
-  const loadWorkflow = useCallback((wf) => {
-    setCurrentWorkflow(wf); setWorkspaceName(wf.name || "Untitled");
-    const loadedSteps = (wf.steps || []).map((s, i) => ({ id: s.id || `step-${Date.now()}-${i}`, type: s.agent || "image_gen", name: s.task || `Step ${i+1}`, config: { model: s.params?.model || "", prompt: s.params?.prompt || "", inputSource: s.params?.inputSource || "previous", onFailure: s.params?.onFailure || "stop", params: s.params || {} }, position: { x: 60, y: 60 + i * 130 } }));
-    setSteps(loadedSteps); setConnections(loadedSteps.slice(0,-1).map((_, i) => ({ from: loadedSteps[i].id, to: loadedSteps[i+1].id }))); setSelectedStepId(null); setRunResult(null);
+  const startNew = useCallback(() => {
+    setCurrent(null);
+    setName("Untitled workflow");
+    setSteps([]);
+    setSavedSig(null);
+    setEditing(null);
+    setListOpen(false);
+    setResult(null);
+    setError("");
+    setNotice("");
+    nameRef.current?.focus();
   }, []);
-  const executeWorkflow = useCallback(async () => {
-    if (!currentWorkflow?.id) return; setExecuting(true); setRunResult(null); setRunStatus({}); setExecProgress({ current: 0, total: steps.length });
-    try { const res = await apiFetch(`/api/workflows/${currentWorkflow.id}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inputs: { prompt: steps[0]?.config?.prompt || "" } }) }); const data = await res.json(); setRunResult(data); if (data.stepResults) { const statuses = {}; data.stepResults.forEach((sr, i) => { statuses[i] = sr.status === "completed" ? "done" : sr.status === "failed" ? "error" : "running"; }); setRunStatus(statuses); } setExecProgress(null); } catch (e) { setRunResult({ success: false, error: e.message }); } finally { setExecuting(false); }
-  }, [currentWorkflow, steps]);
-  const regenerateStep = useCallback(async () => {
-    if (!currentWorkflow?.id || selectedStepId == null) return; const stepIdx = steps.findIndex(s => s.id === selectedStepId); if (stepIdx < 0) return;
-    try { const res = await apiFetch(`/api/workflows/${currentWorkflow.id}/regen`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stepIndex: stepIdx }) }); const data = await res.json(); setRunResult(prev => ({ ...prev, regenResult: data })); } catch {}
-  }, [currentWorkflow, selectedStepId, steps]);
-  const publishWorkflow = useCallback(async () => {
-    if (!currentWorkflow?.id) return;
-    try { await apiFetch(`/api/workflows/${currentWorkflow.id}/publish`, { method: "POST", headers: { "Content-Type": "application/json" } }); await loadWorkflows(); } catch {}
-  }, [currentWorkflow, loadWorkflows]);
 
-  const selectedStep = steps.find(s => s.id === selectedStepId);
-  const selectedStepType = STEP_TYPES.find(t => t.id === selectedStep?.type);
-  const costEstimate = steps.reduce((sum, s) => { if (s.type === "video_gen") return sum + 8; if (s.type === "audio_gen") return sum + 3; return sum + 4; }, 0);
+  /* ── Save ───────────────────────────────────────────────────────────── */
+  const save = useCallback(async () => {
+    const title = name.trim();
+    if (!title || !steps.length || busy) return;
+    setBusy("save");
+    setError("");
+    setNotice("");
+    const payload = { name: title, description: current?.description || "", steps: steps.map(toApiStep) };
 
-  /* ── Mini-map dimensions ── */
-  const mmW = 140, mmH = 90;
-  const maxX = Math.max(...steps.map(s => s.position.x + 155), 300);
-  const maxY = Math.max(...steps.map(s => s.position.y + 60), 300);
-  const scale = Math.min(mmW / maxX, mmH / maxY, 0.4);
+    try {
+      let saved;
+      if (current?.id) {
+        /* PATCH lives on .../run — that route file exports POST, DELETE and
+           PATCH together, and PATCH is the only update endpoint that exists.
+           POST /api/workflows always creates, so using it here would leave a
+           duplicate record behind on every save. */
+        await apiFetch(`/api/workflows/${current.id}/run`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          retries: 0,
+        });
+        saved = { ...current, ...payload };
+      } else {
+        const res = await apiFetch("/api/workflows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+          retries: 0,
+        });
+        const data = await res.json();
+        saved = data?.workflow || null;
+      }
+      if (saved) setCurrent(saved);
+      setSavedSig(signature(title, steps));
+      setNotice(`Saved “${title}”.`);
+      await loadLists();
+    } catch (err) {
+      setError(err?.message || "Saving failed. Check your connection and try again.");
+    } finally {
+      setBusy("");
+    }
+  }, [name, steps, busy, current, loadLists]);
 
+  /* ── Run — the server executes the saved version, so unsaved edits block it ── */
+  const run = useCallback(async () => {
+    if (!current?.id || busy) return;
+    setBusy("run");
+    setError("");
+    setNotice("");
+    setResult({ running: true, stepStatus: {}, outputs: [] });
+
+    try {
+      const res = await apiFetch(`/api/workflows/${current.id}/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: { prompt: steps[0]?.prompt || "" } }),
+        timeout: 600000,
+        retries: 0,
+      });
+      const data = await res.json();
+
+      const stepStatus = {};
+      (data?.stepResults || []).forEach((r, i) => {
+        const index = (r.step || i + 1) - 1;
+        stepStatus[index] = r.status === "completed" ? "done" : "failed";
+      });
+
+      setResult({
+        running: false,
+        ok: !!data?.success,
+        stepStatus,
+        error: data?.success ? "" : data?.error || "The run stopped before it finished.",
+        creditsUsed: typeof data?.creditsUsed === "number" ? data.creditsUsed : null,
+        outputs: (data?.outputs || []).filter((o) => typeof o === "string"),
+      });
+      if (!data?.success) setError(data?.error || "The run stopped before it finished.");
+    } catch (err) {
+      setResult({ running: false, ok: false, stepStatus: {}, error: err?.message || "The run failed.", outputs: [] });
+      setError(err?.message || "The run failed.");
+    } finally {
+      setBusy("");
+      loadBalance();
+      onCreditsChanged?.();
+    }
+  }, [current, busy, steps, loadBalance, onCreditsChanged]);
+
+  /* ── Regenerate one step ────────────────────────────────────────────── */
+  const regenerate = useCallback(async (index) => {
+    if (!current?.id || busy || regenAt != null) return;
+    setRegenAt(index);
+    setError("");
+    setNotice("");
+    try {
+      const res = await apiFetch(`/api/workflows/${current.id}/regen`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stepIndex: index, newParams: {} }),
+        timeout: 600000,
+        retries: 0,
+      });
+      const data = await res.json();
+      if (!data?.success) throw new Error(data?.error || "The step did not regenerate.");
+
+      setResult((prev) => ({
+        running: false,
+        ok: prev?.ok ?? true,
+        stepStatus: { ...(prev?.stepStatus || {}), [index]: "done" },
+        error: "",
+        creditsUsed: prev?.creditsUsed ?? null,
+        outputs: isUrl(data.output) ? [...(prev?.outputs || []), data.output] : prev?.outputs || [],
+      }));
+      setNotice(
+        `Step ${pad(index + 1)} regenerated${data.creditsUsed != null ? ` for ${data.creditsUsed} credits` : ""}.`,
+      );
+    } catch (err) {
+      setError(err?.message || "The step did not regenerate.");
+    } finally {
+      setRegenAt(null);
+      loadBalance();
+      onCreditsChanged?.();
+    }
+  }, [current, busy, regenAt, loadBalance, onCreditsChanged]);
+
+  /* ── Publish ────────────────────────────────────────────────────────── */
+  const publish = useCallback(async () => {
+    if (!current?.id || busy) return;
+    setBusy("publish");
+    setError("");
+    setNotice("");
+    try {
+      const res = await apiFetch(`/api/workflows/${current.id}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        retries: 0,
+      });
+      const data = await res.json();
+      if (data?.workflow) setCurrent(data.workflow);
+      else setCurrent((c) => (c ? { ...c, isPublic: true } : c));
+      setNotice("Published. This workflow is now listed publicly.");
+      await loadLists();
+    } catch (err) {
+      setError(err?.message || "Publishing failed.");
+    } finally {
+      setBusy("");
+    }
+  }, [current, busy, loadLists]);
+
+  /* ── Derived ────────────────────────────────────────────────────────── */
+  const dirty = savedSig == null ? steps.length > 0 : signature(name.trim(), steps) !== savedSig;
+  const unsupported = steps.filter((s) => !KIND_IDS.includes(s.kind));
+  const total = quote.total;
+  const affordable = balance == null || total == null || balance >= total;
+  const shortfall = affordable || total == null || balance == null ? 0 : total - balance;
+  const running = busy === "run";
+  const step = steps.find((s) => s.key === editing) || null;
+  const stepIndex = step ? steps.findIndex((s) => s.key === step.key) : -1;
+
+  const stepModels = useMemo(() => {
+    const groups = kindOf(step?.kind)?.group || [];
+    if (!groups.length) return [];
+    return (models || []).filter((m) => groups.some((g) => matchesGroup(m, g)));
+  }, [models, step?.kind]);
+
+  const chosenModel = stepModels.find((m) => m.id === step?.model) || null;
+  const ratios = chosenModel?.aspectRatios?.length ? chosenModel.aspectRatios : [];
+  const durations = chosenModel?.durations?.length ? chosenModel.durations : [];
+
+  const runBlock =
+    !current?.id ? "Save this workflow before running it."
+    : dirty ? "Save your changes — a run always uses the saved version."
+    : unsupported.length ? "One or more steps use a type this studio can no longer run. Change them first."
+    : !steps.length ? "Add at least one step."
+    : quote.quoting ? "Working out what this run costs…"
+    : total == null ? "The pricing API did not quote every step. Reopen a step to try again."
+    : !affordable ? "Not enough credits for this run."
+    : "";
+
+  /* ══════════════════════════════════════════════════════════════════════ */
   return (
-    <div className="v6-builder-grid" style={{ height: "100%" }}>
-      {/* ── Left: Step Palette + saved ── */}
-      <div className="v6-builder-panel">
-        <div className="v6-eyebrow" style={{ marginBottom: 8 }}>Step Palette</div>
-        {isMobile ? (
-          <MobileChipScroller
-            items={STEP_TYPES.map(st => ({ label: st.label, value: st.id }))}
-            selectedValue={null}
-            onSelect={(id) => addStep(id)}
-          />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {STEP_TYPES.map((st) => (
-              <button key={st.id} className="v6-btn ghost" onClick={() => addStep(st.id)} style={{ justifyContent: "flex-start", gap: 9, width: "100%", borderColor: `${st.color}30`, padding: "8px 10px", textAlign: "left" }}>
-                <span style={{ color: st.color, display: "flex", flexShrink: 0 }}><st.icon /></span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700 }}>{st.label}</div>
-                  <div style={{ fontSize: 8, color: "var(--v6-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{st.desc}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--v6-line)" }}>
-          <div className="v6-eyebrow" style={{ marginBottom: 8 }}>Your Workflows</div>
-          {workflows.map(wf => (
-            <button key={wf.id} onClick={() => loadWorkflow(wf)} style={{ width: "100%", border: currentWorkflow?.id === wf.id ? "1px solid var(--v6-accent)" : "1px solid transparent", background: currentWorkflow?.id === wf.id ? "var(--v6-surface2)" : "transparent", color: "var(--v6-text)", padding: "8px 10px", borderRadius: 9, marginBottom: 4, fontSize: 11, textAlign: "left", cursor: "pointer", display: "block" }}>
-              <strong style={{ display: "block", fontSize: 11 }}>{wf.name}</strong>
-              <span style={{ fontSize: 9, color: "var(--v6-muted)" }}>{wf.steps?.length || 0} steps</span>
-            </button>
-          ))}
-          {workflows.length === 0 && <p style={{ fontSize: 10, color: "var(--v6-muted)", textAlign: "center", padding: 12 }}>No saved workflows.</p>}
-        </div>
-        {templates.length > 0 && (
-          <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px solid var(--v6-line)" }}>
-            <div className="v6-eyebrow" style={{ marginBottom: 8 }}>Templates</div>
-            {templates.map(tmpl => (
-              <button key={tmpl.id} onClick={() => loadWorkflow(tmpl)} style={{ width: "100%", border: "1px solid transparent", background: "transparent", color: "var(--v6-text)", padding: "8px 10px", borderRadius: 9, marginBottom: 4, fontSize: 11, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
-                <IconTemplate /> {tmpl.name}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+    <div className="st-flow">
+      <aside className="st-flow__side" aria-label="Saved workflows">
+        <WorkflowList
+          workflows={workflows}
+          templates={templates}
+          currentId={current?.id}
+          onOpen={open}
+          onNew={startNew}
+        />
+      </aside>
 
-      {/* ── Center: Canvas ── */}
-      <div className="v6-builder-panel" style={{ padding: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* Progress bar */}
-        {execProgress && (
-          <div style={{ height: 3, background: "var(--v6-surface2)", flexShrink: 0 }}>
-            <div style={{ height: "100%", width: `${(execProgress.current / Math.max(execProgress.total, 1)) * 100}%`, background: "linear-gradient(90deg, var(--v6-accent), var(--v6-good))", transition: "width 0.4s ease", borderRadius: "0 3px 3px 0" }} />
+      <div className="st-flow__main">
+        <div className="st-lib__bar">
+          <button
+            type="button"
+            className="hs-btn hs-btn--ghost hs-btn--sm st-flow__open"
+            onClick={() => setListOpen(true)}
+          >
+            <IcLayers className="hs-icon-sm" /> Workflows
+          </button>
+
+          <label className="hs-sr" htmlFor="wf-name">Workflow name</label>
+          <input
+            id="wf-name"
+            ref={nameRef}
+            className="hs-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Name this workflow"
+            style={{ flex: 1, minWidth: 160 }}
+          />
+
+          <button
+            type="button"
+            className="hs-btn hs-btn--sm"
+            onClick={save}
+            disabled={!name.trim() || !steps.length || !!busy}
+            title={current?.id ? "Update the saved workflow" : "Save this workflow"}
+          >
+            {busy === "save" ? <span className="hs-spin" style={{ width: 12, height: 12 }} /> : <IcUpload className="hs-icon-sm" />}
+            {current?.id ? "Save" : "Save new"}
+          </button>
+
+          <button
+            type="button"
+            className="hs-btn hs-btn--sm"
+            onClick={publish}
+            disabled={!current?.id || !!busy || current?.isPublic}
+            title={current?.isPublic ? "Already published" : "List this workflow publicly"}
+          >
+            {busy === "publish" ? <span className="hs-spin" style={{ width: 12, height: 12 }} /> : <IcExternal className="hs-icon-sm" />}
+            {current?.isPublic ? "Published" : "Publish"}
+          </button>
+        </div>
+
+        {running && (
+          <div className="hs-progress hs-progress--indeterminate" role="status" aria-label="Running the workflow">
+            <i />
           </div>
         )}
-        {/* Toolbar */}
-        <div className="v6-workflow-toolbar">
-          <input className="v6-input" value={workspaceName} onChange={e => setWorkspaceName(e.target.value)} placeholder="Workflow name..." style={{ flex: 1, fontSize: 13, fontWeight: 600, background: "transparent", border: "1px solid var(--v6-line)", padding: "6px 10px", borderRadius: 7 }} />
-          <button onClick={executeWorkflow} disabled={executing || !currentWorkflow?.id}><IconRun /> {!isMobile && (executing ? "Running..." : "Run")}</button>
-          <button onClick={saveWorkflow} disabled={!workspaceName || steps.length === 0}><IconSave /> {!isMobile && "Save"}</button>
-          <button onClick={handleExportJSON} title="Export JSON"><IconUpload /> {!isMobile && "Export"}</button>
-          <button onClick={handleImportJSON} title="Import JSON"><IconTemplate /> {!isMobile && "Import"}</button>
-          <button onClick={publishWorkflow} disabled={!currentWorkflow?.id}><IconPublish /> {!isMobile && "Publish"}</button>
-          <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleFileImport} />
-        </div>
-        {/* Node canvas */}
-        <div ref={canvasRef} className="v6-node-canvas" style={{ flex: 1, position: "relative" }} onClick={() => { setSelectedStepId(null); setConnectingFrom(null); }}>
-          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 0 }}>
-            <defs>
-              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
-                <polygon points="0 0, 8 3, 0 6" fill="var(--v6-accent)" opacity="0.7" />
-              </marker>
-            </defs>
-            {connections.map(conn => {
-              const fromNode = steps.find(s => s.id === conn.from);
-              const toNode = steps.find(s => s.id === conn.to);
-              if (!fromNode || !toNode) return null;
-              const x1 = fromNode.position.x + 155, y1 = fromNode.position.y + 30;
-              const x2 = toNode.position.x, y2 = toNode.position.y + 30;
-              const midX = (x1 + x2) / 2;
+
+        {error && (
+          <div className="hs-notice hs-notice--fault" role="alert" style={{ margin: "var(--s-3) var(--s-4) 0" }}>
+            <IcAlert className="hs-icon-sm" />
+            <span style={{ flex: 1 }}>{error}</span>
+            <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => setError("")}>
+              Dismiss
+            </button>
+          </div>
+        )}
+
+        {!error && notice && (
+          <div className="hs-notice hs-notice--signal" style={{ margin: "var(--s-3) var(--s-4) 0" }}>
+            <IcCheck className="hs-icon-sm" />
+            <span style={{ flex: 1 }}>{notice}</span>
+          </div>
+        )}
+
+        <div className="st-flow__chain">
+          {steps.length === 0 && (
+            <div className="hs-empty">
+              <span className="hs-empty__mark"><IcFlow /></span>
+              <h3>Build a pipeline</h3>
+              <p>
+                Add a step below. Each step feeds the next — write{" "}
+                <code className="hs-mono">$STEP_1_OUTPUT</code> in a prompt to use what the first
+                step produced, or <code className="hs-mono">$INPUT_PROMPT</code> for the run input.
+              </p>
+            </div>
+          )}
+
+          {/* The chain itself is the list; the connectors are decoration and the
+              add block below it is not a step, so both stay out of the role. */}
+          <div className="st-flow__steps" role="list" aria-label="Step chain" aria-busy={running}>
+            {steps.map((s, i) => {
+              const kind = kindOf(s.kind);
+              const status = result?.stepStatus?.[i];
+              const isRegenerating = regenAt === i;
+              const cost = quote.perStep[i];
+
               return (
-                <g key={`${conn.from}-${conn.to}`}>
-                  <path d={`M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`} fill="none" stroke="var(--v6-accent)" strokeWidth="2.5" strokeOpacity="0.45" strokeDasharray="6 4" markerEnd="url(#arrowhead)">
-                    <animate attributeName="stroke-dashoffset" from="20" to="0" dur="1.2s" repeatCount="indefinite" />
-                  </path>
-                </g>
+                <Fragment key={s.key}>
+                  {i > 0 && <span className="st-flow__link" aria-hidden="true" />}
+                  <div
+                    role="listitem"
+                    className={`st-step${
+                      isRegenerating ? " is-running"
+                      : status === "done" ? " is-done"
+                      : status === "failed" ? " is-failed" : ""
+                    }${editing === s.key ? " is-active" : ""}`}
+                  >
+                    <span className="st-step__n">{pad(i + 1)}</span>
+
+                    <button
+                      type="button"
+                      className="st-step__open"
+                      onClick={() => setEditing(s.key)}
+                      aria-label={`Edit step ${i + 1}, ${s.name || kind?.label || s.kind}`}
+                    >
+                      <span className="st-step__name">
+                        {s.name || kind?.label || s.kind}
+                      </span>
+                      <span className="st-step__desc">
+                        {kind ? `${kind.label} · ` : ""}
+                        {s.prompt?.trim() ? s.prompt.trim() : s.model || "Not configured yet"}
+                      </span>
+                    </button>
+
+                    <span className="st-step__end">
+                      <span className="st-plan__cost">
+                        {isRegenerating ? "running"
+                          : status === "failed" ? "failed"
+                          : cost == null ? "—" : `${cost} cr`}
+                      </span>
+
+                      {current?.id && !dirty && (
+                        <button
+                          type="button"
+                          className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
+                          onClick={() => regenerate(i)}
+                          disabled={!!busy || regenAt != null}
+                          aria-label={`Rerun step ${i + 1} on its own`}
+                          title="Rerun this step on its own"
+                        >
+                          {isRegenerating
+                            ? <span className="hs-spin" style={{ width: 12, height: 12 }} />
+                            : <IcRefresh className="hs-icon-sm" />}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
+                        onClick={() => removeStep(s.key)}
+                        disabled={!!busy}
+                        aria-label={`Remove step ${i + 1}`}
+                        title="Remove this step"
+                      >
+                        <IcTrash className="hs-icon-sm" />
+                      </button>
+                    </span>
+
+                    {!kind && (
+                      <p className="hs-notice hs-notice--caution" style={{ gridColumn: "1 / -1" }}>
+                        This step is a “{s.kind}” type, which the engine cannot run. Open it and pick
+                        a different type.
+                      </p>
+                    )}
+                  </div>
+                </Fragment>
               );
             })}
-            {connectingFrom && (() => { const fn = steps.find(s => s.id === connectingFrom); if (!fn) return null; return <line x1={fn.position.x + 155} y1={fn.position.y + 30} x2={fn.position.x + 250} y2={fn.position.y + 30} stroke="var(--v6-accent)" strokeWidth="2" strokeDasharray="6 4" opacity="0.5" />; })()}
-          </svg>
+          </div>
 
-          {steps.map((step, i) => {
-            const st = STEP_TYPES.find(t => t.id === step.type);
-            const status = runStatus[i];
-            const isSelected = selectedStepId === step.id;
-            const isConnecting = connectingFrom === step.id;
-            const statusColor = status === "done" ? "var(--v6-good)" : status === "error" ? "var(--v6-bad)" : status === "running" ? "var(--v6-warn)" : st?.color;
-            return (
-              <div key={step.id} className="v6-node" style={{
-                left: step.position.x, top: step.position.y,
-                borderColor: isSelected ? "var(--v6-accent)" : isConnecting ? "var(--v6-accent)" : `${st?.color || "var(--v6-line)"}40`,
-                borderLeft: `3px solid ${st?.color || "var(--v6-accent)"}`,
-                zIndex: isSelected ? 5 : 1, cursor: draggingNodeId === step.id ? "grabbing" : "grab",
-                opacity: draggingNodeId === step.id ? 0.85 : 1,
-                transition: draggingNodeId ? "none" : "border-color 0.18s, box-shadow 0.18s",
-                boxShadow: isSelected ? `0 0 24px ${st?.color || "var(--v6-accent)"}33` : isConnecting ? "0 0 16px rgba(255,65,111,0.15)" : draggingNodeId ? "0 8px 24px rgba(0,0,0,0.3)" : undefined,
-              }} onMouseDown={e => { setSelectedStepId(step.id); handleNodeMouseDown(e, step.id); }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <span style={{ width: 20, height: 20, borderRadius: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", background: `${st?.color || "var(--v6-accent)"}1f`, color: st?.color || "var(--v6-text)", border: `1px solid ${st?.color || "var(--v6-line)"}44`, flexShrink: 0 }}>{st?.icon && <st.icon />}</span>
-                  <strong>{step.name || `Step ${i+1}`}</strong>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusColor, flexShrink: 0, boxShadow: status ? `0 0 8px ${statusColor}` : "none", marginLeft: "auto" }} title={status || "idle"} />
-                  <button onClick={e => { e.stopPropagation(); removeStep(step.id); }} style={{ border: 0, background: "transparent", color: "var(--v6-muted)", cursor: "pointer", padding: 2, display: "flex" }} title="Remove step"><IconTrash /></button>
+          {steps.length > 0 && <span className="st-flow__link" aria-hidden="true" />}
+
+          <div className="st-flow__add">
+            <span className="hs-label" style={{ margin: 0 }}>Add a step</span>
+            <div className="hs-chips">
+              {STEP_KINDS.map((k) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  className="hs-chip"
+                  onClick={() => addStep(k.id)}
+                  disabled={!!busy}
+                  title={k.desc}
+                >
+                  <k.icon className="hs-icon-sm" /> {k.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {result && !result.running && (
+            <div className="st-flow__out hs-card" style={{ marginTop: "var(--s-6)" }}>
+              <div className="hs-row hs-row--between">
+                <span className="hs-label" style={{ margin: 0 }}>
+                  {result.ok ? "Run finished" : "Run stopped"}
+                </span>
+                {result.creditsUsed != null && (
+                  <span className="hs-badge hs-badge--accent hs-mono">{result.creditsUsed} cr</span>
+                )}
+              </div>
+
+              {result.error && (
+                <p className="hs-notice hs-notice--fault" style={{ marginTop: "var(--s-3)" }}>
+                  {result.error}
+                </p>
+              )}
+
+              {result.outputs?.length > 0 && (
+                <div className="hs-thumbs" style={{ marginTop: "var(--s-3)" }}>
+                  {result.outputs.filter(isUrl).map((url, i) => (
+                    <a
+                      key={`${url}-${i}`}
+                      className="hs-thumb"
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Open output ${i + 1} in a new tab`}
+                    >
+                      {isVideoUrl(url) ? (
+                        <video src={url} muted playsInline preload="metadata" />
+                      ) : isAudioUrl(url) ? (
+                        <span
+                          className="hs-mono"
+                          style={{ display: "grid", placeItems: "center", height: "100%", fontSize: 10, color: "var(--tx-mute)" }}
+                        >
+                          AUDIO
+                        </span>
+                      ) : (
+                        <img src={url} alt={`Output ${i + 1}`} />
+                      )}
+                    </a>
+                  ))}
                 </div>
-                <p>{step.config?.prompt?.slice(0, 60) || step.config?.model || "Configure step..."}</p>
-                <div style={{ position: "absolute", right: -8, top: "50%", transform: "translateY(-50%)", width: 16, height: 16, borderRadius: "50%", border: `2.5px solid ${isConnecting ? "var(--v6-accent)" : "var(--v6-line)"}`, background: isConnecting ? "var(--v6-accent)" : "var(--v6-surface)", cursor: "pointer", zIndex: 6, transition: "all 0.18s", boxShadow: isConnecting ? "0 0 12px var(--v6-accent)" : "none" }} onClick={e => handlePortClick(e, step.id)} title="Connect output" />
-              </div>
-            );
-          })}
+              )}
 
-          {/* Empty canvas state */}
-          {steps.length === 0 && (
-            <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "var(--v6-muted)", fontSize: 12 }}>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ width: 64, height: 64, borderRadius: 14, border: "2px dashed var(--v6-line)", margin: "0 auto 16px", display: "grid", placeItems: "center", opacity: 0.5, animation: "v6-float 3s ease-in-out infinite" }}><IconPlus /></div>
-                <p style={{ fontWeight: 600 }}>Drag steps here to build your workflow</p>
-                <p style={{ fontSize: 10, marginTop: 4 }}>Add steps from the left palette and connect them by clicking output ports</p>
-              </div>
-            </div>
-          )}
-
-          {/* Connection hint */}
-          {connectingFrom && (
-            <div style={{ position: "absolute", bottom: 12, left: "50%", transform: "translateX(-50%)", zIndex: 10, fontSize: 10, color: "var(--v6-muted)", background: "var(--v6-surface)", padding: "6px 14px", borderRadius: 99, border: "1px solid var(--v6-line)" }}>
-              Click a node's output port to connect · <button onClick={e => { e.stopPropagation(); setConnectingFrom(null); }} style={{ border: 0, background: "transparent", color: "var(--v6-accent)", cursor: "pointer", fontWeight: 700 }}>Cancel</button>
-            </div>
-          )}
-
-          {/* Mini-map */}
-          {steps.length > 0 && (
-            <div style={{ position: "absolute", bottom: 8, right: 8, width: mmW, height: mmH, borderRadius: 8, border: "1px solid var(--v6-line)", background: "var(--v6-surface2)", opacity: 0.7, overflow: "hidden", pointerEvents: "none", zIndex: 8 }}>
-              {steps.map(s => { const st2 = STEP_TYPES.find(t => t.id === s.type); return <div key={s.id} style={{ position: "absolute", left: s.position.x * scale, top: s.position.y * scale, width: 155 * scale, height: 60 * scale, background: st2?.color || "var(--v6-line)", borderRadius: 3, opacity: 0.5 }} />; })}
+              {result.ok && !result.outputs?.length && (
+                <p className="hs-hint" style={{ marginTop: "var(--s-3)" }}>
+                  The run finished without producing a file. Check the step prompts.
+                </p>
+              )}
             </div>
           )}
         </div>
 
-        {/* Run result */}
-        {runResult && (
-          <div style={{ borderTop: "1px solid var(--v6-line)", padding: "10px 14px", background: "var(--v6-surface)", fontSize: 11, maxHeight: 120, overflow: "auto" }}>
-            {runResult.success ? <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ color: "var(--v6-good)", display: "flex" }}><IconCheck /></span><span>Workflow completed · {runResult.outputs?.length || 0} outputs</span>{runResult.creditsUsed != null && <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--v6-accent)", marginLeft: "auto" }}><IconBolt /> {runResult.creditsUsed}c</span>}</div> : <div style={{ color: "var(--v6-bad)" }}><IconClose /> {runResult.error || "Execution failed"}</div>}
+        <div className="st-dock-prompt">
+          <div className="st-spend">
+            <SpendMeter
+              cost={total ?? 0}
+              balance={balance}
+              affordable={affordable}
+              shortfall={shortfall}
+              label="Run cost"
+            />
+            <button
+              type="button"
+              className="hs-btn hs-btn--primary hs-btn--lg"
+              onClick={run}
+              disabled={!!runBlock || !!busy}
+              title={runBlock || `Run all ${steps.length} steps`}
+            >
+              {running ? <span className="hs-spin" /> : <IcPlay className="hs-icon-sm" />}
+              {running ? "Running" : "Run workflow"}
+              {total != null && !running && <span className="hs-btn__cost hs-mono">{total}</span>}
+            </button>
           </div>
-        )}
-      </div>
-
-      {/* ── Right: Step inspector ── */}
-      <div className="v6-builder-panel">
-        <div className="v6-eyebrow" style={{ marginBottom: 10 }}>Step Inspector</div>
-        {selectedStep ? (
-          <div style={{ display: "grid", gap: 10 }}>
-            <div className="v6-field"><span className="v6-field-label">Step name</span><input className="v6-input" value={selectedStep.name} onChange={e => updateStep(selectedStep.id, { name: e.target.value })} placeholder="Step name..." style={{ fontSize: 11 }} /></div>
-            <div className="v6-quote"><div className="v6-quote-row"><span className="v6-muted">Type</span><strong style={{ color: selectedStepType?.color }}>{selectedStepType?.label || selectedStep.type}</strong></div><div className="v6-quote-row"><span className="v6-muted">ID</span><strong className="v6-tiny v6-mono">{selectedStep.id.slice(0, 12)}...</strong></div></div>
-            {(selectedStep.type === "image_gen" || selectedStep.type === "video_gen") && <div className="v6-field"><span className="v6-field-label">Model</span><select className="v6-input" value={selectedStep.config.model} onChange={e => updateStepConfig(selectedStep.id, "model", e.target.value)} style={{ fontSize: 11 }}><option value="">Select model...</option>{imageModels.map(m => <option key={m.id} value={m.id}>{m.name} — {m.provider}</option>)}</select></div>}
-            <div className="v6-field"><span className="v6-field-label">Prompt <span className="v6-tiny" style={{ color: "var(--v6-muted)", fontWeight: 400 }}>($INPUT_, $STEP_ supported)</span></span><textarea className="v6-textarea" value={selectedStep.config.prompt} onChange={e => updateStepConfig(selectedStep.id, "prompt", e.target.value)} placeholder="Describe what to generate..." rows={3} style={{ minHeight: 72 }} /></div>
-            <div className="v6-field"><span className="v6-field-label">Input source</span><select className="v6-input" value={selectedStep.config.inputSource} onChange={e => updateStepConfig(selectedStep.id, "inputSource", e.target.value)} style={{ fontSize: 11 }}>{INPUT_SOURCES.map(src => <option key={src.value} value={src.value}>{src.label}</option>)}</select></div>
-            <div className="v6-field"><span className="v6-field-label">On failure</span><select className="v6-input" value={selectedStep.config.onFailure} onChange={e => updateStepConfig(selectedStep.id, "onFailure", e.target.value)} style={{ fontSize: 11 }}>{FAILURE_BEHAVIORS.map(fb => <option key={fb.value} value={fb.value}>{fb.label}</option>)}</select></div>
-            <details style={{ fontSize: 10 }}><summary style={{ cursor: "pointer", color: "var(--v6-muted)", fontWeight: 700, marginBottom: 6 }}>Generation params</summary><div className="v6-field" style={{ marginTop: 6 }}><span className="v6-field-label">Aspect ratio</span><input className="v6-input" value={selectedStep.config.params?.aspect_ratio || ""} onChange={e => updateStepConfig(selectedStep.id, "params", { ...selectedStep.config.params, aspect_ratio: e.target.value })} placeholder="e.g. 16:9, 1:1" style={{ fontSize: 11 }} /></div><div className="v6-field" style={{ marginTop: 6 }}><span className="v6-field-label">Negative prompt</span><input className="v6-input" value={selectedStep.config.params?.negative_prompt || ""} onChange={e => updateStepConfig(selectedStep.id, "params", { ...selectedStep.config.params, negative_prompt: e.target.value })} placeholder="Things to avoid..." style={{ fontSize: 11 }} /></div></details>
-            {currentWorkflow?.id && <button className="v6-btn v6-ghost" onClick={regenerateStep} style={{ width: "100%" }}><IconRefresh /> Regenerate this step</button>}
-            <button className="v6-btn v6-ghost" onClick={() => removeStep(selectedStep.id)} style={{ width: "100%", color: "var(--v6-bad)" }}><IconTrash /> Remove step</button>
-          </div>
-        ) : (
-          <div style={{ textAlign: "center", padding: "20px 8px", fontSize: 10, color: "var(--v6-muted)" }}>
-            <div style={{ marginBottom: 10, opacity: 0.25 }}><IconMove /></div>
-            <p>Select a node on the canvas to configure it</p>
-            {steps.length > 0 && <p style={{ marginTop: 6 }}>{steps.length} step{steps.length !== 1 ? "s" : ""} in workflow</p>}
-          </div>
-        )}
-        <div className="v6-quote" style={{ marginTop: 12 }}>
-          <div className="v6-eyebrow" style={{ marginBottom: 4 }}>Run Estimate</div>
-          <div className="v6-quote-row"><span className="v6-muted">Steps</span><strong>{steps.length}</strong></div>
-          <div className="v6-quote-row"><span className="v6-muted">Connections</span><strong>{connections.length}</strong></div>
-          <div className="v6-quote-row"><span className="v6-muted">Est. cost</span><strong style={{ color: "var(--v6-good)" }}><IconBolt /> {costEstimate}c</strong></div>
+          {runBlock && !running && (
+            <p className="hs-hint" style={{ marginTop: "var(--s-2)" }}>{runBlock}</p>
+          )}
         </div>
-        {undoStack.length > 0 && <button className="v6-btn v6-ghost v6-sm" onClick={handleUndo} style={{ width: "100%", marginTop: 8 }}><IconRefresh /> Undo (Ctrl+Z)</button>}
       </div>
 
-      <style>{`@keyframes v6-float { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-6px) } }`}</style>
+      {/* Saved list on narrow screens, where .st-flow__side is hidden */}
+      <Sheet open={listOpen} onClose={() => setListOpen(false)} title="Workflows">
+        <WorkflowList
+          workflows={workflows}
+          templates={templates}
+          currentId={current?.id}
+          onOpen={open}
+          onNew={startNew}
+        />
+      </Sheet>
+
+      {/* Step editor */}
+      <Sheet
+        open={!!step}
+        onClose={() => setEditing(null)}
+        title={step ? `Step ${pad(stepIndex + 1)}` : "Step"}
+        footer={
+          step ? (
+            <>
+              <button
+                type="button"
+                className="hs-btn hs-btn--ghost"
+                onClick={() => moveStep(step.key, -1)}
+                disabled={stepIndex <= 0}
+                aria-label="Move this step earlier"
+              >
+                <IcChevronLeft className="hs-icon-sm" /> Earlier
+              </button>
+              <button
+                type="button"
+                className="hs-btn hs-btn--ghost"
+                onClick={() => moveStep(step.key, 1)}
+                disabled={stepIndex < 0 || stepIndex >= steps.length - 1}
+                aria-label="Move this step later"
+              >
+                Later <IcChevron className="hs-icon-sm" />
+              </button>
+              <button type="button" className="hs-btn hs-btn--danger" onClick={() => removeStep(step.key)}>
+                <IcTrash className="hs-icon-sm" /> Remove
+              </button>
+              <button type="button" className="hs-btn hs-btn--primary" onClick={() => setEditing(null)}>
+                Done
+              </button>
+            </>
+          ) : null
+        }
+      >
+        {step && (
+          <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+            <Field label="What this step does">
+              <Chips
+                label="Step type"
+                options={STEP_KINDS.map((k) => ({ value: k.id, label: k.label, title: k.desc }))}
+                value={step.kind}
+                onChange={(kind) => { changeStep(step.key, { kind, model: "", aspect: "", duration: null }); resetRun(); }}
+              />
+            </Field>
+
+            <Field label="Step name" hint="Shown on the chain and stored with the workflow.">
+              {(id) => (
+                <input
+                  id={id}
+                  className="hs-input"
+                  value={step.name}
+                  onChange={(e) => changeStep(step.key, { name: e.target.value })}
+                  placeholder={kindOf(step.kind)?.label || "Step"}
+                />
+              )}
+            </Field>
+
+            {stepModels.length > 0 && (
+              <Field label="Model" hint="Leave unset to let the engine pick its fallback.">
+                {(id) => (
+                  <select
+                    id={id}
+                    className="hs-select"
+                    value={step.model}
+                    onChange={(e) => changeStep(step.key, { model: e.target.value, aspect: "" })}
+                  >
+                    <option value="">Engine default</option>
+                    {stepModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.displayName || m.name} — {m.provider}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+            )}
+
+            <Field
+              label="Prompt"
+              hint="Use $INPUT_PROMPT for the run input and $STEP_1_OUTPUT to pass an earlier result forward."
+            >
+              {(id) => (
+                <textarea
+                  id={id}
+                  className="hs-input hs-textarea"
+                  value={step.prompt}
+                  onChange={(e) => changeStep(step.key, { prompt: e.target.value })}
+                  placeholder="Describe what this step should produce."
+                />
+              )}
+            </Field>
+
+            {ratios.length > 0 && (
+              <Field label="Aspect ratio">
+                <RatioPicker options={ratios} value={step.aspect} onChange={(aspect) => changeStep(step.key, { aspect })} />
+              </Field>
+            )}
+
+            {durations.length > 0 && (
+              <Field label="Duration">
+                <Chips
+                  label="Duration"
+                  options={durations.map((d) => ({ value: d, label: `${d}s` }))}
+                  value={step.duration}
+                  onChange={(duration) => changeStep(step.key, { duration: Number(duration) })}
+                />
+              </Field>
+            )}
+
+            {step.kind === "image" && (
+              <Field label="Avoid" hint="Elements the render should exclude.">
+                {(id) => (
+                  <input
+                    id={id}
+                    className="hs-input"
+                    value={step.negative}
+                    onChange={(e) => changeStep(step.key, { negative: e.target.value })}
+                    placeholder="text, watermark"
+                  />
+                )}
+              </Field>
+            )}
+
+            <Group label="This step">
+              <Specs
+                rows={[
+                  { k: "Type", v: kindOf(step.kind)?.label || step.kind },
+                  { k: "Model", v: step.model || "Engine default" },
+                  { k: "Cost", v: quote.perStep[stepIndex] == null ? "Not quoted" : `${quote.perStep[stepIndex]} cr` },
+                  { k: "Position", v: `${pad(stepIndex + 1)} of ${pad(steps.length)}` },
+                ]}
+              />
+            </Group>
+          </div>
+        )}
+      </Sheet>
     </div>
   );
 }

@@ -2,6 +2,23 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import prisma from "@/lib/prisma";
 
+// Explicit allowlist of client-updatable BrandKit fields. `data: body` would
+// let a caller rewrite userId (ownership transfer) or id.
+const UPDATABLE_FIELDS = [
+  "name", "description", "website",
+  "primaryColors", "secondaryColors", "fonts", "slogans",
+  "photographyStyle", "toneOfVoice", "avoid", "visualReferences",
+  "fingerprint", "enforcement", "isActive",
+];
+
+function pickUpdatable(body) {
+  const data = {};
+  for (const key of UPDATABLE_FIELDS) {
+    if (body[key] !== undefined) data[key] = body[key];
+  }
+  return data;
+}
+
 export async function GET(req) {
   try {
     const user = await getCurrentUser(req);
@@ -29,7 +46,7 @@ export async function PATCH(req) {
     const body = await req.json();
     const brand = await prisma.brandKit.findFirst({ where: { id: body.id, userId: user.id } });
     if (!brand) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const updated = await prisma.brandKit.update({ where: { id: body.id }, data: body });
+    const updated = await prisma.brandKit.update({ where: { id: body.id }, data: pickUpdatable(body) });
     return NextResponse.json(updated);
   } catch (e) { return NextResponse.json({ error: e.message }, { status: 500 }); }
 }
@@ -41,7 +58,9 @@ export async function DELETE(req) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-    await prisma.brandKit.update({ where: { id }, data: { isActive: false } });
+    // Scope by owner: updateMany silently no-ops on someone else's brand kit.
+    const res = await prisma.brandKit.updateMany({ where: { id, userId: user.id }, data: { isActive: false } });
+    if (res.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (e) { return NextResponse.json({ error: e.message }, { status: 500 }); }
 }

@@ -1,578 +1,606 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { apiFetch } from "@/lib/client-fetch";
-import toast from "react-hot-toast";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileChipScroller } from "@/components/studio/mobile";
+import {
+  Confirm, Modal, Specs, Segmented,
+  IcImage, IcVideo, IcMusic, IcSearch, IcDownload, IcCopy, IcCheck,
+  IcTrash, IcExternal, IcRefresh, IcLayers, IcAlert, IcClose,
+} from "@/components/studio/kit";
 
-const EASE = [0.32, 0.72, 0, 1];
+/* ══════════════════════════════════════════════════════════════════════════
+   ASSET LIBRARY — .st-lib collection browser
+   ──────────────────────────────────────────────────────────────────────────
+   Everything the account has made. The type filter is served by the API
+   (`?type=`); search and sort work on what has been loaded, which is stated
+   in the interface rather than implied.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const TYPE_FILTERS = [
-  { id: "all", label: "All", d: "M12 3l2 7 7 2-7 2-2 7-2-7-7-2 7-2z" },
-  { id: "image", label: "Images", d: "M3 3h18v18H3z M9 9h.01M15 9h.01M9 15h.01M15 15h.01" },
-  { id: "video", label: "Videos", d: "M2 5h14v14H2z M16 10l5-3v10l-5-3" },
-  { id: "audio", label: "Audio", d: "M9 18V5l11-2v13 M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M17 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" },
+const PAGE = 48;
+
+const TYPES = [
+  { value: "all", label: "All" },
+  { value: "image", label: "Images" },
+  { value: "video", label: "Video" },
+  { value: "audio", label: "Audio" },
 ];
 
-/* ── Inline SVG Icon ── */
-function SvgIcon({ d, size = 18 }) {
-  return (
-    <svg className="v6-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d={d} />
-    </svg>
-  );
-}
+const SORTS = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "name", label: "Name A–Z" },
+  { value: "largest", label: "Largest file" },
+];
 
-const iconPaths = {
-  image: "M3 3h18v18H3z M9 9h.01M15 9h.01M9 15h.01M15 15h.01",
-  video: "M2 5h14v14H2z M16 10l5-3v10l-5-3",
-  audio: "M9 18V5l11-2v13 M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M17 19a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
-  download: "M12 3v12M7 10l5 5 5-5M5 21h14",
-  close: "M6 6l12 12M18 6L6 18",
-  star: "M12 3l2.7 6.3 6.8.7-5 4.8 1.4 6.7L12 18l-6 3.5 1.4-6.7-5-4.8 6.8-.7z",
-  more: "M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z M19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z M5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
-  upload: "M12 3v12M7 10l5-5 5 5M5 21h14",
-  arrowRight: "M5 12h14M13 6l6 6-6 6",
-  copy: "M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M16 20h2a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z",
-  grid: "M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z",
-  list: "M3 12h18M3 6h18M3 18h18",
+/* ── Formatting ───────────────────────────────────────────────────────── */
+const kindOf = (a) => {
+  const t = String(a?.type || "").toLowerCase();
+  return t === "video" || t === "audio" ? t : "image";
 };
 
+function KindIcon({ kind, ...rest }) {
+  if (kind === "video") return <IcVideo {...rest} />;
+  if (kind === "audio") return <IcMusic {...rest} />;
+  return <IcImage {...rest} />;
+}
+
+function bytesLabel(n) {
+  const b = Number(n);
+  if (!Number.isFinite(b) || b <= 0) return null;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 ** 2) return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1024 ** 3) return `${(b / 1024 ** 2).toFixed(1)} MB`;
+  return `${(b / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function dateLabel(v, long = false) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return long
+    ? d.toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
+}
+
+const creditsOf = (a) => {
+  const raw = a?.metadata?.creditsUsed ?? a?.metadata?.credits;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+const dimsLabel = (a) => (a?.width && a?.height ? `${a.width}×${a.height}` : null);
+const secondsLabel = (a) => (a?.duration ? `${Number(a.duration).toFixed(1)}s` : null);
+
+function metaLine(a) {
+  const credits = creditsOf(a);
+  return [
+    dateLabel(a.createdAt),
+    bytesLabel(a.bytes) || dimsLabel(a) || secondsLabel(a),
+    credits != null ? `${credits}cr` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+const nameOf = (a) => a?.name || `Untitled ${kindOf(a)}`;
+
+/* ── Roving arrow-key movement across the card grid ───────────────────── */
+function columnsOf(el) {
+  if (!el || typeof window === "undefined") return 1;
+  const cols = window.getComputedStyle(el).gridTemplateColumns;
+  return Math.max(1, String(cols).split(" ").filter(Boolean).length);
+}
+
 export default function AssetLibraryStudio() {
-  const isMobile = useIsMobile();
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [favoriteFilter, setFavoriteFilter] = useState(false);
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+  const [reloads, setReloads] = useState(0);
+
+  const [type, setType] = useState("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("newest");
+  const [favouritesOnly, setFavouritesOnly] = useState(false);
+
+  const [cursor, setCursor] = useState(null);
   const [hasMore, setHasMore] = useState(false);
-  const [nextCursor, setNextCursor] = useState(null);
-  const [viewMode, setViewMode] = useState("grid");
 
-  const loadAssets = useCallback(
-    async (cursor = null) => {
-      try {
-        const params = new URLSearchParams({ limit: "50" });
-        if (typeFilter !== "all") params.set("type", typeFilter);
-        if (cursor) params.set("cursor", cursor);
+  const [open, setOpen] = useState(null);      // asset shown in the detail modal
+  const [pending, setPending] = useState(null); // asset awaiting delete confirmation
+  const [copied, setCopied] = useState("");
 
-        const res = await apiFetch(`/api/assets?${params}`);
-        const data = await res.json();
+  const gridRef = useRef(null);
+  const sentinelRef = useRef(null);
+  const copyTimer = useRef(null);
 
-        if (cursor) {
-          setAssets((prev) => [...prev, ...data.assets]);
-        } else {
-          setAssets(data.assets);
-        }
-        setHasMore(data.hasMore);
-        setNextCursor(data.nextCursor);
-      } catch {
-        toast.error("Failed to load assets");
-      } finally {
-        setLoading(false);
-      }
-    },
-    [typeFilter]
-  );
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
 
+  /* ── First page, and every time the served filter changes ───────────── */
   useEffect(() => {
+    let dead = false;
     setLoading(true);
-    loadAssets();
-  }, [loadAssets]);
+    setError("");
+    (async () => {
+      try {
+        const q = new URLSearchParams({ limit: String(PAGE) });
+        if (type !== "all") q.set("type", type);
+        const res = await apiFetch(`/api/assets?${q}`);
+        const data = await res.json();
+        if (dead) return;
+        setAssets(Array.isArray(data.assets) ? data.assets : []);
+        setHasMore(!!data.hasMore);
+        setCursor(data.nextCursor || null);
+      } catch (err) {
+        if (!dead) setError(err?.message || "The library could not be loaded.");
+      } finally {
+        if (!dead) setLoading(false);
+      }
+    })();
+    return () => { dead = true; };
+  }, [type, reloads]);
 
-  const toggleFavorite = async (asset) => {
+  /* ── Next page ──────────────────────────────────────────────────────── */
+  const loadMore = useCallback(async () => {
+    if (!hasMore || !cursor || loadingMore) return;
+    setLoadingMore(true);
+    setError("");
     try {
-      const res = await apiFetch("/api/assets", {
+      const q = new URLSearchParams({ limit: String(PAGE), cursor });
+      if (type !== "all") q.set("type", type);
+      const res = await apiFetch(`/api/assets?${q}`);
+      const data = await res.json();
+      const page = Array.isArray(data.assets) ? data.assets : [];
+      setAssets((prev) => {
+        const seen = new Set(prev.map((a) => a.id));
+        return [...prev, ...page.filter((a) => !seen.has(a.id))];
+      });
+      setHasMore(!!data.hasMore);
+      setCursor(data.nextCursor || null);
+    } catch (err) {
+      setError(err?.message || "The next page could not be loaded.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, cursor, loadingMore, type]);
+
+  /* Pull the next page in as the end of the list comes into view */
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || !hasMore || loading) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries.some((e) => e.isIntersecting)) loadMore(); },
+      { rootMargin: "280px" },
+    );
+    io.observe(node);
+    return () => io.disconnect();
+  }, [hasMore, loading, loadMore]);
+
+  /* ── Mutations ──────────────────────────────────────────────────────── */
+  const toggleFavourite = useCallback(async (asset) => {
+    const next = !asset.isFavorite;
+    setError("");
+    try {
+      await apiFetch("/api/assets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: asset.id, isFavorite: !asset.isFavorite }),
+        body: JSON.stringify({ id: asset.id, isFavorite: next }),
       });
-      if (res.ok) {
-        setAssets((prev) =>
-          prev.map((a) => (a.id === asset.id ? { ...a, isFavorite: !a.isFavorite } : a))
-        );
-        if (selected?.id === asset.id) setSelected({ ...selected, isFavorite: !asset.isFavorite });
-      }
-    } catch {
-      toast.error("Failed to update");
+      setAssets((prev) => prev.map((a) => (a.id === asset.id ? { ...a, isFavorite: next } : a)));
+      setOpen((o) => (o && o.id === asset.id ? { ...o, isFavorite: next } : o));
+    } catch (err) {
+      setError(err?.message || "The favourite could not be saved.");
     }
-  };
+  }, []);
 
-  const deleteAsset = async (id) => {
-    if (!confirm("Delete this asset?")) return;
+  const remove = useCallback(async (asset) => {
+    setError("");
     try {
-      await apiFetch(`/api/assets?id=${id}`, { method: "DELETE" });
-      setAssets((prev) => prev.filter((a) => a.id !== id));
-      if (selected?.id === id) setSelected(null);
-      toast.success("Asset deleted");
-    } catch {
-      toast.error("Failed to delete");
+      await apiFetch(`/api/assets?id=${encodeURIComponent(asset.id)}`, { method: "DELETE" });
+      setAssets((prev) => prev.filter((a) => a.id !== asset.id));
+      setOpen((o) => (o && o.id === asset.id ? null : o));
+    } catch (err) {
+      setError(err?.message || "The asset could not be deleted.");
     }
+  }, []);
+
+  const copyLink = useCallback(async (asset) => {
+    if (!asset?.url) return;
+    try {
+      await navigator.clipboard.writeText(asset.url);
+      setCopied(asset.id);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(""), 1600);
+    } catch {
+      setError("The browser blocked the clipboard. Open the asset and copy the address from the address bar.");
+    }
+  }, []);
+
+  /* ── Search and sort over what is loaded ────────────────────────────── */
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = assets.filter((a) => {
+      if (favouritesOnly && !a.isFavorite) return false;
+      if (!q) return true;
+      return [a.name, a.model, a.source, a.type].some((v) => String(v || "").toLowerCase().includes(q));
+    });
+    list = [...list];
+    if (sort === "newest") list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    else if (sort === "oldest") list.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    else if (sort === "name") list.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+    else if (sort === "largest") list.sort((a, b) => (Number(b.bytes) || 0) - (Number(a.bytes) || 0));
+    return list;
+  }, [assets, query, sort, favouritesOnly]);
+
+  /* ── Lineage, straight from the records ─────────────────────────────── */
+  const byId = useMemo(() => new Map(assets.map((a) => [a.id, a])), [assets]);
+  const childrenOf = useCallback(
+    (id) => assets.filter((a) => a.parentAssetId === id),
+    [assets],
+  );
+
+  const onGridKey = (e) => {
+    if (!["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+    const nodes = Array.from(gridRef.current?.querySelectorAll("[data-card]") || []);
+    const i = nodes.indexOf(document.activeElement);
+    if (i < 0) return;
+    const cols = columnsOf(gridRef.current);
+    let next = i;
+    if (e.key === "ArrowRight") next = i + 1;
+    else if (e.key === "ArrowLeft") next = i - 1;
+    else if (e.key === "ArrowDown") next = i + cols;
+    else if (e.key === "ArrowUp") next = i - cols;
+    else if (e.key === "Home") next = 0;
+    else next = nodes.length - 1;
+    if (next < 0 || next >= nodes.length) return;
+    e.preventDefault();
+    nodes[next].focus();
   };
 
-  const getTypeIcon = (type) => iconPaths[type] || iconPaths.image;
+  const filtering = query.trim() !== "" || favouritesOnly || type !== "all";
 
-  // Apply client-side filters
-  const filtered = assets.filter((a) => {
-    if (favoriteFilter && !a.isFavorite) return false;
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      const name = (a.name || "").toLowerCase();
-      const model = (a.model || "").toLowerCase();
-      if (!name.includes(q) && !model.includes(q)) return false;
-    }
-    return true;
-  });
-
-  // Counts per type
-  const typeCounts = {};
-  assets.forEach((a) => {
-    const t = a.type || "image";
-    typeCounts[t] = (typeCounts[t] || 0) + 1;
-  });
-  const allCount = assets.length;
+  /* Keep the last values on screen while an overlay plays its exit */
+  const lastOpen = useRef(null);
+  const lastPending = useRef(null);
+  if (open) lastOpen.current = open;
+  if (pending) lastPending.current = pending;
+  const detail = open || lastOpen.current;
+  const doomed = pending || lastPending.current;
 
   return (
-    <div className="v6-page-content">
-      {/* Page Head */}
-      <div className="v6-page-head">
-        <div>
-          <div className="v6-eyebrow">Media Library</div>
-          <h1>Asset Studio</h1>
-          <p>Browse, organize, and reuse your generated media assets.</p>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* View toggle */}
-          {isMobile ? (
-            <MobileChipScroller items={[{ label: "Grid", value: "grid" }, { label: "List", value: "list" }]} selectedValue={viewMode} onSelect={setViewMode} />
-          ) : (
-          <div style={{ display: "flex", borderRadius: 9, border: "1px solid var(--v6-line)", overflow: "hidden" }}>
-            <button
-              onClick={() => setViewMode("grid")}
-              className="v6-btn v6-icon-only v6-sm"
-              style={{
-                borderRadius: 0, border: 0,
-                ...(viewMode === "grid" ? { background: "var(--v6-surface2)", color: "var(--v6-text)" } : { color: "var(--v6-muted)" }),
-              }}
-            >
-              <SvgIcon d={iconPaths.grid} size={14} />
-            </button>
-            <button
-              onClick={() => setViewMode("list")}
-              className="v6-btn v6-icon-only v6-sm"
-              style={{
-                borderRadius: 0, border: 0, borderLeft: "1px solid var(--v6-line)",
-                ...(viewMode === "list" ? { background: "var(--v6-surface2)", color: "var(--v6-text)" } : { color: "var(--v6-muted)" }),
-              }}
-            >
-              <SvgIcon d={iconPaths.list} size={14} />
-            </button>
-          </div>
-          )}
-          <button
-            className="v6-btn v6-primary"
-            onClick={() => toast.success("Import dialog coming soon")}
-          >
-            <SvgIcon d={iconPaths.upload} size={14} />
-            Import
-          </button>
-        </div>
-      </div>
+    <div className="st-lib">
+      {/* ── Filter bar ───────────────────────────────────────────────── */}
+      <div className="st-lib__bar">
+        <Segmented
+          label="Asset type"
+          value={type}
+          onChange={setType}
+          options={TYPES}
+        />
 
-      {/* Filter Chips + Search */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
-        {isMobile ? (
-          <MobileChipScroller
-            items={[
-              { label: "All", value: "all" },
-              { label: "Images", value: "images" },
-              { label: "Video", value: "videos" },
-              { label: "Audio", value: "audio" },
-              { label: "Favorites", value: "favorites" },
-            ]}
-            selectedValue={favoriteFilter ? "favorites" : (typeFilter === "all" ? "all" : typeFilter === "image" ? "images" : typeFilter === "video" ? "videos" : typeFilter === "audio" ? "audio" : "all")}
-            onSelect={(val) => {
-              if (val === "favorites") { setFavoriteFilter(true); setTypeFilter("all"); }
-              else { setFavoriteFilter(false); setTypeFilter(val === "images" ? "image" : val === "videos" ? "video" : val === "audio" ? "audio" : "all"); }
-            }}
+        <div style={{ position: "relative", flex: "1 1 180px", minWidth: 160, maxWidth: 320 }}>
+          <IcSearch
+            className="hs-icon-sm"
+            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--tx-mute)", pointerEvents: "none" }}
           />
-        ) : (
-        <div className="v6-chip-row">
-          <button
-            onClick={() => setTypeFilter("all")}
-            className={`v6-chip ${typeFilter === "all" ? "v6-active" : ""}`}
-            style={{ display: "flex", alignItems: "center", gap: 5 }}
-          >
-            <SvgIcon d={TYPE_FILTERS[0].d} size={12} /> All
-            <span style={{
-              fontSize: 9, background: typeFilter === "all" ? "var(--v6-accent)" : "var(--v6-surface2)",
-              color: typeFilter === "all" ? "#fff" : "var(--v6-muted)",
-              padding: "1px 5px", borderRadius: 99, minWidth: 18, textAlign: "center",
-            }}>
-              {allCount}
-            </span>
-          </button>
-          {TYPE_FILTERS.slice(1).map((f) => {
-            const count = typeCounts[f.id] || 0;
-            const isActive = typeFilter === f.id;
-            return (
-              <button
-                key={f.id}
-                onClick={() => setTypeFilter(f.id)}
-                className={`v6-chip ${isActive ? "v6-active" : ""}`}
-                style={{ display: "flex", alignItems: "center", gap: 5 }}
-              >
-                <SvgIcon d={f.d} size={12} /> {f.label}
-                <span style={{
-                  fontSize: 9, background: isActive ? "var(--v6-accent)" : "var(--v6-surface2)",
-                  color: isActive ? "#fff" : "var(--v6-muted)",
-                  padding: "1px 5px", borderRadius: 99, minWidth: 18, textAlign: "center",
-                }}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-          <div className="v6-section-rule" style={{ width: 1, height: 20, alignSelf: "center", margin: "0 4px" }} />
-          <button
-            onClick={() => setFavoriteFilter(!favoriteFilter)}
-            className={`v6-chip ${favoriteFilter ? "v6-active" : ""}`}
-          >
-            <SvgIcon d={iconPaths.star} size={12} /> Favorites
-          </button>
-        </div>
-        )}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--v6-line)", borderRadius: 99, padding: "7px 12px", background: "var(--v6-surface2)", maxWidth: 260, flex: 1 }}>
-          <SvgIcon d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z M21 21l-4.3-4.3" size={14} />
           <input
-            type="text"
-            placeholder="Search assets..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ border: 0, background: "transparent", color: "var(--v6-text)", fontSize: 11, width: "100%", outline: "none" }}
+            type="search"
+            className="hs-input"
+            style={{ paddingLeft: 32 }}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search name, model or source"
+            aria-label="Search loaded assets"
           />
-          {search && (
-            <button onClick={() => setSearch("")} style={{ border: 0, background: "transparent", padding: 0, cursor: "pointer", color: "var(--v6-muted)" }}>
-              <SvgIcon d={iconPaths.close} size={12} />
-            </button>
-          )}
         </div>
+
+        <select
+          className="hs-select"
+          style={{ width: "auto", minWidth: 150 }}
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          aria-label="Sort order"
+        >
+          {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+
+        <button
+          type="button"
+          className={`hs-chip${favouritesOnly ? " is-active" : ""}`}
+          aria-pressed={favouritesOnly}
+          onClick={() => setFavouritesOnly((v) => !v)}
+        >
+          Favourites
+        </button>
+
+        <span className="hs-mono hs-mute" style={{ marginLeft: "auto", fontSize: 10, letterSpacing: "0.06em" }}>
+          {loading ? "—" : `${shown.length}${hasMore ? "+" : ""} shown`}
+        </span>
       </div>
 
-      {/* Content */}
-      {loading ? (
-        <div className="v6-media-grid">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <div key={i} className="v6-media-card">
-              <div className="v6-skeleton v6-skeleton-media" />
-              <div className="v6-media-card-body">
-                <div className="v6-skeleton v6-skeleton-text" style={{ width: "60%" }} />
-                <div className="v6-skeleton v6-skeleton-text v6-short" />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="v6-empty-state v6-entrance" style={{ padding: "60px 0" }}>
-          <div className="v6-empty-orbit">
-            <SvgIcon d={iconPaths.image} size={26} />
-          </div>
-          <h2>No assets yet</h2>
-          <p>Generated images, videos, and audio will appear here. Start creating in the Studio.</p>
-          {search && <p className="v6-muted v6-tiny">Try adjusting your search or filters.</p>}
-          {!search && (
-            <button className="v6-btn v6-primary" style={{ marginTop: 8 }}>
-              <SvgIcon d={iconPaths.upload} size={14} /> Upload your first asset
+      {/* ── Body ─────────────────────────────────────────────────────── */}
+      <div className="st-lib__body">
+        {error && (
+          <div className="hs-notice hs-notice--fault" style={{ marginBottom: "var(--s-4)" }} role="alert">
+            <IcAlert className="hs-icon-sm" style={{ marginTop: 2 }} />
+            <span style={{ flex: 1 }}>{error}</span>
+            <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => setReloads((n) => n + 1)}>
+              <IcRefresh className="hs-icon-sm" /> Retry
             </button>
-          )}
-        </div>
-      ) : viewMode === "list" ? (
-        /* ── List View ── */
-        <div style={{ border: "1px solid var(--v6-line)", borderRadius: "var(--v6-r)", overflow: "hidden", background: "var(--v6-surface)" }}>
-          <table className="v6-data-table" style={{ marginBottom: 0 }}>
-            <thead>
-              <tr>
-                <th>Preview</th>
-                <th>Name</th>
-                <th>Type</th>
-                <th>Dimensions</th>
-                <th>Created</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((asset, i) => (
-                <motion.tr
-                  key={asset.id}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.02, duration: 0.25 }}
-                  style={{ cursor: "pointer" }}
-                  onClick={() => setSelected(asset)}
-                >
-                  <td>
-                    <div style={{ width: 48, height: 36, borderRadius: 6, overflow: "hidden", background: "var(--v6-surface2)" }}>
-                      {asset.thumbnailUrl ? (
-                        <img src={asset.thumbnailUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (
-                        <div style={{ display: "grid", placeItems: "center", height: "100%" }}>
-                          <SvgIcon d={getTypeIcon(asset.type)} size={16} />
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td><strong style={{ fontSize: 11 }}>{asset.name || `Untitled ${asset.type || "asset"}`}</strong></td>
-                  <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px" }}>{asset.type || "image"}</span></td>
-                  <td className="v6-mono v6-tiny">{asset.width && asset.height ? `${asset.width}×${asset.height}` : "—"}</td>
-                  <td className="v6-mono v6-tiny">{new Date(asset.createdAt).toLocaleDateString()}</td>
-                  <td>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {asset.url && (
-                        <a href={asset.url} download className="v6-btn v6-icon-only v6-sm" onClick={(e) => e.stopPropagation()}>
-                          <SvgIcon d={iconPaths.download} size={13} />
-                        </a>
-                      )}
-                      <button
-                        className="v6-btn v6-icon-only v6-sm"
-                        onClick={(e) => { e.stopPropagation(); toggleFavorite(asset); }}
-                        style={{ color: asset.isFavorite ? "#fbbf24" : undefined }}
-                      >
-                        <SvgIcon d={iconPaths.star} size={13} />
-                      </button>
-                    </div>
-                  </td>
-                </motion.tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        /* ── Grid View ── */
-        <div className="v6-media-grid v6-stagger">
-          {filtered.map((asset, i) => (
-            <motion.div
-              key={asset.id}
-              className={`v6-media-card ${selected?.id === asset.id ? "v6-active" : ""}`}
-              onClick={() => setSelected(asset)}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.03, duration: 0.35, ease: EASE }}
-              style={selected?.id === asset.id ? { borderColor: "var(--v6-accent)" } : {}}
-            >
-              <div style={{ position: "relative", overflow: "hidden" }}>
-                {asset.url && (asset.type === "image" || !asset.type) ? (
-                  <img
-                    src={asset.thumbnailUrl || asset.url}
-                    alt={asset.name || ""}
-                    loading="lazy"
-                    style={{ transition: "transform 0.4s ease" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                  />
-                ) : asset.url && asset.type === "video" ? (
-                  <video src={asset.url} muted preload="metadata" />
-                ) : asset.url && asset.type === "audio" ? (
-                  <div style={{ width: "100%", aspectRatio: "4/3", background: "linear-gradient(135deg, #00E68A22, #00E68A08)", display: "grid", placeItems: "center" }}>
-                    <SvgIcon d={iconPaths.audio} size={32} />
-                  </div>
-                ) : (
-                  <div style={{ width: "100%", aspectRatio: "4/3", background: "linear-gradient(135deg, var(--v6-surface2), transparent)", display: "grid", placeItems: "center" }}>
-                    <SvgIcon d={getTypeIcon(asset.type)} size={32} />
-                  </div>
-                )}
-                {/* Type icon overlay bottom-left */}
-                <div style={{
-                  position: "absolute", bottom: 6, left: 6,
-                  background: "rgba(0,0,0,0.65)", borderRadius: 6,
-                  padding: "3px 6px", display: "flex", alignItems: "center", gap: 4,
-                  fontSize: 9, color: "#fff", backdropFilter: "blur(4px)",
-                }}>
-                  <SvgIcon d={getTypeIcon(asset.type)} size={11} />
-                  {asset.type || "image"}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="st-lib__grid" aria-busy="true" aria-label="Loading assets">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="st-item">
+                <div className="hs-skel" style={{ aspectRatio: "1", borderRadius: 0 }} />
+                <div className="st-item__body">
+                  <div className="hs-skel" style={{ height: 10, width: "72%" }} />
+                  <div className="hs-skel" style={{ height: 8, width: "48%" }} />
                 </div>
-                {/* Favorite star top-right */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); toggleFavorite(asset); }}
-                  style={{
-                    position: "absolute", top: 6, right: 6,
-                    border: 0, background: "rgba(0,0,0,0.5)", borderRadius: "50%",
-                    width: 26, height: 26, display: "grid", placeItems: "center",
-                    cursor: "pointer", backdropFilter: "blur(4px)",
-                    color: asset.isFavorite ? "#fbbf24" : "rgba(255,255,255,0.5)",
-                    transition: "all 0.2s",
-                  }}
-                >
-                  <SvgIcon d={iconPaths.star} size={13} />
-                </button>
               </div>
-              <div className="v6-media-card-body">
-                <h3>{asset.name || `Untitled ${asset.type || "asset"}`}</h3>
+            ))}
+          </div>
+        ) : shown.length === 0 ? (
+          <div className="hs-empty">
+            <span className="hs-empty__mark"><IcLayers /></span>
+            {filtering ? (
+              <>
+                <h3>Nothing matches these filters</h3>
                 <p>
-                  {asset.type && <span style={{ textTransform: "capitalize" }}>{asset.type}</span>}
-                  {asset.model && <span> · {asset.model}</span>}
-                  {asset.width && asset.height && <span> · {asset.width}×{asset.height}</span>}
+                  {hasMore
+                    ? "Search runs over the assets loaded so far. Clear the filters, or load more pages and search again."
+                    : "Clear the search, the type filter, or the favourites filter to see the rest of the library."}
                 </p>
-                {asset.createdAt && (
-                  <div className="v6-tiny v6-muted" style={{ marginTop: 3 }}>
-                    {new Date(asset.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                  </div>
-                )}
-              </div>
-              <div className="v6-card-actions">
-                {asset.url && (
-                  <a href={asset.url} download className="v6-btn v6-icon-only v6-sm" title="Download" onClick={(e) => e.stopPropagation()}>
-                    <SvgIcon d={iconPaths.download} size={13} />
-                  </a>
-                )}
-                <button className="v6-btn v6-icon-only v6-sm" title="Details" onClick={(e) => { e.stopPropagation(); setSelected(asset); }}>
-                  <SvgIcon d={iconPaths.more} size={13} />
-                </button>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
-
-      {/* Load More */}
-      {hasMore && (
-        <div style={{ textAlign: "center", marginTop: 20 }}>
-          <button onClick={() => loadAssets(nextCursor)} className="v6-btn">
-            Load More
-          </button>
-        </div>
-      )}
-
-      {/* Detail Modal */}
-      <AnimatePresence>
-        {selected && (
-          <motion.div
-            className="v6-modal-backdrop"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSelected(null)}
-          >
-            <motion.div
-              className="v6-modal v6-entrance-scale"
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: 600 }}
+                <div className="hs-row" style={{ marginTop: "var(--s-2)" }}>
+                  <button
+                    type="button"
+                    className="hs-btn hs-btn--outline"
+                    onClick={() => { setQuery(""); setFavouritesOnly(false); setType("all"); }}
+                  >
+                    <IcClose className="hs-icon-sm" /> Clear filters
+                  </button>
+                  {hasMore && (
+                    <button type="button" className="hs-btn hs-btn--outline" onClick={loadMore} disabled={loadingMore}>
+                      Load more
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>The library is empty</h3>
+                <p>
+                  Every image, video and audio file you generate lands here automatically, with its model and
+                  settings attached. Make something first.
+                </p>
+                <div className="hs-row" style={{ marginTop: "var(--s-2)", flexWrap: "wrap", justifyContent: "center" }}>
+                  <Link href="/studio/image" className="hs-btn hs-btn--primary"><IcImage className="hs-icon-sm" /> Compose an image</Link>
+                  <Link href="/studio/video" className="hs-btn hs-btn--outline"><IcVideo className="hs-icon-sm" /> Shoot a video</Link>
+                  <Link href="/studio/audio" className="hs-btn hs-btn--outline"><IcMusic className="hs-icon-sm" /> Record audio</Link>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <>
+            <div
+              className="st-lib__grid"
+              ref={gridRef}
+              role="list"
+              aria-label="Assets"
+              onKeyDown={onGridKey}
             >
-              <div className="v6-panel-title" style={{ marginBottom: 14 }}>
-                <h3>Asset Details</h3>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button onClick={() => toggleFavorite(selected)} className="v6-btn v6-icon-only v6-sm" style={{ color: selected.isFavorite ? "#fbbf24" : undefined }}>
-                    <SvgIcon d={iconPaths.star} size={14} />
-                  </button>
-                  <button onClick={() => setSelected(null)} className="v6-btn v6-icon-only v6-sm">
-                    <SvgIcon d={iconPaths.close} size={14} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Preview — larger */}
-              {selected.url && (selected.type === "image" || !selected.type) && (
-                <div style={{ borderRadius: 12, overflow: "hidden", marginBottom: 16, background: "#111" }}>
-                  <img
-                    src={selected.url}
-                    alt=""
-                    style={{ width: "100%", maxHeight: 360, objectFit: "contain", display: "block" }}
-                  />
-                </div>
-              )}
-              {selected.url && selected.type === "video" && (
-                <div style={{ borderRadius: 12, overflow: "hidden", marginBottom: 16, background: "#111" }}>
-                  <video src={selected.url} controls style={{ width: "100%", maxHeight: 360 }} />
-                </div>
-              )}
-              {selected.url && selected.type === "audio" && (
-                <div style={{ padding: 16, borderRadius: 12, marginBottom: 16, background: "var(--v6-surface2)" }}>
-                  <audio src={selected.url} controls style={{ width: "100%" }} />
-                </div>
-              )}
-
-              {/* Metadata — styled table */}
-              <div className="v6-section-rule" style={{ marginBottom: 12 }} />
-              <div style={{ display: "grid", gap: 0, marginBottom: 14, borderRadius: 10, overflow: "hidden", border: "1px solid var(--v6-line)" }}>
-                {[
-                  ["Name", selected.name || `Untitled ${selected.type || "asset"}`],
-                  ["Type", selected.type],
-                  ["Source", selected.source],
-                  ["Model", selected.model],
-                  ["Dimensions", selected.width && selected.height ? `${selected.width}×${selected.height}` : null],
-                  ["Duration", selected.duration ? `${selected.duration}s` : null],
-                  ["File Size", selected.bytes > 0 ? `${(selected.bytes / 1024).toFixed(1)} KB` : null],
-                  ["Created", new Date(selected.createdAt).toLocaleString()],
-                ]
-                  .filter(([, v]) => v)
-                  .map(([label, value], idx, arr) => (
-                    <div
-                      key={label}
+              {shown.map((a) => {
+                const kind = kindOf(a);
+                const label = nameOf(a);
+                return (
+                  <div key={a.id} className="st-item" role="listitem">
+                    <button
+                      type="button"
+                      data-card
+                      onClick={() => setOpen(a)}
+                      aria-label={`${label} — ${kind}${a.createdAt ? `, made ${dateLabel(a.createdAt)}` : ""}. Open details.`}
                       style={{
-                        display: "flex", justifyContent: "space-between", fontSize: 11,
-                        padding: "9px 12px",
-                        background: idx % 2 === 0 ? "var(--v6-surface)" : "var(--v6-surface2)",
-                        borderBottom: idx < arr.length - 1 ? "1px solid var(--v6-line)" : "none",
+                        display: "block", width: "100%", padding: 0, border: 0,
+                        background: "transparent", color: "inherit", font: "inherit",
+                        textAlign: "left", cursor: "pointer",
                       }}
                     >
-                      <span className="v6-muted">{label}</span>
-                      <span style={{ fontWeight: 600, textAlign: "right" }}>{value}</span>
-                    </div>
-                  ))}
-              </div>
+                      <div className="st-item__frame">
+                        {a.url && kind === "image" ? (
+                          <img src={a.thumbnailUrl || a.url} alt="" loading="lazy" />
+                        ) : a.url && kind === "video" ? (
+                          <video src={a.url} muted playsInline preload="metadata" />
+                        ) : (
+                          <span style={{ display: "grid", placeItems: "center", height: "100%", color: "var(--tx-ghost)" }}>
+                            <KindIcon kind={kind} style={{ width: 30, height: 30 }} />
+                          </span>
+                        )}
+                        <span className="st-item__kind">{kind}</span>
+                        {a.isFavorite && (
+                          <span
+                            className="hs-badge hs-badge--accent"
+                            style={{ position: "absolute", top: "var(--s-2)", right: "var(--s-2)" }}
+                          >
+                            Kept
+                          </span>
+                        )}
+                      </div>
+                      <div className="st-item__body">
+                        <span className="st-item__name">{label}</span>
+                        <span className="st-item__meta">{metaLine(a) || "—"}</span>
+                      </div>
+                    </button>
 
-              {/* Actions */}
-              <div className="v6-chip-row">
-                {selected.url && (
-                  <a href={selected.url} download className="v6-chip v6-active" style={{ textDecoration: "none" }}>
-                    <SvgIcon d={iconPaths.download} size={12} /> Download
-                  </a>
-                )}
-                {selected.url && (
-                  <button
-                    className="v6-chip"
-                    onClick={async () => {
-                      try { await navigator.clipboard.writeText(selected.url); toast.success("URL copied"); } catch { toast.error("Failed to copy"); }
-                    }}
-                  >
-                    <SvgIcon d={iconPaths.copy} size={12} /> Copy URL
-                  </button>
-                )}
-                <button onClick={() => toggleFavorite(selected)} className="v6-chip">
-                  <SvgIcon d={iconPaths.star} size={12} /> {selected.isFavorite ? "Unfavorite" : "Favorite"}
-                </button>
-                {selected.type === "image" && (
-                  <>
-                    <button onClick={() => window.open("/studio/canvas", "_blank")} className="v6-chip">Add to Canvas</button>
-                    <button onClick={() => window.open("/studio/image", "_blank")} className="v6-chip">Use as Reference</button>
-                    <button onClick={() => window.open("/studio/lipsync", "_blank")} className="v6-chip">Lip Sync</button>
-                    <button onClick={() => window.open("/studio/body-swap", "_blank")} className="v6-chip">Recast</button>
-                  </>
-                )}
-                {selected.type === "video" && (
-                  <>
-                    <button onClick={() => window.open("/studio/body-swap", "_blank")} className="v6-chip">Recast</button>
-                    <button onClick={() => window.open("/studio/clipping", "_blank")} className="v6-chip">Create Clips</button>
-                  </>
-                )}
-                <button onClick={() => window.open("/studio/brands", "_blank")} className="v6-chip">Add to Brand Kit</button>
-                <button
-                  onClick={() => deleteAsset(selected.id)}
-                  className="v6-chip"
-                  style={{ borderColor: "var(--v6-bad)", color: "var(--v6-bad)" }}
-                >
-                  <SvgIcon d={iconPaths.close} size={12} /> Delete
+                    <div className="st-item__acts">
+                      {a.url && (
+                        <a
+                          className="hs-btn hs-btn--sm hs-btn--icon"
+                          href={a.url}
+                          download
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={`Download ${label}`}
+                          title="Download"
+                        >
+                          <IcDownload className="hs-icon-sm" />
+                        </a>
+                      )}
+                      {a.url && (
+                        <button
+                          type="button"
+                          className="hs-btn hs-btn--sm hs-btn--icon"
+                          onClick={() => copyLink(a)}
+                          aria-label={`Copy link to ${label}`}
+                          title={copied === a.id ? "Copied" : "Copy link"}
+                        >
+                          {copied === a.id ? <IcCheck className="hs-icon-sm" /> : <IcCopy className="hs-icon-sm" />}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="hs-btn hs-btn--sm hs-btn--icon hs-btn--danger"
+                        onClick={() => setPending(a)}
+                        aria-label={`Delete ${label}`}
+                        title="Delete"
+                      >
+                        <IcTrash className="hs-icon-sm" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {hasMore && (
+              <div ref={sentinelRef} style={{ display: "grid", placeItems: "center", padding: "var(--s-6) 0 var(--s-3)" }}>
+                <button type="button" className="hs-btn hs-btn--outline" onClick={loadMore} disabled={loadingMore}>
+                  {loadingMore ? <><span className="hs-spin" /> Loading</> : "Load more"}
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+            )}
+          </>
         )}
-      </AnimatePresence>
+      </div>
+
+      {/* ── Detail ───────────────────────────────────────────────────── */}
+      <Modal open={!!open} onClose={() => setOpen(null)} title={detail ? nameOf(detail) : ""}>
+        {detail && (
+          <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+            {detail.url && (
+              <div style={{ borderRadius: "var(--r-md)", overflow: "hidden", background: "var(--ink-000)", border: "1px solid var(--line)" }}>
+                {kindOf(detail) === "video" ? (
+                  <video src={detail.url} controls playsInline style={{ width: "100%", maxHeight: 380, display: "block" }} />
+                ) : kindOf(detail) === "audio" ? (
+                  <audio src={detail.url} controls style={{ width: "100%", padding: "var(--s-4)" }} />
+                ) : (
+                  <img src={detail.url} alt={nameOf(detail)} style={{ width: "100%", maxHeight: 380, objectFit: "contain", display: "block" }} />
+                )}
+              </div>
+            )}
+
+            <Specs
+              rows={[
+                { k: "Kind", v: kindOf(detail) },
+                { k: "Source", v: detail.source },
+                { k: "Model", v: detail.model },
+                { k: "Size", v: bytesLabel(detail.bytes) },
+                { k: "Pixels", v: dimsLabel(detail) },
+                { k: "Length", v: secondsLabel(detail) },
+                { k: "Credits", v: creditsOf(detail) != null ? `${creditsOf(detail)}cr` : null },
+                { k: "Made", v: dateLabel(detail.createdAt, true) },
+              ]}
+            />
+
+            {(detail.parentAssetId || detail.generationId || childrenOf(detail.id).length > 0) && (
+              <section className="hs-stack" style={{ gap: "var(--s-2)" }}>
+                <span className="hs-label" style={{ margin: 0 }}>Lineage</span>
+                {detail.parentAssetId && (
+                  <p style={{ fontSize: "var(--t-sm)", color: "var(--tx-dim)" }}>
+                    Derived from{" "}
+                    {byId.has(detail.parentAssetId) ? (
+                      <button
+                        type="button"
+                        className="hs-btn hs-btn--ghost hs-btn--sm"
+                        onClick={() => setOpen(byId.get(detail.parentAssetId))}
+                      >
+                        {nameOf(byId.get(detail.parentAssetId))}
+                      </button>
+                    ) : (
+                      <>
+                        <span className="hs-mono">{detail.parentAssetId}</span>
+                        {" — that asset is not on the pages loaded so far."}
+                      </>
+                    )}
+                  </p>
+                )}
+                {detail.generationId && (
+                  <p style={{ fontSize: "var(--t-sm)", color: "var(--tx-dim)" }}>
+                    Generation <span className="hs-mono">{detail.generationId}</span>
+                  </p>
+                )}
+                {childrenOf(detail.id).length > 0 && (
+                  <div className="hs-chips">
+                    <span className="hs-hint" style={{ alignSelf: "center" }}>Made from this:</span>
+                    {childrenOf(detail.id).map((c) => (
+                      <button key={c.id} type="button" className="hs-chip" onClick={() => setOpen(c)}>
+                        {nameOf(c)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            <div className="hs-row" style={{ flexWrap: "wrap", gap: "var(--s-2)" }}>
+              {detail.url && (
+                <a className="hs-btn hs-btn--sm" href={detail.url} download target="_blank" rel="noopener noreferrer">
+                  <IcDownload className="hs-icon-sm" /> Download
+                </a>
+              )}
+              {detail.url && (
+                <button type="button" className="hs-btn hs-btn--sm" onClick={() => copyLink(detail)}>
+                  {copied === detail.id ? <IcCheck className="hs-icon-sm" /> : <IcCopy className="hs-icon-sm" />}
+                  {copied === detail.id ? "Copied" : "Copy link"}
+                </button>
+              )}
+              {detail.url && (
+                <a className="hs-btn hs-btn--sm" href={detail.url} target="_blank" rel="noopener noreferrer">
+                  <IcExternal className="hs-icon-sm" /> Open
+                </a>
+              )}
+              <button type="button" className="hs-btn hs-btn--sm" onClick={() => toggleFavourite(detail)}>
+                {detail.isFavorite ? "Remove from favourites" : "Add to favourites"}
+              </button>
+              <button
+                type="button"
+                className="hs-btn hs-btn--sm hs-btn--danger"
+                onClick={() => { setOpen(null); setPending(detail); }}
+                style={{ marginLeft: "auto" }}
+              >
+                <IcTrash className="hs-icon-sm" /> Delete
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Confirm ──────────────────────────────────────────────────── */}
+      <Confirm
+        open={!!pending}
+        onClose={() => setPending(null)}
+        onConfirm={() => pending && remove(pending)}
+        title="Delete this asset?"
+        body={
+          doomed
+            ? `“${nameOf(doomed)}” leaves the library and stops appearing in pickers. Anything already generated from it keeps its own copy.`
+            : ""
+        }
+        confirmLabel="Delete"
+      />
     </div>
   );
 }

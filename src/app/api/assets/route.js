@@ -48,7 +48,9 @@ export async function DELETE(req) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
-    await prisma.asset.update({ where: { id }, data: { isDeleted: true } });
+    // Scope by owner: updateMany silently no-ops on someone else's asset.
+    const res = await prisma.asset.updateMany({ where: { id, userId: user.id }, data: { isDeleted: true } });
+    if (res.count === 0) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ success: true });
   } catch (e) { return NextResponse.json({ error: e.message }, { status: 500 }); }
 }

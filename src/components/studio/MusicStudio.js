@@ -1,299 +1,630 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
-import { motion } from "framer-motion";
-import StudioLayout from "./v6/StudioLayout";
-import ModelSelector from "./v6/ModelSelector";
-import PromptDock from "./v6/PromptDock";
-import StageArea from "./v6/StageArea";
-import { useModelCatalog } from "@/components/studio/useModelCatalog";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Brief, ModelPicker, Sheet,
+  Field, Group, Chips, Toggle, Segmented, Specs,
+  clock, mediaUrl,
+  IcMusic, IcPlay, IcPause, IcSettings, IcDownload, IcExternal, IcRefresh,
+} from "@/components/studio/kit";
+import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 import { matchesGroup } from "@/lib/capability-groups";
 
-/* ── Inline SVGs ── */
-const IconMusic = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
-  </svg>
-);
-const IconBolt = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="13,2 3,14 12,14 11,22 21,10 12,10" />
-  </svg>
-);
-const IconDownload = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7,10 12,15 17,10" /><line x1="12" y1="15" x2="12" y2="3" />
-  </svg>
-);
-const IconRefresh = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23,4 23,10 17,10" /><polyline points="1,20 1,14 7,14" /><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-  </svg>
-);
-const IconClock = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" />
-  </svg>
-);
-const IconSpark = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6.4-4.8-6.4 4.8 2.4-7.2-6-4.8h7.6z" />
-  </svg>
-);
+/* ══════════════════════════════════════════════════════════════════════════
+   MUSIC — composition, on the .st-wave archetype
+   ──────────────────────────────────────────────────────────────────────────
+   Fixed in this rebuild:
+   · `hasInstrumental`, `hasVocalGender`, `hasStyle`, `hasTitle` and
+     `hasNegativeTags` gated every optional field in the submit body. The live
+     catalog never emits those flags — `serializeCatalogModel` returns id,
+     capability, credits, schema, constraints, pricing and nothing else — so
+     the style, title, vocal gender, instrumental switch and negative tags the
+     user set were silently dropped from every single request. They are now
+     gated on the model's own input schema (a field the catalog does emit),
+     defaulting to "send it" when a model declares no schema.
+   · `error` from useAsyncGeneration was never rendered; failures were silent.
+   · `elapsed` was unused; the transport line now shows it while a job runs.
+   · The result was an <audio controls> with ten decorative bars beside it.
+     The waveform is decoded from the returned track.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Music style tags with mood/genre coloring ── */
-const MUSIC_STYLES = [
-  { label: "cinematic", color: "#c084fc" }, { label: "synthwave", color: "#f472b6" },
-  { label: "orchestral", color: "#fbbf24" }, { label: "electronic", color: "#60a5fa" },
-  { label: "ambient", color: "#65dca6" }, { label: "lofi", color: "#fb923c" },
-  { label: "rock", color: "#ef4444" }, { label: "pop", color: "#f472b6" },
-  { label: "jazz", color: "#a78bfa" }, { label: "classical", color: "#94a3b8" },
-  { label: "trap", color: "#f87171" }, { label: "EDM", color: "#38bdf8" },
-  { label: "hip-hop", color: "#facc15" }, { label: "R&B", color: "#c084fc" },
-];
+const BARS = 120;
 
-const DURATION_PRESETS = [
-  { label: "30s", value: 30 }, { label: "60s", value: 60 }, { label: "90s", value: 90 },
-  { label: "2m", value: 120 }, { label: "3m", value: 180 }, { label: "4m", value: 240 }, { label: "5m", value: 300 },
-];
+/* Deterministic stand-in, seeded by the track's own duration. Provider CDNs
+   frequently answer without an Access-Control-Allow-Origin header, so the
+   decode below throws and the real peaks are unknowable from the browser.
+   Rather than draw a shape that changes on every render, we draw the same one
+   for the same track: bar count still maps to time, so scrubbing is honest. */
+function placeholderPeaks(duration) {
+  const seed = Math.max(1, Math.round((duration || 30) * 1000));
+  return Array.from({ length: BARS }, (_, i) => {
+    const n = Math.sin((i + 1) * 12.9898 + seed * 0.0001) * 43758.5453;
+    const noise = n - Math.floor(n);
+    const envelope = Math.sin((Math.PI * (i + 0.5)) / BARS);
+    return 0.16 + 0.74 * noise * (0.4 + 0.6 * envelope);
+  });
+}
 
-/* ══════════════════════════════════════════════════════════════ */
-export default function MusicStudio() {
-  const [prompt, setPrompt] = useState("");
-  const [style, setStyle] = useState("");
-  const [title, setTitle] = useState("");
-  const [negativeTags, setNegativeTags] = useState("");
-  const [duration, setDuration] = useState(30);
-  const [instrumental, setInstrumental] = useState(false);
-  const [vocalGender, setVocalGender] = useState("female");
-  const [genStage, setGenStage] = useState("");
-  const [lyricsExpanded, setLyricsExpanded] = useState(false);
+/* Real peaks: fetch the bytes, decode them, downsample to BARS buckets. */
+function useWaveform(url) {
+  const [peaks, setPeaks] = useState(null);
+  const [real, setReal] = useState(false);
 
-  const { models: catalogModels } = useModelCatalog({});
-  const sunoModels = useMemo(() => catalogModels?.filter(m => matchesGroup(m, "audio") && m.provider?.toLowerCase() === "suno") || [], [catalogModels]);
-  const [selectedModelId, setSelectedModelId] = useState(null);
-  const isMobile = useIsMobile();
+  useEffect(() => {
+    if (!url) { setPeaks(null); setReal(false); return undefined; }
+    let alive = true;
+    setPeaks(null);
+    setReal(false);
 
-  useEffect(() => { if (sunoModels.length) setSelectedModelId(sunoModels[0].id); }, [sunoModels]);
-  const currentModel = sunoModels.find((m) => m.id === selectedModelId) || sunoModels[0] || {};
-  const { loading, result, error, elapsed, submit } = useAsyncGeneration();
-  const { cost, affordable, shortfall } = useCreditCost("audio", selectedModelId, { duration, prompt });
+    (async () => {
+      let ctx = null;
+      try {
+        const Ctx = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+        if (!Ctx) throw new Error("No AudioContext");
+        const res = await fetch(url, { mode: "cors" });
+        const bytes = await res.arrayBuffer();
+        ctx = new Ctx();
+        const buffer = await ctx.decodeAudioData(bytes);
+        const data = buffer.getChannelData(0);
+        const block = Math.max(1, Math.floor(data.length / BARS));
+        const out = new Array(BARS);
+        let top = 0;
+        for (let i = 0; i < BARS; i++) {
+          let sum = 0;
+          const start = i * block;
+          for (let j = 0; j < block; j++) sum += Math.abs(data[start + j] || 0);
+          out[i] = sum / block;
+          if (out[i] > top) top = out[i];
+        }
+        if (!alive) return;
+        setPeaks(top > 0 ? out.map((v) => v / top) : out);
+        setReal(true);
+      } catch {
+        if (alive) { setPeaks(null); setReal(false); }
+      } finally {
+        ctx?.close?.();
+      }
+    })();
 
-  /* ── Auto-generate title ── */
-  const suggestedTitle = useMemo(() => {
-    if (title) return title;
-    const styleParts = style ? style.split(",").map(s => s.trim()).filter(Boolean).slice(0, 2) : [];
-    const moodParts = vocalGender === "female" ? "Female" : "Male";
-    const parts = [...styleParts, instrumental ? "Instrumental" : `${moodParts} Vocal`].filter(Boolean);
-    return parts.length ? parts.join(" \u2014 ") : "";
-  }, [style, vocalGender, instrumental, title]);
+    return () => { alive = false; };
+  }, [url]);
 
-  const lineCount = prompt.split("\n").filter(l => l.trim()).length;
+  return { peaks, real };
+}
 
-  const handleGenerate = useCallback(() => {
-    if (!prompt.trim()) return;
-    if (!affordable) return;
-    setGenStage("preparing");
-    const params = {
-      endpoint: currentModel.endpoint || selectedModelId, prompt, duration,
-      ...(currentModel.hasInstrumental ? { instrumental } : {}),
-      ...(currentModel.hasVocalGender ? { vocal_gender: vocalGender } : {}),
-      ...(currentModel.hasStyle && style ? { style } : {}),
-      ...(currentModel.hasTitle ? { title: title || suggestedTitle } : {}),
-      ...(currentModel.hasNegativeTags && negativeTags ? { negative_tags: negativeTags } : {}),
+/* Playback. The playhead follows `currentTime` on the frame rather than the
+   4-per-second `timeupdate` event, so it does not stutter. */
+function useTransport(url) {
+  const ref = useRef(null);
+  const raf = useRef(0);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => { setPlaying(false); setCurrent(0); setDuration(0); }, [url]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const meta = () => setDuration(Number.isFinite(el.duration) ? el.duration : 0);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onEnd = () => { setPlaying(false); setCurrent(0); };
+    const onTime = () => setCurrent(el.currentTime || 0);
+    el.addEventListener("loadedmetadata", meta);
+    el.addEventListener("durationchange", meta);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("ended", onEnd);
+    el.addEventListener("timeupdate", onTime);
+    return () => {
+      el.removeEventListener("loadedmetadata", meta);
+      el.removeEventListener("durationchange", meta);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("ended", onEnd);
+      el.removeEventListener("timeupdate", onTime);
     };
-    submit("audio", selectedModelId, params);
-  }, [prompt, selectedModelId, currentModel, duration, instrumental, vocalGender, style, title, suggestedTitle, negativeTags, affordable, submit]);
+  }, [url]);
 
-  const handleNew = useCallback(() => { setGenStage(""); setPrompt(""); setStyle(""); setTitle(""); setNegativeTags(""); }, []);
-  const handleDownload = useCallback(() => { const url = result?.url || result?.outputUrl || result; if (url && typeof url === "string") window.open(url, "_blank"); }, [result]);
+  useEffect(() => {
+    if (!playing) return undefined;
+    const tick = () => {
+      if (ref.current) setCurrent(ref.current.currentTime || 0);
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [playing]);
 
-  /* ── Controls ── */
-  const controls = (
-    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18, padding: "8px 10px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)", borderRadius: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 7, background: "rgba(99,102,241,0.2)", color: "#a5b4fc" }}><IconMusic /></div>
-        <div><div style={{ fontSize: 13, fontWeight: 600, color: "#c7d2fe" }}>Music Composer</div><div style={{ fontSize: 10, color: "#818cf8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Suno AI</div></div>
-      </div>
+  const toggle = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.paused) el.play().catch(() => setPlaying(false));
+    else el.pause();
+  }, []);
 
-      {/* Style tags */}
-      <div className="v6-field">
-        <label className="v6-field-label">Style &amp; Mood</label>
-        {isMobile ? (
-          <MobileChipScroller items={MUSIC_STYLES.map(s => ({ label: s.label, value: s.label }))} selectedValue={style} onSelect={setStyle} />
-        ) : (
-          <div className="v6-style-chip-grid" style={{ marginTop: 6 }}>
-            {MUSIC_STYLES.map((s) => {
-              const active = style.toLowerCase().includes(s.label.toLowerCase());
-              return (
-                <button key={s.label} className={`v6-style-chip${active ? " v6-active" : ""}`}
-                  onClick={() => setStyle((prev) => { const parts = prev.split(",").map(p => p.trim()).filter(Boolean); const idx = parts.findIndex(p => p.toLowerCase() === s.label.toLowerCase()); if (idx >= 0) parts.splice(idx, 1); else parts.push(s.label); return parts.join(", "); })}>
-                  <span className="v6-style-dot" style={{ background: s.color }} />{s.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+  const seek = useCallback((ratio) => {
+    const el = ref.current;
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    const t = Math.min(el.duration, Math.max(0, ratio * el.duration));
+    el.currentTime = t;
+    setCurrent(t);
+  }, []);
 
-      {/* Track title with auto-suggest */}
-      <div className="v6-field">
-        <label className="v6-field-label">Track Title</label>
-        <input className="v6-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={suggestedTitle || "Name your composition"} />
-        {suggestedTitle && !title && (
-          <div style={{ fontSize: 10, color: "var(--v6-muted)", marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
-            <IconSpark style={{ width: 10, height: 10 }} /> Auto-suggested: {suggestedTitle}
-          </div>
-        )}
-      </div>
+  return { ref, playing, current, duration, toggle, seek };
+}
 
-      {/* Lyrics / Prompt */}
-      <div className="v6-field">
-        <label className="v6-field-label" style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Lyrics / Prompt</span>
-          <span className="v6-mono v6-tiny" style={{ color: "var(--v6-muted)" }}>{lineCount} lines</span>
-        </label>
-        <textarea className="v6-textarea" value={prompt} onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Write lyrics or describe the music\u2026\n\nEpic orchestral with soaring strings and thunderous drums"
-          style={{ minHeight: lyricsExpanded ? 180 : 90, transition: "min-height 0.3s ease" }} />
-        <button className="v6-btn v6-ghost v6-sm" onClick={() => setLyricsExpanded(!lyricsExpanded)} style={{ marginTop: 4, fontSize: 10 }}>
-          {lyricsExpanded ? "Collapse" : "Expand lyrics"}
-        </button>
-      </div>
+function Waveform({ peaks, progress = 0, onSeek, muted = false, label = "Waveform" }) {
+  const box = useRef(null);
+  const [count, setCount] = useState(BARS);
 
-      {/* Instrumental toggle */}
-      <button className="v6-toggle" onClick={() => setInstrumental(!instrumental)} style={{ marginBottom: 12 }}>
-        <div className={`v6-toggle-track${instrumental ? " v6-on" : ""}`}><div className="v6-toggle-thumb" /></div>
-        <span className="v6-toggle-label">Instrumental only</span>
+  /* One bar per 6px of frame. The shared CSS caps a bar at 4px and sets a 2px
+     gap, so at this density the strip is exactly as wide as the frame at every
+     screen size. That matters: the playhead and the click-to-seek both
+     measure the frame, so a strip that stopped short of it would put the
+     playhead to the right of the sample it points at. */
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry?.contentRect?.width || 0;
+      setCount(Math.max(24, Math.min(240, Math.floor(w / 6) || 24)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* Resample the decoded peaks onto the bars that actually fit */
+  const bars = useMemo(() => {
+    const src = peaks && peaks.length ? peaks : null;
+    if (!src) return new Array(count).fill(0.12);
+    return Array.from({ length: count }, (_, i) => {
+      const a = Math.floor((i * src.length) / count);
+      const b = Math.min(src.length, Math.max(a + 1, Math.floor(((i + 1) * src.length) / count)));
+      let sum = 0;
+      for (let j = a; j < b; j++) sum += src[j];
+      return sum / (b - a);
+    });
+  }, [peaks, count]);
+
+  const seekAt = (clientX) => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!rect?.width || !onSeek) return;
+    onSeek(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)));
+  };
+
+  return (
+    <div
+      ref={box}
+      className="st-wf"
+      role={onSeek ? "slider" : "img"}
+      aria-label={label}
+      aria-valuenow={onSeek ? Math.round(progress * 100) : undefined}
+      aria-valuemin={onSeek ? 0 : undefined}
+      aria-valuemax={onSeek ? 100 : undefined}
+      tabIndex={onSeek ? 0 : -1}
+      style={{ cursor: onSeek ? "pointer" : "default", opacity: muted ? 0.45 : 1 }}
+      onClick={(e) => seekAt(e.clientX)}
+      onKeyDown={(e) => {
+        if (!onSeek) return;
+        if (e.key === "ArrowRight") { e.preventDefault(); onSeek(Math.min(1, progress + 0.02)); }
+        if (e.key === "ArrowLeft") { e.preventDefault(); onSeek(Math.max(0, progress - 0.02)); }
+      }}
+    >
+      {bars.map((h, i) => (
+        <i
+          key={i}
+          className={i / bars.length < progress ? "is-played" : ""}
+          style={{ "--h": `${Math.round(6 + h * 86)}%` }}
+        />
+      ))}
+      {progress > 0 && <span className="st-wf__head" style={{ left: `${progress * 100}%` }} />}
+    </div>
+  );
+}
+
+function Transport({ playing, current, duration, onToggle, onSeek, disabled }) {
+  const bar = useRef(null);
+  const p = duration > 0 ? Math.min(1, current / duration) : 0;
+
+  return (
+    <div className="st-transport">
+      <button
+        type="button"
+        className="st-transport__play"
+        onClick={onToggle}
+        disabled={disabled}
+        aria-label={playing ? "Pause" : "Play"}
+      >
+        {playing ? <IcPause className="hs-icon-sm" /> : <IcPlay className="hs-icon-sm" />}
       </button>
 
-      {/* Vocal gender */}
-      <div className="v6-field">
-        <label className="v6-field-label">Vocal Gender</label>
-        <div className="v6-segmented">
-          {[{ id: "female", label: "Female" }, { id: "male", label: "Male" }].map((g) => (
-            <button key={g.id} className={vocalGender === g.id && !instrumental ? "v6-active" : ""} onClick={() => setVocalGender(g.id)} disabled={instrumental}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 5, flex: 1 }}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
-                <circle cx="12" cy="8" r="5"/>{g.id === "female" ? <><line x1="12" y1="13" x2="12" y2="22"/><line x1="9" y1="17" x2="15" y2="17"/></> : <><line x1="12" y1="13" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></>}
-              </svg> {g.label}
-            </button>
-          ))}
-        </div>
+      <span className="st-transport__time">{clock(current)}</span>
+
+      <div
+        ref={bar}
+        className="st-transport__bar"
+        role="progressbar"
+        aria-label="Playback position"
+        aria-valuenow={Math.round(p * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        onClick={(e) => {
+          const rect = bar.current?.getBoundingClientRect();
+          if (!rect?.width || disabled) return;
+          onSeek?.(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)));
+        }}
+      >
+        <i style={{ width: `${p * 100}%` }} />
       </div>
 
-      {/* Negative tags */}
-      <div className="v6-field" style={{ marginTop: 10 }}>
-        <label className="v6-field-label">Negative tags</label>
-        <input className="v6-input" value={negativeTags} onChange={(e) => setNegativeTags(e.target.value)} placeholder="e.g. autotune, lo-fi" />
-      </div>
+      <span className="st-transport__time">{duration > 0 ? clock(duration) : "--:--"}</span>
+    </div>
+  );
+}
 
-      {/* Duration chips */}
-      <div style={{ marginTop: 12 }}>
-        <div className="v6-field-label" style={{ marginBottom: 6 }}>Duration</div>
-        {isMobile ? (
-          <MobileChipScroller items={DURATION_PRESETS.map(p => ({ label: p.label, value: p.value }))} selectedValue={duration} onSelect={setDuration} />
-        ) : (
-          <div className="v6-chip-row">
-            {DURATION_PRESETS.map((preset) => (
-              <button key={preset.value} className={`v6-chip${duration === preset.value ? " v6-active" : ""}`} onClick={() => setDuration(preset.value)}>{preset.label}</button>
-            ))}
-          </div>
-        )}
-      </div>
+/* The only capability signal the live catalog carries is the model's own
+   input schema. No schema means "unknown", and unknown is not a reason to
+   hide a field — the provider drops what it does not take. */
+function offers(model, ...fields) {
+  const declared = model?.schema?.fields;
+  if (!declared) return true;
+  return fields.some((f) => !!declared[f]);
+}
 
-      {/* Duration timeline */}
-      <div className="v6-field" style={{ marginTop: 8 }}>
-        <div className="v6-range-row">
-          <span className="v6-muted" style={{ fontSize: 11 }}>Fine-tune</span>
-          <span className="v6-mono" style={{ fontSize: 11, fontWeight: 600 }}>{duration}s</span>
-        </div>
-        <div className="v6-timeline-bar">
-          <div className="v6-timeline-track">
-            <div className="v6-timeline-fill" style={{ width: `${(duration / 300) * 100}%` }} />
-          </div>
-          <span className="v6-timeline-label">max 5m</span>
-        </div>
-        <div className="v6-timeline-ticks">
-          <span>0s</span><span>1m</span><span>2m</span><span>3m</span><span>5m</span>
-        </div>
-      </div>
+const STYLES = [
+  "cinematic", "orchestral", "ambient", "lo-fi", "synthwave", "electronic",
+  "house", "trap", "hip-hop", "rock", "jazz", "classical", "folk", "pop",
+];
+
+const FALLBACK_LENGTHS = [30, 60, 90, 120, 180, 240];
+
+const EXAMPLES = [
+  "Slow build, muted piano over sub bass, no drums until the second half",
+  "Driving four-on-the-floor, analogue synths, bright but not cheerful",
+  "Solo cello, room tone, one long phrase repeated with variation",
+  "Late-night radio soul, tape hiss, brushed drums, warm bass",
+];
+
+export default function MusicStudio({ initialModel, templateConfig, onCreditsChanged }) {
+  const [modelId, setModelId] = useState(initialModel || null);
+  const [brief, setBrief] = useState("");
+  const [style, setStyle] = useState([]);
+  const [title, setTitle] = useState("");
+  const [negativeTags, setNegativeTags] = useState("");
+  const [instrumental, setInstrumental] = useState(false);
+  const [vocalGender, setVocalGender] = useState("female");
+  const [duration, setDuration] = useState(60);
+  const [sheet, setSheet] = useState(false);
+
+  const { models, loading: loadingModels } = useModelCatalog({});
+  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+
+  /* Composition models: the audio group minus the speech capability. Filtering
+     on `capability` is the only reliable route — the DB's modelType values are
+     fragmented, which is why capability-groups.js exists. */
+  const available = useMemo(
+    () => (models || []).filter((m) => matchesGroup(m, "audio") && m.capability === "audio"),
+    [models],
+  );
+
+  const model = available.find((m) => m.id === modelId) || available[0] || null;
+
+  useEffect(() => {
+    if (available.length && !available.some((m) => m.id === modelId)) setModelId(available[0].id);
+  }, [available, modelId]);
+
+  useEffect(() => {
+    if (!templateConfig) return;
+    if (templateConfig.prompt) setBrief(templateConfig.prompt);
+    if (templateConfig.title) setTitle(templateConfig.title);
+    if (templateConfig.style) setStyle(String(templateConfig.style).split(",").map((s) => s.trim()).filter(Boolean));
+    if (templateConfig.model) setModelId(templateConfig.model);
+    if (typeof templateConfig.instrumental === "boolean") setInstrumental(templateConfig.instrumental);
+  }, [templateConfig]);
+
+  /* `durations` is always an array — [] when the model offers no choice. This
+     is a field the catalog genuinely emits, unlike the `has*` flags. */
+  const lengths = model?.durations?.length
+    ? model.durations.map(Number).filter(Number.isFinite)
+    : FALLBACK_LENGTHS;
+  const modelSetsLength = !!model?.durations?.length;
+
+  useEffect(() => {
+    if (lengths.length && !lengths.includes(duration)) setDuration(lengths[0]);
+  }, [lengths, duration]);
+
+  const wantsStyle = offers(model, "style", "tags");
+  const wantsTitle = offers(model, "title");
+  const wantsVocals = offers(model, "instrumental", "vocal_gender");
+  const wantsNegative = offers(model, "negative_tags");
+
+  const styleText = style.join(", ");
+
+  /* Identical tool string and params on both sides of the quote. */
+  const costParams = useMemo(
+    () => ({ duration, prompt: brief, ...(wantsStyle && styleText ? { style: styleText } : {}) }),
+    [duration, brief, wantsStyle, styleText],
+  );
+
+  const { cost, affordable, balance, shortfall } = useCreditCost("audio", model?.id || "", costParams);
+
+  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
+
+  const url = mediaUrl(result);
+  const { peaks, real } = useWaveform(url);
+  const { ref, playing, current, duration: playLength, toggle, seek } = useTransport(url);
+  const shownPeaks = peaks || (playLength ? placeholderPeaks(playLength) : null);
+  const progress = playLength > 0 ? Math.min(1, current / playLength) : 0;
+
+  const suggestedTitle = useMemo(() => {
+    if (title.trim()) return title.trim();
+    const head = style.slice(0, 2).join(" ");
+    const tail = instrumental ? "instrumental" : `${vocalGender} vocal`;
+    return head ? `${head} — ${tail}` : "";
+  }, [title, style, instrumental, vocalGender]);
+
+  const toggleStyle = useCallback((tag) => {
+    setStyle((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }, []);
+
+  const generate = useCallback(() => {
+    if (!model || !brief.trim()) return;
+    submit("audio", model.id, {
+      endpoint: model.endpoint || model.id,
+      prompt: brief.trim(),
+      duration,
+      ...(wantsStyle && styleText ? { style: styleText } : {}),
+      ...(wantsTitle && suggestedTitle ? { title: suggestedTitle } : {}),
+      ...(wantsVocals ? { instrumental, ...(instrumental ? {} : { vocal_gender: vocalGender }) } : {}),
+      ...(wantsNegative && negativeTags.trim() ? { negative_tags: negativeTags.trim() } : {}),
+    });
+  }, [
+    model, brief, submit, duration, wantsStyle, styleText, wantsTitle, suggestedTitle,
+    wantsVocals, instrumental, vocalGender, wantsNegative, negativeTags,
+  ]);
+
+  /* ── Controls ─────────────────────────────────────────────────────────── */
+  const controls = (
+    <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+      <ModelPicker
+        models={available}
+        value={model?.id}
+        onSelect={setModelId}
+        loading={loadingModels}
+        label="Composer"
+        emptyHint="No music models in the catalog yet."
+      />
+
+      {wantsStyle && (
+        <Field label="Style" hint="Stack a few. Order does not matter.">
+          <Chips
+            label="Style"
+            scroll
+            options={STYLES.map((s) => ({ value: s, label: s }))}
+            value={style}
+            onChange={toggleStyle}
+            compare={(selected, tag) => Array.isArray(selected) && selected.includes(tag)}
+          />
+        </Field>
+      )}
+
+      {wantsVocals && (
+        <Group label="Voice">
+          <Toggle
+            checked={instrumental}
+            onChange={setInstrumental}
+            label="Instrumental only"
+            hint="No lead vocal, no lyrics."
+          />
+          {!instrumental && (
+            <Segmented
+              label="Vocal register"
+              value={vocalGender}
+              onChange={setVocalGender}
+              options={[
+                { value: "female", label: "Female" },
+                { value: "male", label: "Male" },
+              ]}
+            />
+          )}
+        </Group>
+      )}
+
+      <Field
+        label="Length"
+        hint={modelSetsLength ? "Lengths this model offers." : "Target length. The model may land close rather than exact."}
+      >
+        <Chips
+          label="Length"
+          scroll
+          value={duration}
+          onChange={setDuration}
+          options={lengths.map((d) => ({
+            value: d,
+            label: d >= 60 && d % 60 === 0 ? `${d / 60}m` : `${d}s`,
+          }))}
+        />
+      </Field>
+
+      {wantsTitle && (
+        <Field label="Title" hint={suggestedTitle && !title ? `Blank uses “${suggestedTitle}”.` : undefined}>
+          {(id) => (
+            <input
+              id={id}
+              className="hs-input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={suggestedTitle || "Name the track"}
+            />
+          )}
+        </Field>
+      )}
+
+      {wantsNegative && (
+        <Field label="Avoid" hint="Sounds or treatments to keep out.">
+          {(id) => (
+            <input
+              id={id}
+              className="hs-input"
+              value={negativeTags}
+              onChange={(e) => setNegativeTags(e.target.value)}
+              placeholder="autotune, distortion, spoken word"
+            />
+          )}
+        </Field>
+      )}
+
+      <Group label="This take">
+        <Specs
+          rows={[
+            { k: "Model", v: model?.displayName || model?.name },
+            { k: "Len", v: `${duration}s` },
+            { k: "Style", v: styleText || "Unset" },
+            { k: "Voice", v: wantsVocals ? (instrumental ? "Instrumental" : `${vocalGender} vocal`) : null },
+            { k: "Title", v: suggestedTitle || null },
+          ]}
+        />
+      </Group>
     </div>
   );
 
-  /* ── Center ── */
-  const centerContent = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        {loading ? (
-          <StageArea generating={true} stage={genStage} model={currentModel.name} onCancel={handleNew} />
-        ) : result ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 24, padding: "40px 20px", flex: 1 }}>
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }} style={{ width: "100%", maxWidth: 460 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 16 }}>
-                <div className="v6-waveform">
-                  {Array.from({ length: 10 }).map((_, i) => (<div key={i} className="v6-wave-bar" />))}
-                </div>
-              </div>
-              <div style={{ borderRadius: 12, overflow: "hidden" }}>
-                <audio controls style={{ width: "100%", borderRadius: 10 }} src={result?.url || result?.outputUrl || result} />
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, textAlign: "center", marginTop: 16 }}>
-                <div style={{ fontSize: 15, fontWeight: 600 }}>{title || result?.name || "Composition"}</div>
-                <div style={{ fontSize: 12, color: "var(--v6-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                  <IconBolt />{result?.creditsUsed ?? cost ?? "\u2014"} credits <span style={{ margin: "0 4px", opacity: 0.2 }}>\u00b7</span> <IconClock />{elapsed}s
-                </div>
-                <div style={{ fontSize: 11, color: "var(--v6-muted)" }}>{currentModel.name}{instrumental ? " \u00b7 Instrumental" : ` \u00b7 ${vocalGender} vocals`}</div>
-              </div>
-              <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
-                <button className="v6-btn v6-primary" onClick={handleDownload}><IconDownload /> Download</button>
-                <button className="v6-btn" onClick={handleNew}><IconRefresh /> Compose again</button>
-              </div>
-            </motion.div>
-          </div>
-        ) : (
-          <StageArea toolLabel="Music Composer" toolDesc="Compose original music with Suno AI. Describe the style, mood, and genre \u2014 from cinematic scores to electronic beats." toolIcon={<IconMusic />} onSuggestionClick={(s) => setPrompt(s)} />
-        )}
-      </div>
-      <PromptDock value={prompt} onChange={setPrompt} onSubmit={handleGenerate} cost={cost} generating={loading} stage={genStage} icon="bolt" />
-    </div>
-  );
+  /* ── Body ─────────────────────────────────────────────────────────────── */
+  const settings = [
+    model?.displayName || model?.name,
+    `${duration}s`,
+    instrumental ? "instrumental" : styleText || null,
+  ].filter(Boolean).join(" · ");
 
-  /* ── Inspector ── */
-  const inspector = (
-    <div style={{ display: "flex", flexDirection: "column" }}>
-      {isMobile ? (
-        <MobileModelCarousel models={sunoModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} />
+  const body = (
+    <div className="st-wave__body">
+      {error && (
+        <p className="hs-notice hs-notice--fault" role="alert">
+          {error} Change the style or the length and run it again, or pick another composer.
+        </p>
+      )}
+
+      <div className="hs-row hs-row--between">
+        <span className="hs-eyebrow">
+          {generating ? "Composing" : url ? suggestedTitle || "Composed" : "Composition"}
+        </span>
+        <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+          {generating
+            ? `${String(stage || "working").replace(/_/g, " ")} · ${clock(elapsed)}`
+            : settings || "No model selected"}
+        </span>
+      </div>
+
+      <Waveform
+        peaks={shownPeaks}
+        progress={progress}
+        onSeek={url ? seek : undefined}
+        muted={!url}
+        label={url ? "Composed track waveform" : "Empty waveform"}
+      />
+
+      <Transport
+        playing={playing}
+        current={current}
+        duration={playLength}
+        onToggle={toggle}
+        onSeek={seek}
+        disabled={!url}
+      />
+
+      {url && !real && (
+        <span className="hs-hint" style={{ textAlign: "center" }}>
+          The waveform is an estimate — this browser was not allowed to read the file to draw its
+          peaks. Playback, the playhead and the timecode are exact.
+        </span>
+      )}
+
+      {/* No `crossOrigin`: demanding CORS from a host that does not send it
+          would block playback outright. The waveform degrades instead. */}
+      <audio ref={ref} src={url || undefined} preload="metadata" style={{ display: "none" }} />
+
+      {url ? (
+        <div className="hs-row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
+          <a className="hs-btn hs-btn--sm" href={url} download target="_blank" rel="noopener noreferrer">
+            <IcDownload className="hs-icon-sm" /> Download
+          </a>
+          <a className="hs-btn hs-btn--ghost hs-btn--sm" href={url} target="_blank" rel="noopener noreferrer">
+            <IcExternal className="hs-icon-sm" /> Open
+          </a>
+          <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={reset}>
+            <IcRefresh className="hs-icon-sm" /> Compose another
+          </button>
+          <span className="hs-mono" style={{ marginLeft: "auto", fontSize: 10, color: "var(--tx-mute)" }}>
+            {result?.creditsUsed != null ? `${result.creditsUsed} cr` : ""}
+            {result?.elapsed != null ? ` · ${result.elapsed}s` : ""}
+          </span>
+        </div>
       ) : (
-        <ModelSelector models={sunoModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} label="Suno models" />
-      )}
-      {selectedModelId && (
-        <div className="v6-quote" style={{ marginTop: 14 }}>
-          <div className="v6-quote-row"><span className="v6-muted">Model</span><strong>{currentModel.name}</strong></div>
-          <div className="v6-quote-row"><span className="v6-muted">Provider</span><strong>{currentModel.provider}</strong></div>
-          <div className="v6-quote-row"><span className="v6-muted">Duration</span><strong>{duration}s</strong></div>
-          {instrumental ? <div className="v6-quote-row"><span className="v6-muted">Mode</span><strong>Instrumental</strong></div>
-            : <div className="v6-quote-row"><span className="v6-muted">Vocals</span><strong>{vocalGender === "female" ? "Female" : "Male"}</strong></div>}
-          {style && <div className="v6-quote-row"><span className="v6-muted">Style</span><strong>{style}</strong></div>}
-          <div className="v6-section-rule" style={{ margin: "8px 0" }} />
-          <div className="v6-quote-row"><span className="v6-muted">Estimated cost</span><strong><IconBolt /> {cost != null ? `${cost} credits` : "\u2014"}</strong></div>
-          {shortfall > 0 && <div style={{ fontSize: 11, color: "var(--v6-bad)", marginTop: 4, textAlign: "right" }}>Need {shortfall} more credits</div>}
-          {cost != null && affordable && <div style={{ fontSize: 11, color: "var(--v6-good)", marginTop: 4, textAlign: "right" }}>\u2713 Affordable</div>}
-        </div>
-      )}
-      {prompt && (
-        <div style={{ marginTop: 12 }}>
-          <div className="v6-eyebrow">Lyrics / Prompt</div>
-          <div className="v6-quote" style={{ marginTop: 6, fontSize: 11, color: "var(--v6-muted)", lineHeight: 1.5, maxHeight: 100, overflow: "hidden" }}>{prompt}</div>
-        </div>
+        !generating && (
+          <div className="hs-empty">
+            <span className="hs-empty__mark"><IcMusic /></span>
+            <h3>Describe the track</h3>
+            <p>
+              Say what plays, what does not, and how it moves. Pick the style and length on the
+              left, then write the brief below — or paste lyrics and the composer will set them.
+            </p>
+            <div className="hs-chips" style={{ justifyContent: "center", marginTop: "var(--s-2)" }}>
+              {EXAMPLES.map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  className="hs-chip"
+                  style={{ fontFamily: "var(--ff-ui)", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis" }}
+                  title={e}
+                  onClick={() => setBrief(e)}
+                >
+                  {e.length > 44 ? `${e.slice(0, 44)}…` : e}
+                </button>
+              ))}
+            </div>
+          </div>
+        )
       )}
     </div>
   );
 
-  return <StudioLayout controls={controls} inspector={inspector}>{centerContent}</StudioLayout>;
+  return (
+    <div className="st-wave">
+      <aside className="st-wave__controls" aria-label="Settings">{controls}</aside>
+
+      <div className="st-wave__main">
+        {body}
+
+        <div className="st-panel-tabs">
+          <button type="button" className="hs-btn hs-btn--sm" onClick={() => setSheet(true)}>
+            <IcSettings className="hs-icon-sm" /> Settings
+          </button>
+        </div>
+
+        <Brief
+          value={brief}
+          onChange={setBrief}
+          onSubmit={generate}
+          onCancel={cancel}
+          generating={generating}
+          stage={stage}
+          disabled={!model}
+          cost={cost || 0}
+          balance={balance}
+          affordable={affordable}
+          shortfall={shortfall}
+          maxChars={3000}
+          submitLabel="Compose"
+          placeholder="Describe the track, or paste the lyrics you want set."
+        />
+      </div>
+
+      <Sheet open={sheet} onClose={() => setSheet(false)} title="Settings">
+        {controls}
+      </Sheet>
+    </div>
+  );
 }

@@ -58,8 +58,11 @@ export async function POST(req) {
       });
       customerId = customer.id;
 
+      // This row exists only to remember the Stripe customer id. It must NOT
+      // grant any entitlement before payment — an "active" plan here handed out
+      // every subscription-tier template for free. The webhook activates it.
       await prisma.subscription.create({
-        data: { userId: user.id, stripeCustomerId: customerId, plan: "payg", status: "active" },
+        data: { userId: user.id, stripeCustomerId: customerId, plan: "free", status: "pending" },
       });
     }
 

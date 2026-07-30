@@ -2,75 +2,65 @@
 
 import { Component } from "react";
 
-/* ── Inline SVGs ── */
-const IconError = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10" />
-    <line x1="12" y1="8" x2="12" y2="12" />
-    <line x1="12" y1="16" x2="12.01" y2="16" />
-  </svg>
-);
+/* ══════════════════════════════════════════════════════════════════════════
+   ERROR BOUNDARY
+   A tool that throws should not take the whole studio down. State the plain
+   fact, offer the one useful action, and keep the shell navigable so the
+   user can move to another instrument.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const IconRefresh = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 4 23 10 17 10" />
-    <polyline points="1 20 1 14 7 14" />
-    <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-  </svg>
-);
-
-/* ══════════════════════════════════════════════════════════════ */
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { error: null };
   }
 
   static getDerivedStateFromError(error) {
-    return { hasError: true, error };
+    return { error };
   }
 
-  componentDidCatch(error, errorInfo) {
-    console.error("[ErrorBoundary] Studio tool error:", error, errorInfo);
+  componentDidCatch(error, info) {
+    console.error("[studio] tool crashed:", error, info?.componentStack);
   }
 
-  handleRetry = () => {
-    this.setState({ hasError: false, error: null });
-  };
+  retry = () => this.setState({ error: null });
 
   render() {
-    if (this.state.hasError) {
-      return (
-        <div className="v6-error-state" style={{ padding: "60px 20px", minHeight: 300 }}>
-          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "color-mix(in srgb, var(--v6-bad), transparent 88%)", display: "grid", placeItems: "center", marginBottom: 12 }}>
-            <IconError />
-          </div>
-          <h3>Something went wrong</h3>
+    const { error } = this.state;
+    if (!error) return this.props.children;
+
+    const subject = encodeURIComponent(`Studio error: ${error.message || "unknown"}`);
+
+    return (
+      <div className="st-stage">
+        <div className="hs-empty">
+          <span
+            className="hs-empty__mark"
+            style={{ color: "var(--fault)", borderColor: "rgba(255,90,90,.3)" }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 3l9.5 16.5H2.5L12 3z" />
+              <path d="M12 10v4M12 17h.01" />
+            </svg>
+          </span>
+
+          <h3>This instrument stopped responding</h3>
           <p>
-            {this.state.error?.message || "An unexpected error occurred in this studio tool."}
+            {error.message
+              ? `${error.message}. Your other work is unaffected — the rest of the studio is still available.`
+              : "Something in this tool failed unexpectedly. Your other work is unaffected."}
           </p>
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-            <button className="v6-btn v6-primary" onClick={this.handleRetry}>
-              <IconRefresh /> Try again
+
+          <div className="hs-row" style={{ marginTop: "var(--s-2)" }}>
+            <button type="button" className="hs-btn hs-btn--primary" onClick={this.retry}>
+              Reload the instrument
             </button>
-            <a
-              href="mailto:support@helmies.fi?subject=Studio%20Error%20Report"
-              className="v6-btn v6-ghost"
-              onClick={(e) => {
-                // Optional: attach error details
-                const subject = encodeURIComponent(
-                  `Studio Error: ${this.state.error?.message || "Unknown"}`
-                );
-                e.currentTarget.href = `mailto:support@helmies.fi?subject=${subject}`;
-              }}
-            >
-              Report issue
+            <a className="hs-btn hs-btn--ghost" href={`mailto:support@helmies.fi?subject=${subject}`}>
+              Report it
             </a>
           </div>
         </div>
-      );
-    }
-
-    return this.props.children;
+      </div>
+    );
   }
 }

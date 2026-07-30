@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
+import { grantCredits, getWallet } from "@/lib/wallet";
 import prisma from "@/lib/prisma";
 
 export async function GET(req) {
@@ -20,15 +21,25 @@ export async function POST(req) {
     await requireAdmin(req);
     const { userId, generationId, amount, reason } = await req.json();
 
+    if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
+    const credits = Number(amount);
+    if (!Number.isFinite(credits) || credits <= 0) {
+      return NextResponse.json({ error: "amount must be a positive number" }, { status: 400 });
+    }
+
     const refund = await prisma.refund.create({
-      data: { userId, generationId, amount, reason, status: "completed", processedAt: new Date() },
+      data: { userId, generationId, amount: credits, reason, status: "completed", processedAt: new Date() },
     });
 
-    await prisma.user.update({ where: { id: userId }, data: { credits: { increment: amount } } });
+    // Grant through the wallet — incrementing the legacy User.credits column
+    // was a no-op, since the wallet sync overwrites it from `available`.
+    await getWallet(userId); // ensures a wallet exists (migrates legacy balance)
+    const wallet = await grantCredits(userId, credits, "refund", reason || "Admin refund", generationId || null);
+    await prisma.user.update({ where: { id: userId }, data: { credits: wallet.available } }).catch(() => {});
     await prisma.creditTransaction.create({
-      data: { userId, amount, type: "admin_refund", description: reason || "Admin refund" },
+      data: { userId, amount: credits, type: "admin_refund", description: reason || "Admin refund" },
     });
-    await logAudit("admin_refund", "user", userId, { amount, reason }, req);
+    await logAudit("admin_refund", "user", userId, { amount: credits, reason }, req);
 
     return NextResponse.json({ success: true, refund });
   } catch (e) {

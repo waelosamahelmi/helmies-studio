@@ -18,7 +18,7 @@ export async function POST(req) {
     const body = await req.json();
     if (!body.imageUrl) return NextResponse.json({ error: "imageUrl required" }, { status: 400 });
 
-    const analysis = await analyzeImage(body.imageUrl, { force: body.force });
+    const analysis = await analyzeImage(body.imageUrl, { force: body.force, userId: user.id });
     return NextResponse.json(analysis, { status: 201 });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
@@ -33,7 +33,9 @@ export async function GET(req) {
 
     const { searchParams } = new URL(req.url);
     const assetUrl = searchParams.get("assetUrl");
-    const where = assetUrl ? { assetUrl } : {};
+    // Always scoped to the caller — an unscoped `where` listed every user's
+    // analyses (and the image URLs they were run against).
+    const where = { userId: user.id, ...(assetUrl ? { assetUrl } : {}) };
     return NextResponse.json(
       await prisma.visualAnalysis.findMany({ where, orderBy: { createdAt: "desc" }, take: 20 })
     );

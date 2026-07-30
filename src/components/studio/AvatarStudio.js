@@ -1,190 +1,610 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { motion } from "framer-motion";
-import { StudioLayout, ModelSelector, PromptDock, StageArea } from "./v6";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Stage, Brief, ModelPicker, Sheet,
+  Field, Group, Chips, RatioPicker, Dropzone, Specs,
+  clock,
+  IcPersona, IcLink, IcPlay, IcPause, IcSettings, IcClose, IcImage, IcMic, IcMusic,
+} from "@/components/studio/kit";
+import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
-import { useModelCatalog } from "./useModelCatalog";
-import { apiFetch } from "@/lib/client-fetch";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 import { matchesGroup } from "@/lib/capability-groups";
 
-/* ── Inline SVGs ── */
-const IconUsers = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>);
-const IconImage = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>);
-const IconBolt = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10" /></svg>);
-const IconUpload = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17,8 12,3 7,8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>);
-const IconClock = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12,6 12,12 16,14" /></svg>);
+/* ══════════════════════════════════════════════════════════════════════════
+   AVATAR — a portrait and a voice, on the .st-wave / .st-pair archetype
+   ──────────────────────────────────────────────────────────────────────────
+   An avatar take is two sources joined: the face that performs and the voice
+   it performs. The layout puts them side by side with the join between them,
+   and the voice track's waveform runs full width beneath, because the length
+   of the voice is what decides the length of the take.
 
-const DURATIONS = [5, 10];
-const ASPECTS = ["16:9", "9:16", "1:1"];
+   Fixed in this rebuild:
+   · `error` from useAsyncGeneration was computed and never rendered — a
+     failed job stopped silently with the stage still showing the idle copy.
+     It is passed to <Stage> now.
+   · `elapsed` was unused; <Stage> shows the real clock while a job runs.
+   · `affordable` was unused: PromptDock had no idea about the balance, so a
+     job the wallet could not cover was one click away and came back a 402.
+     <Brief> takes `affordable` and `shortfall` and blocks the action.
+   · The tool string was already `"v2v"` on both sides — `useCreditCost("v2v",…)`
+     and `submit("v2v",…)` — and it is left that way deliberately: `"v2v"` is a
+     registered tool in the async route's ENDPOINT_MAP and in the pricing
+     engine's fallback table, whereas `"avatar"` is in neither and would fall
+     through to the generic 2-credit default. Verified, and kept in step.
+   · Duration and aspect ratio were hardcoded lists. They come from the model's
+     own `durations` / `aspectRatios` when the catalog supplies them.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const AVATAR_SUGGESTIONS = [
-  "The person smiles warmly and gives a confident nod, natural head movement",
-  "Slow turn from profile to facing camera, dramatic hair movement",
-  "The person speaks expressively, gesturing with hands, studio lighting",
-  "Gentle laugh with natural eye contact, soft bokeh background",
-];
+const BARS = 120;
 
-export default function AvatarStudio() {
-  const { models: rawModels } = useModelCatalog({});
-  const AVATAR_IDS = new Set(["kling-ai-avatar-standard", "kling-ai-avatar-pro"]);
-  const MODELS = useMemo(() => rawModels.filter((m) => {
-    // Avatar-capable pool: v2v group plus the dedicated "avatar-video"
-    // capability (Kling avatar models carry that capability, not v2v).
-    if (!matchesGroup(m, "v2v") && m.capability !== "avatar-video") return false;
-    const name = (m.displayName || m.id || "").toLowerCase(); const id = (m.id || "").toLowerCase();
-    return AVATAR_IDS.has(m.id) || name.includes("avatar") || id.includes("avatar");
-  }).map((m) => ({ id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: m.id?.includes("pro") ? "premium" : "standard", aspectRatios: m.aspectRatios, durations: m.durations, endpoint: m.endpoint })), [rawModels]);
+/* Deterministic stand-in, seeded by the track's own duration. Uploaded voice
+   tracks are same-origin and decode for real; anything cross-origin without an
+   Access-Control-Allow-Origin header cannot be decoded in the browser, so this
+   draws the same shape every time for the same track. Bar count still maps to
+   time, so the scrubber stays truthful even when the peaks are not. */
+function placeholderPeaks(duration) {
+  const seed = Math.max(1, Math.round((duration || 30) * 1000));
+  return Array.from({ length: BARS }, (_, i) => {
+    const n = Math.sin((i + 1) * 12.9898 + seed * 0.0001) * 43758.5453;
+    const noise = n - Math.floor(n);
+    const envelope = Math.sin((Math.PI * (i + 0.5)) / BARS);
+    return 0.16 + 0.74 * noise * (0.4 + 0.6 * envelope);
+  });
+}
 
-  const [model, setModel] = useState("");
-  useEffect(() => { if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) setModel(MODELS[0].id); }, [MODELS, model]);
-  const [prompt, setPrompt] = useState("");
-  const [duration, setDuration] = useState(5);
-  const [aspectRatio, setAspectRatio] = useState("16:9");
-  const [imageUrl, setImageUrl] = useState(null);
-  const [uploading, setUploading] = useState(false);
+function useWaveform(url) {
+  const [peaks, setPeaks] = useState(null);
+  const [real, setReal] = useState(false);
 
-  const isMobile = useIsMobile();
+  useEffect(() => {
+    if (!url) { setPeaks(null); setReal(false); return undefined; }
+    let alive = true;
+    setPeaks(null);
+    setReal(false);
 
-  const { loading, result, error, elapsed, submit } = useAsyncGeneration();
-  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
-  const { cost, affordable, shortfall, balance } = useCreditCost("v2v", model, { duration, aspect_ratio: aspectRatio, image_url: imageUrl });
+    (async () => {
+      let ctx = null;
+      try {
+        const Ctx = typeof window !== "undefined" && (window.AudioContext || window.webkitAudioContext);
+        if (!Ctx) throw new Error("No AudioContext");
+        const res = await fetch(url, { mode: "cors" });
+        const bytes = await res.arrayBuffer();
+        ctx = new Ctx();
+        const buffer = await ctx.decodeAudioData(bytes);
+        const data = buffer.getChannelData(0);
+        const block = Math.max(1, Math.floor(data.length / BARS));
+        const out = new Array(BARS);
+        let top = 0;
+        for (let i = 0; i < BARS; i++) {
+          let sum = 0;
+          const start = i * block;
+          for (let j = 0; j < block; j++) sum += Math.abs(data[start + j] || 0);
+          out[i] = sum / block;
+          if (out[i] > top) top = out[i];
+        }
+        if (!alive) return;
+        setPeaks(top > 0 ? out.map((v) => v / top) : out);
+        setReal(true);
+      } catch {
+        if (alive) { setPeaks(null); setReal(false); }
+      } finally {
+        ctx?.close?.();
+      }
+    })();
 
-  const handleUpload = useCallback(async (file) => {
-    if (!file) return; setUploading(true);
-    const fd = new FormData(); fd.append("file", file);
-    try { const r = await apiFetch("/api/upload", { method: "POST", body: fd }); const d = await r.json(); if (d.url) setImageUrl(d.url); } catch {}
-    setUploading(false);
+    return () => { alive = false; };
+  }, [url]);
+
+  return { peaks, real };
+}
+
+function useTransport(url) {
+  const ref = useRef(null);
+  const raf = useRef(0);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => { setPlaying(false); setCurrent(0); setDuration(0); }, [url]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const meta = () => setDuration(Number.isFinite(el.duration) ? el.duration : 0);
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onEnd = () => { setPlaying(false); setCurrent(0); };
+    const onTime = () => setCurrent(el.currentTime || 0);
+    el.addEventListener("loadedmetadata", meta);
+    el.addEventListener("durationchange", meta);
+    el.addEventListener("play", onPlay);
+    el.addEventListener("pause", onPause);
+    el.addEventListener("ended", onEnd);
+    el.addEventListener("timeupdate", onTime);
+    return () => {
+      el.removeEventListener("loadedmetadata", meta);
+      el.removeEventListener("durationchange", meta);
+      el.removeEventListener("play", onPlay);
+      el.removeEventListener("pause", onPause);
+      el.removeEventListener("ended", onEnd);
+      el.removeEventListener("timeupdate", onTime);
+    };
+  }, [url]);
+
+  useEffect(() => {
+    if (!playing) return undefined;
+    const tick = () => {
+      if (ref.current) setCurrent(ref.current.currentTime || 0);
+      raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [playing]);
+
+  const toggle = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.paused) el.play().catch(() => setPlaying(false));
+    else el.pause();
   }, []);
 
-  const handleGenerate = useCallback(() => {
-    if (!prompt.trim() || !imageUrl || loading) return;
-    submit("v2v", model, { endpoint: currentModel.endpoint || model, prompt: prompt.trim(), image_url: imageUrl, duration, aspect_ratio: aspectRatio });
-  }, [prompt, imageUrl, loading, model, currentModel, duration, aspectRatio, submit]);
+  const seek = useCallback((ratio) => {
+    const el = ref.current;
+    if (!el || !Number.isFinite(el.duration) || el.duration <= 0) return;
+    const t = Math.min(el.duration, Math.max(0, ratio * el.duration));
+    el.currentTime = t;
+    setCurrent(t);
+  }, []);
 
-  const handleDownload = () => { if (result?.url) window.open(result.url, "_blank"); };
-  const handleNew = () => { setPrompt(""); setImageUrl(null); };
+  return { ref, playing, current, duration, toggle, seek };
+}
 
-  const lineCount = prompt.split("\n").filter(l => l.trim()).length;
+function Waveform({ peaks, progress = 0, onSeek, muted = false, label = "Waveform" }) {
+  const box = useRef(null);
+  const [count, setCount] = useState(BARS);
 
-  /* ── Controls ── */
-  const controls = (
-    <div className="v6-control-stack">
-      {isMobile ? (
-        <MobileModelCarousel models={MODELS} selectedModelId={model} onSelect={setModel} />
+  /* One bar per 6px of frame. The shared CSS caps a bar at 4px and sets a 2px
+     gap, so at this density the strip is exactly as wide as the frame at every
+     screen size. That matters: the playhead and the click-to-seek both
+     measure the frame, so a strip that stopped short of it would put the
+     playhead to the right of the sample it points at. */
+  useEffect(() => {
+    const el = box.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry?.contentRect?.width || 0;
+      setCount(Math.max(24, Math.min(240, Math.floor(w / 6) || 24)));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* Resample the decoded peaks onto the bars that actually fit */
+  const bars = useMemo(() => {
+    const src = peaks && peaks.length ? peaks : null;
+    if (!src) return new Array(count).fill(0.12);
+    return Array.from({ length: count }, (_, i) => {
+      const a = Math.floor((i * src.length) / count);
+      const b = Math.min(src.length, Math.max(a + 1, Math.floor(((i + 1) * src.length) / count)));
+      let sum = 0;
+      for (let j = a; j < b; j++) sum += src[j];
+      return sum / (b - a);
+    });
+  }, [peaks, count]);
+
+  const seekAt = (clientX) => {
+    const rect = box.current?.getBoundingClientRect();
+    if (!rect?.width || !onSeek) return;
+    onSeek(Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)));
+  };
+
+  return (
+    <div
+      ref={box}
+      className="st-wf"
+      role={onSeek ? "slider" : "img"}
+      aria-label={label}
+      aria-valuenow={onSeek ? Math.round(progress * 100) : undefined}
+      aria-valuemin={onSeek ? 0 : undefined}
+      aria-valuemax={onSeek ? 100 : undefined}
+      tabIndex={onSeek ? 0 : -1}
+      style={{ cursor: onSeek ? "pointer" : "default", opacity: muted ? 0.45 : 1 }}
+      onClick={(e) => seekAt(e.clientX)}
+      onKeyDown={(e) => {
+        if (!onSeek) return;
+        if (e.key === "ArrowRight") { e.preventDefault(); onSeek(Math.min(1, progress + 0.02)); }
+        if (e.key === "ArrowLeft") { e.preventDefault(); onSeek(Math.max(0, progress - 0.02)); }
+      }}
+    >
+      {bars.map((h, i) => (
+        <i
+          key={i}
+          className={i / bars.length < progress ? "is-played" : ""}
+          style={{ "--h": `${Math.round(6 + h * 86)}%` }}
+        />
+      ))}
+      {progress > 0 && <span className="st-wf__head" style={{ left: `${progress * 100}%` }} />}
+    </div>
+  );
+}
+
+function Transport({ playing, current, duration, onToggle, onSeek, disabled }) {
+  const bar = useRef(null);
+  const p = duration > 0 ? Math.min(1, current / duration) : 0;
+
+  return (
+    <div className="st-transport">
+      <button
+        type="button"
+        className="st-transport__play"
+        onClick={onToggle}
+        disabled={disabled}
+        aria-label={playing ? "Pause" : "Play"}
+      >
+        {playing ? <IcPause className="hs-icon-sm" /> : <IcPlay className="hs-icon-sm" />}
+      </button>
+
+      <span className="st-transport__time">{clock(current)}</span>
+
+      <div
+        ref={bar}
+        className="st-transport__bar"
+        role="progressbar"
+        aria-label="Playback position"
+        aria-valuenow={Math.round(p * 100)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        onClick={(e) => {
+          const rect = bar.current?.getBoundingClientRect();
+          if (!rect?.width || disabled) return;
+          onSeek?.(Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)));
+        }}
+      >
+        <i style={{ width: `${p * 100}%` }} />
+      </div>
+
+      <span className="st-transport__time">{duration > 0 ? clock(duration) : "--:--"}</span>
+    </div>
+  );
+}
+
+/* ── One source of the pair ────────────────────────────────────────────── */
+function Source({ kind, title, hint, value, onChange, accept, preview, icon }) {
+  return (
+    <div className="st-source">
+      <span className="hs-label" style={{ margin: 0 }}>{title}</span>
+
+      <div className="st-source__frame">
+        {preview || <span style={{ color: "var(--tx-ghost)" }}>{icon}</span>}
+      </div>
+
+      {value ? (
+        <div className="hs-row hs-row--between" style={{ gap: "var(--s-2)" }}>
+          <span
+            className="hs-hint"
+            style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            title={value.name}
+          >
+            {value.name || `${kind} ready`}
+          </span>
+          <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => onChange(null)}>
+            <IcClose className="hs-icon-sm" /> Remove
+          </button>
+        </div>
       ) : (
-        <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Avatar Models" />
-      )}
-
-      {/* Portrait upload */}
-      <div className="v6-field">
-        <label className="v6-field-label">Portrait</label>
-        {imageUrl ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", border: "1px solid var(--v6-line)", borderRadius: 12, background: "var(--v6-surface2)" }}>
-            <div className="v6-circle-crop"><img src={imageUrl} alt="" /></div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "var(--v6-good)" }}>Portrait ready \u2713</div>
-              <button className="v6-btn v6-ghost v6-sm" onClick={() => setImageUrl(null)} style={{ marginTop: 4, fontSize: 10 }}>Change</button>
-            </div>
-          </div>
-        ) : (
-          <label className="v6-upload-drop" style={{ cursor: uploading ? "wait" : "pointer", opacity: uploading ? 0.5 : 1 }}>
-            <input type="file" accept="image/*" onChange={(e) => handleUpload(e.target.files?.[0])} hidden disabled={uploading} />
-            <IconUpload /><span>Upload portrait photo</span>
-            <span className="v6-file-types">PNG, JPG, WebP \u00b7 Face clearly visible</span>
-          </label>
-        )}
-      </div>
-
-      {/* Script editor */}
-      <div className="v6-field">
-        <label className="v6-field-label" style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>Animation Script</span>
-          <span className="v6-mono v6-tiny" style={{ color: "var(--v6-muted)" }}>{prompt.length} <span className="v6-muted">chars</span></span>
-        </label>
-        <div style={{ position: "relative", display: "flex", gap: 0 }}>
-          {lineCount > 1 && (
-            <div style={{ padding: "10px 4px", background: "var(--v6-surface2)", border: "1px solid var(--v6-line)", borderRight: 0, borderRadius: "8px 0 0 8px", font: "9px var(--v6-mono)", color: "var(--v6-muted)", textAlign: "right", minWidth: 28, lineHeight: 1.5, display: "flex", flexDirection: "column", gap: 0, userSelect: "none" }}>
-              {Array.from({ length: lineCount }).map((_, i) => (<span key={i}>{i + 1}</span>))}
-            </div>
-          )}
-          <textarea className="v6-textarea" value={prompt} onChange={(e) => setPrompt(e.target.value.slice(0, 2000))} placeholder="Describe the animation\u2026\n\nThe person smiles warmly and gives a confident nod" style={{ borderRadius: lineCount > 1 ? "0 8px 8px 0" : 8, minHeight: 90 }} />
-        </div>
-      </div>
-
-      {/* Duration + Aspect visual chips */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div className="v6-field">
-          <label className="v6-field-label">Duration</label>
-          {isMobile ? (
-            <MobileChipScroller
-              items={DURATIONS.map(d => ({ label: `${d}s`, value: d }))}
-              selectedValue={duration}
-              onSelect={setDuration}
-            />
-          ) : (
-            <div className="v6-segmented">
-              {DURATIONS.map((d) => (
-                <button key={d} className={duration === d ? "v6-active" : ""} onClick={() => setDuration(d)}>
-                  <IconClock style={{ width: 10, height: 10 }} /> {d}s
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="v6-field">
-          <label className="v6-field-label">Aspect</label>
-          {isMobile ? (
-            <MobileChipScroller
-              items={ASPECTS.map(a => ({ label: a, value: a }))}
-              selectedValue={aspectRatio}
-              onSelect={setAspectRatio}
-            />
-          ) : (
-            <div className="v6-chip-row">
-              {ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-
-  /* ── Inspector ── */
-  const inspector = (
-    <div className="v6-control-stack">
-      <div className="v6-panel-title"><h3>Status</h3><span className={`v6-status${loading ? " v6-processing" : prompt && imageUrl ? "" : " v6-failed"}`}>{loading ? "Processing" : prompt && imageUrl ? "Ready" : "Incomplete"}</span></div>
-      <div className="v6-quote">
-        <div className="v6-quote-row"><span className="v6-muted">Model</span><strong>{currentModel.displayName}</strong></div>
-        <div className="v6-quote-row"><span className="v6-muted">Provider</span><strong>{currentModel.provider}</strong></div>
-        <div className="v6-quote-row"><span className="v6-muted">Duration</span><strong>{duration}s</strong></div>
-        <div className="v6-quote-row"><span className="v6-muted">Aspect</span><strong>{aspectRatio}</strong></div>
-        <div className="v6-quote-row"><span className="v6-muted">Cost</span><strong><IconBolt /> {cost ?? "\u2026"} credits</strong></div>
-        {balance > 0 && <div className="v6-quote-row"><span className="v6-muted">Balance</span><span className="v6-balance"><IconBolt /> {balance}</span></div>}
-        {shortfall > 0 && <div style={{ fontSize: 10, color: "var(--v6-bad)", marginTop: 4 }}>Need {shortfall} more credits</div>}
-      </div>
-
-      {/* Quick suggestions */}
-      {!prompt && (
-        <div style={{ marginTop: 12 }}>
-          <div className="v6-eyebrow">Animation Ideas</div>
-          <div className="v6-suggestions-row">
-            {AVATAR_SUGGESTIONS.map((s) => (<button key={s} className="v6-prompt-suggestion" onClick={() => setPrompt(s)} style={{ fontSize: 9 }}>{s.slice(0, 70)}</button>))}
-          </div>
-        </div>
+        <Dropzone value={null} onChange={onChange} accept={accept} label={`Drop the ${kind} or browse`} hint={hint} />
       )}
     </div>
   );
+}
 
-  const center = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      <StageArea generating={loading} result={result} model={currentModel.displayName} toolLabel="Avatar Studio" toolDesc="Upload a portrait and describe the animation \u2014 bring a still image to life with natural motion." toolIcon={<IconUsers />} onDownload={handleDownload} onNew={handleNew} />
-      <PromptDock value={prompt} onChange={(v) => setPrompt(v.slice(0, 2000))} onSubmit={handleGenerate} cost={cost} generating={loading} stage={loading ? "generating" : undefined} />
+/* The only capability signal the live catalog carries is the model's own input
+   schema — `serializeCatalogModel` emits `schema`, never a `has*` flag. No
+   schema means "unknown", and unknown is not a reason to hide a source. */
+function offers(model, field) {
+  const declared = model?.schema?.fields;
+  if (!declared) return true;
+  return !!declared[field];
+}
+
+const FALLBACK_DURATIONS = [5, 10];
+const FALLBACK_RATIOS = ["16:9", "9:16", "1:1"];
+
+const EXAMPLES = [
+  "Speaks straight to camera, small nods on the stresses, still shoulders",
+  "Warm and unhurried, half smile between sentences, soft key from the left",
+  "Explains with light hand gestures, brief glance away, returns to camera",
+  "Steady news read, minimal movement, neutral expression throughout",
+];
+
+export default function AvatarStudio({ initialModel, templateConfig, onCreditsChanged }) {
+  const [modelId, setModelId] = useState(initialModel || null);
+  const [portrait, setPortrait] = useState(null);
+  const [voice, setVoice] = useState(null);
+  const [direction, setDirection] = useState("");
+  const [seconds, setSeconds] = useState(5);
+  const [ratio, setRatio] = useState("16:9");
+  const [sheet, setSheet] = useState(false);
+
+  const { models, loading: loadingModels } = useModelCatalog({});
+  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+
+  /* Avatar models carry the `avatar-video` capability, which lives in the
+     lipsync group; a few video-to-video models are also avatar-capable. Both
+     routes are filtered by the scalar `capability` field the catalog emits,
+     then narrowed by name — never by a `has*` flag, which never arrives. */
+  const available = useMemo(() => (models || []).filter((m) => {
+    if (m.capability !== "avatar-video" && !matchesGroup(m, "v2v")) return false;
+    const text = `${m.id || ""} ${m.displayName || m.name || ""}`.toLowerCase();
+    return m.capability === "avatar-video" || text.includes("avatar");
+  }), [models]);
+
+  const model = available.find((m) => m.id === modelId) || available[0] || null;
+
+  useEffect(() => {
+    if (available.length && !available.some((m) => m.id === modelId)) setModelId(available[0].id);
+  }, [available, modelId]);
+
+  useEffect(() => {
+    if (!templateConfig) return;
+    if (templateConfig.prompt) setDirection(templateConfig.prompt);
+    if (templateConfig.aspect_ratio) setRatio(templateConfig.aspect_ratio);
+    if (templateConfig.duration) setSeconds(Number(templateConfig.duration));
+    if (templateConfig.model) setModelId(templateConfig.model);
+  }, [templateConfig]);
+
+  /* `durations` and `aspectRatios` are always arrays — [] when the model does
+     not offer a choice. These are the fields the catalog genuinely emits. */
+  const durations = model?.durations?.length
+    ? model.durations.map(Number).filter(Number.isFinite)
+    : FALLBACK_DURATIONS;
+  const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
+
+  useEffect(() => {
+    if (durations.length && !durations.includes(seconds)) setSeconds(durations[0]);
+  }, [durations, seconds]);
+  useEffect(() => {
+    if (ratios.length && !ratios.includes(ratio)) setRatio(ratios[0]);
+  }, [ratios, ratio]);
+
+  const portraitUrl = portrait?.url || null;
+  const voiceUrl = voice?.url || null;
+  const needsVoice = offers(model, "audio_url");
+  const ready = !!portraitUrl && (!needsVoice || !!voiceUrl);
+
+  /* Same tool string and same params as submit() below — verified in step, so
+     the quote and the charge cannot diverge. */
+  const costParams = useMemo(() => ({
+    duration: seconds,
+    aspect_ratio: ratio,
+    image_url: portraitUrl || undefined,
+    ...(needsVoice && voiceUrl ? { audio_url: voiceUrl } : {}),
+  }), [seconds, ratio, portraitUrl, needsVoice, voiceUrl]);
+
+  const { cost, affordable, balance, shortfall } = useCreditCost("v2v", model?.id || "", costParams);
+
+  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
+
+  const { peaks, real } = useWaveform(voiceUrl);
+  const { ref, playing, current, duration: voiceLength, toggle, seek } = useTransport(voiceUrl);
+  const shownPeaks = peaks || (voiceLength ? placeholderPeaks(voiceLength) : null);
+  const progress = voiceLength > 0 ? Math.min(1, current / voiceLength) : 0;
+
+  const generate = useCallback(() => {
+    if (!model || !ready) return;
+    submit("v2v", model.id, {
+      endpoint: model.endpoint || model.id,
+      prompt: direction.trim(),
+      image_url: portraitUrl,
+      ...(needsVoice && voiceUrl ? { audio_url: voiceUrl } : {}),
+      duration: seconds,
+      aspect_ratio: ratio,
+    });
+  }, [model, ready, submit, direction, portraitUrl, needsVoice, voiceUrl, seconds, ratio]);
+
+  const startOver = useCallback(() => {
+    reset();
+    setPortrait(null);
+    setVoice(null);
+    setDirection("");
+  }, [reset]);
+
+  /* ── Controls ─────────────────────────────────────────────────────────── */
+  const controls = (
+    <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+      <ModelPicker
+        models={available}
+        value={model?.id}
+        onSelect={setModelId}
+        loading={loadingModels}
+        label="Avatar model"
+        emptyHint="No avatar models in the catalog yet."
+      />
+
+      <Field label="Take length" hint={model?.durations?.length ? "Lengths this model offers." : undefined}>
+        <Chips
+          label="Take length"
+          value={seconds}
+          onChange={setSeconds}
+          options={durations.map((d) => ({ value: d, label: `${d}s` }))}
+        />
+      </Field>
+
+      <Field label="Aspect ratio">
+        <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
+      </Field>
+
+      <Group label="This take">
+        <Specs
+          rows={[
+            { k: "Model", v: model?.displayName || model?.name },
+            { k: "Face", v: portrait ? "Portrait" : "Missing" },
+            { k: "Voice", v: needsVoice ? (voice ? (voiceLength ? clock(voiceLength) : "Loaded") : "Missing") : "Not used" },
+            { k: "Len", v: `${seconds}s` },
+            { k: "Ratio", v: ratio },
+          ]}
+        />
+      </Group>
     </div>
   );
 
-  return <StudioLayout controls={controls} inspector={inspector}>{center}</StudioLayout>;
+  /* ── Body ─────────────────────────────────────────────────────────────── */
+  const body = (
+    <div className="st-wave__body">
+      <div className="st-pair">
+        <Source
+          kind="portrait"
+          title="Face — portrait"
+          hint="JPG, PNG or WebP, face square on"
+          accept="image/*"
+          value={portrait}
+          onChange={setPortrait}
+          preview={portraitUrl ? <img src={portraitUrl} alt={portrait?.name || "Portrait"} /> : null}
+          icon={<IcImage />}
+        />
+
+        <span className="st-pair__link" aria-hidden="true"><IcLink className="hs-icon-sm" /></span>
+
+        <Source
+          kind="voice track"
+          title={needsVoice ? "Voice — audio" : "Voice — optional"}
+          hint="MP3 or WAV, speech only"
+          accept="audio/*"
+          value={voice}
+          onChange={setVoice}
+          preview={
+            voiceUrl ? (
+              <span style={{ display: "grid", placeItems: "center", gap: 6, color: "var(--filament-lit)" }}>
+                <IcMusic />
+                <span className="hs-mono" style={{ fontSize: 11, color: "var(--tx-dim)" }}>
+                  {voiceLength > 0 ? clock(voiceLength) : "--:--"}
+                </span>
+              </span>
+            ) : null
+          }
+          icon={<IcMic />}
+        />
+      </div>
+
+      <Waveform
+        peaks={shownPeaks}
+        progress={progress}
+        onSeek={voiceUrl ? seek : undefined}
+        muted={!voiceUrl}
+        label={voiceUrl ? "Voice track waveform" : "No voice track yet"}
+      />
+
+      <Transport
+        playing={playing}
+        current={current}
+        duration={voiceLength}
+        onToggle={toggle}
+        onSeek={seek}
+        disabled={!voiceUrl}
+      />
+
+      {voiceUrl && !real && (
+        <span className="hs-hint" style={{ textAlign: "center" }}>
+          The waveform is an estimate — this browser was not allowed to read the file to draw its
+          peaks. Playback, the playhead and the timecode are exact.
+        </span>
+      )}
+
+      {/* No `crossOrigin`: demanding CORS from a host that does not send it
+          would block playback outright. The waveform degrades instead. */}
+      <audio ref={ref} src={voiceUrl || undefined} preload="metadata" style={{ display: "none" }} />
+
+      {!ready && !generating && !result && !error && (
+        <div className="hs-empty">
+          <span className="hs-empty__mark"><IcPersona /></span>
+          <h3>Pair a face with a voice</h3>
+          <p>
+            {!portraitUrl
+              ? "Start with a portrait: one face, eyes toward the lens, even light. Then add the voice track it should perform."
+              : "Add the voice track. Its length sets the length of the take."}
+          </p>
+          <div className="hs-chips" style={{ justifyContent: "center", marginTop: "var(--s-2)" }}>
+            {EXAMPLES.map((e) => (
+              <button
+                key={e}
+                type="button"
+                className="hs-chip"
+                style={{ fontFamily: "var(--ff-ui)", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis" }}
+                title={e}
+                onClick={() => setDirection(e)}
+              >
+                {e.length > 44 ? `${e.slice(0, 44)}…` : e}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Errors, the real elapsed clock and the finished take all come from
+         <Stage>. It renders nothing when there is nothing to show, so the
+         pairing above stays visible the whole time. */}
+      {(generating || result || error) && (
+        <div style={{ minHeight: 280 }}>
+          <Stage
+            generating={generating}
+            result={result}
+            error={error}
+            stage={stage}
+            elapsed={elapsed}
+            ratio={ratio}
+            model={model?.displayName || model?.name}
+            settings={`${seconds}s · ${ratio}`}
+            onCancel={cancel}
+            onRetry={generate}
+            onNew={startOver}
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="st-wave">
+      <aside className="st-wave__controls" aria-label="Settings">{controls}</aside>
+
+      <div className="st-wave__main">
+        {body}
+
+        <div className="st-panel-tabs">
+          <button type="button" className="hs-btn hs-btn--sm" onClick={() => setSheet(true)}>
+            <IcSettings className="hs-icon-sm" /> Settings
+          </button>
+        </div>
+
+        <Brief
+          value={direction}
+          onChange={setDirection}
+          onSubmit={generate}
+          onCancel={cancel}
+          generating={generating}
+          stage={stage}
+          disabled={!model || !ready}
+          cost={cost || 0}
+          balance={balance}
+          affordable={affordable}
+          shortfall={shortfall}
+          maxChars={2000}
+          submitLabel="Perform"
+          placeholder={
+            !portraitUrl
+              ? "Add a portrait first, then direct the performance."
+              : needsVoice && !voiceUrl
+                ? "Add the voice track, then direct the performance."
+                : "Direct the performance: eyeline, gesture, energy."
+          }
+        />
+      </div>
+
+      <Sheet open={sheet} onClose={() => setSheet(false)} title="Settings">
+        {controls}
+      </Sheet>
+    </div>
+  );
 }

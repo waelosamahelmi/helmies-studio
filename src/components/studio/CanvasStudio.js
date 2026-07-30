@@ -1,1213 +1,2177 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useModelCatalog } from "@/components/studio/useModelCatalog";
+/* ══════════════════════════════════════════════════════════════════════════
+   CANVAS — compositional editor
+   ──────────────────────────────────────────────────────────────────────────
+   A real editor: direct manipulation on an infinite surface, a tool palette,
+   a context bar that follows the tool, a layer stack with per-layer
+   visibility, role and z-order, and a zoom readout in mono.
+
+   One renderer. The surface and the export are painted by the SAME function
+   (`paintComposition`), so what you see is what downloads. The previous build
+   drew the preview with DOM nodes and the export with Canvas 2D, and the two
+   disagreed about text size, image fit and text alignment.
+
+   Layout comes from the `.st-canvas` archetype in studio.css. One component
+   tree at every width — the layer stack is hidden by CSS below 1024px and the
+   same markup is reachable through a sheet.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Brief, ModelPicker, Sheet, Modal, Confirm,
+  Field, Segmented,
+  IcCursor, IcHand, IcText, IcImage,
+  IcZoomIn, IcZoomOut, IcFit, IcUndo, IcRedo,
+  IcEye, IcEyeOff, IcLock, IcTrash, IcCopy, IcLayers, IcArchive,
+  IcDownload, IcUpload, IcAlert, IcHistory, IcChevron,
+  IcPlus, IcRefresh, IcCheck, IcExternal, IcSpark,
+  useUpload,
+} from "@/components/studio/kit";
+import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
-import PromptDock from "./v6/PromptDock";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { useCreditCost } from "./useCreditCost";
 import { matchesGroup } from "@/lib/capability-groups";
+import { apiFetch } from "@/lib/client-fetch";
+import { compileCanvas } from "@/lib/canvas-compiler";
 
-/* ═══════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
    CONSTANTS
-   ═══════════════════════════════════════════════════════════ */
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const BLEND_MODES = [
+/* The 13 semantic roles the compiler understands. Every one of them is
+   selectable per layer, and every one of them reaches compileCanvas(). */
+const ROLES = [
+  { value: "layout_reference", label: "Layout reference" },
+  { value: "identity_reference", label: "Identity reference" },
+  { value: "style_reference", label: "Style reference" },
+  { value: "product_reference", label: "Product reference" },
+  { value: "background_reference", label: "Background reference" },
+  { value: "color_reference", label: "Colour reference" },
+  { value: "composition_anchor", label: "Composition anchor" },
+  { value: "logo", label: "Logo" },
+  { value: "preserve_exactly", label: "Preserve exactly" },
+  { value: "edit_target", label: "Edit target" },
+  { value: "remove_target", label: "Remove target" },
+  { value: "inpaint_region", label: "Inpaint region" },
+  { value: "text_content", label: "Text content" },
+];
+const ROLE_LABEL = Object.fromEntries(ROLES.map((r) => [r.value, r.label]));
+
+const BLENDS = [
   "normal", "multiply", "screen", "overlay", "darken", "lighten",
-  "color-dodge", "color-burn", "hard-light", "soft-light", "difference",
-  "exclusion", "hue", "saturation", "color", "luminosity",
+  "color-dodge", "color-burn", "hard-light", "soft-light",
+  "difference", "exclusion", "hue", "saturation", "color", "luminosity",
 ];
 
-const FONTS = [
-  "Inter", "Manrope", "DM Sans", "Space Grotesk", "Newsreader",
-  "Georgia", "JetBrains Mono", "Playfair Display", "system-ui",
+const FONTS = ["Inter", "Manrope", "DM Sans", "Space Grotesk", "Newsreader", "Playfair Display", "Georgia", "JetBrains Mono", "system-ui"];
+
+const SIZE_PRESETS = [
+  { label: "Square 1080", w: 1080, h: 1080 },
+  { label: "Portrait 1080×1350", w: 1080, h: 1350 },
+  { label: "Story 1080×1920", w: 1080, h: 1920 },
+  { label: "Landscape 1920×1080", w: 1920, h: 1080 },
+  { label: "Wide 2048×878", w: 2048, h: 878 },
 ];
+
+const BACKGROUNDS = ["transparent", "#000000", "#FFFFFF", "#0B0B10", "#F2EFE9", "#12233A"];
+
+const EXAMPLES = [
+  "Keep the product exactly as placed, replace the background with wet slate",
+  "Match the light in the reference and hold the logo where it sits",
+  "Remove the marked region and rebuild the wall behind it",
+  "Same layout, softer key from the left, cooler cast",
+];
+
+const MAX_HISTORY = 60;
+const MAX_BACKING = 4096;      // px per side of the preview backing store
+const MIN_ZOOM = 0.05;
+const MAX_ZOOM = 8;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ICONS — two shapes the kit does not carry, drawn to the same spec
+   ══════════════════════════════════════════════════════════════════════════ */
+const stroke = {
+  viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+  strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round",
+};
+const IcRect = ({ className = "hs-icon", ...rest }) => (
+  <svg {...stroke} className={className} aria-hidden="true" {...rest}><rect x="3.5" y="5.5" width="17" height="13" rx="2" /></svg>
+);
+const IcEllipse = ({ className = "hs-icon", ...rest }) => (
+  <svg {...stroke} className={className} aria-hidden="true" {...rest}><ellipse cx="12" cy="12" rx="8.6" ry="7" /></svg>
+);
 
 const TOOLS = [
-  { id: "select", label: "Select", shortcut: "V" },
-  { id: "rectangle", label: "Rectangle", shortcut: "R" },
-  { id: "circle", label: "Circle", shortcut: "C" },
-  { id: "text", label: "Text", shortcut: "T" },
-  { id: "hand", label: "Hand", shortcut: "H" },
-  { id: "image", label: "Image", shortcut: "I" },
+  { id: "select", label: "Select", key: "V", icon: IcCursor },
+  { id: "hand", label: "Pan", key: "H", icon: IcHand },
+  { id: "image", label: "Place image", key: "I", icon: IcImage },
+  { id: "text", label: "Text", key: "T", icon: IcText },
+  { id: "rect", label: "Rectangle", key: "R", icon: IcRect },
+  { id: "ellipse", label: "Ellipse", key: "O", icon: IcEllipse },
 ];
 
-const MAX_HISTORY = 50;
+/* ══════════════════════════════════════════════════════════════════════════
+   PURE HELPERS
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/* ═══════════════════════════════════════════════════════════
-   SVG ICONS — 24×24, stroke currentColor, strokeWidth 1.7
-   ═══════════════════════════════════════════════════════════ */
+let seq = 0;
+const uid = () => `l${Date.now().toString(36)}${(seq++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-const IconSelect = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><path d="M13 13l6 6"/></svg>);
-const IconRect = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>);
-const IconCircle = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/></svg>);
-const IconType = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/><line x1="4" y1="20" x2="20" y2="20"/></svg>);
-const IconHand = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M18 11V6a2 2 0 00-4 0v4"/><path d="M14 10V4a2 2 0 00-4 0v6"/><path d="M10 10.5V6a2 2 0 00-4 0v8"/><path d="M18 8a2 2 0 011 1.73V18a4 4 0 01-4 4H8.5a4 4 0 01-4-4v-6"/></svg>);
-const IconImage = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>);
-const IconPlus = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);
-const IconTrash = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>);
-const IconUpload = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>);
-const IconDownload = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>);
-const IconSave = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>);
-const IconFolder = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>);
-const IconBolt = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10"/></svg>);
-const IconEye = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>);
-const IconEyeOff = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>);
-const IconLock = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>);
-const IconCopy = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>);
-const IconGrip = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>);
-const IconZoomIn = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>);
-const IconZoomOut = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>);
-const IconFit = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>);
-const IconUndo = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>);
-const IconRedo = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>);
-const IconMerge = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>);
-const IconMove = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="15 19 12 22 9 19"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="12" y1="2" x2="12" y2="22"/></svg>);
-const IconChevronUp = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>);
-const IconChevronDown = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>);
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+const round = (n) => Math.round(n * 100) / 100;
 
-const toolIcons = { select: IconSelect, rectangle: IconRect, circle: IconCircle, text: IconType, hand: IconHand, image: IconImage };
+function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 
-/* ═══════════════════════════════════════════════════════════
-   HELPERS
-   ═══════════════════════════════════════════════════════════ */
-
-let _layerCounter = 1;
-function generateLayerId() { return `l-${Date.now().toString(36)}-${_layerCounter++}-${Math.random().toString(36).slice(2, 7)}`; }
-
-function createLayer(type, overrides = {}) {
-  const base = { id: generateLayerId(), type, name: `${type[0].toUpperCase() + type.slice(1)} ${_layerCounter}`, x: 0, y: 0, width: 400, height: 400, rotation: 0, opacity: 1, blendMode: "normal", visible: true, locked: false };
-  if (type === "image") return { ...base, src: "", width: 500, height: 500, ...overrides };
-  if (type === "text") return { ...base, text: "Text layer", fontFamily: "Inter", fontSize: 48, fontWeight: 700, textColor: "#ffffff", textAlign: "center", width: 600, height: 120, ...overrides };
-  if (type === "rectangle") return { ...base, fill: "#ff416f", stroke: "transparent", strokeWidth: 0, width: 300, height: 200, ...overrides };
-  if (type === "circle") return { ...base, fill: "#ff416f", stroke: "transparent", strokeWidth: 0, width: 200, height: 200, ...overrides };
-  return { ...base, ...overrides };
+/** Exact reduced ratio of the document, e.g. 1080×1350 → "4:5". */
+function exactRatio(w, h) {
+  const a = Math.max(1, Math.round(w)), b = Math.max(1, Math.round(h));
+  const g = gcd(a, b) || 1;
+  const rw = a / g, rh = b / g;
+  if (rw > 64 || rh > 64) return `${(a / b).toFixed(2)}:1`;
+  return `${rw}:${rh}`;
 }
 
-function cloneLayer(layer) {
-  return { ...layer, id: generateLayerId(), name: `${layer.name} copy` };
+/** The closest ratio the model actually offers. Falls back to the exact one. */
+function nearestRatio(w, h, options) {
+  const exact = exactRatio(w, h);
+  const list = (options || []).filter((r) => /^\d+:\d+$/.test(String(r)));
+  if (!list.length) return exact;
+  if (list.includes(exact)) return exact;
+  const target = w / h;
+  let best = list[0], bestD = Infinity;
+  for (const r of list) {
+    const [a, b] = String(r).split(":").map(Number);
+    if (!a || !b) continue;
+    const d = Math.abs(a / b - target);
+    if (d < bestD) { best = r; bestD = d; }
+  }
+  return best;
 }
 
-function loadImageElement(src) {
+/** Axis-aligned bounding box of a possibly rotated layer. */
+function aabb(l) {
+  const cx = l.x + l.width / 2, cy = l.y + l.height / 2;
+  const r = ((l.rotation || 0) * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(r)), sin = Math.abs(Math.sin(r));
+  const w = l.width * cos + l.height * sin;
+  const h = l.width * sin + l.height * cos;
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+
+function newLayer(type, over = {}) {
+  const base = {
+    id: uid(), type, name: "", x: 0, y: 0, width: 400, height: 400,
+    rotation: 0, opacity: 1, blend: "normal", visible: true, locked: false,
+    role: "layout_reference", mask: "none",
+  };
+  if (type === "image") return { ...base, name: "Image", src: "", fit: "cover", width: 640, height: 640, ...over };
+  if (type === "text") return { ...base, name: "Text", role: "text_content", text: "Double-click to edit", fontFamily: "Inter", fontSize: 72, fontWeight: 700, lineHeight: 1.2, color: "#FFFFFF", align: "center", width: 720, height: 160, ...over };
+  if (type === "rect") return { ...base, name: "Rectangle", role: "composition_anchor", fill: "#FF1B6B", stroke: "transparent", strokeWidth: 0, radius: 0, width: 480, height: 320, ...over };
+  return { ...base, name: "Ellipse", role: "composition_anchor", fill: "#FF1B6B", stroke: "transparent", strokeWidth: 0, width: 360, height: 360, ...over };
+}
+
+/** Documents saved by the previous build used other type and field names. */
+function migrate(raw) {
+  const type = raw?.type === "rectangle" ? "rect" : raw?.type === "circle" ? "ellipse" : raw?.type || "image";
+  const out = { ...newLayer(type), ...raw, type };
+  if (raw?.blendMode) out.blend = raw.blendMode;
+  if (raw?.textColor) out.color = raw.textColor;
+  if (raw?.textAlign) out.align = raw.textAlign;
+  if (!ROLE_LABEL[out.role]) out.role = type === "text" ? "text_content" : type === "image" ? "layout_reference" : "composition_anchor";
+  if (out.mask !== "include" && out.mask !== "exclude") out.mask = "none";
+  return out;
+}
+
+/* ── Image loading ──────────────────────────────────────────────────────────
+   `crossOrigin="anonymous"` against a provider that sends no CORS header does
+   not "taint" — the image simply fails to load, which is why the old export
+   silently produced nothing. Remote images go through /api/media/proxy, which
+   replies with `Access-Control-Allow-Origin: *`. If every CORS route fails we
+   still load the image so the composition is visible, and mark it unclean so
+   export can explain itself instead of throwing into a bare catch.          */
+
+function sameOrigin(src) {
+  if (!src) return false;
+  if (src.startsWith("data:") || src.startsWith("blob:")) return true;
+  if (src.startsWith("/")) return true;
+  try { return new URL(src, window.location.href).origin === window.location.origin; }
+  catch { return false; }
+}
+
+function loadTag(url, cors) {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = "anonymous";
+    if (cors) img.crossOrigin = "anonymous";
+    img.decoding = "async";
     img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
+    img.onerror = () => reject(new Error(`Could not load ${url}`));
+    img.src = url;
   });
 }
 
-/* ═══════════════════════════════════════════════════════════
-   CANVAS STUDIO
-   ═══════════════════════════════════════════════════════════ */
-
-export default function CanvasStudio() {
-  /* ── Canvas ── */
-  const [canvasWidth, setCanvasWidth] = useState(1080);
-  const [canvasHeight, setCanvasHeight] = useState(1080);
-  const [canvasBg, setCanvasBg] = useState("transparent");
-  const [layers, setLayers] = useState([]);
-  const [activeLayerId, setActiveLayerId] = useState(null);
-  const [zoom, setZoom] = useState(100);
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-
-  /* ── Tool ── */
-  const [activeTool, setActiveTool] = useState("select");
-
-  /* ── Generation ── */
-  const [selectedModelId, setSelectedModelId] = useState("");
-  const [prompt, setPrompt] = useState("");
-  const [generating, setGenerating] = useState(false);
-  const isMobile = useIsMobile();
-  const { models: catalogModels } = useModelCatalog({});
-  // Canvas generation supports both text-to-image and image-to-image models;
-  // merge both capability groups from the full catalog.
-  const canvasModels = useMemo(() => catalogModels.filter((m) => matchesGroup(m, "tti") || matchesGroup(m, "iti")), [catalogModels]);
-  useEffect(() => { if (canvasModels.length > 0 && !selectedModelId) setSelectedModelId(canvasModels[0].id); }, [canvasModels, selectedModelId]);
-  const { loading: generationLoading, result: genResult, error: genError, elapsed, submit } = useAsyncGeneration();
-  useEffect(() => { setGenerating(generationLoading); }, [generationLoading]);
-  useEffect(() => { if (genResult?.url && !generating) { addLayer("image", { src: genResult.url, name: `Generated ${layers.length + 1}`, x: (canvasWidth - 500) / 2, y: (canvasHeight - 500) / 2 }); } }, [genResult?.url, generating]);
-
-  const currentModel = canvasModels.find(m => m.id === selectedModelId) || canvasModels[0];
-
-  /* ── Documents ── */
-  const [document, setDocument] = useState(null);
-  const [docName, setDocName] = useState("Untitled");
-  const [loadedDocs, setLoadedDocs] = useState([]);
-  const [showDocList, setShowDocList] = useState(false);
-  const [showExport, setShowExport] = useState(false);
-  const [exportFormat, setExportFormat] = useState("png");
-  const [exportQuality, setExportQuality] = useState(0.9);
-  const [exportScale, setExportScale] = useState(1);
-  const [exporting, setExporting] = useState(false);
-
-  /* ── Refs ── */
-  const uploadRef = useRef(null);
-  const canvasWrapRef = useRef(null);
-  const canvasInnerRef = useRef(null);
-  const historyRef = useRef({ past: [], future: [] });
-  const [historyVersion, setHistoryVersion] = useState(0);
-
-  /* ── Interaction state ── */
-  const [isDrawing, setIsDrawing] = useState(false); // shape drawing
-  const [drawStart, setDrawStart] = useState(null); // shape start coords
-  const [drawPreview, setDrawPreview] = useState(null); // shape preview rect
-  const [editingTextId, setEditingTextId] = useState(null); // text layer being edited
-
-  /* ── Derived ── */
-  const activeLayer = useMemo(() => layers.find(l => l.id === activeLayerId), [layers, activeLayerId]);
-  const visibleLayers = useMemo(() => layers.filter(l => l.visible), [layers]);
-  // eslint-disable-next-line no-unused-vars
-  const _hv = historyVersion; // force re-render when history changes
-  const canUndo = historyRef.current.past.length > 0;
-  const canRedo = historyRef.current.future.length > 0;
-  const scale = zoom / 100;
-
-  /* ═══════════════════════════════════════════════════════════
-     HISTORY
-     ═══════════════════════════════════════════════════════════ */
-
-  const captureLayers = useCallback(() => layers.map(l => ({ ...l })), [layers]);
-
-  const pushUndo = useCallback(() => {
-    const snap = { layers: captureLayers(), canvasWidth, canvasHeight, canvasBg };
-    historyRef.current.past.push(snap);
-    historyRef.current.future = [];
-    if (historyRef.current.past.length > MAX_HISTORY) historyRef.current.past.shift();
-    setHistoryVersion(v => v + 1);
-  }, [captureLayers, canvasWidth, canvasHeight, canvasBg]);
-
-  const handleUndo = useCallback(() => {
-    const { past, future } = historyRef.current;
-    if (!past.length) return;
-    const current = { layers: captureLayers(), canvasWidth, canvasHeight, canvasBg };
-    future.push(current);
-    const prev = past.pop();
-    setLayers(prev.layers);
-    setCanvasWidth(prev.canvasWidth);
-    setCanvasHeight(prev.canvasHeight);
-    setCanvasBg(prev.canvasBg);
-    setActiveLayerId(null);
-    setHistoryVersion(v => v + 1);
-  }, [captureLayers, canvasWidth, canvasHeight, canvasBg]);
-
-  const handleRedo = useCallback(() => {
-    const { past, future } = historyRef.current;
-    if (!future.length) return;
-    const current = { layers: captureLayers(), canvasWidth, canvasHeight, canvasBg };
-    past.push(current);
-    const next = future.pop();
-    setLayers(next.layers);
-    setCanvasWidth(next.canvasWidth);
-    setCanvasHeight(next.canvasHeight);
-    setCanvasBg(next.canvasBg);
-    setActiveLayerId(null);
-    setHistoryVersion(v => v + 1);
-  }, [captureLayers, canvasWidth, canvasHeight, canvasBg]);
-
-  /* ═══════════════════════════════════════════════════════════
-     LAYER CRUD
-     ═══════════════════════════════════════════════════════════ */
-
-  const addLayer = useCallback((type = "image", overrides = {}) => {
-    pushUndo();
-    const layer = createLayer(type, overrides);
-    setLayers(prev => [...prev, layer]);
-    setActiveLayerId(layer.id);
-    return layer.id;
-  }, [pushUndo]);
-
-  const updateLayer = useCallback((id, patch) => {
-    setLayers(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l));
-  }, []);
-
-  const removeLayer = useCallback((id) => {
-    pushUndo();
-    setLayers(prev => prev.filter(l => l.id !== id));
-    setActiveLayerId(prev => prev === id ? null : prev);
-    setEditingTextId(prev => prev === id ? null : prev);
-  }, [pushUndo]);
-
-  const duplicateLayer = useCallback((id) => {
-    const src = layers.find(l => l.id === id);
-    if (!src) return;
-    pushUndo();
-    const cloned = cloneLayer(src);
-    setLayers(prev => [...prev, cloned]);
-    setActiveLayerId(cloned.id);
-  }, [layers, pushUndo]);
-
-  const moveLayerIndex = useCallback((id, newIndex) => {
-    pushUndo();
-    setLayers(prev => {
-      const idx = prev.findIndex(l => l.id === id);
-      if (idx < 0) return prev;
-      const arr = [...prev];
-      const [item] = arr.splice(idx, 1);
-      arr.splice(newIndex, 0, item);
-      return arr;
-    });
-  }, [pushUndo]);
-
-  const mergeDown = useCallback((id) => {
-    const idx = layers.findIndex(l => l.id === id);
-    if (idx <= 0) return;
-    pushUndo();
-    setLayers(prev => {
-      const arr = [...prev];
-      const upper = arr[idx];
-      const lower = arr[idx - 1];
-      arr.splice(idx, 1);
-      arr[idx - 1] = { ...lower, name: `${lower.name} + ${upper.name}` };
-      return arr;
-    });
-    setActiveLayerId(null);
-  }, [layers, pushUndo]);
-
-  const flattenAll = useCallback(() => {
-    if (layers.length < 2) return;
-    pushUndo();
-    setLayers(prev => [{ type: "image", id: generateLayerId(), name: "Flattened", x: 0, y: 0, width: canvasWidth, height: canvasHeight, rotation: 0, opacity: 1, blendMode: "normal", visible: true, locked: false, src: "" }]);
-    setActiveLayerId(null);
-  }, [layers.length, pushUndo, canvasWidth, canvasHeight]);
-
-  /* ═══════════════════════════════════════════════════════════
-     LAYER TRANSFORM HANDLERS (move / resize / rotate)
-     ═══════════════════════════════════════════════════════════ */
-
-  const screenToCanvas = useCallback((clientX, clientY) => {
-    const wrap = canvasWrapRef.current;
-    if (!wrap) return { x: 0, y: 0 };
-    const rect = wrap.getBoundingClientRect();
-    return {
-      x: (clientX - rect.left - panX) / scale,
-      y: (clientY - rect.top - panY) / scale,
-    };
-  }, [scale, panX, panY]);
-
-  const startMove = useCallback((e, layerId) => {
-    if (activeTool !== "select") return;
-    const layer = layers.find(l => l.id === layerId);
-    if (!layer || layer.locked) return;
-    e.stopPropagation();
-    e.preventDefault();
-    setActiveLayerId(layerId);
-    const start = screenToCanvas(e.clientX, e.clientY);
-    const startX = layer.x;
-    const startY = layer.y;
-    pushUndo();
-
-    const onMove = (ev) => {
-      const pos = screenToCanvas(ev.clientX, ev.clientY);
-      updateLayer(layerId, { x: startX + (pos.x - start.x), y: startY + (pos.y - start.y) });
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [activeTool, layers, screenToCanvas, pushUndo, updateLayer]);
-
-  const startResize = useCallback((e, layerId, corner) => {
-    if (activeTool !== "select") return;
-    const layer = layers.find(l => l.id === layerId);
-    if (!layer || layer.locked) return;
-    e.stopPropagation();
-    e.preventDefault();
-    setActiveLayerId(layerId);
-    const start = screenToCanvas(e.clientX, e.clientY);
-    const startX = layer.x, startY = layer.y, startW = layer.width, startH = layer.height;
-    pushUndo();
-
-    const onMove = (ev) => {
-      const pos = screenToCanvas(ev.clientX, ev.clientY);
-      const dx = pos.x - start.x, dy = pos.y - start.y;
-      let nx = startX, ny = startY, nw = startW, nh = startH;
-      const maintainAspect = ev.shiftKey;
-
-      if (corner.includes("br") || corner.includes("tr") || corner.includes("right")) nw = Math.max(10, startW + dx);
-      if (corner.includes("br") || corner.includes("bl") || corner.includes("bottom")) nh = Math.max(10, startH + dy);
-      if (corner.includes("tl") || corner.includes("bl") || corner.includes("left")) { nw = Math.max(10, startW - dx); nx = startX + dx; }
-      if (corner.includes("tl") || corner.includes("tr") || corner.includes("top")) { nh = Math.max(10, startH - dy); ny = startY + dy; }
-
-      if (maintainAspect) {
-        const ratio = startW / startH;
-        if (Math.abs(dx) > Math.abs(dy)) { nh = nw / ratio; if (corner.includes("top")) ny = startY + startH - nh; }
-        else { nw = nh * ratio; if (corner.includes("left")) nx = startX + startW - nw; }
-      }
-
-      if (nw < 10) nw = 10;
-      if (nh < 10) nh = 10;
-
-      updateLayer(layerId, { x: nx, y: ny, width: nw, height: nh });
-    };
-    const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [activeTool, layers, screenToCanvas, pushUndo, updateLayer]);
-
-  const startRotate = useCallback((e, layerId) => {
-    if (activeTool !== "select") return;
-    const layer = layers.find(l => l.id === layerId);
-    if (!layer || layer.locked) return;
-    e.stopPropagation();
-    e.preventDefault();
-    setActiveLayerId(layerId);
-    const cx = layer.x + layer.width / 2, cy = layer.y + layer.height / 2;
-    const startAngle = Math.atan2(screenToCanvas(e.clientX, e.clientY).y - cy, screenToCanvas(e.clientX, e.clientY).x - cx) * 180 / Math.PI;
-    const startRot = layer.rotation;
-    pushUndo();
-
-    const onMove = (ev) => {
-      const pos = screenToCanvas(ev.clientX, ev.clientY);
-      const angle = Math.atan2(pos.y - cy, pos.x - cx) * 180 / Math.PI;
-      let rot = startRot + (angle - startAngle);
-      rot = rot % 360;
-      if (ev.shiftKey) rot = Math.round(rot / 15) * 15;
-      updateLayer(layerId, { rotation: rot });
-    };
-    const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [activeTool, layers, screenToCanvas, pushUndo, updateLayer]);
-
-  /* ═══════════════════════════════════════════════════════════
-     CANVAS CLICK — tool actions
-     ═══════════════════════════════════════════════════════════ */
-
-  const handleCanvasPointerDown = useCallback((e) => {
-    // Only respond to clicks on the canvas area itself (not the empty state overlay)
-    if (!canvasInnerRef.current?.contains(e.target) && e.target !== canvasWrapRef.current) return;
-    setActiveLayerId(null);
-    if (activeTool === "rectangle" || activeTool === "circle") {
-      const pos = screenToCanvas(e.clientX, e.clientY);
-      setDrawStart(pos);
-      setDrawPreview({ ...pos, w: 0, h: 0 });
-      setIsDrawing(true);
-      e.preventDefault();
-    }
-    if (activeTool === "text") {
-      const pos = screenToCanvas(e.clientX, e.clientY);
-      const layerId = addLayer("text", { x: pos.x - 300, y: pos.y - 60 });
-      setActiveTool("select");
-    }
-  }, [activeTool, screenToCanvas, addLayer]);
-
-  const handleCanvasPointerMove = useCallback((e) => {
-    if (!isDrawing || !drawStart) return;
-    const pos = screenToCanvas(e.clientX, e.clientY);
-    if (activeTool === "rectangle") {
-      setDrawPreview({ x: Math.min(drawStart.x, pos.x), y: Math.min(drawStart.y, pos.y), w: Math.abs(pos.x - drawStart.x), h: Math.abs(pos.y - drawStart.y) });
-    } else if (activeTool === "circle") {
-      const r = Math.max(Math.abs(pos.x - drawStart.x), Math.abs(pos.y - drawStart.y));
-      setDrawPreview({ x: drawStart.x - r, y: drawStart.y - r, w: r * 2, h: r * 2 });
-    }
-  }, [isDrawing, drawStart, activeTool, screenToCanvas]);
-
-  const handleCanvasPointerUp = useCallback((e) => {
-    if (!isDrawing || !drawStart) { setIsDrawing(false); setDrawStart(null); setDrawPreview(null); return; }
-    const pos = screenToCanvas(e.clientX, e.clientY);
-    const type = activeTool;
-    setIsDrawing(false);
-    setDrawStart(null);
-    setDrawPreview(null);
-    if (type === "rectangle" && Math.abs(pos.x - drawStart.x) > 5 && Math.abs(pos.y - drawStart.y) > 5) {
-      addLayer("rectangle", { x: Math.min(drawStart.x, pos.x), y: Math.min(drawStart.y, pos.y), width: Math.abs(pos.x - drawStart.x), height: Math.abs(pos.y - drawStart.y) });
-      setActiveTool("select");
-    }
-    if (type === "circle" && Math.abs(pos.x - drawStart.x) > 5) {
-      const r = Math.max(Math.abs(pos.x - drawStart.x), Math.abs(pos.y - drawStart.y));
-      addLayer("circle", { x: drawStart.x - r, y: drawStart.y - r, width: r * 2, height: r * 2 });
-      setActiveTool("select");
-    }
-  }, [isDrawing, drawStart, activeTool, screenToCanvas, addLayer]);
-
-  /* ═══════════════════════════════════════════════════════════
-     PAN / ZOOM — native wheel listener (React onWheel is passive)
-     ═══════════════════════════════════════════════════════════ */
-
-  useEffect(() => {
-    const wrap = canvasWrapRef.current;
-    if (!wrap) return;
-    const onWheel = (e) => {
-      if (e.ctrlKey || e.metaKey) return;
-      e.preventDefault();
-      const rect = wrap.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      const s = zoom / 100;
-      const delta = e.deltaY > 0 ? -10 : 10;
-      const newZ = Math.max(25, Math.min(400, zoom + delta));
-      const newS = newZ / 100;
-      const cx = (mouseX - panX) / s;
-      const cy = (mouseY - panY) / s;
-      setZoom(newZ);
-      setPanX(mouseX - cx * newS);
-      setPanY(mouseY - cy * newS);
-    };
-    wrap.addEventListener("wheel", onWheel, { passive: false });
-    return () => wrap.removeEventListener("wheel", onWheel);
-  }, [zoom, panX, panY]);
-
-  const startPan = useCallback((e) => {
-    if (activeTool !== "hand" && e.button !== 1) return;
-    e.preventDefault();
-    const startX = e.clientX - panX;
-    const startY = e.clientY - panY;
-    const onMove = (ev) => { setPanX(ev.clientX - startX); setPanY(ev.clientY - startY); };
-    const onUp = () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [activeTool, panX, panY]);
-
-  const fitToScreen = useCallback(() => {
-    const wrap = canvasWrapRef.current;
-    if (!wrap) return;
-    const rect = wrap.getBoundingClientRect();
-    const pad = 40;
-    const availW = rect.width - pad * 2, availH = rect.height - pad * 2;
-    const fit = Math.min(availW / canvasWidth, availH / canvasHeight, 4);
-    setZoom(Math.round(fit * 100));
-    setPanX(0);
-    setPanY(0);
-  }, [canvasWidth, canvasHeight]);
-
-  /* ═══════════════════════════════════════════════════════════
-     DROP / UPLOAD
-     ═══════════════════════════════════════════════════════════ */
-
-  const handleDrop = useCallback(async (e) => {
-    e.preventDefault();
-    const files = e.dataTransfer?.files;
-    if (!files?.length) return;
-    for (const file of files) {
-      if (!file.type.startsWith("image/")) continue;
-      const fd = new FormData(); fd.append("file", file);
-      try {
-        const res = await fetch("/api/upload", { method: "POST", body: fd });
-        const data = await res.json();
-        if (data.url) {
-          const centerX = (canvasWidth - 500) / 2;
-          const centerY = (canvasHeight - 500) / 2;
-          addLayer("image", { src: data.url, name: file.name, x: centerX, y: centerY, width: 500, height: 500 });
-        }
-      } catch { /* ignore */ }
-    }
-  }, [canvasWidth, canvasHeight, addLayer]);
-
-  const handleDragOver = useCallback((e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }, []);
-
-  const handleFileChange = useCallback(async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const fd = new FormData(); fd.append("file", file);
-    try {
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (data.url) {
-        const centerX = (canvasWidth - 500) / 2;
-        const centerY = (canvasHeight - 500) / 2;
-        addLayer("image", { src: data.url, name: file.name, x: centerX, y: centerY, width: 500, height: 500 });
-      }
-    } catch { /* ignore */ }
-    e.target.value = "";
-  }, [canvasWidth, canvasHeight, addLayer]);
-
-  const handleUpload = useCallback(() => uploadRef.current?.click(), []);
-
-  /* ═══════════════════════════════════════════════════════════
-     EXPORT
-     ═══════════════════════════════════════════════════════════ */
-
-  const handleExport = useCallback(async () => {
-    setExporting(true);
-    try {
-      const w = Math.round(canvasWidth * exportScale);
-      const h = Math.round(canvasHeight * exportScale);
-      const canvas = document.createElement("canvas");
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext("2d");
-
-      // Background
-      if (canvasBg === "transparent") {
-        // leave transparent
-      } else if (canvasBg.startsWith("#") || canvasBg.startsWith("rgb")) {
-        ctx.fillStyle = canvasBg;
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      // Draw layers bottom-to-top
-      const ordered = [...layers].filter(l => l.visible);
-      for (const layer of ordered) {
-        ctx.save();
-        ctx.globalAlpha = layer.opacity;
-        if (layer.blendMode !== "normal") ctx.globalCompositeOperation = layer.blendMode;
-
-        const sx = layer.x * exportScale;
-        const sy = layer.y * exportScale;
-        const sw = layer.width * exportScale;
-        const sh = layer.height * exportScale;
-        const cx = sx + sw / 2, cy = sy + sh / 2;
-
-        ctx.translate(cx, cy);
-        ctx.rotate((layer.rotation * Math.PI) / 180);
-        ctx.translate(-sw / 2, -sh / 2);
-
-        if (layer.type === "image" && layer.src) {
-          try {
-            const img = await loadImageElement(layer.src);
-            ctx.drawImage(img, 0, 0, sw, sh);
-          } catch { /* skip failed images */ }
-        } else if (layer.type === "text") {
-          ctx.fillStyle = layer.textColor || "#ffffff";
-          const fs = (layer.fontSize || 48) * exportScale;
-          ctx.font = `${layer.fontWeight || 700} ${fs}px ${layer.fontFamily || "Inter"}, system-ui, sans-serif`;
-          ctx.textAlign = layer.textAlign || "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(layer.text || "", sw / 2, sh / 2);
-        } else if (layer.type === "rectangle") {
-          if (layer.fill && layer.fill !== "transparent") { ctx.fillStyle = layer.fill; ctx.fillRect(0, 0, sw, sh); }
-          if (layer.stroke && layer.stroke !== "transparent" && layer.strokeWidth > 0) { ctx.strokeStyle = layer.stroke; ctx.lineWidth = layer.strokeWidth * exportScale; ctx.strokeRect(0, 0, sw, sh); }
-        } else if (layer.type === "circle") {
-          ctx.beginPath();
-          ctx.ellipse(sw / 2, sh / 2, sw / 2, sh / 2, 0, 0, Math.PI * 2);
-          if (layer.fill && layer.fill !== "transparent") { ctx.fillStyle = layer.fill; ctx.fill(); }
-          if (layer.stroke && layer.stroke !== "transparent" && layer.strokeWidth > 0) { ctx.strokeStyle = layer.stroke; ctx.lineWidth = layer.strokeWidth * exportScale; ctx.stroke(); }
-        }
-        ctx.restore();
-      }
-
-      const mime = exportFormat === "jpg" ? "image/jpeg" : exportFormat === "webp" ? "image/webp" : "image/png";
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, mime, exportFormat === "png" ? undefined : exportQuality));
-      if (blob) {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${docName.replace(/\s+/g, "_")}.${exportFormat}`;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-    } catch { /* ignore */ }
-    setExporting(false);
-    setShowExport(false);
-  }, [canvasWidth, canvasHeight, canvasBg, layers, exportScale, exportFormat, exportQuality, docName]);
-
-  /* ═══════════════════════════════════════════════════════════
-     DOCUMENT SAVE / LOAD
-     ═══════════════════════════════════════════════════════════ */
-
-  useEffect(() => { fetch("/api/canvas").then(r => r.json()).then(docs => { if (Array.isArray(docs)) setLoadedDocs(docs); }).catch(() => {}); }, []);
-
-  const saveDocument = useCallback(async () => {
-    const content = { width: canvasWidth, height: canvasHeight, background: canvasBg, layers };
-    try {
-      if (document?.id) {
-        const res = await fetch("/api/canvas", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: document.id, name: docName, content }) });
-        setDocument(await res.json());
-      } else {
-        const res = await fetch("/api/canvas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: docName, content }) });
-        const doc = await res.json();
-        setDocument(doc);
-        setLoadedDocs(prev => [doc, ...prev]);
-      }
-    } catch { /* ignore */ }
-  }, [document, docName, canvasWidth, canvasHeight, canvasBg, layers]);
-
-  const loadDocument = useCallback((doc) => {
-    setDocument(doc);
-    setDocName(doc.name || "Untitled");
-    const c = doc.content || {};
-    setLayers(c.layers || []);
-    if (c.width) setCanvasWidth(c.width);
-    if (c.height) setCanvasHeight(c.height);
-    if (c.background) setCanvasBg(c.background);
-    setActiveLayerId(null);
-    setEditingTextId(null);
-    setShowDocList(false);
-    setPanX(0); setPanY(0);
-  }, []);
-
-  const newDocument = useCallback(() => {
-    setDocument(null); setDocName("Untitled"); setLayers([]); setActiveLayerId(null);
-    setCanvasWidth(1080); setCanvasHeight(1080); setCanvasBg("transparent");
-    setShowDocList(false); setPanX(0); setPanY(0); setZoom(100);
-    historyRef.current = { past: [], future: [] };
-    setHistoryVersion(v => v + 1);
-    setEditingTextId(null);
-  }, []);
-
-  /* ═══════════════════════════════════════════════════════════
-     GENERATION
-     ═══════════════════════════════════════════════════════════ */
-
-  const handleGenerate = useCallback(async () => {
-    if (!prompt.trim()) return;
-    try {
-      const { compileCanvas } = await import("@/lib/canvas-compiler");
-      const canvasContext = { canvas: { width: canvasWidth, height: canvasHeight }, objects: layers.filter(l => l.type === "image" && l.src).map(l => ({ id: l.id, type: "image", src: l.src, role: "layout_reference", bounds: { left: l.x, top: l.y, width: l.width, height: l.height } })) };
-      const compiled = compileCanvas(canvasContext, { modelId: selectedModelId, prompt, aspectRatio: "1:1" });
-      const params = compiled?.request ? { ...compiled.request, canvas_context: canvasContext, canvas_compiled: compiled } : { endpoint: currentModel?.endpoint || selectedModelId, prompt, aspect_ratio: "1:1" };
-      submit("image", selectedModelId, params);
-    } catch { submit("image", selectedModelId, { endpoint: currentModel?.endpoint || selectedModelId, prompt, aspect_ratio: "1:1" }); }
-  }, [prompt, selectedModelId, currentModel, layers, canvasWidth, canvasHeight, submit]);
-
-  /* ═══════════════════════════════════════════════════════════
-     KEYBOARD SHORTCUTS
-     ═══════════════════════════════════════════════════════════ */
-
-  useEffect(() => {
-    const handler = (e) => {
-      const target = e.target;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-
-      const mod = e.metaKey || e.ctrlKey;
-
-      // Undo / Redo
-      if (mod && e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); return; }
-      if (mod && (e.key === "z" && e.shiftKey) || (mod && e.key === "Z")) { e.preventDefault(); handleRedo(); return; }
-      if (mod && e.key === "s") { e.preventDefault(); saveDocument(); return; }
-      if (mod && e.key === "d") { e.preventDefault(); if (activeLayerId) duplicateLayer(activeLayerId); return; }
-      if (mod && e.key === "a") { e.preventDefault(); /* select all - visual only */ return; }
-
-      // Tool shortcuts (no modifier)
-      if (!mod) {
-        if (e.key === "v" || e.key === "V") { setActiveTool("select"); return; }
-        if (e.key === "r" || e.key === "R") { setActiveTool("rectangle"); return; }
-        if (e.key === "c" || e.key === "C") { setActiveTool("circle"); return; }
-        if (e.key === "t" || e.key === "T") { setActiveTool("text"); return; }
-        if (e.key === "h" || e.key === "H") { setActiveTool("hand"); return; }
-        if (e.key === "i" || e.key === "I") { setActiveTool("image"); return; }
-        if (e.key === "Delete" || e.key === "Backspace") { if (activeLayerId) removeLayer(activeLayerId); return; }
-        if (e.key === "Escape") { if (editingTextId) { setEditingTextId(null); return; } setActiveLayerId(null); setActiveTool("select"); return; }
-
-        // Nudge with arrow keys
-        if (activeLayerId && activeLayer) {
-          const nudge = e.shiftKey ? 10 : 1;
-          if (e.key === "ArrowLeft") { e.preventDefault(); pushUndo(); updateLayer(activeLayerId, { x: activeLayer.x - nudge }); }
-          if (e.key === "ArrowRight") { e.preventDefault(); pushUndo(); updateLayer(activeLayerId, { x: activeLayer.x + nudge }); }
-          if (e.key === "ArrowUp") { e.preventDefault(); pushUndo(); updateLayer(activeLayerId, { y: activeLayer.y - nudge }); }
-          if (e.key === "ArrowDown") { e.preventDefault(); pushUndo(); updateLayer(activeLayerId, { y: activeLayer.y + nudge }); }
-        }
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [activeLayerId, activeLayer, editingTextId, handleUndo, handleRedo, saveDocument, duplicateLayer, removeLayer, pushUndo, updateLayer]);
-
-  /* ═══════════════════════════════════════════════════════════
-     RENDER
-     ═══════════════════════════════════════════════════════════ */
-
-  const canvasBgStyle = useMemo(() => {
-    if (canvasBg === "transparent") return {
-      backgroundImage: `
-        linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%),
-        linear-gradient(-45deg, rgba(255,255,255,0.03) 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.03) 75%),
-        linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.03) 75%)
-      `,
-      backgroundSize: "20px 20px",
-      backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
-    };
-    if (canvasBg.startsWith("#") || canvasBg.startsWith("rgb")) return { backgroundColor: canvasBg };
-    return {};
-  }, [canvasBg]);
-
-  // Layer panel drag reorder
-  const [dragLayerId, setDragLayerId] = useState(null);
-  const [dragOverLayerId, setDragOverLayerId] = useState(null);
-
-  const handleLayerDragStart = useCallback((e, layerId) => {
-    setDragLayerId(layerId);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", layerId);
-  }, []);
-
-  const handleLayerDragOver = useCallback((e, layerId) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverLayerId(layerId);
-  }, []);
-
-  const handleLayerDrop = useCallback((e, targetId) => {
-    e.preventDefault();
-    setDragLayerId(null);
-    setDragOverLayerId(null);
-    const sourceId = e.dataTransfer.getData("text/plain");
-    if (!sourceId || sourceId === targetId) return;
-    const targetIdx = layers.findIndex(l => l.id === targetId);
-    if (targetIdx < 0) return;
-    moveLayerIndex(sourceId, targetIdx);
-  }, [layers, moveLayerIndex]);
-
-  const handleLayerDragEnd = useCallback(() => {
-    setDragLayerId(null);
-    setDragOverLayerId(null);
-  }, []);
-
-  return (
-    <div className="v6-canvas-board">
-      {/* ═══ TOOLS PALETTE (left) ═══ */}
-      <div className="v6-canvas-tools">
-        {isMobile ? (
-          <MobileChipScroller
-            items={TOOLS.map(t => ({ label: t.label, value: t.id }))}
-            selectedValue={activeTool}
-            onSelect={setActiveTool}
-          />
-        ) : (
-          TOOLS.map(tool => {
-            const Icon = toolIcons[tool.id];
-            return (
-              <button
-                key={tool.id}
-                className={`v6-tooltip ${activeTool === tool.id ? "v6-active" : ""}`}
-                onClick={() => setActiveTool(tool.id)}
-                data-tooltip={`${tool.label} (${tool.shortcut})`}
-                style={activeTool === tool.id ? { boxShadow: "0 0 16px var(--v6-accent)44" } : {}}
-              >
-                {Icon ? <Icon /> : null}
-              </button>
-            );
-          })
-        )}
-        <div className="v6-section-rule" style={{ width: "60%", margin: "4px auto" }} />
-        <button className={`v6-tooltip ${!canUndo ? "v6-disabled" : ""}`} onClick={handleUndo} data-tooltip="Undo (Ctrl+Z)" disabled={!canUndo}><IconUndo /></button>
-        <button className={`v6-tooltip ${!canRedo ? "v6-disabled" : ""}`} onClick={handleRedo} data-tooltip="Redo (Ctrl+Shift+Z)" disabled={!canRedo}><IconRedo /></button>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => setShowDocList(v => !v)} className="v6-tooltip" data-tooltip="Documents"><IconFolder /></button>
-        <button onClick={handleUpload} className="v6-tooltip" data-tooltip="Upload image"><IconUpload /></button>
-        <button onClick={saveDocument} className="v6-tooltip" data-tooltip="Save (Ctrl+S)"><IconSave /></button>
-        <button onClick={() => setShowExport(v => !v)} className="v6-tooltip" data-tooltip="Export"><IconDownload /></button>
-      </div>
-
-      {/* ═══ CANVAS AREA (center) ═══ */}
-      <div className="v6-artboard-wrap">
-        {/* Document list overlay */}
-        <AnimatePresence>
-          {showDocList && (
-            <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}
-              style={{ position: "absolute", top: 12, left: 12, zIndex: 20, minWidth: 260, maxWidth: 340, background: "var(--v6-surface)", border: "1px solid var(--v6-line)", borderRadius: 14, padding: 10, boxShadow: "var(--v6-shadow)", maxHeight: "50vh", overflow: "auto" }}>
-              <div className="v6-eyebrow" style={{ padding: "4px 8px 6px" }}>Documents</div>
-              <button onClick={newDocument} style={{ width: "100%", border: "1px dashed var(--v6-line)", background: "transparent", color: "var(--v6-muted)", padding: "8px 12px", borderRadius: 9, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}><IconPlus /> New Document</button>
-              {loadedDocs.map(doc => (
-                <motion.button key={doc.id} onClick={() => loadDocument(doc)}
-                  initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.15 }}
-                  style={{ width: "100%", border: 0, background: document?.id === doc.id ? "var(--v6-surface2)" : "transparent", color: "var(--v6-text)", padding: "8px 12px", borderRadius: 9, fontSize: 11, cursor: "pointer", textAlign: "left", display: "block" }}>
-                  {doc.name || "Untitled"}<span style={{ display: "block", fontSize: 9, color: "var(--v6-muted)" }}>{doc.content?.layers?.length || 0} layers &middot; {doc.content?.width || 1080}&times;{doc.content?.height || 1080}</span>
-                </motion.button>
-              ))}
-              {loadedDocs.length === 0 && <p style={{ fontSize: 10, color: "var(--v6-muted)", textAlign: "center", padding: 12 }}>No saved documents.</p>}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Export modal */}
-        <AnimatePresence>
-          {showExport && (
-            <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={{ duration: 0.2 }}
-              style={{ position: "absolute", top: 12, left: 12, zIndex: 20, minWidth: 260, background: "var(--v6-surface)", border: "1px solid var(--v6-line)", borderRadius: 14, padding: 16, boxShadow: "var(--v6-shadow)" }}>
-              <div className="v6-panel-title"><h3>Export</h3><button onClick={() => setShowExport(false)} className="v6-btn v6-ghost v6-sm v6-icon-only" style={{ fontSize: 14 }}>&times;</button></div>
-              <div className="v6-field" style={{ marginTop: 8 }}><span className="v6-field-label">Format</span>
-                <select className="v6-input" value={exportFormat} onChange={e => setExportFormat(e.target.value)} style={{ fontSize: 11 }}>
-                  <option value="png">PNG</option>
-                  <option value="jpg">JPEG</option>
-                  <option value="webp">WebP</option>
-                </select>
-              </div>
-              {exportFormat !== "png" && (
-                <div className="v6-range-row" style={{ marginTop: 10 }}>
-                  <span className="v6-tiny v6-muted" style={{ minWidth: 28 }}>Quality</span>
-                  <input type="range" min="0.1" max="1" step="0.05" value={exportQuality} onChange={e => setExportQuality(Number(e.target.value))} />
-                  <span className="v6-tiny v6-mono" style={{ minWidth: 24, textAlign: "right" }}>{Math.round(exportQuality * 100)}%</span>
-                </div>
-              )}
-              <div className="v6-range-row" style={{ marginTop: 8 }}>
-                <span className="v6-tiny v6-muted" style={{ minWidth: 28 }}>Scale</span>
-                <input type="range" min="0.25" max="3" step="0.25" value={exportScale} onChange={e => setExportScale(Number(e.target.value))} />
-                <span className="v6-tiny v6-mono" style={{ minWidth: 24, textAlign: "right" }}>{exportScale}&times;</span>
-              </div>
-              <div style={{ fontSize: 9, color: "var(--v6-muted)", marginTop: 6, textAlign: "right" }}>
-                {Math.round(canvasWidth * exportScale)}&times;{Math.round(canvasHeight * exportScale)}px
-              </div>
-              <button className="v6-btn v6-primary" onClick={handleExport} disabled={exporting} style={{ width: "100%", marginTop: 12 }}>
-                {exporting ? "Exporting..." : <><IconDownload /> Export {exportFormat.toUpperCase()}</>}
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Canvas viewport */}
-        <div
-          ref={canvasWrapRef}
-          onPointerDown={(e) => { if (activeTool === "hand" || e.button === 1) startPan(e); else handleCanvasPointerDown(e); }}
-          onPointerMove={(e) => { if (activeTool === "hand" && e.buttons === 1) return; handleCanvasPointerMove(e); }}
-          onPointerUp={handleCanvasPointerUp}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          style={{
-            flex: 1, width: "100%", position: "relative", overflow: "hidden",
-            cursor: activeTool === "hand" ? "grab" : activeTool === "rectangle" || activeTool === "circle" ? "crosshair" : "default",
-            background: "radial-gradient(circle at center, rgba(255,65,111,0.03), transparent 70%), var(--v6-bg)",
-            touchAction: "none",
-          }}
-        >
-          {/* Drop zone indicator */}
-          <div className="v6-drop-zone" />
-
-          {/* Canvas inner — scaled & panned */}
-          <div
-            ref={canvasInnerRef}
-            style={{
-              position: "absolute",
-              width: canvasWidth,
-              height: canvasHeight,
-              transform: `translate(${panX}px, ${panY}px) scale(${scale})`,
-              transformOrigin: "0 0",
-              ...canvasBgStyle,
-              boxShadow: "0 20px 80px rgba(0,0,0,0.6), 0 0 0 1px var(--v6-line)",
-            }}
-          >
-            {/* Layers */}
-            {visibleLayers.map(layer => {
-              const isSelected = activeLayerId === layer.id;
-              return (
-                <div
-                  key={layer.id}
-                  onPointerDown={(e) => startMove(e, layer.id)}
-                  style={{
-                    position: "absolute",
-                    left: layer.x,
-                    top: layer.y,
-                    width: layer.width,
-                    height: layer.height,
-                    transform: `rotate(${layer.rotation}deg)`,
-                    transformOrigin: "center center",
-                    opacity: layer.opacity,
-                    mixBlendMode: layer.blendMode !== "normal" ? layer.blendMode : undefined,
-                    cursor: activeTool === "select" && !layer.locked ? "move" : "default",
-                    outline: isSelected ? "2px solid var(--v6-accent)" : "none",
-                    outlineOffset: isSelected ? 1 : 0,
-                    zIndex: 1,
-                  }}
-                >
-                  {/* Layer content */}
-                  {layer.type === "image" && layer.src ? (
-                    <img src={layer.src} alt={layer.name} style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} draggable={false} />
-                  ) : layer.type === "text" ? (
-                    <div
-                      contentEditable={editingTextId === layer.id && !layer.locked}
-                      suppressContentEditableWarning
-                      onBlur={(e) => { updateLayer(layer.id, { text: e.target.textContent }); setEditingTextId(null); }}
-                      onPointerDown={(e) => { if (editingTextId === layer.id) e.stopPropagation(); }}
-                      onDoubleClick={(e) => { if (!layer.locked) { e.stopPropagation(); setEditingTextId(layer.id); } }}
-                      style={{
-                        width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: layer.textAlign === "center" ? "center" : layer.textAlign === "right" ? "flex-end" : "flex-start",
-                        fontFamily: `${layer.fontFamily || "Inter"}, system-ui, sans-serif`,
-                        fontSize: `${(layer.fontSize || 48) / scale}px`,
-                        fontWeight: layer.fontWeight || 700,
-                        color: layer.textColor || "#ffffff",
-                        textAlign: layer.textAlign || "center",
-                        pointerEvents: editingTextId === layer.id ? "auto" : "none",
-                        overflow: "hidden",
-                        outline: editingTextId === layer.id ? "1px dashed var(--v6-accent)" : "none",
-                        outlineOffset: 2,
-                        padding: "4px 8px",
-                        lineHeight: 1.2,
-                        cursor: editingTextId === layer.id ? "text" : undefined,
-                      }}
-                    >
-                      {layer.text || "Text"}
-                    </div>
-                  ) : layer.type === "rectangle" ? (
-                    <div style={{ width: "100%", height: "100%", backgroundColor: layer.fill || "transparent", border: layer.stroke && layer.stroke !== "transparent" ? `${layer.strokeWidth}px solid ${layer.stroke}` : "none", pointerEvents: "none" }} />
-                  ) : layer.type === "circle" ? (
-                    <div style={{ width: "100%", height: "100%", borderRadius: "50%", backgroundColor: layer.fill || "transparent", border: layer.stroke && layer.stroke !== "transparent" ? `${layer.strokeWidth}px solid ${layer.stroke}` : "none", pointerEvents: "none" }} />
-                  ) : (
-                    <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "repeating-conic-gradient(rgba(255,255,255,0.02) 0% 25%, transparent 0% 50%) 50% / 12px 12px", color: "var(--v6-muted)", fontSize: 10, pointerEvents: "none" }}><IconImage /> Empty</div>
-                  )}
-
-                  {/* Selection handles */}
-                  {isSelected && !layer.locked && activeTool === "select" && (
-                    <>
-                      {/* Corner resize handles */}
-                      <div onPointerDown={(e) => startResize(e, layer.id, "tl")} style={cornerHandleStyle({ left: -5, top: -5, cursor: "nwse-resize" })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "tr")} style={cornerHandleStyle({ right: -5, top: -5, cursor: "nesw-resize" })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "bl")} style={cornerHandleStyle({ left: -5, bottom: -5, cursor: "nesw-resize" })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "br")} style={cornerHandleStyle({ right: -5, bottom: -5, cursor: "nwse-resize" })} />
-                      {/* Edge resize handles */}
-                      <div onPointerDown={(e) => startResize(e, layer.id, "top")} style={cornerHandleStyle({ left: "50%", top: -5, cursor: "ns-resize", marginLeft: -5 })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "bottom")} style={cornerHandleStyle({ left: "50%", bottom: -5, cursor: "ns-resize", marginLeft: -5 })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "left")} style={cornerHandleStyle({ left: -5, top: "50%", cursor: "ew-resize", marginTop: -5 })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "right")} style={cornerHandleStyle({ right: -5, top: "50%", cursor: "ew-resize", marginTop: -5 })} />
-                      {/* Rotation handle */}
-                      <div onPointerDown={(e) => startRotate(e, layer.id)} style={{
-                        position: "absolute", left: "50%", top: -28, transform: "translateX(-50%)",
-                        width: 18, height: 18, borderRadius: "50%",
-                        background: "var(--v6-accent)", border: "2px solid var(--v6-bg)",
-                        cursor: "grab", zIndex: 10, boxShadow: "0 0 12px rgba(255,65,111,0.5)",
-                      }} />
-                      {/* Rotation line */}
-                      <div style={{ position: "absolute", left: "50%", top: -12, width: 1, height: 12, background: "var(--v6-accent)", transform: "translateX(-50%)", pointerEvents: "none" }} />
-                      {/* Center crosshair */}
-                      <div style={{ position: "absolute", left: "50%", top: "50%", width: 8, height: 8, borderRadius: "50%", background: "var(--v6-accent)", transform: "translate(-50%, -50%)", pointerEvents: "none", opacity: 0.7 }} />
-                    </>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* Shape draw preview */}
-            {drawPreview && (
-              <div style={{ position: "absolute", left: drawPreview.x, top: drawPreview.y, width: drawPreview.w, height: drawPreview.h, border: "1px dashed var(--v6-accent)", background: "rgba(255,65,111,0.07)", pointerEvents: "none", zIndex: 5, borderRadius: activeTool === "circle" ? "50%" : 0 }} />
-            )}
-          </div>
-
-          {/* Empty state */}
-          {layers.length === 0 && !isDrawing && (
-            <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, color: "var(--v6-muted)", pointerEvents: "none", zIndex: 3 }}>
-              <div className="v6-empty-orbit"><IconMove /></div>
-              <div style={{ textAlign: "center" }}>
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: "var(--v6-text)", margin: "0 0 6px", letterSpacing: "-0.03em" }}>Drop images or start creating</h2>
-                <p style={{ fontSize: 11, margin: 0, maxWidth: 300, lineHeight: 1.5 }}>Drag images here, use a shape tool, or type text to start composing. Select a tool from the left palette.</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Bottom bar — zoom + prompt */}
-        <div style={{ padding: "6px 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-          {/* Zoom + Fit + Canvas size */}
-          {isMobile ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
-              <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.max(25, z - 25))} disabled={zoom <= 25}><IconZoomOut /></button>
-              <span className="v6-tiny v6-mono" style={{ minWidth: 36, textAlign: "center", color: "var(--v6-muted)" }}>{zoom}%</span>
-              <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.min(400, z + 25))} disabled={zoom >= 400}><IconZoomIn /></button>
-              <button className="v6-btn v6-icon-only v6-sm v6-tooltip" onClick={fitToScreen} data-tooltip="Fit to screen"><IconFit /></button>
-            </div>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
-              <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.max(25, z - 25))} disabled={zoom <= 25}><IconZoomOut /></button>
-              <input type="range" min="25" max="400" step="5" value={zoom} onChange={e => setZoom(Number(e.target.value))} style={{ width: 100, accentColor: "var(--v6-accent)", height: 4, cursor: "pointer" }} />
-              <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.min(400, z + 25))} disabled={zoom >= 400}><IconZoomIn /></button>
-              <span className="v6-tiny v6-mono" style={{ minWidth: 36, textAlign: "center", color: "var(--v6-muted)" }}>{zoom}%</span>
-              <button className="v6-btn v6-icon-only v6-sm v6-tooltip" onClick={fitToScreen} data-tooltip="Fit to screen"><IconFit /></button>
-              <div style={{ width: 1, height: 16, background: "var(--v6-line)", margin: "0 4px" }} />
-              <input type="number" value={canvasWidth} onChange={e => { pushUndo(); setCanvasWidth(Number(e.target.value) || 1); }} min={1} max={8000} style={{ width: 52, fontSize: 10, padding: "4px 6px", border: "1px solid var(--v6-line)", borderRadius: 6, background: "var(--v6-surface2)", color: "var(--v6-text)", textAlign: "center", fontFamily: "var(--v6-mono)" }} />
-              <span className="v6-tiny v6-muted">&times;</span>
-              <input type="number" value={canvasHeight} onChange={e => { pushUndo(); setCanvasHeight(Number(e.target.value) || 1); }} min={1} max={8000} style={{ width: 52, fontSize: 10, padding: "4px 6px", border: "1px solid var(--v6-line)", borderRadius: 6, background: "var(--v6-surface2)", color: "var(--v6-text)", textAlign: "center", fontFamily: "var(--v6-mono)" }} />
-              <span className="v6-tiny v6-muted">px</span>
-            </div>
-          )}
-
-          {/* Prompt dock for generation */}
-          <div style={{ maxWidth: 640, margin: "0 auto", width: "100%" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <span className="v6-eyebrow" style={{ flexShrink: 0 }}>Model</span>
-              {isMobile ? (
-                <MobileModelCarousel models={canvasModels} selectedModelId={selectedModelId} onSelect={setSelectedModelId} />
-              ) : (
-                <select className="v6-input" value={selectedModelId} onChange={e => setSelectedModelId(e.target.value)} style={{ flex: 1, fontSize: 11, padding: "6px 8px" }}>
-                  {canvasModels.map(m => <option key={m.id} value={m.id}>{m.name} &mdash; {m.provider}</option>)}
-                </select>
-              )}
-            </div>
-            <PromptDock value={prompt} onChange={setPrompt} onSubmit={generating ? () => {} : handleGenerate} generating={generating} stage={generating ? "compositing" : null} cost={currentModel?.speedTier === "premium" ? "8c" : "4c"} />
-            {genResult?.url && !generating && (
-              <div style={{ marginTop: 8, padding: 10, border: "1px solid var(--v6-line)", borderRadius: 12, background: "var(--v6-surface2)", display: "flex", alignItems: "center", gap: 10, fontSize: 10 }}>
-                <img src={genResult.url} alt="" style={{ width: 48, height: 48, borderRadius: 8, objectFit: "cover" }} />
-                <span style={{ flex: 1, color: "var(--v6-muted)" }}>Generated in {elapsed}s</span>
-                {genResult.creditsUsed && <span style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--v6-accent)" }}><IconBolt /> {genResult.creditsUsed}c</span>}
-                <button className="v6-btn v6-ghost v6-sm" onClick={() => { if (genResult.url) addLayer("image", { src: genResult.url, name: `Generated ${layers.length + 1}`, x: (canvasWidth - 500) / 2, y: (canvasHeight - 500) / 2, width: 500, height: 500 }); }}><IconPlus /> Add layer</button>
-              </div>
-            )}
-            {genError && <div style={{ marginTop: 8, fontSize: 10, color: "var(--v6-bad)", padding: "6px 10px", borderRadius: 8, background: "rgba(255,107,107,0.08)" }}>{genError}</div>}
-          </div>
-        </div>
-      </div>
-
-      {/* ═══ LAYERS PANEL (right) ═══ */}
-      <div className="v6-layers" style={{ display: "flex", flexDirection: "column" }}>
-        <div className="v6-panel-title">
-          <h3>Layers</h3>
-          <div style={{ display: "flex", gap: 4 }}>
-            <button className="v6-btn v6-ghost v6-sm v6-icon-only v6-tooltip" onClick={() => addLayer("image")} data-tooltip="Add image layer"><IconImage /></button>
-            <button className="v6-btn v6-ghost v6-sm v6-icon-only v6-tooltip" onClick={() => addLayer("text")} data-tooltip="Add text layer"><IconType /></button>
-            <button className="v6-btn v6-ghost v6-sm v6-icon-only v6-tooltip" onClick={() => addLayer("rectangle")} data-tooltip="Add rectangle"><IconRect /></button>
-            <button className="v6-btn v6-ghost v6-sm v6-icon-only v6-tooltip" onClick={() => addLayer("circle")} data-tooltip="Add circle"><IconCircle /></button>
-          </div>
-        </div>
-
-        {/* Canvas background selector */}
-        <div className="v6-field" style={{ marginBottom: 10 }}>
-          <span className="v6-field-label">Background</span>
-          <div style={{ display: "flex", gap: 4 }}>
-            {["transparent", "#000000", "#ffffff", "#1a1a2e", "#16213e", "#0f3460"].map(c => (
-              <button key={c} onClick={() => setCanvasBg(c)} style={{
-                width: 24, height: 24, borderRadius: 6, border: canvasBg === c ? "2px solid var(--v6-accent)" : "1px solid var(--v6-line)",
-                background: c === "transparent" ? "repeating-conic-gradient(rgba(255,255,255,0.05) 0% 25%, transparent 0% 50%) 50% / 6px 6px" : c,
-                cursor: "pointer", flexShrink: 0,
-              }} />
-            ))}
-          </div>
-        </div>
-
-        <div className="v6-section-rule" style={{ marginBottom: 10 }} />
-
-        {/* Layer list */}
-        <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
-          {layers.length === 0 && (
-            <div style={{ padding: "16px 8px", textAlign: "center", fontSize: 10, color: "var(--v6-muted)" }}>
-              No layers yet. Drag images here or use a tool to add one.
-            </div>
-          )}
-          <AnimatePresence>
-            {[...layers].reverse().map((layer, reversedIdx) => {
-              const i = layers.length - 1 - reversedIdx;
-              const isActive = activeLayerId === layer.id;
-              const isDragOver = dragOverLayerId === layer.id;
-              const isDragging = dragLayerId === layer.id;
-              return (
-                <motion.div
-                  key={layer.id}
-                  layout
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: 20, height: 0, marginTop: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0 }}
-                  transition={{ duration: 0.2 }}
-                  draggable
-                  onDragStart={(e) => handleLayerDragStart(e, layer.id)}
-                  onDragOver={(e) => handleLayerDragOver(e, layer.id)}
-                  onDrop={(e) => handleLayerDrop(e, layer.id)}
-                  onDragEnd={handleLayerDragEnd}
-                  onClick={() => setActiveLayerId(layer.id)}
-                  className={`v6-layer${isActive ? " v6-active" : ""}`}
-                  style={{
-                    flexDirection: "column", alignItems: "stretch", gap: 6,
-                    borderLeft: isActive ? "3px solid var(--v6-accent)" : "3px solid transparent",
-                    paddingLeft: isActive ? 7 : 10,
-                    opacity: isDragging ? 0.4 : 1,
-                    background: isDragOver ? "rgba(255,65,111,0.1)" : undefined,
-                    marginBottom: 4,
-                  }}
-                >
-                  {/* Layer row */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ cursor: "grab", color: "var(--v6-muted)", display: "flex", opacity: 0.4 }}><IconGrip /></span>
-                    <button onClick={e => { e.stopPropagation(); updateLayer(layer.id, { visible: !layer.visible }); }} style={{ border: 0, background: "transparent", color: layer.visible ? "var(--v6-text)" : "var(--v6-muted)", cursor: "pointer", padding: 2, opacity: layer.visible ? 1 : 0.4 }}>{layer.visible ? <IconEye /> : <IconEyeOff />}</button>
-                    <button onClick={e => { e.stopPropagation(); updateLayer(layer.id, { locked: !layer.locked }); }} style={{ border: 0, background: "transparent", color: layer.locked ? "var(--v6-accent)" : "var(--v6-muted)", cursor: "pointer", padding: 2, opacity: layer.locked ? 1 : 0.4 }}><IconLock /></button>
-                    <span style={{ flex: 1, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: layer.locked ? "none" : undefined }}>{layer.name}</span>
-                    <span className="v6-tiny v6-muted" style={{ minWidth: 28, textAlign: "right" }}>{Math.round(layer.opacity * 100)}%</span>
-                  </div>
-
-                  {/* Thumbnail */}
-                  {layer.type === "image" && layer.src && (
-                    <div style={{ width: "100%", height: 40, borderRadius: 6, overflow: "hidden", background: "repeating-conic-gradient(rgba(255,255,255,0.015) 0% 25%, transparent 0% 50%) 50% / 8px 8px, var(--v6-bg)" }}>
-                      <img src={layer.src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", opacity: layer.opacity }} />
-                    </div>
-                  )}
-
-                  {/* Expanded controls */}
-                  {isActive && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} transition={{ duration: 0.2 }} style={{ display: "grid", gap: 7, paddingTop: 4, overflow: "hidden" }}>
-                      {/* Opacity */}
-                      <div className="v6-range-row">
-                        <span className="v6-tiny v6-muted" style={{ minWidth: 28 }}>Opacity</span>
-                        <input type="range" min="0" max="100" value={Math.round(layer.opacity * 100)} onChange={e => updateLayer(layer.id, { opacity: Number(e.target.value) / 100 })} onClick={e => e.stopPropagation()} />
-                        <span className="v6-tiny v6-mono" style={{ minWidth: 24, textAlign: "right" }}>{Math.round(layer.opacity * 100)}%</span>
-                      </div>
-
-                      {/* Blend mode */}
-                      <div className="v6-field">
-                        <span className="v6-field-label">Blend</span>
-                        <select className="v6-input" value={layer.blendMode} onChange={e => updateLayer(layer.id, { blendMode: e.target.value })} onClick={e => e.stopPropagation()} style={{ fontSize: 11, padding: "6px 8px" }}>
-                          {BLEND_MODES.map(bm => <option key={bm} value={bm}>{bm.charAt(0).toUpperCase() + bm.slice(1).replace(/-/g, " ")}</option>)}
-                        </select>
-                      </div>
-
-                      {/* Text-specific */}
-                      {layer.type === "text" && (
-                        <>
-                          <div className="v6-field"><span className="v6-field-label">Font</span>
-                            <select className="v6-input" value={layer.fontFamily || "Inter"} onChange={e => updateLayer(layer.id, { fontFamily: e.target.value })} style={{ fontSize: 11 }}>{FONTS.map(f => <option key={f} value={f}>{f}</option>)}</select>
-                          </div>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <div className="v6-field" style={{ flex: 1 }}><span className="v6-field-label">Size</span><input type="number" className="v6-input" value={layer.fontSize || 48} onChange={e => updateLayer(layer.id, { fontSize: Number(e.target.value) })} min={8} max={500} style={{ fontSize: 11, padding: "6px 8px" }} /></div>
-                            <div className="v6-field" style={{ flex: 1 }}><span className="v6-field-label">Weight</span>
-                              <select className="v6-input" value={layer.fontWeight || 700} onChange={e => updateLayer(layer.id, { fontWeight: Number(e.target.value) })} style={{ fontSize: 11 }}>{[300, 400, 500, 600, 700, 800, 900].map(w => <option key={w} value={w}>{w}</option>)}</select>
-                            </div>
-                          </div>
-                          <div className="v6-field"><span className="v6-field-label">Color</span><input type="color" value={layer.textColor || "#ffffff"} onChange={e => updateLayer(layer.id, { textColor: e.target.value })} style={{ width: "100%", height: 34, border: "1px solid var(--v6-line)", borderRadius: 8, background: "transparent", cursor: "pointer" }} /></div>
-                          <div className="v6-segmented">
-                            {["left", "center", "right"].map(a => (
-                              <button key={a} className={(layer.textAlign || "center") === a ? "v6-active" : ""} onClick={e => { e.stopPropagation(); updateLayer(layer.id, { textAlign: a }); }} style={{ fontSize: 9 }}>{a}</button>
-                            ))}
-                          </div>
-                        </>
-                      )}
-
-                      {/* Shape-specific */}
-                      {(layer.type === "rectangle" || layer.type === "circle") && (
-                        <>
-                          <div className="v6-field"><span className="v6-field-label">Fill</span><div style={{ display: "flex", gap: 6 }}><input type="color" value={layer.fill || "#ff416f"} onChange={e => updateLayer(layer.id, { fill: e.target.value })} style={{ width: 34, height: 30, border: "1px solid var(--v6-line)", borderRadius: 6 }} /><input type="text" className="v6-input" value={layer.fill || "#ff416f"} onChange={e => updateLayer(layer.id, { fill: e.target.value })} style={{ flex: 1, fontSize: 10, padding: "4px 8px" }} /></div></div>
-                          <div className="v6-field"><span className="v6-field-label">Stroke</span><div style={{ display: "flex", gap: 6 }}><input type="color" value={layer.stroke || "#000000"} onChange={e => updateLayer(layer.id, { stroke: e.target.value })} style={{ width: 34, height: 30, border: "1px solid var(--v6-line)", borderRadius: 6 }} /><input type="number" className="v6-input" value={layer.strokeWidth || 0} onChange={e => updateLayer(layer.id, { strokeWidth: Number(e.target.value) })} min={0} max={50} placeholder="Width" style={{ flex: 1, fontSize: 10, padding: "4px 8px", width: 50 }} /></div></div>
-                        </>
-                      )}
-
-                      {/* Actions */}
-                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                        <button className="v6-btn v6-ghost v6-sm" onClick={e => { e.stopPropagation(); duplicateLayer(layer.id); }}><IconCopy /> Duplicate</button>
-                        {i > 0 && <button className="v6-btn v6-ghost v6-sm" onClick={e => { e.stopPropagation(); mergeDown(layer.id); }}><IconMerge /> Merge</button>}
-                        <button className="v6-btn v6-ghost v6-sm" onClick={e => { e.stopPropagation(); removeLayer(layer.id); }} style={{ color: "var(--v6-bad)" }}><IconTrash /> Delete</button>
-                      </div>
-                    </motion.div>
-                  )}
-                </motion.div>
-              );
-            })}
-          </AnimatePresence>
-        </div>
-
-        {/* Footer */}
-        <div style={{ marginTop: "auto", paddingTop: 14, borderTop: "1px solid var(--v6-line)" }}>
-          {layers.length > 1 && (
-            <button className="v6-btn v6-ghost v6-sm" onClick={flattenAll} style={{ width: "100%", marginBottom: 8, fontSize: 10 }}><IconMerge /> Flatten all layers</button>
-          )}
-          <div className="v6-field"><span className="v6-field-label">Document name</span><input className="v6-input" value={docName} onChange={e => setDocName(e.target.value)} placeholder="Untitled" style={{ fontSize: 11 }} /></div>
-          <button className="v6-btn v6-primary" onClick={saveDocument} style={{ width: "100%", marginTop: 8 }}><IconSave /> Save</button>
-        </div>
-      </div>
-
-      {/* Hidden upload input */}
-      <input ref={uploadRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleFileChange} />
-    </div>
-  );
+async function loadCanvasImage(src) {
+  if (sameOrigin(src)) return { img: await loadTag(src, false), clean: true };
+  const proxied = `/api/media/proxy?url=${encodeURIComponent(src)}`;
+  try { return { img: await loadTag(proxied, true), clean: true }; } catch { /* not an allowed host */ }
+  try { return { img: await loadTag(src, true), clean: true }; } catch { /* provider sends no CORS */ }
+  return { img: await loadTag(src, false), clean: false };
 }
 
-/* ═══════════════════════════════════════════════════════════
-   STYLE HELPERS
-   ═══════════════════════════════════════════════════════════ */
+/* ── Painting ─────────────────────────────────────────────────────────────
+   The single source of truth for what the composition looks like.          */
 
-function cornerHandleStyle({ left, right, top, bottom, cursor, marginLeft, marginTop }) {
-  return {
-    position: "absolute",
-    ...(left !== undefined ? { left } : {}),
-    ...(right !== undefined ? { right } : {}),
-    ...(top !== undefined ? { top } : {}),
-    ...(bottom !== undefined ? { bottom } : {}),
-    ...(marginLeft !== undefined ? { marginLeft } : {}),
-    ...(marginTop !== undefined ? { marginTop } : {}),
-    width: 10, height: 10,
-    background: "var(--v6-accent)",
-    border: "1.5px solid var(--v6-bg)",
-    cursor,
-    zIndex: 10,
-    borderRadius: 2,
-    boxShadow: "0 0 6px rgba(255,65,111,0.4)",
+function fontOf(l) {
+  const family = l.fontFamily && l.fontFamily !== "system-ui" ? `"${l.fontFamily}", ` : "";
+  return `${l.fontWeight || 600} ${l.fontSize || 48}px ${family}system-ui, sans-serif`;
+}
+
+function wrapLines(ctx, text, maxWidth) {
+  const out = [];
+  /* contentEditable hands back a trailing newline; it would offset the block */
+  for (const para of String(text ?? "").replace(/\s+$/, "").split("\n")) {
+    const words = para.split(" ");
+    let line = "";
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (line && ctx.measureText(test).width > maxWidth) { out.push(line); line = word; }
+      else line = test;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+function drawFitted(ctx, img, w, h, fit) {
+  const iw = img.naturalWidth || img.width;
+  const ih = img.naturalHeight || img.height;
+  if (!iw || !ih) return;
+  if (fit === "fill") { ctx.drawImage(img, 0, 0, w, h); return; }
+  const sr = iw / ih, dr = w / h;
+  if (fit === "contain") {
+    let dw = w, dh = h;
+    if (sr > dr) dh = w / sr; else dw = h * sr;
+    ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+    return;
+  }
+  let sw = iw, sh = ih;
+  if (sr > dr) sw = ih * dr; else sh = iw / dr;
+  ctx.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, 0, 0, w, h);
+}
+
+function roundedPath(ctx, w, h, r) {
+  const rad = Math.min(r, w / 2, h / 2);
+  if (rad <= 0) { ctx.rect(0, 0, w, h); return; }
+  if (typeof ctx.roundRect === "function") { ctx.roundRect(0, 0, w, h, rad); return; }
+  ctx.moveTo(rad, 0);
+  ctx.lineTo(w - rad, 0); ctx.quadraticCurveTo(w, 0, w, rad);
+  ctx.lineTo(w, h - rad); ctx.quadraticCurveTo(w, h, w - rad, h);
+  ctx.lineTo(rad, h); ctx.quadraticCurveTo(0, h, 0, h - rad);
+  ctx.lineTo(0, rad); ctx.quadraticCurveTo(0, 0, rad, 0);
+}
+
+function paintLayer(ctx, l, images, preview) {
+  const w = l.width, h = l.height;
+
+  if (l.type === "image") {
+    const entry = l.src ? images.get(l.src) : null;
+    if (entry?.img) { drawFitted(ctx, entry.img, w, h, l.fit || "cover"); return; }
+    if (!preview) return;                       // never bake chrome into an export
+    ctx.save();
+    ctx.setLineDash([8, 6]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255,255,255,0.22)";
+    ctx.strokeRect(1, 1, Math.max(0, w - 2), Math.max(0, h - 2));
+    ctx.restore();
+    return;
+  }
+
+  if (l.type === "text") {
+    ctx.font = fontOf(l);
+    ctx.fillStyle = l.color || "#FFFFFF";
+    ctx.textBaseline = "middle";
+    const align = l.align || "center";
+    ctx.textAlign = align;
+    const lh = (l.fontSize || 48) * (l.lineHeight || 1.2);
+    const lines = wrapLines(ctx, l.text, w);
+    const x = align === "left" ? 0 : align === "right" ? w : w / 2;
+    let y = h / 2 - (lines.length * lh) / 2 + lh / 2;
+    for (const line of lines) { ctx.fillText(line, x, y); y += lh; }
+    return;
+  }
+
+  ctx.beginPath();
+  if (l.type === "ellipse") ctx.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+  else roundedPath(ctx, w, h, l.radius || 0);
+  if (l.fill && l.fill !== "transparent") { ctx.fillStyle = l.fill; ctx.fill(); }
+  if (l.stroke && l.stroke !== "transparent" && l.strokeWidth > 0) {
+    ctx.strokeStyle = l.stroke;
+    ctx.lineWidth = l.strokeWidth;
+    ctx.stroke();
+  }
+}
+
+/**
+ * Paint a composition. `scale` maps document units to device pixels, so the
+ * same call serves a 0.4× preview and a 3× export.
+ */
+function paintComposition(ctx, { layers, width, height, background, scale = 1, images, preview = false, skipId = null, only = null }) {
+  const bw = width * scale, bh = height * scale;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, bw, bh);
+  if (background && background !== "transparent") {
+    ctx.fillStyle = background;
+    ctx.fillRect(0, 0, bw, bh);
+  }
+  ctx.scale(scale, scale);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  for (const l of layers) {
+    if (l.visible === false) continue;
+    if (skipId && l.id === skipId) continue;
+    if (only && !only.has(l.id)) continue;
+    ctx.save();
+    ctx.globalAlpha = clamp(l.opacity ?? 1, 0, 1);
+    if (l.blend && l.blend !== "normal") ctx.globalCompositeOperation = l.blend;
+    ctx.translate(l.x + l.width / 2, l.y + l.height / 2);
+    if (l.rotation) ctx.rotate((l.rotation * Math.PI) / 180);
+    ctx.translate(-l.width / 2, -l.height / 2);
+    try { paintLayer(ctx, l, images, preview); } catch { /* one bad layer must not kill the frame */ }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function rasterize({ layers, width, height, background, images, scale = 1, only = null, origin = { x: 0, y: 0 } }) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext("2d");
+  const shifted = origin.x || origin.y
+    ? layers.map((l) => ({ ...l, x: l.x - origin.x, y: l.y - origin.y }))
+    : layers;
+  paintComposition(ctx, { layers: shifted, width, height, background, scale, images, preview: false, only });
+  return canvas;
+}
+
+function toBlob(canvas, mime, quality) {
+  return new Promise((resolve, reject) => {
+    try {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("The browser could not encode this image."))), mime, quality);
+    } catch (e) { reject(e); }
+  });
+}
+
+const isTaint = (e) => e?.name === "SecurityError" || /taint|cross-origin/i.test(e?.message || "");
+const TAINT_MSG = "One of the images is served without cross-origin permission, so the browser will not let this canvas be read. Re-upload that image, or replace it with one generated here.";
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CANVAS STUDIO
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export default function CanvasStudio({ initialModel, templateConfig, onCreditsChanged }) {
+  /* ── Scene: one object so history is one snapshot ─────────────────────── */
+  const [scene, setScene] = useState({ w: 1080, h: 1080, bg: "transparent", layers: [] });
+  const sceneRef = useRef(scene);
+  const past = useRef([]);
+  const future = useRef([]);
+  const coalesce = useRef(null);
+  const [histTick, setHistTick] = useState(0);
+
+  const [selectedId, setSelectedId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [tool, setTool] = useState("select");
+  const [zoom, setZoom] = useState(0.5);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [draft, setDraft] = useState(null);        // shape being dragged out
+
+  /* ── Document ─────────────────────────────────────────────────────────── */
+  const [docId, setDocId] = useState(null);
+  const [docName, setDocName] = useState("Untitled");
+  const [docs, setDocs] = useState([]);
+  const [dirty, setDirty] = useState(false);
+  const [saveState, setSaveState] = useState("idle");   // idle | saving | saved | error
+  const [saveError, setSaveError] = useState("");
+  const [savedAt, setSavedAt] = useState(null);
+  const saving = useRef(false);
+
+  /* ── Overlays ─────────────────────────────────────────────────────────── */
+  const [panel, setPanel] = useState(null);        // null | layers | models | files | export
+  const [confirmNew, setConfirmNew] = useState(false);
+  const [confirmFlatten, setConfirmFlatten] = useState(false);
+  const [pendingOpen, setPendingOpen] = useState(null);
+  const [versions, setVersions] = useState(null);  // { docId, name, list } | null
+  const [busy, setBusy] = useState("");
+  const [notice, setNotice] = useState("");
+
+  /* ── Export ───────────────────────────────────────────────────────────── */
+  const [format, setFormat] = useState("png");
+  const [quality, setQuality] = useState(0.92);
+  const [exportScale, setExportScale] = useState(1);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+
+  /* ── Generation ───────────────────────────────────────────────────────── */
+  const [prompt, setPrompt] = useState("");
+  const [negative, setNegative] = useState("");
+  const [modelId, setModelId] = useState(initialModel || null);
+  const [useGuide, setUseGuide] = useState(true);
+  const [genNotice, setGenNotice] = useState("");
+
+  /* ── Tool defaults (used when nothing is selected) ────────────────────── */
+  const [textDefaults, setTextDefaults] = useState({ fontFamily: "Inter", fontSize: 72, fontWeight: 700, color: "#FFFFFF", align: "center" });
+  const [shapeDefaults, setShapeDefaults] = useState({ fill: "#FF1B6B", stroke: "transparent", strokeWidth: 0, radius: 0 });
+
+  /* ── Refs ─────────────────────────────────────────────────────────────── */
+  const surfaceRef = useRef(null);
+  const paperRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fileRef = useRef(null);
+  const images = useRef(new Map());
+  const [imgTick, setImgTick] = useState(0);
+  const alive = useRef(true);
+  const placed = useRef(null);
+  const zoomRef = useRef(zoom);
+
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+
+  const { upload } = useUpload();
+  const { models, loading: loadingModels } = useModelCatalog({});
+  const { loading: generating, result, error: genError, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+
+  /* Canvas can drive both text-to-image and edit models */
+  const available = useMemo(
+    () => (models || []).filter((m) => matchesGroup(m, "tti") || matchesGroup(m, "iti")),
+    [models],
+  );
+  const model = available.find((m) => m.id === modelId) || available[0] || null;
+  useEffect(() => {
+    if (available.length && !available.some((m) => m.id === modelId)) setModelId(available[0].id);
+  }, [available, modelId]);
+
+  const layers = scene.layers;
+  const selected = useMemo(() => layers.find((l) => l.id === selectedId) || null, [layers, selectedId]);
+  const canUndo = past.current.length > 0;
+  const canRedo = future.current.length > 0;
+  void histTick;
+
+  /* ══════════════════════════════════════════════════════════════════════
+     HISTORY — one entry per gesture
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const commit = useCallback((updater, key) => {
+    const prev = sceneRef.current;
+    const next = typeof updater === "function" ? updater(prev) : updater;
+    if (!next || next === prev) return;
+    if (!key || key !== coalesce.current) {
+      past.current.push(prev);
+      if (past.current.length > MAX_HISTORY) past.current.shift();
+      future.current = [];
+    }
+    coalesce.current = key || null;
+    sceneRef.current = next;
+    setScene(next);
+    setDirty(true);
+    setSaveState((s) => (s === "saved" ? "idle" : s));
+    setHistTick((t) => t + 1);
+  }, []);
+
+  const endGesture = useCallback(() => { coalesce.current = null; }, []);
+
+  const load = useCallback((next) => {          // replace the scene without history
+    past.current = [];
+    future.current = [];
+    coalesce.current = null;
+    sceneRef.current = next;
+    setScene(next);
+    setSelectedId(null);
+    setEditingId(null);
+    setHistTick((t) => t + 1);
+  }, []);
+
+  const undo = useCallback(() => {
+    const prev = past.current.pop();
+    if (!prev) return;
+    future.current.push(sceneRef.current);
+    coalesce.current = null;
+    sceneRef.current = prev;
+    setScene(prev);
+    setDirty(true);
+    setHistTick((t) => t + 1);
+  }, []);
+
+  const redo = useCallback(() => {
+    const next = future.current.pop();
+    if (!next) return;
+    past.current.push(sceneRef.current);
+    coalesce.current = null;
+    sceneRef.current = next;
+    setScene(next);
+    setDirty(true);
+    setHistTick((t) => t + 1);
+  }, []);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     LAYER OPERATIONS
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const patch = useCallback((id, delta, key) => {
+    commit((s) => ({ ...s, layers: s.layers.map((l) => (l.id === id ? { ...l, ...delta } : l)) }), key);
+  }, [commit]);
+
+  const addLayer = useCallback((type, over = {}) => {
+    const s = sceneRef.current;
+    const count = s.layers.filter((l) => l.type === type).length + 1;
+    const layer = newLayer(type, { name: `${newLayer(type).name} ${count}`, ...over });
+    commit({ ...s, layers: [...s.layers, layer] });
+    setSelectedId(layer.id);
+    return layer;
+  }, [commit]);
+
+  const removeLayer = useCallback((id) => {
+    commit((s) => ({ ...s, layers: s.layers.filter((l) => l.id !== id) }));
+    setSelectedId((v) => (v === id ? null : v));
+    setEditingId((v) => (v === id ? null : v));
+  }, [commit]);
+
+  const duplicateLayer = useCallback((id) => {
+    const s = sceneRef.current;
+    const i = s.layers.findIndex((l) => l.id === id);
+    if (i < 0) return;
+    const copy = { ...s.layers[i], id: uid(), name: `${s.layers[i].name} copy`, x: s.layers[i].x + 24, y: s.layers[i].y + 24 };
+    const next = [...s.layers];
+    next.splice(i + 1, 0, copy);
+    commit({ ...s, layers: next });
+    setSelectedId(copy.id);
+  }, [commit]);
+
+  /** Move a layer to an absolute index in the bottom-to-top array. */
+  const moveTo = useCallback((id, index) => {
+    commit((s) => {
+      const from = s.layers.findIndex((l) => l.id === id);
+      if (from < 0) return s;
+      const to = clamp(index, 0, s.layers.length - 1);
+      if (to === from) return s;
+      const next = [...s.layers];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return { ...s, layers: next };
+    });
+  }, [commit]);
+
+  const moveBy = useCallback((id, step) => {
+    const i = sceneRef.current.layers.findIndex((l) => l.id === id);
+    if (i < 0) return;
+    moveTo(id, i + step);
+  }, [moveTo]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     IMAGES — load everything the scene references, once
+     ══════════════════════════════════════════════════════════════════════ */
+
+  useEffect(() => {
+    const wanted = new Set(layers.filter((l) => l.type === "image" && l.src).map((l) => l.src));
+    for (const src of wanted) {
+      if (images.current.has(src)) continue;
+      images.current.set(src, { status: "loading" });
+      loadCanvasImage(src)
+        .then(({ img, clean }) => { images.current.set(src, { status: "ready", img, clean }); })
+        .catch(() => { images.current.set(src, { status: "error" }); })
+        .finally(() => { if (alive.current) setImgTick((t) => t + 1); });
+    }
+  }, [layers]);
+
+  /* Webfonts settle after first paint — repaint so text metrics are right */
+  useEffect(() => {
+    if (typeof document === "undefined" || !document.fonts?.ready) return;
+    document.fonts.ready.then(() => { if (alive.current) setImgTick((t) => t + 1); }).catch(() => {});
+  }, []);
+
+  const unclean = useMemo(() => {
+    for (const l of layers) {
+      if (l.type !== "image" || !l.src) continue;
+      const e = images.current.get(l.src);
+      if (e?.status === "ready" && e.clean === false) return true;
+    }
+    return false;
+  }, [layers, imgTick]);
+
+  const failedImages = useMemo(
+    () => layers.filter((l) => l.type === "image" && l.src && images.current.get(l.src)?.status === "error").length,
+    [layers, imgTick],
+  );
+
+  /* ══════════════════════════════════════════════════════════════════════
+     PAINT — the surface uses the same painter the export does
+     ══════════════════════════════════════════════════════════════════════ */
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
+    const s = Math.min(zoom * dpr, MAX_BACKING / scene.w, MAX_BACKING / scene.h);
+    const bw = Math.max(1, Math.round(scene.w * s));
+    const bh = Math.max(1, Math.round(scene.h * s));
+    if (canvas.width !== bw) canvas.width = bw;
+    if (canvas.height !== bh) canvas.height = bh;
+    canvas.style.width = `${scene.w * zoom}px`;
+    canvas.style.height = `${scene.h * zoom}px`;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    paintComposition(ctx, {
+      layers: scene.layers,
+      width: scene.w,
+      height: scene.h,
+      background: scene.bg,
+      scale: bw / scene.w,
+      images: images.current,
+      preview: true,
+      skipId: editingId,
+    });
+  }, [scene, zoom, imgTick, editingId]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     VIEWPORT — pan, zoom, fit
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const toDoc = useCallback((clientX, clientY) => {
+    const r = paperRef.current?.getBoundingClientRect();
+    if (!r) return { x: 0, y: 0 };
+    const z = zoomRef.current;
+    return { x: (clientX - r.left) / z, y: (clientY - r.top) / z };
+  }, []);
+
+  const zoomAt = useCallback((nextZoom, clientX, clientY) => {
+    const surface = surfaceRef.current;
+    const paper = paperRef.current;
+    if (!surface || !paper) { setZoom(nextZoom); return; }
+    const sr = surface.getBoundingClientRect();
+    const pr = paper.getBoundingClientRect();
+    const cx = clientX ?? sr.left + sr.width / 2;
+    const cy = clientY ?? sr.top + sr.height / 2;
+    const z0 = zoomRef.current;
+    const dx = (cx - pr.left) / z0;
+    const dy = (cy - pr.top) / z0;
+    const { w, h } = sceneRef.current;
+    setPan({
+      x: cx - dx * nextZoom - sr.left - (sr.width - w * nextZoom) / 2,
+      y: cy - dy * nextZoom - sr.top - (sr.height - h * nextZoom) / 2,
+    });
+    setZoom(nextZoom);
+  }, []);
+
+  const stepZoom = useCallback((factor) => {
+    zoomAt(clamp(zoomRef.current * factor, MIN_ZOOM, MAX_ZOOM), null, null);
+  }, [zoomAt]);
+
+  const fit = useCallback(() => {
+    const r = surfaceRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const { w, h } = sceneRef.current;
+    const z = clamp(Math.min((r.width - 72) / w, (r.height - 72) / h), MIN_ZOOM, MAX_ZOOM);
+    setPan({ x: 0, y: 0 });
+    setZoom(z);
+  }, []);
+
+  useEffect(() => { fit(); /* once, on mount */ }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* React attaches wheel passively, so the listener is native */
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        const factor = Math.exp(-e.deltaY / 340);
+        zoomAt(clamp(zoomRef.current * factor, MIN_ZOOM, MAX_ZOOM), e.clientX, e.clientY);
+        return;
+      }
+      const dx = e.shiftKey ? -e.deltaY : -e.deltaX;
+      const dy = e.shiftKey ? 0 : -e.deltaY;
+      setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomAt]);
+
+  const startPan = useCallback((e) => {
+    e.preventDefault();
+    const ox = e.clientX, oy = e.clientY;
+    const start = pan;
+    const move = (ev) => setPan({ x: start.x + (ev.clientX - ox), y: start.y + (ev.clientY - oy) });
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [pan]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     DIRECT MANIPULATION
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const hitTest = useCallback((p) => {
+    const ls = sceneRef.current.layers;
+    for (let i = ls.length - 1; i >= 0; i--) {
+      const l = ls[i];
+      if (l.visible === false) continue;
+      const cx = l.x + l.width / 2, cy = l.y + l.height / 2;
+      const r = -((l.rotation || 0) * Math.PI) / 180;
+      const dx = p.x - cx, dy = p.y - cy;
+      const lx = dx * Math.cos(r) - dy * Math.sin(r);
+      const ly = dx * Math.sin(r) + dy * Math.cos(r);
+      if (Math.abs(lx) <= l.width / 2 && Math.abs(ly) <= l.height / 2) return l;
+    }
+    return null;
+  }, []);
+
+  const startMove = useCallback((e, id) => {
+    const layer = sceneRef.current.layers.find((l) => l.id === id);
+    if (!layer || layer.locked) return;
+    const start = toDoc(e.clientX, e.clientY);
+    const ox = layer.x, oy = layer.y;
+    const key = `move:${id}:${Date.now()}`;
+    const move = (ev) => {
+      const p = toDoc(ev.clientX, ev.clientY);
+      let nx = ox + (p.x - start.x);
+      let ny = oy + (p.y - start.y);
+      if (ev.shiftKey) {
+        if (Math.abs(p.x - start.x) > Math.abs(p.y - start.y)) ny = oy; else nx = ox;
+      }
+      patch(id, { x: Math.round(nx), y: Math.round(ny) }, key);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      endGesture();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [toDoc, patch, endGesture]);
+
+  const startResize = useCallback((e, id, corner) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const layer = sceneRef.current.layers.find((l) => l.id === id);
+    if (!layer || layer.locked) return;
+    const start = toDoc(e.clientX, e.clientY);
+    const { x: ox, y: oy, width: ow, height: oh } = layer;
+    const rot = ((layer.rotation || 0) * Math.PI) / 180;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const c0 = { x: ox + ow / 2, y: oy + oh / 2 };
+    const west = corner.includes("w"), east = corner.includes("e");
+    const north = corner.includes("n"), south = corner.includes("s");
+    const key = `size:${id}:${Date.now()}`;
+
+    const move = (ev) => {
+      const p = toDoc(ev.clientX, ev.clientY);
+      const dx = p.x - start.x, dy = p.y - start.y;
+      /* Work in the layer's own axes so a rotated box resizes sensibly */
+      const lx = dx * cos + dy * sin;
+      const ly = -dx * sin + dy * cos;
+
+      let left = 0, top = 0, w = ow, h = oh;
+      if (east) w = ow + lx;
+      if (west) { w = ow - lx; left = lx; }
+      if (south) h = oh + ly;
+      if (north) { h = oh - ly; top = ly; }
+
+      if (ev.shiftKey && (east || west) && (north || south)) {
+        const ratio = ow / oh;
+        if (Math.abs(w / ratio) > Math.abs(h)) h = w / ratio; else w = h * ratio;
+        if (north) top = oh - h;
+        if (west) left = ow - w;
+      }
+
+      w = Math.max(8, w); h = Math.max(8, h);
+      const localCx = -ow / 2 + left + w / 2;
+      const localCy = -oh / 2 + top + h / 2;
+      const cx = c0.x + localCx * cos - localCy * sin;
+      const cy = c0.y + localCx * sin + localCy * cos;
+      patch(id, {
+        x: Math.round(cx - w / 2), y: Math.round(cy - h / 2),
+        width: Math.round(w), height: Math.round(h),
+      }, key);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      endGesture();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [toDoc, patch, endGesture]);
+
+  const startRotate = useCallback((e, id) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const layer = sceneRef.current.layers.find((l) => l.id === id);
+    if (!layer || layer.locked) return;
+    const cx = layer.x + layer.width / 2, cy = layer.y + layer.height / 2;
+    const p0 = toDoc(e.clientX, e.clientY);
+    const a0 = (Math.atan2(p0.y - cy, p0.x - cx) * 180) / Math.PI;
+    const r0 = layer.rotation || 0;
+    const key = `spin:${id}:${Date.now()}`;
+    const move = (ev) => {
+      const p = toDoc(ev.clientX, ev.clientY);
+      const a = (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI;
+      let rot = (r0 + (a - a0)) % 360;
+      if (ev.shiftKey) rot = Math.round(rot / 15) * 15;
+      patch(id, { rotation: round(rot) }, key);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      endGesture();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [toDoc, patch, endGesture]);
+
+  const startDraw = useCallback((e) => {
+    const start = toDoc(e.clientX, e.clientY);
+    const kind = tool;
+    setDraft({ x: start.x, y: start.y, w: 0, h: 0 });
+    const move = (ev) => {
+      const p = toDoc(ev.clientX, ev.clientY);
+      let w = p.x - start.x, h = p.y - start.y;
+      if (ev.shiftKey) { const m = Math.max(Math.abs(w), Math.abs(h)); w = Math.sign(w || 1) * m; h = Math.sign(h || 1) * m; }
+      setDraft({ x: Math.min(start.x, start.x + w), y: Math.min(start.y, start.y + h), w: Math.abs(w), h: Math.abs(h) });
+    };
+    const up = (ev) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      const p = toDoc(ev.clientX, ev.clientY);
+      const w = Math.abs(p.x - start.x), h = Math.abs(p.y - start.y);
+      setDraft(null);
+      const x = Math.round(Math.min(start.x, p.x));
+      const y = Math.round(Math.min(start.y, p.y));
+      if (kind === "text") {
+        const box = w > 24 && h > 24
+          ? { x, y, width: Math.round(w), height: Math.round(h) }
+          : { x: Math.round(start.x - 360), y: Math.round(start.y - 80), width: 720, height: 160 };
+        const layer = addLayer("text", { ...box, ...textDefaults, text: "New text" });
+        setEditingId(layer.id);
+        setTool("select");
+      } else if (w > 6 && h > 6) {
+        addLayer(kind, { x, y, width: Math.round(w), height: Math.round(h), ...shapeDefaults });
+        setTool("select");
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, [toDoc, tool, addLayer, textDefaults, shapeDefaults]);
+
+  const onSurfacePointerDown = useCallback((e) => {
+    if (e.button === 1 || tool === "hand") { startPan(e); return; }
+    if (e.button !== 0) return;
+    if (editingId) { setEditingId(null); return; }
+    if (tool === "image") { fileRef.current?.click(); return; }
+    if (tool === "text" || tool === "rect" || tool === "ellipse") { e.preventDefault(); startDraw(e); return; }
+    const hit = hitTest(toDoc(e.clientX, e.clientY));
+    if (!hit) { setSelectedId(null); return; }
+    setSelectedId(hit.id);
+    if (!hit.locked) startMove(e, hit.id);
+  }, [tool, editingId, startPan, startDraw, hitTest, toDoc, startMove]);
+
+  const onSurfaceDoubleClick = useCallback((e) => {
+    const hit = hitTest(toDoc(e.clientX, e.clientY));
+    if (hit?.type === "text" && !hit.locked) { setSelectedId(hit.id); setEditingId(hit.id); }
+  }, [hitTest, toDoc]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     PLACING IMAGES
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const placeImage = useCallback((url, name) => {
+    const { w, h } = sceneRef.current;
+    const side = Math.round(Math.min(w, h) * 0.7);
+    return addLayer("image", {
+      src: url, name: name || "Image",
+      x: Math.round((w - side) / 2), y: Math.round((h - side) / 2),
+      width: side, height: side,
+    });
+  }, [addLayer]);
+
+  const takeFiles = useCallback(async (files) => {
+    const list = Array.from(files || []).filter((f) => f.type.startsWith("image/"));
+    if (!list.length) return;
+    setBusy(`Uploading ${list.length} image${list.length > 1 ? "s" : ""}…`);
+    setNotice("");
+    for (const file of list) {
+      const up = await upload(file);
+      if (up?.url) placeImage(up.url, file.name);
+      else setNotice("An image did not upload. Check the file size and try again.");
+    }
+    setBusy("");
+    setTool("select");
+  }, [upload, placeImage]);
+
+  const onDrop = useCallback((e) => {
+    e.preventDefault();
+    takeFiles(e.dataTransfer?.files);
+  }, [takeFiles]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     RASTERISING — merge down and flatten actually composite pixels
+     ══════════════════════════════════════════════════════════════════════ */
+
+  /** Rasterise a set of layers to a hosted URL, falling back to a data URL. */
+  const bake = useCallback(async (opts, filename) => {
+    const canvas = rasterize({ ...opts, images: images.current });
+    let blob;
+    try {
+      blob = await toBlob(canvas, "image/png");
+    } catch (e) {
+      throw new Error(isTaint(e) ? TAINT_MSG : e.message || "Could not rasterise this composition.");
+    }
+    const file = new File([blob], filename, { type: "image/png" });
+    const up = await upload(file);
+    if (up?.url) return up.url;
+    return canvas.toDataURL("image/png");   // still usable locally
+  }, [upload]);
+
+  const mergeDown = useCallback(async (id) => {
+    const s = sceneRef.current;
+    const i = s.layers.findIndex((l) => l.id === id);
+    if (i <= 0) return;
+    const upper = s.layers[i], lower = s.layers[i - 1];
+    const a = aabb(upper), b = aabb(lower);
+    const x = Math.floor(Math.min(a.x, b.x));
+    const y = Math.floor(Math.min(a.y, b.y));
+    const w = Math.ceil(Math.max(a.x + a.w, b.x + b.w) - x);
+    const h = Math.ceil(Math.max(a.y + a.h, b.y + b.h) - y);
+    if (w < 1 || h < 1) return;
+
+    setBusy("Merging layers…");
+    setNotice("");
+    try {
+      const url = await bake({
+        layers: [lower, upper], width: w, height: h,
+        background: "transparent", origin: { x, y },
+        only: new Set([lower.id, upper.id]),
+      }, "merged.png");
+      const merged = {
+        ...newLayer("image"),
+        id: uid(),
+        name: `${lower.name} + ${upper.name}`,
+        src: url, fit: "fill",
+        x, y, width: w, height: h,
+        role: lower.role, opacity: 1, blend: "normal",
+      };
+      const next = [...s.layers];
+      next.splice(i - 1, 2, merged);
+      commit({ ...s, layers: next });
+      setSelectedId(merged.id);
+    } catch (e) {
+      setNotice(e.message);
+    } finally {
+      setBusy("");
+    }
+  }, [bake, commit]);
+
+  const flatten = useCallback(async () => {
+    const s = sceneRef.current;
+    const visible = s.layers.filter((l) => l.visible !== false);
+    if (visible.length < 2) return;
+    setBusy("Flattening…");
+    setNotice("");
+    try {
+      const url = await bake({
+        layers: visible, width: s.w, height: s.h,
+        background: "transparent",
+        only: new Set(visible.map((l) => l.id)),
+      }, "flattened.png");
+      const flat = {
+        ...newLayer("image"),
+        id: uid(), name: "Flattened", src: url, fit: "fill",
+        x: 0, y: 0, width: s.w, height: s.h,
+      };
+      const hidden = s.layers.filter((l) => l.visible === false);
+      commit({ ...s, layers: [flat, ...hidden] });
+      setSelectedId(flat.id);
+    } catch (e) {
+      setNotice(e.message);
+    } finally {
+      setBusy("");
+    }
+  }, [bake, commit]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     EXPORT
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const doExport = useCallback(async () => {
+    setExporting(true);
+    setExportError("");
+    try {
+      const canvas = rasterize({
+        layers: scene.layers, width: scene.w, height: scene.h,
+        background: format === "png" || format === "webp" ? scene.bg : (scene.bg === "transparent" ? "#FFFFFF" : scene.bg),
+        images: images.current, scale: exportScale,
+      });
+      const mime = format === "jpg" ? "image/jpeg" : format === "webp" ? "image/webp" : "image/png";
+      const blob = await toBlob(canvas, mime, format === "png" ? undefined : quality);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(docName || "canvas").replace(/[^\w.-]+/g, "_")}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setPanel(null);
+    } catch (e) {
+      setExportError(isTaint(e) ? TAINT_MSG : e?.message || "The export did not complete.");
+    } finally {
+      setExporting(false);
+    }
+  }, [scene, format, quality, exportScale, docName]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     DOCUMENTS — apiFetch everywhere, dirty flag, autosave, version history
+     ══════════════════════════════════════════════════════════════════════ */
+
+  useEffect(() => {
+    apiFetch("/api/canvas")
+      .then((r) => r.json())
+      .then((list) => { if (alive.current && Array.isArray(list)) setDocs(list); })
+      .catch(() => { /* signed out — the save button will say so */ });
+  }, []);
+
+  const save = useCallback(async () => {
+    if (saving.current) return;
+    saving.current = true;
+    setSaveState("saving");
+    setSaveError("");
+    const s = sceneRef.current;
+    const content = { width: s.w, height: s.h, background: s.bg, layers: s.layers };
+    try {
+      const res = docId
+        ? await apiFetch("/api/canvas", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: docId, name: docName, content }),
+          })
+        : await apiFetch("/api/canvas", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: docName, content }),
+          });
+      const saved = await res.json();
+      if (!alive.current) return;
+      if (saved?.id) setDocId(saved.id);
+      setDocs((prev) => [saved, ...prev.filter((d) => d.id !== saved.id)]);
+      setDirty(false);
+      setSavedAt(new Date());
+      setSaveState("saved");
+    } catch (e) {
+      if (!alive.current) return;
+      setSaveState("error");
+      setSaveError(e?.status === 401 ? "Sign in to save this document." : e?.message || "Could not save. Try again.");
+    } finally {
+      saving.current = false;
+    }
+  }, [docId, docName]);
+
+  /* Autosave, but only for a document that already exists. Creating a
+     document behind the user's back on their first stroke is not autosave. */
+  useEffect(() => {
+    if (!dirty || !docId || saving.current) return;
+    const t = setTimeout(() => { save(); }, 5000);
+    return () => clearTimeout(t);
+  }, [dirty, docId, scene, docName, save]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [dirty]);
+
+  const openDoc = useCallback((doc) => {
+    const c = doc?.content || {};
+    load({
+      w: c.width || 1080,
+      h: c.height || 1080,
+      bg: c.background || "transparent",
+      layers: (c.layers || []).map(migrate),
+    });
+    setDocId(doc.id);
+    setDocName(doc.name || "Untitled");
+    setDirty(false);
+    setSaveState("idle");
+    setPanel(null);
+    setVersions(null);
+    setPan({ x: 0, y: 0 });
+    requestAnimationFrame(fit);
+  }, [load, fit]);
+
+  const newDoc = useCallback(() => {
+    load({ w: 1080, h: 1080, bg: "transparent", layers: [] });
+    setDocId(null);
+    setDocName("Untitled");
+    setDirty(false);
+    setSaveState("idle");
+    setSavedAt(null);
+    setPanel(null);
+    setVersions(null);
+    setPan({ x: 0, y: 0 });
+    reset();
+    placed.current = null;
+    requestAnimationFrame(fit);
+  }, [load, fit, reset]);
+
+  const requestNew = useCallback(() => {
+    if (dirty) setConfirmNew(true); else newDoc();
+  }, [dirty, newDoc]);
+
+  const requestOpen = useCallback((doc) => {
+    if (dirty) setPendingOpen(doc); else openDoc(doc);
+  }, [dirty, openDoc]);
+
+  const deleteDoc = useCallback(async (id) => {
+    try {
+      await apiFetch(`/api/canvas?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      setDocs((prev) => prev.filter((d) => d.id !== id));
+      if (id === docId) { setDocId(null); setDirty(true); }
+    } catch (e) {
+      setNotice(e?.message || "Could not delete that document.");
+    }
+  }, [docId]);
+
+  const openVersions = useCallback(async (doc) => {
+    setVersions({ docId: doc.id, name: doc.name || "Untitled", list: null });
+    try {
+      const res = await apiFetch(`/api/canvas/versions?documentId=${encodeURIComponent(doc.id)}`);
+      const list = await res.json();
+      if (alive.current) setVersions({ docId: doc.id, name: doc.name || "Untitled", list: Array.isArray(list) ? list : [] });
+    } catch (e) {
+      if (alive.current) setVersions({ docId: doc.id, name: doc.name || "Untitled", list: [], error: e?.message || "Could not load versions." });
+    }
+  }, []);
+
+  const restoreVersion = useCallback((v) => {
+    const c = v?.content || {};
+    load({
+      w: c.width || 1080,
+      h: c.height || 1080,
+      bg: c.background || "transparent",
+      layers: (c.layers || []).map(migrate),
+    });
+    setDirty(true);                    // saving writes a new version; nothing is overwritten
+    setSaveState("idle");
+    setPanel(null);
+    setVersions(null);
+    requestAnimationFrame(fit);
+  }, [load, fit]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     GENERATION — real roles, real ratio, real cost, real cancel
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const ratio = useMemo(() => nearestRatio(scene.w, scene.h, model?.aspectRatios), [scene.w, scene.h, model]);
+  const trueRatio = useMemo(() => exactRatio(scene.w, scene.h), [scene.w, scene.h]);
+
+  /** The document in the shape compileCanvas() expects. */
+  const canvasDoc = useMemo(() => {
+    const objects = [];
+    const masks = { include: [], exclude: [] };
+    for (const l of scene.layers) {
+      if (l.visible === false) continue;
+      const bounds = { left: l.x, top: l.y, width: l.width, height: l.height };
+      if (l.mask === "include") { masks.include.push({ id: l.id, bounds }); continue; }
+      if (l.mask === "exclude") { masks.exclude.push({ id: l.id, bounds }); continue; }
+      if (l.type === "image") {
+        if (l.src) objects.push({ id: l.id, type: "image", src: l.src, role: l.role || "layout_reference", bounds });
+      } else if (l.type === "text") {
+        objects.push({ id: l.id, type: "text", text: l.text, fontSize: l.fontSize, fontFamily: l.fontFamily, role: l.role || "text_content", bounds });
+      } else {
+        objects.push({ id: l.id, type: "shape", role: l.role || "composition_anchor", bounds });
+      }
+    }
+    return { canvas: { width: scene.w, height: scene.h }, aspectRatio: ratio, objects, masks, instructions: [] };
+  }, [scene, ratio]);
+
+  const compiled = useMemo(
+    () => compileCanvas(canvasDoc, { modelId: model?.id, prompt, negativePrompt: negative, aspectRatio: ratio }),
+    [canvasDoc, model, prompt, negative, ratio],
+  );
+
+  /* The compiler resolves models against the STATIC lib/models.js list while
+     the studio picks from the live DB catalog, so `model` is always undefined
+     inside it and every strategy collapsed to flatten_guide/t2i. Routing is
+     therefore re-derived here from the live model's real capability fields.
+     Its "Unknown model" warning is dropped — it fires on every live id. */
+  const route = useMemo(() => {
+    const refs = compiled.references || [];
+    const urls = refs.map((r) => r.url).filter(Boolean);
+    const edit = model ? matchesGroup(model, "iti") : false;
+    const slots = model?.maxImages || 0;
+    const hasMasks = !!compiled.masks?.hasMasks;
+    if (edit && urls.length) return { strategy: hasMasks ? "inpaint" : "i2i", urls, edit, slots };
+    if (slots > 1 && urls.length > 1) return { strategy: "multi_ref", urls: urls.slice(0, slots), edit, slots };
+    if (slots >= 1 && urls.length) return { strategy: "single_ref", urls: urls.slice(0, 1), edit, slots };
+    if (urls.length) return { strategy: "described", urls: [], edit, slots };
+    return { strategy: "t2i", urls: [], edit, slots };
+  }, [compiled, model]);
+
+  const warnings = useMemo(() => {
+    const out = (compiled.warnings || []).filter((w) => !/^Unknown model/.test(w));
+    const name = model?.displayName || model?.name || "This model";
+    const refCount = (compiled.references || []).length;
+    if (route.strategy === "described" && refCount) {
+      out.push(`${name} does not accept reference images. The ${refCount} image layer${refCount > 1 ? "s are" : " is"} described by position in the prompt instead — pick an edit model to use the pixels.`);
+    }
+    if (route.strategy === "multi_ref" && refCount > route.slots) {
+      out.push(`${name} takes ${route.slots} references; the canvas has ${refCount}. The rest are described in the prompt.`);
+    }
+    if (compiled.masks?.hasMasks && !route.edit) {
+      out.push(`${name} cannot read masks. Mask regions are described in the prompt only. Choose an edit model for real inpainting.`);
+    }
+    if ((compiled.textRegions || []).length && !/gpt-image|ideogram/i.test(model?.id || "")) {
+      out.push(`${name} rarely renders exact lettering. The text layers are passed as content requirements — check the result, or generate the type here and place it on top.`);
+    }
+    if (failedImages) out.push(`${failedImages} image layer${failedImages > 1 ? "s" : ""} could not be loaded and will not be sent.`);
+    if (ratio !== trueRatio) out.push(`The canvas is ${trueRatio}; ${name} renders the nearest supported ratio, ${ratio}.`);
+    return out;
+  }, [compiled, route, model, failedImages, ratio, trueRatio]);
+
+  const { cost, affordable, balance, shortfall } = useCreditCost("image", model?.id || "", {
+    aspect_ratio: ratio,
+    image_url: route.urls[0],
+    images_list: route.strategy === "multi_ref" ? route.urls : undefined,
+  });
+
+  const guideEligible = useGuide && route.edit && scene.layers.some((l) => l.visible !== false);
+
+  const generate = useCallback(async () => {
+    if (!model || !prompt.trim() || generating) return;
+    setGenNotice("");
+    const params = {
+      endpoint: model.endpoint || model.id,
+      prompt: compiled.compiledPrompt || prompt,
+      negative_prompt: compiled.compiledNegative,
+      aspect_ratio: ratio,
+    };
+
+    /* An edit model deserves to see the actual composition, not the first
+       reference. compileCanvas asks the caller to do exactly this. */
+    if (guideEligible) {
+      setBusy("Flattening the composition guide…");
+      try {
+        params.image_url = await bake({
+          layers: scene.layers, width: scene.w, height: scene.h,
+          background: scene.bg === "transparent" ? "#000000" : scene.bg,
+          only: new Set(scene.layers.filter((l) => l.visible !== false).map((l) => l.id)),
+        }, "composition-guide.png");
+      } catch (e) {
+        setGenNotice(`${e.message} Sending the first reference instead.`);
+        if (route.urls[0]) params.image_url = route.urls[0];
+      } finally {
+        setBusy("");
+      }
+    } else if (route.strategy === "multi_ref") {
+      params.images_list = route.urls;
+    } else if (route.urls[0]) {
+      params.image_url = route.urls[0];
+    }
+
+    placed.current = null;
+    submit("image", model.id, params);
+  }, [model, prompt, generating, compiled, ratio, guideEligible, bake, scene, route, submit]);
+
+  /* One placement path. The old build auto-added the result AND offered an
+     "Add layer" button, so every generation landed on the canvas twice. */
+  useEffect(() => {
+    if (!result?.url || generating) return;
+    if (placed.current === result.url) return;
+    placed.current = result.url;
+    placeImage(result.url, "Generated");
+    onCreditsChanged?.();
+  }, [result, generating, placeImage, onCreditsChanged]);
+
+  /* A template may arrive after mount */
+  useEffect(() => {
+    if (!templateConfig) return;
+    if (templateConfig.prompt) setPrompt(templateConfig.prompt);
+    if (templateConfig.negative_prompt) setNegative(templateConfig.negative_prompt);
+    if (templateConfig.model) setModelId(templateConfig.model);
+  }, [templateConfig]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     KEYBOARD
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const overlayOpen = panel !== null || confirmNew || confirmFlatten || !!pendingOpen;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!e.key) return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+      if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+      if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); if (selectedId) duplicateLayer(selectedId); return; }
+      if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); stepZoom(1.25); return; }
+      if (mod && e.key === "-") { e.preventDefault(); stepZoom(0.8); return; }
+      if (mod && e.key === "0") { e.preventDefault(); fit(); return; }
+      if (mod) return;
+      if (overlayOpen) return;
+
+      const key = e.key.toLowerCase();
+      const byKey = TOOLS.find((x) => x.key.toLowerCase() === key);
+      if (byKey) { setTool(byKey.id); return; }
+
+      if (e.key === "Escape") { setEditingId(null); setSelectedId(null); setTool("select"); return; }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) { e.preventDefault(); removeLayer(selectedId); return; }
+
+      if (selectedId && e.key.startsWith("Arrow")) {
+        const layer = sceneRef.current.layers.find((l) => l.id === selectedId);
+        if (!layer || layer.locked) return;
+        e.preventDefault();
+        const n = e.shiftKey ? 10 : 1;
+        const d = e.key === "ArrowLeft" ? { x: layer.x - n } : e.key === "ArrowRight" ? { x: layer.x + n }
+          : e.key === "ArrowUp" ? { y: layer.y - n } : { y: layer.y + n };
+        patch(selectedId, d, `nudge:${selectedId}`);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo, save, duplicateLayer, removeLayer, patch, selectedId, stepZoom, fit, overlayOpen]);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     CONTEXT BAR — follows the tool
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const num = { width: 62, height: 28, padding: "0 6px", fontSize: 11 };
+  const swatch = { width: 28, height: 26, padding: 0, border: "1px solid var(--line)", borderRadius: "var(--r-xs)", background: "transparent", cursor: "pointer" };
+
+  const textLayer = selected?.type === "text" ? selected : null;
+  const textVals = textLayer || textDefaults;
+  const setText = (delta) => {
+    if (textLayer) patch(textLayer.id, delta, `text:${textLayer.id}`);
+    else setTextDefaults((d) => ({ ...d, ...delta }));
   };
+  const shapeLayer = selected && (selected.type === "rect" || selected.type === "ellipse") ? selected : null;
+  const shapeVals = shapeLayer || shapeDefaults;
+  const setShape = (delta) => {
+    if (shapeLayer) patch(shapeLayer.id, delta, `shape:${shapeLayer.id}`);
+    else setShapeDefaults((d) => ({ ...d, ...delta }));
+  };
+
+  const contextBar = (() => {
+    if (tool === "hand") {
+      return <span className="hs-hint">Drag to pan. Ctrl and scroll to zoom. Scroll to move.</span>;
+    }
+    if (tool === "image") {
+      return (
+        <>
+          <span className="hs-hint">Click the surface to browse, or drop images straight on it.</span>
+          <button type="button" className="hs-btn hs-btn--sm" onClick={() => fileRef.current?.click()}>
+            <IcUpload className="hs-icon-sm" /> Browse
+          </button>
+        </>
+      );
+    }
+    if (tool === "text") {
+      return (
+        <>
+          <span className="hs-label" style={{ margin: 0 }}>{textLayer ? "Text layer" : "New text"}</span>
+          <select className="hs-select" style={{ height: 28, fontSize: 11, width: 132 }} aria-label="Font"
+            value={textVals.fontFamily} onChange={(e) => setText({ fontFamily: e.target.value })}>
+            {FONTS.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+          <input className="hs-input" type="number" style={num} min={8} max={800} aria-label="Font size"
+            value={textVals.fontSize} onChange={(e) => setText({ fontSize: clamp(Number(e.target.value) || 8, 8, 800) })} />
+          <select className="hs-select" style={{ height: 28, fontSize: 11, width: 78 }} aria-label="Font weight"
+            value={textVals.fontWeight} onChange={(e) => setText({ fontWeight: Number(e.target.value) })}>
+            {[300, 400, 500, 600, 700, 800, 900].map((w) => <option key={w} value={w}>{w}</option>)}
+          </select>
+          <input type="color" style={swatch} aria-label="Text colour"
+            value={textVals.color} onChange={(e) => setText({ color: e.target.value })} />
+          <Segmented label="Alignment" value={textVals.align} onChange={(v) => setText({ align: v })}
+            options={[{ value: "left", label: "Left" }, { value: "center", label: "Centre" }, { value: "right", label: "Right" }]} />
+        </>
+      );
+    }
+    if (tool === "rect" || tool === "ellipse") {
+      return (
+        <>
+          <span className="hs-label" style={{ margin: 0 }}>{shapeLayer ? "Shape layer" : "New shape"}</span>
+          <span className="hs-hint">Fill</span>
+          <input type="color" style={swatch} aria-label="Fill colour"
+            value={shapeVals.fill === "transparent" ? "#000000" : shapeVals.fill}
+            onChange={(e) => setShape({ fill: e.target.value })} />
+          <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost" onClick={() => setShape({ fill: "transparent" })}>No fill</button>
+          <span className="hs-hint">Stroke</span>
+          <input type="color" style={swatch} aria-label="Stroke colour"
+            value={shapeVals.stroke === "transparent" ? "#000000" : shapeVals.stroke}
+            onChange={(e) => setShape({ stroke: e.target.value })} />
+          <input className="hs-input" type="number" style={num} min={0} max={200} aria-label="Stroke width"
+            value={shapeVals.strokeWidth} onChange={(e) => setShape({ strokeWidth: clamp(Number(e.target.value) || 0, 0, 200) })} />
+          {(shapeLayer?.type ?? tool) === "rect" && (
+            <>
+              <span className="hs-hint">Radius</span>
+              <input className="hs-input" type="number" style={num} min={0} max={400} aria-label="Corner radius"
+                value={shapeVals.radius || 0} onChange={(e) => setShape({ radius: clamp(Number(e.target.value) || 0, 0, 400) })} />
+            </>
+          )}
+        </>
+      );
+    }
+    /* select — the document itself */
+    return (
+      <>
+        <span className="hs-label" style={{ margin: 0 }}>Canvas</span>
+        <input className="hs-input" type="number" style={num} min={16} max={8000} aria-label="Canvas width"
+          value={scene.w} onChange={(e) => commit((s) => ({ ...s, w: clamp(Number(e.target.value) || 16, 16, 8000) }), "canvas-size")} />
+        <span className="hs-mute" style={{ fontSize: 11 }}>×</span>
+        <input className="hs-input" type="number" style={num} min={16} max={8000} aria-label="Canvas height"
+          value={scene.h} onChange={(e) => commit((s) => ({ ...s, h: clamp(Number(e.target.value) || 16, 16, 8000) }), "canvas-size")} />
+        <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>{trueRatio}</span>
+        <select className="hs-select" style={{ height: 28, fontSize: 11, width: 150 }} aria-label="Size preset" value=""
+          onChange={(e) => {
+            const p = SIZE_PRESETS[Number(e.target.value)];
+            if (!p) return;
+            commit((s) => ({ ...s, w: p.w, h: p.h }));
+            requestAnimationFrame(fit);
+          }}>
+          <option value="">Preset…</option>
+          {SIZE_PRESETS.map((p, i) => <option key={p.label} value={i}>{p.label}</option>)}
+        </select>
+        <span className="st-canvas__sep" style={{ width: 1, height: 20, margin: "0 2px" }} />
+        <span className="hs-hint">Background</span>
+        {BACKGROUNDS.map((c) => (
+          <button key={c} type="button" aria-label={`Background ${c}`} aria-pressed={scene.bg === c}
+            onClick={() => commit((s) => ({ ...s, bg: c }))}
+            style={{
+              width: 22, height: 22, borderRadius: "var(--r-xs)", flex: "none",
+              border: scene.bg === c ? "2px solid var(--filament)" : "1px solid var(--line)",
+              background: c === "transparent"
+                ? "repeating-conic-gradient(rgba(255,255,255,0.14) 0% 25%, transparent 0% 50%) 50% / 8px 8px"
+                : c,
+            }} />
+        ))}
+      </>
+    );
+  })();
+
+  /* ══════════════════════════════════════════════════════════════════════
+     LAYER STACK — rendered once, placed in the aside and in the sheet
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const [dragId, setDragId] = useState(null);
+  const [dropId, setDropId] = useState(null);
+
+  /* The row is a plain element on purpose. The previous build put `draggable`
+     on a motion.div; framer-motion consumes `onDragStart` as a gesture prop,
+     so it never reached the DOM, dataTransfer was never set and the drop
+     handler bailed out — z-order could not be changed at all. */
+  const onRowDragStart = (e, id) => {
+    if (e.target.closest("button, select, input")) { e.preventDefault(); return; }
+    setDragId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  };
+  const onRowDragOver = (e, id) => {
+    if (!dragId || dragId === id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDropId(id);
+  };
+  const onRowDrop = (e, id) => {
+    e.preventDefault();
+    const source = e.dataTransfer.getData("text/plain") || dragId;
+    setDragId(null);
+    setDropId(null);
+    if (!source || source === id) return;
+    const target = sceneRef.current.layers.findIndex((l) => l.id === id);
+    if (target < 0) return;
+    moveTo(source, target);
+  };
+
+  const layerRow = (l, index) => {
+    const active = l.id === selectedId;
+    const entry = l.src ? images.current.get(l.src) : null;
+    return (
+      <div
+        key={l.id}
+        className={`st-layer${active ? " is-active" : ""}${l.visible === false ? " is-hidden" : ""}${dropId === l.id ? " is-drop" : ""}`}
+        style={dragId === l.id ? { opacity: 0.4 } : undefined}
+        role="option"
+        aria-selected={active}
+        tabIndex={0}
+        draggable
+        onDragStart={(e) => onRowDragStart(e, l.id)}
+        onDragOver={(e) => onRowDragOver(e, l.id)}
+        onDrop={(e) => onRowDrop(e, l.id)}
+        onDragEnd={() => { setDragId(null); setDropId(null); }}
+        onClick={() => setSelectedId(l.id)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(l.id); } }}
+      >
+        <button
+          type="button"
+          className="st-layer__eye"
+          aria-label={l.visible === false ? `Show ${l.name}` : `Hide ${l.name}`}
+          onClick={(e) => { e.stopPropagation(); patch(l.id, { visible: l.visible === false }); }}
+        >
+          {l.visible === false ? <IcEyeOff className="hs-icon-sm" /> : <IcEye className="hs-icon-sm" />}
+        </button>
+
+        {l.type === "image" && entry?.img
+          ? <img className="st-layer__thumb" src={l.src} alt="" />
+          : (
+            <span className="st-layer__thumb" style={{ display: "grid", placeItems: "center", color: "var(--tx-mute)" }}>
+              {l.type === "text" ? <IcText style={{ width: 13, height: 13 }} />
+                : l.type === "ellipse" ? <IcEllipse style={{ width: 13, height: 13 }} />
+                : l.type === "rect" ? <IcRect style={{ width: 13, height: 13 }} />
+                : <IcImage style={{ width: 13, height: 13 }} />}
+            </span>
+          )}
+
+        <span className="st-layer__body">
+          <span className="st-layer__name">{l.name}{l.locked ? " · locked" : ""}</span>
+          <select
+            className="st-layer__role"
+            aria-label={`Role for ${l.name}`}
+            value={l.mask && l.mask !== "none" ? `mask:${l.mask}` : (l.role || "layout_reference")}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v.startsWith("mask:")) patch(l.id, { mask: v.slice(5) });
+              else patch(l.id, { role: v, mask: "none" });
+            }}
+          >
+            {ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            {(l.type === "rect" || l.type === "ellipse") && (
+              <>
+                <option value="mask:include">Mask · include</option>
+                <option value="mask:exclude">Mask · exclude</option>
+              </>
+            )}
+          </select>
+        </span>
+
+        <span className="st-layer__acts">
+          <button type="button" className="st-layer__act" aria-label={`Move ${l.name} up`} disabled={index === layers.length - 1}
+            onClick={(e) => { e.stopPropagation(); moveBy(l.id, 1); }}>
+            <IcChevron style={{ transform: "rotate(180deg)" }} />
+          </button>
+          <button type="button" className="st-layer__act" aria-label={`Move ${l.name} down`} disabled={index === 0}
+            onClick={(e) => { e.stopPropagation(); moveBy(l.id, -1); }}>
+            <IcChevron />
+          </button>
+        </span>
+      </div>
+    );
+  };
+
+  const layerProps = selected && (
+    <div className="st-canvas__props">
+      <div className="hs-row hs-row--between">
+        <input
+          className="hs-input"
+          style={{ height: 30, fontSize: 12, flex: 1, minWidth: 0 }}
+          aria-label="Layer name"
+          value={selected.name}
+          onChange={(e) => patch(selected.id, { name: e.target.value }, `name:${selected.id}`)}
+        />
+        <button type="button" className={`hs-btn hs-btn--sm hs-btn--icon${selected.locked ? " hs-btn--primary" : " hs-btn--ghost"}`}
+          aria-label={selected.locked ? "Unlock layer" : "Lock layer"} aria-pressed={!!selected.locked}
+          onClick={() => patch(selected.id, { locked: !selected.locked })}>
+          <IcLock className="hs-icon-sm" />
+        </button>
+      </div>
+
+      <div>
+        <div className="hs-row hs-row--between">
+          <span className="hs-label" style={{ margin: 0 }}>Opacity</span>
+          <output className="hs-mono" style={{ fontSize: 11, color: "var(--tx-dim)" }}>{Math.round((selected.opacity ?? 1) * 100)}%</output>
+        </div>
+        <input className="hs-range" type="range" min={0} max={100} value={Math.round((selected.opacity ?? 1) * 100)}
+          aria-label="Layer opacity"
+          onChange={(e) => patch(selected.id, { opacity: Number(e.target.value) / 100 }, `op:${selected.id}`)}
+          onPointerUp={endGesture} />
+      </div>
+
+      <div className="hs-row" style={{ gap: "var(--s-2)" }}>
+        <select className="hs-select" style={{ height: 30, fontSize: 11, flex: 1 }} aria-label="Blend mode"
+          value={selected.blend || "normal"} onChange={(e) => patch(selected.id, { blend: e.target.value })}>
+          {BLENDS.map((b) => <option key={b} value={b}>{b[0].toUpperCase() + b.slice(1).replace(/-/g, " ")}</option>)}
+        </select>
+        {selected.type === "image" && (
+          <select className="hs-select" style={{ height: 30, fontSize: 11, width: 96 }} aria-label="Image fit"
+            value={selected.fit || "cover"} onChange={(e) => patch(selected.id, { fit: e.target.value })}>
+            <option value="cover">Cover</option>
+            <option value="contain">Contain</option>
+            <option value="fill">Stretch</option>
+          </select>
+        )}
+      </div>
+
+      {selected.type === "text" && (
+        <textarea
+          className="hs-input hs-textarea"
+          style={{ minHeight: 60, fontSize: 12 }}
+          aria-label="Text content"
+          value={selected.text || ""}
+          onChange={(e) => patch(selected.id, { text: e.target.value }, `content:${selected.id}`)}
+        />
+      )}
+
+      <div className="hs-row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
+        <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+          {Math.round(selected.width)}×{Math.round(selected.height)} · {Math.round(selected.x)},{Math.round(selected.y)} · {Math.round(selected.rotation || 0)}°
+        </span>
+      </div>
+
+      <div className="hs-row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
+        <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost" onClick={() => duplicateLayer(selected.id)}>
+          <IcCopy className="hs-icon-sm" /> Duplicate
+        </button>
+        <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost"
+          disabled={layers.findIndex((l) => l.id === selected.id) <= 0 || !!busy}
+          onClick={() => mergeDown(selected.id)}>
+          <IcLayers className="hs-icon-sm" /> Merge down
+        </button>
+        <button type="button" className="hs-btn hs-btn--sm hs-btn--danger" onClick={() => removeLayer(selected.id)}>
+          <IcTrash className="hs-icon-sm" /> Delete
+        </button>
+      </div>
+    </div>
+  );
+
+  const layerStack = (
+    <>
+      <div className="st-canvas__layers-head">
+        <span className="hs-label" style={{ margin: 0 }}>Layers</span>
+        <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>{layers.length}</span>
+      </div>
+
+      <div className="st-canvas__layers-list" role="listbox" aria-label="Layers, top of the stack first">
+        {layers.length === 0 && (
+          <p className="hs-hint" style={{ padding: "var(--s-4)", textAlign: "center" }}>
+            No layers yet. Drop an image on the surface, or draw one with a tool.
+          </p>
+        )}
+        {layers.map((l, i) => layerRow(l, i))}
+      </div>
+
+      {layerProps}
+
+      <div className="st-canvas__foot">
+        <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost hs-btn--block"
+          disabled={layers.filter((l) => l.visible !== false).length < 2 || !!busy}
+          onClick={() => setConfirmFlatten(true)}>
+          <IcLayers className="hs-icon-sm" /> Flatten visible
+        </button>
+      </div>
+    </>
+  );
+
+  /* ══════════════════════════════════════════════════════════════════════
+     SELECTION OVERLAY
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+  const handlePos = {
+    nw: { left: "0%", top: "0%", cursor: "nwse-resize" },
+    n: { left: "50%", top: "0%", cursor: "ns-resize" },
+    ne: { left: "100%", top: "0%", cursor: "nesw-resize" },
+    e: { left: "100%", top: "50%", cursor: "ew-resize" },
+    se: { left: "100%", top: "100%", cursor: "nwse-resize" },
+    s: { left: "50%", top: "100%", cursor: "ns-resize" },
+    sw: { left: "0%", top: "100%", cursor: "nesw-resize" },
+    w: { left: "0%", top: "50%", cursor: "ew-resize" },
+  };
+
+  const showFrame = selected && selected.visible !== false && tool === "select" && !editingId;
+
+  /* Stable ref so React focuses the text box once, not on every repaint */
+  const focusEditor = useCallback((el) => {
+    if (!el) return;
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }, []);
+
+  /* ══════════════════════════════════════════════════════════════════════
+     RENDER
+     ══════════════════════════════════════════════════════════════════════ */
+
+  const cursor = tool === "hand" ? "grab"
+    : tool === "select" ? "default"
+    : tool === "image" ? "copy"
+    : "crosshair";
+
+  const saveLabel = saveState === "saving" ? "Saving…"
+    : saveState === "error" ? saveError
+    : dirty ? "Unsaved changes"
+    : savedAt ? `Saved ${savedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    : "Not saved yet";
+
+  const editing = editingId ? layers.find((l) => l.id === editingId) : null;
+
+  return (
+    <div className="st-canvas">
+      {/* ── Tool palette ─────────────────────────────────────────────── */}
+      <div className="st-canvas__tools" role="toolbar" aria-label="Canvas tools" aria-orientation="vertical">
+        {TOOLS.map(({ id, label, key, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            className={`st-canvas__tool${tool === id ? " is-active" : ""}`}
+            aria-pressed={tool === id}
+            title={`${label} (${key})`}
+            aria-label={`${label} (${key})`}
+            onClick={() => setTool(id)}
+          >
+            <Icon />
+          </button>
+        ))}
+
+        <span className="st-canvas__sep" />
+
+        <button type="button" className="st-canvas__tool" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
+          <IcUndo />
+        </button>
+        <button type="button" className="st-canvas__tool" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
+          <IcRedo />
+        </button>
+      </div>
+
+      {/* ── Context bar ──────────────────────────────────────────────── */}
+      <div className="st-canvas__topbar">
+        {contextBar}
+
+        <span className="hs-spread" />
+
+        {busy && <span className="hs-row" style={{ gap: 6 }}><span className="hs-spin" style={{ width: 12, height: 12 }} /><span className="hs-hint">{busy}</span></span>}
+
+        <input
+          className="hs-input"
+          style={{ height: 28, fontSize: 11, width: 150 }}
+          aria-label="Document name"
+          value={docName}
+          onChange={(e) => { setDocName(e.target.value); setDirty(true); }}
+          placeholder="Untitled"
+        />
+        <span className={saveState === "error" ? "hs-error" : "hs-mono"} style={{ fontSize: 10, color: saveState === "error" ? undefined : "var(--tx-mute)" }}>
+          {saveLabel}
+        </span>
+
+        <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost st-canvas__layers-btn" onClick={() => setPanel("layers")}>
+          <IcLayers className="hs-icon-sm" /> Layers
+        </button>
+        <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost" onClick={() => { setVersions(null); setPanel("files"); }}>
+          <IcArchive className="hs-icon-sm" /> Documents
+        </button>
+        <button type="button" className="hs-btn hs-btn--sm" onClick={save} disabled={saveState === "saving"}>
+          {saveState === "saving" ? <span className="hs-spin" style={{ width: 12, height: 12 }} /> : <IcCheck className="hs-icon-sm" />} Save
+        </button>
+        <button type="button" className="hs-btn hs-btn--sm" onClick={() => { setExportError(""); setPanel("export"); }} disabled={!layers.length}>
+          <IcDownload className="hs-icon-sm" /> Export
+        </button>
+      </div>
+
+      {/* ── Surface ──────────────────────────────────────────────────── */}
+      <div
+        ref={surfaceRef}
+        className="st-canvas__surface"
+        style={{ cursor }}
+        onPointerDown={onSurfacePointerDown}
+        onDoubleClick={onSurfaceDoubleClick}
+        onDrop={onDrop}
+        onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+      >
+        <div
+          ref={paperRef}
+          className="st-canvas__paper is-zoomable"
+          style={{
+            width: scene.w * zoom,
+            height: scene.h * zoom,
+            transform: `translate(${pan.x}px, ${pan.y}px)`,
+            background: scene.bg === "transparent" ? "transparent" : scene.bg,
+          }}
+        >
+          <canvas ref={canvasRef} aria-label="Canvas composition" />
+
+          {/* Shape being dragged out */}
+          {draft && (
+            <div className="st-canvas__marquee" style={{
+              left: (draft.x) * zoom, top: (draft.y) * zoom,
+              width: draft.w * zoom, height: draft.h * zoom,
+              borderRadius: tool === "ellipse" ? "50%" : 2,
+            }} />
+          )}
+
+          {/* Selection frame + handles, constant size at any zoom */}
+          {showFrame && (
+            <div
+              className="st-canvas__frame"
+              style={{
+                left: selected.x * zoom, top: selected.y * zoom,
+                width: selected.width * zoom, height: selected.height * zoom,
+                transform: `rotate(${selected.rotation || 0}deg)`,
+              }}
+            >
+              {!selected.locked && (
+                <>
+                  {handles.map((h) => (
+                    <span
+                      key={h}
+                      className="st-canvas__handle"
+                      style={handlePos[h]}
+                      onPointerDown={(e) => startResize(e, selected.id, h)}
+                    />
+                  ))}
+                  <span className="st-canvas__spin" onPointerDown={(e) => startRotate(e, selected.id)} />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Text editing happens in the DOM at the same scale the canvas draws */}
+          {editing && (
+            <div
+              ref={focusEditor}
+              contentEditable
+              suppressContentEditableWarning
+              className="st-canvas__textedit"
+              style={{
+                position: "absolute",
+                left: editing.x * zoom, top: editing.y * zoom,
+                width: editing.width * zoom, height: editing.height * zoom,
+                transform: `rotate(${editing.rotation || 0}deg)`,
+                display: "flex", alignItems: "center",
+                justifyContent: editing.align === "left" ? "flex-start" : editing.align === "right" ? "flex-end" : "center",
+                textAlign: editing.align || "center",
+                fontFamily: `"${editing.fontFamily || "Inter"}", system-ui, sans-serif`,
+                fontSize: (editing.fontSize || 48) * zoom,
+                fontWeight: editing.fontWeight || 700,
+                lineHeight: editing.lineHeight || 1.2,
+                color: editing.color || "#FFFFFF",
+                outline: "1px dashed var(--filament)",
+                overflow: "hidden",
+                cursor: "text",
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => e.stopPropagation()}
+              onBlur={(e) => {
+                patch(editing.id, { text: e.currentTarget.innerText.replace(/ /g, " ") });
+                setEditingId(null);
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Escape") e.currentTarget.blur();
+              }}
+            >
+              {editing.text}
+            </div>
+          )}
+        </div>
+
+        {/* Empty state */}
+        {layers.length === 0 && (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none", padding: "var(--s-6)" }}>
+            <div
+              className="hs-empty"
+              style={{ background: "rgba(8,8,12,0.78)", borderRadius: "var(--r-lg)", padding: "var(--s-6)", pointerEvents: "auto", maxWidth: 440 }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <span className="hs-empty__mark"><IcLayers /></span>
+              <h3>Compose, then generate</h3>
+              <p>Drop images on the surface, draw a region, or set a headline. Give every layer a role and the model is told what each one is for.</p>
+              <div className="hs-chips" style={{ justifyContent: "center", marginTop: "var(--s-2)" }}>
+                {EXAMPLES.map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    className="hs-chip"
+                    style={{ fontFamily: "var(--ff-ui)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}
+                    title={e}
+                    onClick={() => setPrompt(e)}
+                  >
+                    {e.length > 44 ? `${e.slice(0, 44)}…` : e}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Zoom */}
+        <div className="st-canvas__zoom" onPointerDown={(e) => e.stopPropagation()}>
+          <button type="button" className="hs-btn hs-btn--sm hs-btn--icon hs-btn--ghost" aria-label="Zoom out" onClick={() => stepZoom(0.8)} disabled={zoom <= MIN_ZOOM}>
+            <IcZoomOut className="hs-icon-sm" />
+          </button>
+          <output aria-label="Zoom level">{Math.round(zoom * 100)}%</output>
+          <button type="button" className="hs-btn hs-btn--sm hs-btn--icon hs-btn--ghost" aria-label="Zoom in" onClick={() => stepZoom(1.25)} disabled={zoom >= MAX_ZOOM}>
+            <IcZoomIn className="hs-icon-sm" />
+          </button>
+          <button type="button" className="hs-btn hs-btn--sm hs-btn--icon hs-btn--ghost" aria-label="Fit to screen" title="Fit (Ctrl+0)" onClick={fit}>
+            <IcFit className="hs-icon-sm" />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Layer stack ──────────────────────────────────────────────── */}
+      <aside className="st-canvas__layers" aria-label="Layer stack">
+        {layerStack}
+      </aside>
+
+      {/* ── Dock ─────────────────────────────────────────────────────── */}
+      <div className="st-canvas__dock st-canvas__dock--flush">
+        <div className="st-canvas__dockhead">
+          <button type="button" className="hs-btn hs-btn--sm" onClick={() => setPanel("models")}>
+            <IcSpark className="hs-icon-sm" />
+            {model ? (model.displayName || model.name) : loadingModels ? "Loading models…" : "Choose a model"}
+          </button>
+          <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+            {ratio} · {route.strategy.replace(/_/g, " ")}
+          </span>
+          <span className="hs-spread" />
+          {unclean && (
+            <span className="hs-badge hs-badge--caution" title={TAINT_MSG}>
+              <IcAlert style={{ width: 11, height: 11 }} /> Export blocked
+            </span>
+          )}
+        </div>
+
+        {(notice || genNotice || warnings.length > 0 || genError) && (
+          <div className="st-canvas__notices">
+            {genError && <div className="hs-notice hs-notice--fault"><IcAlert className="hs-icon-sm" /><span>{genError}</span></div>}
+            {notice && <div className="hs-notice hs-notice--fault"><IcAlert className="hs-icon-sm" /><span>{notice}</span></div>}
+            {genNotice && <div className="hs-notice hs-notice--caution"><IcAlert className="hs-icon-sm" /><span>{genNotice}</span></div>}
+            {warnings.map((w) => (
+              <div key={w} className="hs-notice hs-notice--caution"><IcAlert className="hs-icon-sm" /><span>{w}</span></div>
+            ))}
+          </div>
+        )}
+
+        {result?.url && !generating && (
+          <div className="st-canvas__result">
+            <img src={result.url} alt="" />
+            <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+              Placed on canvas · {elapsed}s{result.creditsUsed != null ? ` · ${result.creditsUsed}cr` : ""}
+            </span>
+            <span className="hs-spread" />
+            <a className="hs-btn hs-btn--sm hs-btn--ghost" href={result.url} target="_blank" rel="noopener noreferrer">
+              <IcExternal className="hs-icon-sm" /> Open
+            </a>
+            <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost" onClick={reset}>
+              <IcRefresh className="hs-icon-sm" /> Clear
+            </button>
+          </div>
+        )}
+
+        <Brief
+          value={prompt}
+          onChange={setPrompt}
+          onSubmit={generate}
+          onCancel={cancel}
+          generating={generating}
+          stage={stage}
+          disabled={!model}
+          cost={cost || 0}
+          balance={balance}
+          affordable={affordable}
+          shortfall={shortfall}
+          submitLabel="Generate"
+          placeholder={
+            layers.length
+              ? "Say what should change and what must stay. Layer roles carry the rest."
+              : "Describe the image. Add layers to direct the composition."
+          }
+          onUpload={() => fileRef.current?.click()}
+        />
+      </div>
+
+      {/* ── Hidden file input ────────────────────────────────────────── */}
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        hidden
+        onChange={(e) => { takeFiles(e.target.files); e.target.value = ""; }}
+      />
+
+      {/* ── Layer stack, where the aside is hidden ───────────────────── */}
+      <Sheet open={panel === "layers"} onClose={() => setPanel(null)} title="Layers">
+        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>{layerStack}</div>
+      </Sheet>
+
+      {/* ── Model ────────────────────────────────────────────────────── */}
+      <Sheet open={panel === "models"} onClose={() => setPanel(null)} title="Model">
+        <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+          <ModelPicker
+            models={available}
+            value={model?.id}
+            onSelect={(id) => { setModelId(id); setPanel(null); }}
+            loading={loadingModels}
+            emptyHint="No image models in the catalog yet."
+          />
+          <Field label="Avoid" hint="Passed to the model as the negative prompt.">
+            {(id) => (
+              <textarea id={id} className="hs-input hs-textarea" style={{ minHeight: 64 }}
+                value={negative} onChange={(e) => setNegative(e.target.value)}
+                placeholder="text, watermark, extra fingers" />
+            )}
+          </Field>
+          <label className="hs-row" style={{ gap: "var(--s-3)", cursor: "pointer" }}>
+            <button type="button" role="switch" aria-checked={useGuide} className="hs-switch" onClick={() => setUseGuide((v) => !v)} />
+            <span>
+              <span style={{ fontSize: "var(--t-sm)" }}>Send the composition as a guide</span>
+              <span className="hs-hint" style={{ display: "block" }}>
+                Flattens every visible layer to one image and sends it to the edit model. Off means only the first reference is sent.
+              </span>
+            </span>
+          </label>
+        </div>
+      </Sheet>
+
+      {/* ── Documents + version history ──────────────────────────────── */}
+      <Modal open={panel === "files"} onClose={() => { setPanel(null); setVersions(null); }} title={versions ? `History · ${versions.name}` : "Documents"}>
+        {versions ? (
+          <div className="hs-stack" style={{ gap: "var(--s-2)" }}>
+            <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost" style={{ alignSelf: "flex-start" }} onClick={() => setVersions(null)}>
+              <IcChevron style={{ transform: "rotate(90deg)", width: 14, height: 14 }} /> All documents
+            </button>
+            {versions.list === null && <div className="hs-skel" style={{ height: 44 }} />}
+            {versions.error && <div className="hs-notice hs-notice--fault"><IcAlert className="hs-icon-sm" /><span>{versions.error}</span></div>}
+            {versions.list?.length === 0 && <p className="hs-hint">No saved versions yet. Every save writes one.</p>}
+            {versions.list?.map((v) => (
+              <div key={v.id} className="hs-card" style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", padding: "var(--s-3)" }}>
+                <span className="hs-mono" style={{ fontSize: 11, color: "var(--filament-lit)" }}>v{v.version}</span>
+                <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+                  {v.createdAt ? new Date(v.createdAt).toLocaleString() : ""}
+                </span>
+                <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+                  {v.content?.layers?.length ?? 0} layers
+                </span>
+                <span className="hs-spread" />
+                <button type="button" className="hs-btn hs-btn--sm" onClick={() => restoreVersion(v)}>Restore</button>
+              </div>
+            ))}
+            <p className="hs-hint">Restoring loads that version into the editor. Nothing is overwritten until you save, and saving writes a new version.</p>
+          </div>
+        ) : (
+          <div className="hs-stack" style={{ gap: "var(--s-2)" }}>
+            <button type="button" className="hs-btn hs-btn--sm" style={{ alignSelf: "flex-start" }} onClick={requestNew}>
+              <IcPlus className="hs-icon-sm" /> New document
+            </button>
+            {docs.length === 0 && <p className="hs-hint">No saved documents yet. Save this one to start a history.</p>}
+            {docs.map((d) => (
+              <div key={d.id} className={`hs-card${d.id === docId ? " hs-card--active" : ""}`} style={{ display: "flex", alignItems: "center", gap: "var(--s-3)", padding: "var(--s-3)" }}>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: "var(--t-sm)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {d.name || "Untitled"}
+                  </span>
+                  <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
+                    {d.content?.layers?.length ?? 0} layers · {d.content?.width ?? 1080}×{d.content?.height ?? 1080}
+                    {d.updatedAt ? ` · ${new Date(d.updatedAt).toLocaleDateString()}` : ""}
+                  </span>
+                </span>
+                <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost" onClick={() => openVersions(d)}>
+                  <IcHistory className="hs-icon-sm" /> History
+                </button>
+                <button type="button" className="hs-btn hs-btn--sm" onClick={() => requestOpen(d)}>Open</button>
+                <button type="button" className="hs-btn hs-btn--sm hs-btn--icon hs-btn--danger" aria-label={`Delete ${d.name || "Untitled"}`} onClick={() => deleteDoc(d.id)}>
+                  <IcTrash className="hs-icon-sm" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Export ───────────────────────────────────────────────────── */}
+      <Modal
+        open={panel === "export"}
+        onClose={() => setPanel(null)}
+        title="Export"
+        footer={
+          <>
+            <button type="button" className="hs-btn hs-btn--ghost" onClick={() => setPanel(null)}>Cancel</button>
+            <button type="button" className="hs-btn hs-btn--primary" onClick={doExport} disabled={exporting}>
+              {exporting ? <span className="hs-spin" style={{ width: 12, height: 12 }} /> : <IcDownload className="hs-icon-sm" />}
+              {exporting ? "Exporting" : `Export ${format.toUpperCase()}`}
+            </button>
+          </>
+        }
+      >
+        <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+          {exportError && <div className="hs-notice hs-notice--fault"><IcAlert className="hs-icon-sm" /><span>{exportError}</span></div>}
+          {unclean && !exportError && (
+            <div className="hs-notice hs-notice--caution"><IcAlert className="hs-icon-sm" /><span>{TAINT_MSG}</span></div>
+          )}
+
+          <Field label="Format">
+            <Segmented value={format} onChange={setFormat} label="Format"
+              options={[{ value: "png", label: "PNG" }, { value: "jpg", label: "JPEG" }, { value: "webp", label: "WebP" }]} />
+          </Field>
+
+          {format !== "png" && (
+            <div className="hs-field">
+              <div className="hs-row hs-row--between">
+                <span className="hs-label" style={{ margin: 0 }}>Quality</span>
+                <output className="hs-mono" style={{ fontSize: 11, color: "var(--tx-dim)" }}>{Math.round(quality * 100)}%</output>
+              </div>
+              <input className="hs-range" type="range" min={0.1} max={1} step={0.02} value={quality} aria-label="Quality"
+                onChange={(e) => setQuality(Number(e.target.value))} />
+            </div>
+          )}
+
+          <div className="hs-field">
+            <div className="hs-row hs-row--between">
+              <span className="hs-label" style={{ margin: 0 }}>Scale</span>
+              <output className="hs-mono" style={{ fontSize: 11, color: "var(--tx-dim)" }}>{exportScale}×</output>
+            </div>
+            <input className="hs-range" type="range" min={0.25} max={4} step={0.25} value={exportScale} aria-label="Scale"
+              onChange={(e) => setExportScale(Number(e.target.value))} />
+          </div>
+
+          <p className="hs-mono" style={{ fontSize: 11, color: "var(--tx-mute)" }}>
+            {Math.round(scene.w * exportScale)}×{Math.round(scene.h * exportScale)} px
+            {format === "jpg" && scene.bg === "transparent" ? " · JPEG has no alpha, so transparency exports white" : ""}
+          </p>
+        </div>
+      </Modal>
+
+      {/* ── Destructive confirmations ────────────────────────────────── */}
+      <Confirm
+        open={confirmNew}
+        onClose={() => setConfirmNew(false)}
+        onConfirm={newDoc}
+        title="Start a new document?"
+        body={`"${docName}" has changes that are not saved. Starting a new document discards them.`}
+        confirmLabel="Discard and start"
+      />
+      <Confirm
+        open={!!pendingOpen}
+        onClose={() => setPendingOpen(null)}
+        onConfirm={() => { if (pendingOpen) openDoc(pendingOpen); setPendingOpen(null); }}
+        title="Open another document?"
+        body={`"${docName}" has changes that are not saved. Opening another document discards them.`}
+        confirmLabel="Discard and open"
+      />
+      <Confirm
+        open={confirmFlatten}
+        onClose={() => setConfirmFlatten(false)}
+        onConfirm={flatten}
+        title="Flatten the visible layers?"
+        body="Every visible layer is composited into one image layer. Hidden layers are kept. Undo reverses it."
+        confirmLabel="Flatten"
+        danger={false}
+      />
+    </div>
+  );
 }

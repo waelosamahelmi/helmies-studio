@@ -1,704 +1,782 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+/* ══════════════════════════════════════════════════════════════════════════
+   SETTINGS — /settings?tab=…
+   ──────────────────────────────────────────────────────────────────────────
+   The tab lives in the query string because the studio shell, the command
+   palette and the phone profile all deep-link straight to a panel
+   (/settings?tab=billing). Tabs are links, not buttons, so those URLs are
+   real, shareable and back-button friendly.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+import { Suspense, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
 import Navbar from "@/components/Navbar";
-import CreditTickDown from "@/components/CreditTickDown";
-import { IconBolt, IconArrowUpRight } from "@/components/Icons";
+import Footer from "@/components/Footer";
+import { Confirm } from "@/components/studio/kit/Sheet";
+import {
+  IcPersona, IcBolt, IcLock, IcSettings, IcCopy, IcTrash, IcPlus,
+  IcExternal, IcCheck, IcRefresh,
+} from "@/components/studio/kit/Icons";
+import { apiFetch } from "@/lib/client-fetch";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
-import { SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
-import toast from "react-hot-toast";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileChipScroller } from "@/components/studio/mobile";
+import { PLAN_NAMES, SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
 
-const EASE = [0.32, 0.72, 0, 1];
-
-// Single source of truth: credits.js SUBSCRIPTION_CREDITS
-const fmt = (n) => n >= 1000 ? `${(n / 1000).toFixed(0)},${String(n % 1000).padStart(3, "0")}` : String(n);
-const PLANS = [
-  { id: "free",    name: "Free",    price: "€0",  period: "/month", credits: `${SUBSCRIPTION_CREDITS.free} credits/mo`,    features: ["Community models", "Standard resolution", "Single generation"] },
-  { id: "starter", name: "Starter", price: "€12", period: "/month", credits: `${fmt(SUBSCRIPTION_CREDITS.starter)} credits/mo`, features: ["All image models", "4K resolution", "Priority queue", "API access"] },
-  { id: "studio",  name: "Studio",  price: "€29", period: "/month", credits: `${fmt(SUBSCRIPTION_CREDITS.studio)} credits/mo`,  features: ["All models + video", "8K resolution", "Fast queue", "Full API", "Brand kits"] },
-  { id: "pro",     name: "Pro",     price: "€79", period: "/month", credits: `${fmt(SUBSCRIPTION_CREDITS.pro)} credits/mo`,     features: ["Everything unlimited", "Custom models", "Dedicated GPU", "White-label API", "Priority support"] },
-];
+/* ── Formatting — every numeral is mono, so keep the strings predictable ── */
+const NF = new Intl.NumberFormat("en-US");
+const num = (n) => NF.format(Number(n) || 0);
+const day = (d) =>
+  d ? new Date(d).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
 const TABS = [
-  { id: "profile", label: "Profile" },
-  { id: "generation", label: "Generation defaults" },
-  { id: "api-keys", label: "API keys" },
-  { id: "notifications", label: "Notifications" },
-  { id: "security", label: "Security" },
-  { id: "billing", label: "Billing" },
+  { id: "account",  label: "Account",             icon: IcPersona },
+  { id: "billing",  label: "Billing",             icon: IcBolt },
+  { id: "api-keys", label: "API keys",            icon: IcLock },
+  { id: "defaults", label: "Generation defaults", icon: IcSettings },
 ];
 
-export default function SettingsPage() {
-  const isMobile = useIsMobile();
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState(tabParam || "profile");
+/* Older links (/settings?tab=profile, ?tab=notifications) still land somewhere sane */
+const ALIASES = {
+  profile: "account", security: "account", notifications: "account",
+  generation: "defaults", "generation-defaults": "defaults",
+  keys: "api-keys", api: "api-keys",
+};
 
-  // Sync tab from URL
-  useEffect(() => {
-    if (tabParam && TABS.some((t) => t.id === tabParam)) {
-      setActiveTab(tabParam);
+/* Prices mirror /pricing. Credit allowances come from plan-constants. */
+const PLANS = [
+  {
+    id: "free", name: PLAN_NAMES.free, monthly: 0, yearly: 0,
+    credits: SUBSCRIPTION_CREDITS.free,
+    features: ["Every studio unlocked", "All 70+ models", "Standard resolution"],
+  },
+  {
+    id: "starter", name: PLAN_NAMES.starter, monthly: 24, yearly: 19,
+    credits: SUBSCRIPTION_CREDITS.starter,
+    features: ["HD resolution", "Cancel anytime", "Email support"],
+  },
+  {
+    id: "studio", name: PLAN_NAMES.studio, monthly: 49, yearly: 39,
+    credits: SUBSCRIPTION_CREDITS.studio,
+    features: ["4K downloads", "Generation archive", "Priority queue"],
+  },
+  {
+    id: "pro", name: PLAN_NAMES.pro, monthly: 99, yearly: 79,
+    credits: SUBSCRIPTION_CREDITS.pro,
+    features: ["Priority queue", "Batch exports", "API access"],
+  },
+];
+
+/* Studios that persist a basic/advanced control mode in this browser */
+const MODE_KEYS = [
+  "audio", "cinema", "clipping", "influencer",
+  "lipsync", "marketing", "vibe-motion", "recast",
+].map((t) => `helmies.studio.${t}.mode`);
+
+const DEFAULTS_KEY = "helmies.studio.defaults";
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+function Fault({ children }) {
+  if (!children) return null;
+  return (
+    <p className="hs-notice hs-notice--fault" role="alert">{children}</p>
+  );
+}
+
+function Spinner({ label }) {
+  return (
+    <>
+      <span className="hs-spin" aria-hidden="true" />
+      <span className="hs-sr">{label}</span>
+    </>
+  );
+}
+
+/* ── Account ───────────────────────────────────────────────────────────── */
+function AccountPanel({ session, status, plan }) {
+  const user = session?.user;
+
+  return (
+    <section className="pg-panel" aria-labelledby="h-account">
+      <div className="pg-panel__head">
+        <h2 id="h-account">Account</h2>
+        <button type="button" className="hs-btn hs-btn--sm" onClick={() => signOut({ callbackUrl: "/" })}>
+          Sign out
+        </button>
+      </div>
+
+      <div className="pg-panel__body">
+        {status === "loading" ? (
+          <div className="hs-stack" aria-busy="true">
+            <div className="hs-skel" style={{ height: 18, width: "40%" }} />
+            <div className="hs-skel" style={{ height: 18, width: "62%" }} />
+            <div className="hs-skel" style={{ height: 18, width: "30%" }} />
+          </div>
+        ) : !user ? (
+          <div className="hs-empty">
+            <span className="hs-empty__mark"><IcPersona /></span>
+            <h3>You are signed out</h3>
+            <p>Sign in to see your account, balance and keys.</p>
+            <Link href="/login" className="hs-btn hs-btn--primary">Sign in</Link>
+          </div>
+        ) : (
+          <>
+            <div>
+              <div className="pg-kv">
+                <div>
+                  <div className="pg-kv__k">Name</div>
+                  <div className="pg-kv__sub">Comes from the account you signed in with.</div>
+                </div>
+                <div className="pg-kv__v">{user.name || "Not set"}</div>
+              </div>
+
+              <div className="pg-kv">
+                <div>
+                  <div className="pg-kv__k">Email</div>
+                  <div className="pg-kv__sub">Used for receipts and account notices.</div>
+                </div>
+                <div className="pg-kv__v">{user.email}</div>
+              </div>
+
+              <div className="pg-kv">
+                <div className="pg-kv__k">Plan</div>
+                <div className="pg-kv__v">
+                  <span className="hs-badge hs-badge--accent">{PLAN_NAMES[plan] || plan}</span>
+                </div>
+              </div>
+
+              <div className="pg-kv">
+                <div className="pg-kv__k">Role</div>
+                <div className="pg-kv__v">{user.role || "user"}</div>
+              </div>
+
+              <div className="pg-kv">
+                <div>
+                  <div className="pg-kv__k">Account ID</div>
+                  <div className="pg-kv__sub">Quote this if you contact support.</div>
+                </div>
+                <div className="pg-kv__v">{user.id}</div>
+              </div>
+            </div>
+
+            <p className="hs-notice">
+              Changing your name or email is not self-service yet. Email{" "}
+              <a href="mailto:hello@helmies.fi" style={{ textDecoration: "underline" }}>hello@helmies.fi</a>{" "}
+              and we will do it for you.
+            </p>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ── Billing ───────────────────────────────────────────────────────────── */
+function BillingPanel({ data, loading, error, reload }) {
+  const [yearly, setYearly] = useState(false);
+  const [busy, setBusy] = useState(null);
+  const [fault, setFault] = useState("");
+
+  const plan = data?.plan || "free";
+  const credits = data?.credits ?? 0;
+  const ledger = data?.recentTransactions || [];
+  const period = data?.subscription?.stripeCurrentPeriodEnd;
+
+  const post = useCallback(async (key, path, body) => {
+    setBusy(key);
+    setFault("");
+    try {
+      // retries: 0 — a retried POST would open a second Stripe session.
+      const res = await apiFetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+        retries: 0,
+      });
+      const json = await res.json();
+      if (!json?.url) throw new Error("Stripe did not return a link. Try again in a moment.");
+      window.location.href = json.url;
+    } catch (e) {
+      setFault(e.message);
+      setBusy(null);
     }
-  }, [tabParam]);
+  }, []);
 
-  const switchTab = (tabId) => {
-    setActiveTab(tabId);
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", tabId);
-    router.replace(`/settings?${params.toString()}`, { scroll: false });
-  };
+  return (
+    <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+      <Fault>{fault}</Fault>
+      <Fault>{error}</Fault>
 
-  // ── Data ──
+      {/* Balance */}
+      <section className="pg-balance" aria-labelledby="h-balance">
+        <h2 id="h-balance" className="hs-label" style={{ marginBottom: 0 }}>Credit balance</h2>
+        {loading ? (
+          <div className="hs-skel" style={{ height: 44, width: 180 }} />
+        ) : (
+          <span className="pg-balance__n">{num(credits)}</span>
+        )}
+        <p className="hs-hint">
+          {PLAN_NAMES[plan] || plan} plan
+          {period ? ` · renews ${day(period)}` : " · no renewal scheduled"}
+        </p>
+        <div className="hs-row" style={{ flexWrap: "wrap", marginTop: "var(--s-2)" }}>
+          <a href="#packs" className="hs-btn hs-btn--primary">
+            Top up credits
+            <IcBolt className="hs-icon-sm" />
+          </a>
+          <button
+            type="button"
+            className="hs-btn"
+            onClick={() => post("portal", "/api/stripe/portal")}
+            disabled={busy === "portal"}
+          >
+            {busy === "portal" ? <Spinner label="Opening billing portal" /> : <IcExternal className="hs-icon-sm" />}
+            Invoices and payment method
+          </button>
+          <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={reload}>
+            <IcRefresh className="hs-icon-sm" />
+            Refresh
+          </button>
+        </div>
+      </section>
+
+      {/* Plans */}
+      <section className="pg-panel" aria-labelledby="h-plans">
+        <div className="pg-panel__head">
+          <h2 id="h-plans">Plan</h2>
+          <div className="hs-segmented" role="group" aria-label="Billing period">
+            <button type="button" aria-pressed={!yearly} onClick={() => setYearly(false)}>Monthly</button>
+            <button type="button" aria-pressed={yearly} onClick={() => setYearly(true)}>Yearly −20%</button>
+          </div>
+        </div>
+        <div className="pg-panel__body">
+          <div className="pg-plans">
+            {PLANS.map((p) => {
+              const current = p.id === plan;
+              const price = yearly ? p.yearly : p.monthly;
+              return (
+                <article key={p.id} className={`pg-plan${current ? " is-featured" : ""}`}>
+                  <h3 className="pg-plan__name">{p.name}</h3>
+                  <div className="pg-plan__price">
+                    <span className="pg-plan__amount">€{price}</span>
+                    <span className="pg-plan__per">{p.id === "free" ? "forever" : "/mo"}</span>
+                  </div>
+                  <span className="pg-plan__credits">{num(p.credits)} credits / month</span>
+                  <ul className="pg-plan__list">
+                    {p.features.map((f) => (
+                      <li key={f}><IcCheck /> {f}</li>
+                    ))}
+                  </ul>
+                  {current ? (
+                    <span className="hs-badge hs-badge--accent" style={{ alignSelf: "flex-start", marginTop: "auto" }}>
+                      Current plan
+                    </span>
+                  ) : p.id === "free" ? (
+                    <span className="hs-hint" style={{ marginTop: "auto" }}>Included with every account.</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="hs-btn hs-btn--primary hs-btn--block"
+                      onClick={() => post(`plan-${p.id}`, "/api/stripe/checkout", { plan: p.id, yearly })}
+                      disabled={busy === `plan-${p.id}`}
+                    >
+                      {busy === `plan-${p.id}` ? <Spinner label="Opening checkout" /> : null}
+                      Switch to {p.name}
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* Credit packs */}
+      <section className="pg-panel" id="packs" aria-labelledby="h-packs">
+        <div className="pg-panel__head">
+          <h2 id="h-packs">Credit packs</h2>
+          <span className="hs-badge">One-off · never expire</span>
+        </div>
+        <div className="pg-panel__body">
+          <div className="pg-packs">
+            {CREDIT_PACKS.map((p) => (
+              <div key={p.id} className="pg-pack">
+                <span className="pg-pack__cr">{num(p.credits)}</span>
+                <span className="pg-pack__eur">{p.price}</span>
+                <span className="pg-pack__rate">{p.pricePerCredit}</span>
+                <button
+                  type="button"
+                  className="hs-btn hs-btn--primary hs-btn--sm hs-btn--block"
+                  style={{ marginTop: "var(--s-2)" }}
+                  onClick={() => post(`pack-${p.id}`, "/api/stripe/topup", { packId: p.id })}
+                  disabled={busy === `pack-${p.id}`}
+                >
+                  {busy === `pack-${p.id}` ? <Spinner label="Opening checkout" /> : null}
+                  Buy {num(p.credits)}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Ledger */}
+      <section className="pg-panel" aria-labelledby="h-ledger">
+        <div className="pg-panel__head">
+          <h2 id="h-ledger">Credit activity</h2>
+          <span className="hs-badge">Last {num(ledger.length)}</span>
+        </div>
+        <div className="pg-panel__body">
+          {loading ? (
+            <div className="hs-stack" aria-busy="true">
+              {[0, 1, 2, 3].map((i) => <div key={i} className="hs-skel" style={{ height: 34 }} />)}
+            </div>
+          ) : ledger.length === 0 ? (
+            <div className="hs-empty">
+              <span className="hs-empty__mark"><IcBolt /></span>
+              <h3>Nothing spent yet</h3>
+              <p>Your first generation will show up here with what it cost.</p>
+              <Link href="/studio" className="hs-btn hs-btn--primary">Open the studio</Link>
+            </div>
+          ) : (
+            <div className="hs-table-wrap">
+              <table className="hs-table">
+                <caption className="hs-sr">Recent credit transactions</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Description</th>
+                    <th scope="col" className="hs-num">Credits</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ledger.map((t) => (
+                    <tr key={t.id}>
+                      <td className="hs-mono">{day(t.createdAt)}</td>
+                      <td><span className="hs-badge">{t.type}</span></td>
+                      <td>{t.description || "—"}</td>
+                      <td
+                        className="hs-num"
+                        style={{ color: t.amount > 0 ? "var(--signal)" : "var(--tx)" }}
+                      >
+                        {t.amount > 0 ? "+" : ""}{num(t.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ── API keys ──────────────────────────────────────────────────────────── */
+function KeysPanel() {
   const [keys, setKeys] = useState([]);
-  const [newKeyName, setNewKeyName] = useState("");
-  const [newKey, setNewKey] = useState(null);
-  const [credits, setCredits] = useState(null);
-  const [subscription, setSubscription] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [displayName, setDisplayName] = useState("");
-  const [email, setEmail] = useState("");
-  const [imageQuality, setImageQuality] = useState("high");
-  const [approvalMode, setApprovalMode] = useState("auto");
-  const [billingYearly, setBillingYearly] = useState(false);
+  const [fault, setFault] = useState("");
+  const [name, setName] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [fresh, setFresh] = useState(null);   // { key, name } — shown once
+  const [copied, setCopied] = useState(false);
+  const [pending, setPending] = useState(null); // key row awaiting confirmation
 
-  const loadKeys = useCallback(() => {
-    fetch("/api/user/keys").then((r) => r.json()).then(setKeys).catch(() => {});
+  const load = useCallback(async () => {
+    setLoading(true);
+    setFault("");
+    try {
+      const res = await apiFetch("/api/user/keys");
+      const json = await res.json();
+      setKeys(Array.isArray(json) ? json : []);
+    } catch (e) {
+      setFault(e.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const loadCredits = useCallback(() => {
-    fetch("/api/credits")
-      .then((r) => r.json())
-      .then((d) => {
-        setCredits(d);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
+  useEffect(() => { load(); }, [load]);
 
-  const loadSubscription = useCallback(() => {
-    fetch("/api/stripe/portal", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ return_url: "/settings" }),
-    })
-      .then((r) => r.json())
-      .then(setSubscription)
-      .catch(() => {});
-  }, []);
+  const create = async (e) => {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setNameError("Give the key a name so you can tell it apart later.");
+      return;
+    }
+    setNameError("");
+    setCreating(true);
+    setFault("");
+    try {
+      const res = await apiFetch("/api/user/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmed }),
+        retries: 0,
+      });
+      const json = await res.json();
+      if (!json?.key) throw new Error("The key was created but not returned. Reload and try again.");
+      setFresh({ key: json.key, name: trimmed });
+      setCopied(false);
+      setName("");
+      load();
+    } catch (e) {
+      setFault(e.message);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const revoke = async (id) => {
+    setFault("");
+    try {
+      await apiFetch("/api/user/keys", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+        retries: 0,
+      });
+      load();
+    } catch (e) {
+      setFault(e.message);
+    }
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(fresh.key);
+      setCopied(true);
+    } catch {
+      setFault("The browser blocked the clipboard. Select the key and copy it by hand.");
+    }
+  };
+
+  return (
+    <section className="pg-panel" aria-labelledby="h-keys">
+      <div className="pg-panel__head">
+        <h2 id="h-keys">API keys</h2>
+        <span className="hs-badge">{num(keys.length)} active</span>
+      </div>
+
+      <div className="pg-panel__body">
+        <Fault>{fault}</Fault>
+
+        <form onSubmit={create} noValidate>
+          <div className="hs-field">
+            <label className="hs-label" htmlFor="key-name">New key name</label>
+            <div className="hs-row" style={{ alignItems: "flex-start" }}>
+              <div style={{ flex: 1 }}>
+                <input
+                  id="key-name"
+                  className="hs-input"
+                  type="text"
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); setNameError(""); }}
+                  placeholder="Render farm, CI, my laptop…"
+                  autoComplete="off"
+                  maxLength={60}
+                  aria-invalid={nameError ? "true" : undefined}
+                  aria-describedby={nameError ? "key-name-error" : "key-name-hint"}
+                />
+              </div>
+              <button type="submit" className="hs-btn hs-btn--primary" disabled={creating}>
+                {creating ? <Spinner label="Creating key" /> : <IcPlus className="hs-icon-sm" />}
+                Create key
+              </button>
+            </div>
+            {nameError
+              ? <p className="hs-error" id="key-name-error" role="alert">{nameError}</p>
+              : <p className="hs-hint" id="key-name-hint">Keys carry your full account permissions. Make one per machine.</p>}
+          </div>
+        </form>
+
+        {/* The one and only time the raw key exists in the browser */}
+        {fresh && (
+          <div className="hs-notice hs-notice--signal" role="status">
+            <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
+              <strong>Copy {fresh.name} now — this key is never shown again.</strong>
+              <code
+                style={{
+                  display: "block", padding: "var(--s-3)", borderRadius: "var(--r-sm)",
+                  background: "rgba(0,0,0,0.4)", fontSize: "var(--t-tiny)", wordBreak: "break-all",
+                  color: "var(--tx)",
+                }}
+              >
+                {fresh.key}
+              </code>
+              <div className="hs-row">
+                <button type="button" className="hs-btn hs-btn--sm" onClick={copy}>
+                  {copied ? <IcCheck className="hs-icon-sm" /> : <IcCopy className="hs-icon-sm" />}
+                  {copied ? "Copied" : "Copy key"}
+                </button>
+                <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => setFresh(null)}>
+                  I have stored it
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="hs-stack" aria-busy="true">
+            {[0, 1].map((i) => <div key={i} className="hs-skel" style={{ height: 44 }} />)}
+          </div>
+        ) : keys.length === 0 ? (
+          <div className="hs-empty">
+            <span className="hs-empty__mark"><IcLock /></span>
+            <h3>No keys yet</h3>
+            <p>Create a key to drive the studio from your own code.</p>
+          </div>
+        ) : (
+          <div className="hs-table-wrap">
+            <table className="hs-table">
+              <caption className="hs-sr">Your API keys</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Name</th>
+                  <th scope="col">Key</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Last used</th>
+                  <th scope="col">State</th>
+                  <th scope="col"><span className="hs-sr">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {keys.map((k) => (
+                  <tr key={k.id}>
+                    <td style={{ color: "var(--tx)", fontWeight: 500 }}>{k.name}</td>
+                    <td className="hs-mono">{k.keyPrefix}</td>
+                    <td className="hs-mono">{day(k.createdAt)}</td>
+                    <td className="hs-mono">{k.lastUsedAt ? day(k.lastUsedAt) : "Never"}</td>
+                    <td>
+                      <span className={`hs-badge ${k.isActive ? "hs-badge--signal" : ""}`}>
+                        {k.isActive ? "Active" : "Revoked"}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <button
+                        type="button"
+                        className="hs-btn hs-btn--danger hs-btn--sm"
+                        onClick={() => setPending(k)}
+                      >
+                        <IcTrash className="hs-icon-sm" />
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="hs-hint">
+          Only the first characters of a key are stored, so we cannot show or resend one. Lose a key and you make a new one.
+        </p>
+      </div>
+
+      <Confirm
+        open={!!pending}
+        onClose={() => setPending(null)}
+        onConfirm={() => revoke(pending.id)}
+        title="Revoke this key?"
+        body={
+          pending
+            ? `${pending.name} (${pending.keyPrefix}) stops working immediately. Anything using it will start failing with 401.`
+            : ""
+        }
+        confirmLabel="Revoke key"
+      />
+    </section>
+  );
+}
+
+/* ── Generation defaults ───────────────────────────────────────────────── */
+const QUALITY = [
+  { id: "standard", label: "Standard" },
+  { id: "high",     label: "High" },
+  { id: "ultra",    label: "Ultra" },
+];
+const RATIOS = ["1:1", "3:2", "16:9", "9:16", "4:5"];
+
+function DefaultsPanel() {
+  const [mode, setMode] = useState("basic");
+  const [quality, setQuality] = useState("high");
+  const [ratio, setRatio] = useState("16:9");
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    loadKeys();
-    loadCredits();
-    loadSubscription();
-    // Load profile
-    fetch("/api/user/profile")
-      .then((r) => r.json())
-      .then((d) => {
-        setDisplayName(d.name || "");
-        setEmail(d.email || "");
-      })
-      .catch(() => {});
-  }, [loadKeys, loadCredits, loadSubscription]);
-
-  // ── API Keys ──
-  const createKey = async () => {
-    if (!newKeyName.trim()) return;
-    const res = await fetch("/api/user/keys", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newKeyName }),
-    });
-    const data = await res.json();
-    if (data.key) {
-      setNewKey(data.key);
-      setNewKeyName("");
-      loadKeys();
-    }
-  };
-
-  const deleteKey = async (id) => {
-    await fetch("/api/user/keys", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    loadKeys();
-  };
-
-  // ── Top-up ──
-  const handleTopup = async (packId) => {
     try {
-      const res = await fetch("/api/stripe/topup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ packId }),
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-    } catch (e) {
-      // silently fail
+      const stored = JSON.parse(localStorage.getItem(DEFAULTS_KEY) || "{}");
+      if (stored.quality) setQuality(stored.quality);
+      if (stored.ratio) setRatio(stored.ratio);
+      const firstMode = localStorage.getItem(MODE_KEYS[0]);
+      if (firstMode) setMode(firstMode);
+    } catch {
+      /* A corrupt or blocked localStorage just means we keep the defaults. */
     }
-  };
+  }, []);
 
-  const handleUpgrade = async (planId) => {
+  const save = () => {
     try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan: planId, yearly: billingYearly }),
-      });
-      const data = await res.json();
-      if (data.url) window.location.href = data.url;
-    } catch (e) {
-      // silently fail
+      localStorage.setItem(DEFAULTS_KEY, JSON.stringify({ quality, ratio }));
+      MODE_KEYS.forEach((k) => localStorage.setItem(k, mode));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2400);
+    } catch {
+      setSaved(false);
     }
   };
 
-  // ── Save profile ──
-  const handleSaveProfile = async () => {
-    await fetch("/api/user/profile", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: displayName }),
-    });
-    toast.success("Profile saved");
-  };
+  return (
+    <section className="pg-panel" aria-labelledby="h-defaults">
+      <div className="pg-panel__head">
+        <h2 id="h-defaults">Generation defaults</h2>
+        {saved && <span className="hs-badge hs-badge--signal" role="status">Saved</span>}
+      </div>
 
-  const currentPlan = credits?.plan || "free";
+      <div className="pg-panel__body">
+        <div className="hs-field">
+          <span className="hs-label" id="lbl-mode">Control mode</span>
+          <div className="hs-segmented" role="group" aria-labelledby="lbl-mode">
+            <button type="button" aria-pressed={mode === "basic"} onClick={() => setMode("basic")}>Basic</button>
+            <button type="button" aria-pressed={mode === "advanced"} onClick={() => setMode("advanced")}>Advanced</button>
+          </div>
+          <p className="hs-hint">
+            Applies to every studio with a basic / advanced switch. Advanced opens the full parameter set on load.
+          </p>
+        </div>
+
+        <div className="hs-field">
+          <label className="hs-label" htmlFor="def-quality">Preferred quality</label>
+          <select
+            id="def-quality"
+            className="hs-select"
+            value={quality}
+            onChange={(e) => setQuality(e.target.value)}
+          >
+            {QUALITY.map((q) => <option key={q.id} value={q.id}>{q.label}</option>)}
+          </select>
+          <p className="hs-hint">Higher quality costs more credits per generation.</p>
+        </div>
+
+        <div className="hs-field">
+          <span className="hs-label" id="lbl-ratio">Preferred aspect ratio</span>
+          <div className="hs-chips" role="group" aria-labelledby="lbl-ratio">
+            {RATIOS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                className="hs-chip"
+                aria-pressed={ratio === r}
+                onClick={() => setRatio(r)}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="hs-row">
+          <button type="button" className="hs-btn hs-btn--primary" onClick={save}>Save defaults</button>
+        </div>
+
+        <p className="hs-hint">
+          These live in this browser, not on your account. Sign in elsewhere and you will set them again.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+function Settings() {
+  const params = useSearchParams();
+  const raw = params.get("tab") || "account";
+  const tab = TABS.some((t) => t.id === raw) ? raw : (ALIASES[raw] || "account");
+
+  const { data: session, status } = useSession();
+
+  const [credits, setCredits] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await apiFetch("/api/credits");
+      setCredits(await res.json());
+    } catch (e) {
+      setError(e.status === 401 ? "Sign in to see your balance." : e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   return (
     <>
+      <a className="hs-skip" href="#main">Skip to content</a>
       <Navbar />
-      <div className="v6-page-content">
-        {/* Page Head */}
-        <div className="v6-page-head">
-          <div>
-            <p className="v6-eyebrow">Account</p>
-            <h1>Settings</h1>
-          </div>
-          <button className="v6-btn v6-primary" onClick={handleSaveProfile}>
-            Save changes
-          </button>
-        </div>
 
-        {/* Settings Grid */}
-        <div className="v6-settings-grid">
-          {/* Nav */}
-          {isMobile ? (
-            <div style={{ marginBottom: 16 }}>
-              <MobileChipScroller
-                items={TABS.map((t) => ({ label: t.label, value: t.id }))}
-                selectedValue={activeTab}
-                onSelect={switchTab}
-              />
-            </div>
-          ) : (
-          <nav className="v6-settings-nav" style={{ position: "relative" }}>
-            {TABS.map((tab) => {
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  className={isActive ? "v6-active" : ""}
-                  onClick={() => switchTab(tab.id)}
-                  style={{
-                    borderLeft: isActive ? "2px solid var(--v6-accent)" : "2px solid transparent",
-                    borderRadius: isActive ? "0 9px 9px 0" : "9px",
-                    paddingLeft: isActive ? 12 : 14,
-                    transition: "all 0.2s ease",
-                  }}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </nav>
+      <main id="main" className="pg-account">
+        <header style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
+          <span className="hs-eyebrow">Account</span>
+          <h1 style={{ fontSize: "var(--t-2xl)" }}>Settings</h1>
+        </header>
+
+        <nav className="pg-tabs" aria-label="Settings sections">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <Link
+              key={id}
+              href={`/settings?tab=${id}`}
+              scroll={false}
+              className="pg-tab"
+              aria-current={tab === id ? "page" : undefined}
+            >
+              <Icon />
+              {label}
+            </Link>
+          ))}
+        </nav>
+
+        <div style={{ minWidth: 0 }}>
+          {tab === "account" && (
+            <AccountPanel session={session} status={status} plan={credits?.plan || "free"} />
           )}
-
-          {/* Form Content */}
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, ease: EASE }}
-            className="v6-settings-form"
-          >
-            {/* ── Profile ── */}
-            {activeTab === "profile" && (
-              <div className="v6-settings-block">
-                <h3>Profile</h3>
-                <div style={{ display: "grid", gap: 16 }}>
-                  {/* Avatar preview */}
-                  <div className="v6-field">
-                    <label className="v6-field-label">Avatar</label>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{
-                        width: 64, height: 64, borderRadius: "50%",
-                        background: "linear-gradient(135deg, var(--v6-accent), #7C3AED)",
-                        display: "grid", placeItems: "center",
-                        fontSize: 24, fontWeight: 700, color: "#fff",
-                        border: "2px solid var(--v6-line)",
-                      }}>
-                        {(displayName || email || "?").charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <button className="v6-btn v6-sm" disabled>Upload photo</button>
-                        <p className="v6-tiny v6-muted" style={{ marginTop: 4 }}>JPG, PNG, GIF up to 2MB</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="v6-section-rule" />
-                  <div className="v6-field">
-                    <label className="v6-field-label">Display name</label>
-                    <input
-                      className="v6-input"
-                      placeholder="Your name"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                    />
-                  </div>
-                  <div className="v6-field">
-                    <label className="v6-field-label">Email</label>
-                    <input className="v6-input" value={email} disabled />
-                    <span className="v6-tiny v6-muted">Email changes are handled via account security.</span>
-                  </div>
-                  <div>
-                    <button className="v6-btn v6-primary v6-sm" onClick={handleSaveProfile}>
-                      Save Profile
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── Generation defaults ── */}
-            {activeTab === "generation" && (
-              <div className="v6-settings-block">
-                <h3>Generation defaults</h3>
-                <div style={{ display: "grid", gap: 16 }}>
-                  <div className="v6-field">
-                    <label className="v6-field-label">Default model</label>
-                    <div className="v6-select-wrap">
-                      <select className="v6-input v6-select" defaultValue="flux-dev">
-                        <option value="flux-dev">Flux Dev (Recommended)</option>
-                        <option value="flux-pro">Flux Pro</option>
-                        <option value="flux-schnell">Flux Schnell</option>
-                        <option value="sdxl">SDXL</option>
-                      </select>
-                      <svg className="v6-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></svg>
-                    </div>
-                    <span className="v6-tiny v6-muted">Your default model for new generations.</span>
-                  </div>
-                  <div className="v6-field">
-                    <label className="v6-field-label">Default image quality</label>
-                    <div className="v6-select-wrap">
-                      <select
-                        className="v6-input v6-select"
-                        value={imageQuality}
-                        onChange={(e) => setImageQuality(e.target.value)}
-                      >
-                        <option value="standard">Standard</option>
-                        <option value="high">High</option>
-                        <option value="ultra">Ultra (4K)</option>
-                      </select>
-                      <svg className="v6-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></svg>
-                    </div>
-                  </div>
-                  <div className="v6-field">
-                    <label className="v6-field-label">Generation approval mode</label>
-                    <div className="v6-segmented">
-                      <button className={approvalMode === "auto" ? "v6-active" : ""} onClick={() => setApprovalMode("auto")}>Auto-approve</button>
-                      <button className={approvalMode === "review" ? "v6-active" : ""} onClick={() => setApprovalMode("review")}>Review first</button>
-                    </div>
-                    <span className="v6-tiny v6-muted">
-                      {approvalMode === "auto" ? "Runs generations immediately after prompting." : "Lets you inspect generated output before finalizing."}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── API Keys ── */}
-            {activeTab === "api-keys" && (
-              <div className="v6-settings-block">
-                <h3>API Keys</h3>
-                <p className="v6-tiny v6-muted" style={{ marginBottom: 12 }}>
-                  Use these keys to access Helmies Studio programmatically via the REST API.
-                </p>
-
-                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-                  <input
-                    className="v6-input"
-                    placeholder="Key name (e.g. My App)"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && createKey()}
-                  />
-                  <button
-                    className="v6-btn v6-primary"
-                    onClick={createKey}
-                    disabled={!newKeyName.trim()}
-                  >
-                    + Create Key
-                  </button>
-                </div>
-
-                {newKey && (
-                  <div className="v6-quote" style={{ marginBottom: 14, borderColor: "var(--v6-good)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 12, color: "var(--v6-good)" }}>Key created</span>
-                      <span className="v6-tiny v6-muted">Copy it now — it won't be shown again</span>
-                    </div>
-                    <code style={{ fontFamily: "var(--v6-mono)", fontSize: 10, wordBreak: "break-all", background: "rgba(0,0,0,0.3)", padding: "10px 12px", borderRadius: 8, display: "block", marginBottom: 8 }}>{newKey}</code>
-                    <button className="v6-btn v6-sm" onClick={() => { navigator.clipboard.writeText(newKey); toast.success("Key copied"); }}>
-                      Copy to clipboard
-                    </button>
-                  </div>
-                )}
-
-                {keys.length > 0 ? (
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {keys.map((k) => (
-                      <div key={k.id} className="v6-quote" style={{ padding: 14 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                          <div>
-                            <strong style={{ fontSize: 12 }}>{k.name}</strong>
-                            {!isMobile && (
-                              <div className="v6-mono v6-tiny v6-muted" style={{ marginTop: 2 }}>
-                                {k.keyPrefix || "••••••••"}****************
-                              </div>
-                            )}
-                          </div>
-                          <span className={`v6-chip ${k.isActive ? "" : "v6-disabled"}`} style={{ fontSize: 9, padding: "2px 7px", background: k.isActive ? "var(--v6-good)" : undefined, color: k.isActive ? "var(--v6-bg)" : undefined, borderColor: k.isActive ? "var(--v6-good)" : undefined }}>
-                            {k.isActive ? "Active" : "Revoked"}
-                          </span>
-                        </div>
-                        {isMobile ? (
-                          <div style={{ display: "flex", justifyContent: "flex-start", gap: 6 }}>
-                            <button className="v6-btn v6-sm" onClick={() => { navigator.clipboard.writeText(k.keyPrefix || ""); toast.success("Prefix copied"); }} disabled={!k.keyPrefix}>Copy</button>
-                            <button className="v6-btn v6-sm" onClick={() => deleteKey(k.id)} style={{ color: "var(--v6-bad)", borderColor: "var(--v6-bad)" }}>Revoke</button>
-                          </div>
-                        ) : (
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span className="v6-tiny v6-muted">
-                            Created {new Date(k.createdAt).toLocaleDateString()}
-                            {k.lastUsedAt && ` · Last used ${new Date(k.lastUsedAt).toLocaleDateString()}`}
-                          </span>
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <button className="v6-btn v6-sm" onClick={() => { navigator.clipboard.writeText(k.keyPrefix || ""); toast.success("Prefix copied"); }} disabled={!k.keyPrefix}>Copy</button>
-                            <button className="v6-btn v6-sm" onClick={() => deleteKey(k.id)} style={{ color: "var(--v6-bad)", borderColor: "var(--v6-bad)" }}>Revoke</button>
-                          </div>
-                        </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="v6-tiny v6-muted">No API keys yet. Create one to access the API.</p>
-                )}
-              </div>
-            )}
-
-            {/* ── Notifications ── */}
-            {activeTab === "notifications" && (
-              <div className="v6-settings-block">
-                <h3>Notifications</h3>
-                <p className="v6-tiny v6-muted" style={{ marginBottom: 14 }}>
-                  Configure how you receive updates about your generations and account.
-                </p>
-                <div style={{ display: "grid", gap: 4 }}>
-                  {[
-                    { label: "Generation completed", desc: "When an image or video finishes processing", key: "gen_complete" },
-                    { label: "Generation failed", desc: "When a generation encounters an error", key: "gen_failed" },
-                    { label: "Credits low warning", desc: "When your balance drops below 50 credits", key: "credits_low" },
-                    { label: "New model available", desc: "When a new AI model is added to the platform", key: "new_model" },
-                    { label: "Billing reminders", desc: "Upcoming renewal or payment notifications", key: "billing_reminder" },
-                  ].map((item) => (
-                    <button
-                      key={item.key}
-                      className="v6-toggle"
-                      style={{ border: "1px solid var(--v6-line)", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
-                    >
-                      <div className="v6-toggle-track v6-on">
-                        <div className="v6-toggle-thumb" />
-                      </div>
-                      <div>
-                        <span className="v6-toggle-label" style={{ display: "block" }}>{item.label}</span>
-                        <span style={{ fontSize: 9, color: "var(--v6-muted)" }}>{item.desc}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ── Security ── */}
-            {activeTab === "security" && (
-              <div style={{ display: "grid", gap: 16 }}>
-                <div className="v6-settings-block">
-                  <h3>Change password</h3>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    <input className="v6-input" type="password" placeholder="Current password" />
-                    <input className="v6-input" type="password" placeholder="New password" />
-                    <input className="v6-input" type="password" placeholder="Confirm new password" />
-                    <button className="v6-btn v6-primary v6-sm" style={{ justifySelf: "flex-start" }}>Update password</button>
-                  </div>
-                </div>
-                <div className="v6-settings-block">
-                  <h3>Two-factor authentication</h3>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div>
-                      <p style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>Protect your account</p>
-                      <p className="v6-tiny v6-muted" style={{ margin: "4px 0 0" }}>
-                        Add an extra layer of security with authenticator app verification.
-                      </p>
-                    </div>
-                    <button className="v6-btn v6-primary v6-sm" disabled>Enable 2FA</button>
-                  </div>
-                </div>
-                <div className="v6-settings-block">
-                  <h3>Active sessions</h3>
-                  <div className="v6-quote" style={{ padding: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div style={{
-                          width: 10, height: 10, borderRadius: "50%", background: "var(--v6-good)",
-                          boxShadow: "0 0 8px var(--v6-good)", flexShrink: 0,
-                        }} />
-                        <div>
-                          <div style={{ fontSize: 11, fontWeight: 700 }}>Current device</div>
-                          <div className="v6-tiny v6-muted">Windows · {new Date().toLocaleDateString()}</div>
-                        </div>
-                      </div>
-                      <span className="v6-chip v6-active" style={{ fontSize: 9, padding: "2px 6px" }}>Active</span>
-                    </div>
-                  </div>
-                  <button className="v6-btn v6-sm" style={{ marginTop: 10, color: "var(--v6-bad)", borderColor: "var(--v6-bad)" }}>
-                    Sign out all devices
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* ── Billing ── */}
-            {activeTab === "billing" && (
-              <>
-                {/* Metric grid — with usage bars */}
-                <div className="v6-metric-grid">
-                  <div className="v6-metric">
-                    <span className="v6-eyebrow" style={{ display: "block" }}>Available credits</span>
-                    <strong>
-                      {loading ? "…" : <CreditTickDown value={credits?.credits || 0} />}
-                    </strong>
-                    <div className="v6-timeline-bar" style={{ marginTop: 10 }}>
-                      <div className="v6-timeline-track">
-                        <div className="v6-timeline-fill" style={{
-                          width: `${Math.min(100, ((credits?.credits || 0) / Math.max(1, (credits?.credits || 0) + (credits?.reserved || 0))) * 100)}%`,
-                        }} />
-                      </div>
-                      <span className="v6-timeline-label">{credits?.reserved || 0} reserved</span>
-                    </div>
-                  </div>
-                  <div className="v6-metric">
-                    <span className="v6-eyebrow" style={{ display: "block" }}>Reserved</span>
-                    <strong>{credits?.reserved || 0}</strong>
-                  </div>
-                  <div className="v6-metric">
-                    <span className="v6-eyebrow" style={{ display: "block" }}>Used this month</span>
-                    <strong>{credits?.usedThisMonth || 0}</strong>
-                  </div>
-                  <div className="v6-metric">
-                    <span className="v6-eyebrow" style={{ display: "block" }}>Next renewal</span>
-                    <strong style={{ fontSize: 14 }}>
-                      {credits?.nextRenewal
-                        ? new Date(credits.nextRenewal).toLocaleDateString()
-                        : "—"}
-                    </strong>
-                  </div>
-                </div>
-
-                {/* Current plan — with checkmarks */}
-                <div className="v6-settings-block">
-                  <h3>Your plan</h3>
-                  <div className="v6-plan-grid">
-                    {PLANS.map((plan) => {
-                      const isCurrent = plan.id === currentPlan;
-                      return (
-                        <div key={plan.id} className={`v6-plan ${isCurrent ? "v6-current" : ""}`} style={{ display: "flex", flexDirection: "column" }}>
-                          <h3>{plan.name}</h3>
-                          <div className="v6-price">{plan.price}<small>{plan.period}</small></div>
-                          <p className="v6-mono v6-tiny" style={{ marginTop: 4 }}>{plan.credits}</p>
-                          <ul style={{ margin: "10px 0", padding: 0, fontSize: 11, display: "grid", gap: 6, listStyle: "none" }}>
-                            {plan.features.map((f) => (
-                              <li key={f} style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--v6-muted)" }}>
-                                <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="var(--v6-good)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                                  <path d="M4 12l5 5L20 6" />
-                                </svg>
-                                {f}
-                              </li>
-                            ))}
-                          </ul>
-                          <div style={{ marginTop: "auto" }}>
-                            {isCurrent ? (
-                              <div style={{ padding: "8px 10px", background: "color-mix(in srgb, var(--v6-accent), transparent 88%)", borderRadius: 8, fontSize: 10, fontWeight: 700, color: "var(--v6-accent)", textAlign: "center" }}>
-                                Current plan
-                              </div>
-                            ) : plan.id !== "free" ? (
-                              <button className="v6-btn v6-primary v6-sm" style={{ width: "100%" }} onClick={() => handleUpgrade(plan.id)}>
-                                Upgrade
-                                <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
-                                  <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
-                                </svg>
-                              </button>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Top-up packs — with bonus badges */}
-                <div className="v6-settings-block">
-                  <h3>Top up credits</h3>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
-                    {CREDIT_PACKS.map((p) => {
-                      const hasBonus = p.name.toLowerCase().includes("pro") || p.name.toLowerCase().includes("studio") || p.name.toLowerCase().includes("mega");
-                      return (
-                        <div key={p.id} className="v6-quote" style={{ padding: 16, position: "relative" }}>
-                          {hasBonus && (
-                            <div style={{
-                              position: "absolute", top: -1, right: 12,
-                              background: "var(--v6-accent)", color: "#fff",
-                              fontSize: 8, fontWeight: 800, padding: "2px 8px",
-                              borderRadius: "0 0 6px 6px",
-                              textTransform: "uppercase", letterSpacing: "0.06em",
-                            }}>
-                              Best value
-                            </div>
-                          )}
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                            <strong style={{ fontSize: 13 }}>{p.name}</strong>
-                            <span style={{ fontSize: 18, fontWeight: 700 }}>{p.price}</span>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                            <IconBolt style={{ width: 14, height: 14, color: "var(--v6-accent)" }} />
-                            <span className="v6-mono v6-tiny" style={{ color: "var(--v6-good)" }}>{p.credits} credits</span>
-                            {p.bonusCredits > 0 && (
-                              <span className="v6-chip v6-active" style={{ fontSize: 8, padding: "1px 5px" }}>+{p.bonusCredits} bonus</span>
-                            )}
-                          </div>
-                          <button
-                            className="v6-btn v6-sm"
-                            style={{ width: "100%", justifyContent: "center" }}
-                            onClick={() => handleTopup(p.id)}
-                          >
-                            Buy
-                            <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
-                              <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
-                            </svg>
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Payment method — card display */}
-                <div className="v6-settings-block">
-                  <h3>Payment method</h3>
-                  {subscription?.url ? (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div className="v6-quote" style={{ padding: 14, display: "flex", alignItems: "center", gap: 12 }}>
-                        <div style={{
-                          width: 44, height: 30, borderRadius: 6,
-                          background: "linear-gradient(135deg, #1a1a2e, #16213e)",
-                          border: "1px solid var(--v6-line)",
-                          display: "grid", placeItems: "center",
-                        }}>
-                          <span style={{ fontSize: 8, fontWeight: 700, color: "#fff" }}>VISA</span>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 11, fontWeight: 600 }}>Visa ending in 4242</div>
-                          <div className="v6-tiny v6-muted">Expires 12/28</div>
-                        </div>
-                      </div>
-                      <a href={subscription.url} target="_blank" rel="noopener noreferrer" className="v6-btn" style={{ textDecoration: "none", justifySelf: "flex-start" }}>
-                        Manage subscription
-                        <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
-                          <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
-                        </svg>
-                      </a>
-                    </div>
-                  ) : (
-                    <p className="v6-tiny v6-muted">
-                      You're on the free plan.{" "}
-                      <a href="/pricing" style={{ color: "var(--v6-accent)" }}>Upgrade to get more credits.</a>
-                    </p>
-                  )}
-                </div>
-
-                {/* Credit activity — with type badges */}
-                <div className="v6-settings-block">
-                  <h3>Credit activity</h3>
-                  <div style={{ overflow: "auto" }}>
-                    <table className="v6-data-table">
-                      <thead>
-                        <tr>
-                          <th>Date</th>
-                          <th>Type</th>
-                          {!isMobile && <th>Description</th>}
-                          <th>Amount</th>
-                          <th>Balance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(credits?.ledger || []).slice(0, 20).map((entry, i) => {
-                          const typeLabel = entry.type || entry.description || "transaction";
-                          const typeColor =
-                            typeLabel.includes("grant") || typeLabel.includes("purchase") || typeLabel.includes("topup") ? "var(--v6-good)" :
-                            typeLabel.includes("refund") ? "var(--v6-accent)" :
-                            typeLabel.includes("generat") || typeLabel.includes("spend") ? "var(--v6-warn)" :
-                            "var(--v6-muted)";
-                          return (
-                            <tr key={i}>
-                              <td className="v6-mono v6-tiny">
-                                {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : "—"}
-                              </td>
-                              <td>
-                                <span className="v6-chip" style={{ fontSize: 8, padding: "2px 6px", borderColor: typeColor, color: typeColor }}>
-                                  {(entry.type || "transaction").slice(0, 12)}
-                                </span>
-                              </td>
-                              {!isMobile && <td>{entry.description || "—"}</td>}
-                              <td style={{ color: entry.amount > 0 ? "var(--v6-good)" : "var(--v6-bad)", fontWeight: 600 }}>
-                                {entry.amount > 0 ? "+" : ""}{entry.amount || 0}
-                              </td>
-                              <td className="v6-mono">{entry.balance ?? "—"}</td>
-                            </tr>
-                          );
-                        })}
-                        {(!credits?.ledger || credits.ledger.length === 0) && (
-                          <tr>
-                            <td colSpan={isMobile ? 4 : 5} style={{ textAlign: "center", color: "var(--v6-muted)", padding: 24 }}>
-                              No activity yet. Generate or purchase credits to see your history.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </>
-            )}
-          </motion.div>
+          {tab === "billing" && (
+            <BillingPanel data={credits} loading={loading} error={error} reload={load} />
+          )}
+          {tab === "api-keys" && <KeysPanel />}
+          {tab === "defaults" && <DefaultsPanel />}
         </div>
-      </div>
+      </main>
+
+      <Footer />
     </>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="pg-account" aria-busy="true">
+          <div className="hs-skel" style={{ height: 220, gridColumn: "1 / -1" }} />
+        </main>
+      }
+    >
+      <Settings />
+    </Suspense>
   );
 }

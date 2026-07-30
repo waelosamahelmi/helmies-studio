@@ -5,12 +5,15 @@ import { downloadAllMedia, extractKieResults } from "@/lib/media-download";
 
 export async function POST(req) {
   try {
+    // Fail CLOSED: with no secret configured this endpoint would otherwise be
+    // an unauthenticated way to mark generations failed and mint refunds.
     const secret = process.env.WEBHOOK_SECRET || process.env.CRON_SECRET;
-    if (secret) {
-      const authHeader = req.headers.get("authorization");
-      if (authHeader !== `Bearer ${secret}`) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    if (!secret) {
+      return NextResponse.json({ error: "Webhook not configured" }, { status: 503 });
+    }
+    const authHeader = req.headers.get("authorization");
+    if (authHeader !== `Bearer ${secret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await req.json();
@@ -42,6 +45,13 @@ export async function POST(req) {
       return NextResponse.json({ error: "Generation not found" }, { status: 404 });
     }
 
+    // Idempotency guard: a generation that already reached a terminal state
+    // must not be re-processed — replaying a "failed" callback would credit
+    // the user again on every delivery.
+    if (generation.status === "failed" || generation.status === "completed") {
+      return NextResponse.json({ success: true, alreadyProcessed: true, status: generation.status });
+    }
+
     const normalizedStatus = status?.toLowerCase();
     const isSuccess = normalizedStatus === "completed" || normalizedStatus === "succeeded" || normalizedStatus === "success";
     const isFail = normalizedStatus === "failed" || normalizedStatus === "error" || normalizedStatus === "fail";
@@ -65,10 +75,16 @@ export async function POST(req) {
     }
 
     if (isFail) {
-      await prisma.generation.update({
-        where: { id: generation.id },
+      // Conditional write: only the delivery that actually transitions the row
+      // out of a non-terminal state is allowed to issue the refund.
+      const transitioned = await prisma.generation.updateMany({
+        where: { id: generation.id, status: { notIn: ["failed", "completed"] } },
         data: { status: "failed", error: errorMsg || "Generation failed" },
       });
+
+      if (transitioned.count === 0) {
+        return NextResponse.json({ success: true, alreadyProcessed: true });
+      }
 
       if (generation.creditsUsed > 0) {
         await creditUser(generation.userId, generation.creditsUsed, "webhook_refund", `Refund: ${errorMsg || "Failed generation"}`);

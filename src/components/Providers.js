@@ -17,17 +17,17 @@ export default function Providers({ children }) {
         position="top-right"
         toastOptions={{
           style: {
-            background: "rgb(24, 24, 27)",
-            color: "#F2F2F7",
-            border: "1px solid rgba(255,255,255,0.08)",
-            fontSize: "0.85rem",
+            background: "var(--ink-200)",
+            color: "var(--tx)",
+            border: "1px solid var(--line-strong)",
+            borderRadius: "var(--r-md)",
+            fontSize: "var(--t-sm)",
+            fontFamily: "var(--ff-ui)",
+            boxShadow: "var(--lift-2)",
+            padding: "var(--s-3) var(--s-4)",
           },
-          success: {
-            iconTheme: { primary: "#00E68A", secondary: "rgb(24, 24, 27)" },
-          },
-          error: {
-            iconTheme: { primary: "#ff3d71", secondary: "rgb(24, 24, 27)" },
-          },
+          success: { iconTheme: { primary: "var(--signal)", secondary: "var(--ink-200)" } },
+          error: { iconTheme: { primary: "var(--fault)", secondary: "var(--ink-200)" } },
         }}
       />
     </SessionProvider>

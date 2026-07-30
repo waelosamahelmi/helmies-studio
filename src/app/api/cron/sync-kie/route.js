@@ -6,12 +6,15 @@ import { syncAlibabaModels } from "@/lib/model-catalog";
 // Protected by CRON_SECRET bearer token
 export async function POST(req) {
   try {
+    // Fail CLOSED — mirrors /api/cron/automation. An unset CRON_SECRET must
+    // not make this endpoint public.
     const secret = process.env.CRON_SECRET;
-    if (secret) {
-      const authHeader = req.headers.get("authorization");
-      if (authHeader !== `Bearer ${secret}`) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
+    if (!secret) {
+      return NextResponse.json({ error: "Cron not configured" }, { status: 503 });
+    }
+    const authHeader = req.headers.get("authorization");
+    if (authHeader !== `Bearer ${secret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const [kie, alibaba] = await Promise.all([syncKieModels(), syncAlibabaModels()]);

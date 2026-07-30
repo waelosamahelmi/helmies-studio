@@ -1,431 +1,538 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import toast from "react-hot-toast";
-import { useIsMobile } from "@/lib/use-media-query";
-import { MobileChipScroller } from "@/components/studio/mobile";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiFetch } from "@/lib/client-fetch";
+import {
+  Confirm, Modal, Field, Segmented,
+  IcBrain, IcPersona, IcPalette, IcImage, IcSearch, IcPlus, IcTrash,
+  IcCopy, IcCheck, IcRefresh, IcAlert, IcClose, IcSettings,
+} from "@/components/studio/kit";
 
-const EASE = [0.32, 0.72, 0, 1];
+/* ══════════════════════════════════════════════════════════════════════════
+   MEMORY — .st-lib collection browser
+   ──────────────────────────────────────────────────────────────────────────
+   The records the prompt pipeline reuses: characters it keeps consistent,
+   styles it re-applies, references it points at, and brand notes it carries.
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const TABS = [
-  { id: "character", label: "Characters", desc: "Saved personas with consistent traits" },
-  { id: "style", label: "Styles", desc: "Visual styles and aesthetics" },
-  { id: "asset", label: "Assets", desc: "Reusable images and references" },
-  { id: "brand", label: "Brands", desc: "Brand guidelines and assets" },
+const KINDS = [
+  {
+    value: "character",
+    label: "Characters",
+    one: "character",
+    icon: IcPersona,
+    blurb: "A person the models should render the same way every time.",
+    example: '{"age":"early 30s","hair":"dark, cropped","build":"tall, lean","wardrobe":"grey wool"}',
+  },
+  {
+    value: "style",
+    label: "Styles",
+    one: "style",
+    icon: IcPalette,
+    blurb: "A look you re-apply — lens, light, grade, texture.",
+    example: '{"lens":"35mm","light":"overcast","grade":"cool, matte","texture":"fine grain"}',
+  },
+  {
+    value: "asset",
+    label: "References",
+    one: "reference",
+    icon: IcImage,
+    blurb: "A file or link the models should treat as the reference.",
+    example: '{"url":"https://…/hero.jpg","use":"framing reference only"}',
+  },
+  {
+    value: "brand",
+    label: "Brand notes",
+    one: "brand note",
+    icon: IcSettings,
+    blurb: "Standing instructions that travel with every generation.",
+    example: '{"never":"logos on skin","always":"product left of centre"}',
+  },
 ];
 
-const TAB_META = {
-  character: { color: "#7C3AED", icon: "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z M12 14c-4 0-7 2-7 5h14c0-3-3-5-7-5z" },
-  style: { color: "#FF1B6B", icon: "M12 3l2 7 7 2-7 2-2 7-2-7-7-2 7-2z" },
-  asset: { color: "#00E68A", icon: "M3 3h18v18H3z M9 9h.01M15 9h.01M9 15h.01M15 15h.01" },
-  brand: { color: "#FF6B35", icon: "M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.5-.6 1.5-1.5 0-.4-.2-.8-.5-1.1-.3-.3-.5-.7-.5-1.1 0-.8.7-1.5 1.5-1.5H17c2.8 0 5-2.2 5-5C22 6.5 17.5 2 12 2z" },
-};
+const kindOf = (v) => KINDS.find((k) => k.value === v) || KINDS[0];
 
-const STATS_ICONS = {
-  projects: "M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z",
-  characters: "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z M12 14c-4 0-7 2-7 5h14c0-3-3-5-7-5z",
-  styles: "M12 3l2 7 7 2-7 2-2 7-2-7-7-2 7-2z",
-  assets: "M3 3h18v18H3z M9 9h.01M15 9h.01M9 15h.01M15 15h.01",
-};
+const SORTS = [
+  { value: "recent", label: "Recently updated" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "name", label: "Name A–Z" },
+];
 
-/* ── Inline SVG Icon ── */
-function SvgIcon({ d, size = 18, color }) {
-  return (
-    <svg className="v6-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color || "currentColor"} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-      <path d={d} />
-    </svg>
-  );
+/* ── Formatting ───────────────────────────────────────────────────────── */
+function dateLabel(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function asText(data) {
+  if (data == null) return "";
+  if (typeof data === "string") return data;
+  try { return JSON.stringify(data, null, 2); } catch { return String(data); }
+}
+
+function summarise(data) {
+  if (data == null) return "";
+  if (typeof data === "string") return data;
+  if (Array.isArray(data)) return data.map((v) => String(v)).join(", ");
+  if (typeof data === "object") {
+    return Object.entries(data).map(([k, v]) => `${k}: ${typeof v === "object" ? "…" : v}`).join(" · ");
+  }
+  return String(data);
+}
+
+function fieldCount(data) {
+  if (data && typeof data === "object" && !Array.isArray(data)) return Object.keys(data).length;
+  if (Array.isArray(data)) return data.length;
+  return null;
+}
+
+/* Text in the editor is JSON when it parses as JSON, and plain prose otherwise. */
+function parseData(text) {
+  const t = String(text ?? "").trim();
+  if (!t) return "";
+  if (t.startsWith("{") || t.startsWith("[")) {
+    try { return JSON.parse(t); } catch { return t; }
+  }
+  return t;
+}
+
+const isJsonish = (t) => {
+  const s = String(t ?? "").trim();
+  return s.startsWith("{") || s.startsWith("[");
+};
+
+const jsonBroken = (t) => {
+  if (!isJsonish(t)) return false;
+  try { JSON.parse(String(t).trim()); return false; } catch { return true; }
+};
+
+/* ══════════════════════════════════════════════════════════════════════ */
 export default function MemoryStudio() {
-  const isMobile = useIsMobile();
-  const [activeTab, setActiveTab] = useState("character");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
-  const [newItem, setNewItem] = useState({ name: "", data: "" });
-  const [editingItem, setEditingItem] = useState(null);
-  const [stats, setStats] = useState({ projects: 0, characters: 0, styles: 0, assets: 0 });
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [reloads, setReloads] = useState(0);
 
-  const loadItems = useCallback(async (type) => {
+  const [kind, setKind] = useState("character");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState("recent");
+
+  const [editor, setEditor] = useState(null); // { mode:"new"|"edit", id, type, name, text }
+  const [saving, setSaving] = useState(false);
+  const [pending, setPending] = useState(null);
+  const [copied, setCopied] = useState("");
+
+  const gridRef = useRef(null);
+  const copyTimer = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
+
+  const meta = kindOf(kind);
+
+  /* ── Load ───────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    let dead = false;
     setLoading(true);
+    setError("");
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/memory?type=${encodeURIComponent(kind)}`);
+        const data = await res.json();
+        if (dead) return;
+        setItems(Array.isArray(data) ? data : []);
+      } catch (err) {
+        if (!dead) setError(err?.message || "The memory records could not be loaded.");
+      } finally {
+        if (!dead) setLoading(false);
+      }
+    })();
+    return () => { dead = true; };
+  }, [kind, reloads]);
+
+  const reload = useCallback(() => setReloads((n) => n + 1), []);
+
+  /* ── Mutations ──────────────────────────────────────────────────────── */
+  const save = useCallback(async () => {
+    if (!editor) return;
+    const name = editor.name.trim();
+    if (!name || jsonBroken(editor.text)) return;
+
+    setSaving(true);
+    setError("");
+    setNotice("");
+    const data = parseData(editor.text);
+
     try {
-      const res = await fetch(`/api/memory?type=${type}`);
-      const data = await res.json();
-      setItems(Array.isArray(data) ? data : []);
-    } catch {
-      setItems([]);
+      if (editor.mode === "new") {
+        const res = await apiFetch("/api/memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: editor.type, name, data }),
+        });
+        const body = await res.json();
+        const record = body?.memory;
+        if (record && record.type === kind) setItems((prev) => [record, ...prev]);
+        else reload();
+        setNotice(`Saved “${name}”.`);
+      } else {
+        const res = await apiFetch("/api/memory", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: editor.id, name, data }),
+        });
+        const body = await res.json().catch(() => null);
+        const record = body?.memory;
+        setItems((prev) =>
+          prev.map((it) =>
+            it.id === editor.id
+              ? record || { ...it, name, data, updatedAt: new Date().toISOString() }
+              : it,
+          ),
+        );
+        setNotice(`Updated “${name}”.`);
+      }
+      setEditor(null);
+    } catch (err) {
+      setError(err?.message || "The record could not be saved.");
     } finally {
-      setLoading(false);
+      setSaving(false);
+    }
+  }, [editor, kind, reload]);
+
+  const remove = useCallback(async (item) => {
+    setError("");
+    try {
+      await apiFetch("/api/memory", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id }),
+      });
+      setItems((prev) => prev.filter((it) => it.id !== item.id));
+    } catch (err) {
+      setError(err?.message || "The record could not be deleted.");
     }
   }, []);
 
-  const loadStats = useCallback(async () => {
+  const copyRecord = useCallback(async (item) => {
     try {
-      const results = await Promise.all(
-        TABS.map((t) =>
-          fetch(`/api/memory?type=${t.id}`)
-            .then((r) => r.json())
-            .then((data) => ({ id: t.id, count: Array.isArray(data) ? data.length : 0 }))
-            .catch(() => ({ id: t.id, count: 0 }))
-        )
-      );
-      const counts = {};
-      results.forEach((r) => { counts[r.id] = r.count; });
-      setStats({
-        projects: Math.max(1, items.length > 0 ? 3 : 1),
-        characters: counts.character || 0,
-        styles: counts.style || 0,
-        assets: counts.asset || 0,
-      });
+      await navigator.clipboard.writeText(asText(item.data));
+      setCopied(item.id);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(""), 1600);
     } catch {
-      // keep defaults
+      setError("The browser blocked the clipboard. Open the record and copy the text by hand.");
     }
-  }, [items.length]);
+  }, []);
 
-  useEffect(() => {
-    loadItems(activeTab);
-  }, [activeTab, loadItems]);
+  /* ── Search and sort ────────────────────────────────────────────────── */
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = items.filter((it) => {
+      if (!q) return true;
+      return String(it.name || "").toLowerCase().includes(q)
+        || summarise(it.data).toLowerCase().includes(q);
+    });
+    list = [...list];
+    if (sort === "recent") list.sort((a, b) => new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
+    else if (sort === "oldest") list.sort((a, b) => new Date(a.updatedAt || a.createdAt) - new Date(b.updatedAt || b.createdAt));
+    else list.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    return list;
+  }, [items, query, sort]);
 
-  useEffect(() => {
-    if (!loading) loadStats();
-  }, [loading]);
-
-  const addItem = async () => {
-    if (!newItem.name || !newItem.data) return;
-    let data = newItem.data;
-    try { data = JSON.parse(newItem.data); } catch { /* keep as string */ }
-    try {
-      const res = await fetch("/api/memory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: activeTab, name: newItem.name, data }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      setNewItem({ name: "", data: "" });
-      setShowAdd(false);
-      loadItems(activeTab);
-      toast.success("Memory saved");
-    } catch {
-      toast.error("Failed to save memory");
-    }
+  const onGridKey = (e) => {
+    if (!["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
+    const nodes = Array.from(gridRef.current?.querySelectorAll("[data-card]") || []);
+    const i = nodes.indexOf(document.activeElement);
+    if (i < 0) return;
+    const cols = Math.max(1, String(window.getComputedStyle(gridRef.current).gridTemplateColumns).split(" ").filter(Boolean).length);
+    let next = i;
+    if (e.key === "ArrowRight") next = i + 1;
+    else if (e.key === "ArrowLeft") next = i - 1;
+    else if (e.key === "ArrowDown") next = i + cols;
+    else if (e.key === "ArrowUp") next = i - cols;
+    else if (e.key === "Home") next = 0;
+    else next = nodes.length - 1;
+    if (next < 0 || next >= nodes.length) return;
+    e.preventDefault();
+    nodes[next].focus();
   };
 
-  const deleteItem = async (id) => {
-    try {
-      await fetch("/api/memory", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      loadItems(activeTab);
-      toast.success("Memory deleted");
-    } catch {
-      toast.error("Failed to delete");
-    }
-  };
+  const openNew = () => setEditor({ mode: "new", id: null, type: kind, name: "", text: "" });
+  const openEdit = (item) =>
+    setEditor({ mode: "edit", id: item.id, type: item.type || kind, name: item.name || "", text: asText(item.data) });
 
-  const updateItem = async (id, updates) => {
-    try {
-      const res = await fetch("/api/memory", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, ...updates }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      setEditingItem(null);
-      loadItems(activeTab);
-      toast.success("Memory updated");
-    } catch {
-      toast.error("Failed to update");
-    }
-  };
+  /* Keep the last values on screen while an overlay plays its exit */
+  const lastEditor = useRef(null);
+  const lastPending = useRef(null);
+  if (editor) lastEditor.current = editor;
+  if (pending) lastPending.current = pending;
+  const editorView = editor || lastEditor.current;
+  const doomed = pending || lastPending.current;
 
-  const formatData = (data) => {
-    if (!data) return "";
-    if (typeof data === "string") return data.slice(0, 100);
-    return Object.entries(data)
-      .map(([k, v]) => `${k}: ${v}`)
-      .join(", ")
-      .slice(0, 100);
-  };
-
-  const tabMeta = TAB_META[activeTab];
-  const activeTabLabel = TABS.find((t) => t.id === activeTab)?.label || "";
+  const editorKind = editorView ? kindOf(editorView.type) : meta;
+  const brokenJson = editorView ? jsonBroken(editorView.text) : false;
 
   return (
-    <div className="v6-page-content">
-      {/* Page Head */}
-      <div className="v6-page-head">
-        <div>
-          <div className="v6-eyebrow">Project Context</div>
-          <h1>Memory Studio</h1>
-          <p>Saved characters, styles, assets, and brand context for consistent generations.</p>
+    <div className="st-lib">
+      {/* ── Filter bar ───────────────────────────────────────────────── */}
+      <div className="st-lib__bar">
+        <Segmented
+          label="Memory type"
+          value={kind}
+          onChange={(v) => { setKind(v); setNotice(""); }}
+          options={KINDS.map((k) => ({ value: k.value, label: k.label }))}
+        />
+
+        <div style={{ position: "relative", flex: "1 1 180px", minWidth: 160, maxWidth: 320 }}>
+          <IcSearch
+            className="hs-icon-sm"
+            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--tx-mute)", pointerEvents: "none" }}
+          />
+          <input
+            type="search"
+            className="hs-input"
+            style={{ paddingLeft: 32 }}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search names and contents"
+            aria-label="Search memory records"
+          />
         </div>
-        <button className="v6-btn v6-primary" onClick={() => setShowAdd(!showAdd)}>
-          <SvgIcon d="M12 5v14M5 12h14" size={14} />
-          {showAdd ? "Cancel" : `Add ${activeTabLabel.slice(0, -1)}`}
+
+        <select
+          className="hs-select"
+          style={{ width: "auto", minWidth: 160 }}
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          aria-label="Sort order"
+        >
+          {SORTS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+
+        <span className="hs-mono hs-mute" style={{ fontSize: 10, letterSpacing: "0.06em" }}>
+          {loading ? "—" : `${shown.length} saved`}
+        </span>
+
+        <button type="button" className="hs-btn hs-btn--primary hs-btn--sm" style={{ marginLeft: "auto" }} onClick={openNew}>
+          <IcPlus className="hs-icon-sm" /> New {meta.one}
         </button>
       </div>
 
-      {/* Metric Grid — with icons */}
-      <div className="v6-metric-grid v6-stagger" style={{ marginBottom: 22 }}>
-        <div className="v6-metric">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <span className="v6-eyebrow" style={{ display: "block" }}>Active Projects</span>
-            <SvgIcon d={STATS_ICONS.projects} size={14} color="var(--v6-muted)" />
-          </div>
-          <strong>{stats.projects}</strong>
-        </div>
-        <div className="v6-metric">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <span className="v6-eyebrow" style={{ display: "block" }}>Saved Characters</span>
-            <SvgIcon d={STATS_ICONS.characters} size={14} color={TAB_META.character.color} />
-          </div>
-          <strong>{stats.characters}</strong>
-        </div>
-        <div className="v6-metric">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <span className="v6-eyebrow" style={{ display: "block" }}>Style Memories</span>
-            <SvgIcon d={STATS_ICONS.styles} size={14} color={TAB_META.style.color} />
-          </div>
-          <strong>{stats.styles}</strong>
-        </div>
-        <div className="v6-metric">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-            <span className="v6-eyebrow" style={{ display: "block" }}>Reusable Assets</span>
-            <SvgIcon d={STATS_ICONS.assets} size={14} color={TAB_META.asset.color} />
-          </div>
-          <strong>{stats.assets}</strong>
-        </div>
-      </div>
-
-      {/* Tabs — segmented control with icons */}
-      {isMobile ? (
-        <MobileChipScroller items={TABS.map((t) => ({ label: t.label, value: t.id }))} selectedValue={activeTab} onSelect={setActiveTab} />
-      ) : (
-      <div className="v6-segmented" style={{ marginBottom: 18, maxWidth: 560 }}>
-        {TABS.map((t) => {
-          const isActive = activeTab === t.id;
-          const meta = TAB_META[t.id];
-          return (
-            <button
-              key={t.id}
-              className={`${isActive ? "v6-active" : ""}`}
-              onClick={() => setActiveTab(t.id)}
-              title={t.desc}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-            >
-              <span
-                style={{
-                  width: 6, height: 6, borderRadius: "50%",
-                  background: meta.color, flexShrink: 0,
-                  boxShadow: isActive ? `0 0 8px ${meta.color}` : "none",
-                  transition: "box-shadow 0.2s",
-                }}
-              />
-              <span>{t.label}</span>
+      {/* ── Body ─────────────────────────────────────────────────────── */}
+      <div className="st-lib__body">
+        {error && (
+          <div className="hs-notice hs-notice--fault" style={{ marginBottom: "var(--s-4)" }} role="alert">
+            <IcAlert className="hs-icon-sm" style={{ marginTop: 2 }} />
+            <span style={{ flex: 1 }}>{error}</span>
+            <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={reload}>
+              <IcRefresh className="hs-icon-sm" /> Retry
             </button>
-          );
-        })}
-      </div>
-      )}
-
-      {/* Add form — styled with sections */}
-      <AnimatePresence>
-        {showAdd && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.3, ease: EASE }}
-            style={{ overflow: "hidden", marginBottom: 16 }}
-          >
-            <div className="v6-settings-block" style={{ borderColor: tabMeta.color }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <h3 style={{ fontSize: 13, margin: 0 }}>
-                  <span style={{ color: tabMeta.color, marginRight: 6 }}>+</span>
-                  New {activeTabLabel.slice(0, -1)}
-                </h3>
-                <span className="v6-tiny v6-muted">{TAB_META[activeTab].color && `${activeTabLabel} memory`}</span>
-              </div>
-              <div className="v6-section-rule" style={{ marginBottom: 12 }} />
-              <div className="v6-field" style={{ marginBottom: 10 }}>
-                <label className="v6-field-label">Name</label>
-                <input
-                  className="v6-input"
-                  placeholder={`e.g. ${activeTab === "character" ? "Princess Aria" : activeTab === "style" ? "Cyberpunk Noir" : activeTab === "brand" ? "Acme Corp" : "Hero Shot 01"}`}
-                  value={newItem.name}
-                  onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
-                />
-              </div>
-              <div className="v6-field" style={{ marginBottom: 14 }}>
-                <label className="v6-field-label">
-                  Description{activeTab === "character" ? " — traits, appearance, background" : ""}
-                </label>
-                <textarea
-                  className="v6-textarea"
-                  placeholder={activeTab === "character"
-                    ? '{"gender":"female","hair":"long blonde","style":"cinematic","personality":"brave"}'
-                    : 'Describe the reference in detail...'}
-                  value={newItem.data}
-                  onChange={(e) => setNewItem({ ...newItem, data: e.target.value })}
-                  rows={4}
-                />
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  className="v6-btn v6-primary"
-                  onClick={addItem}
-                  disabled={!newItem.name || !newItem.data}
-                >
-                  <SvgIcon d="M12 5v14M5 12h14" size={14} /> Save Memory
-                </button>
-                <button className="v6-btn" onClick={() => setShowAdd(false)}>Cancel</button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Edit form */}
-      <AnimatePresence>
-        {editingItem && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.25, ease: EASE }}
-            style={{ overflow: "hidden", marginBottom: 16 }}
-          >
-            <div className="v6-settings-block" style={{ borderColor: tabMeta.color }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                <h3 style={{ fontSize: 13, margin: 0 }}>
-                  Edit: <span style={{ color: tabMeta.color }}>{editingItem.name}</span>
-                </h3>
-                <span className="v6-tiny v6-muted">{activeTabLabel} memory</span>
-              </div>
-              <div className="v6-section-rule" style={{ marginBottom: 12 }} />
-              <div className="v6-field" style={{ marginBottom: 10 }}>
-                <label className="v6-field-label">Name</label>
-                <input
-                  className="v6-input"
-                  value={editingItem.name}
-                  onChange={(e) => setEditingItem({ ...editingItem, name: e.target.value })}
-                />
-              </div>
-              <div className="v6-field" style={{ marginBottom: 14 }}>
-                <label className="v6-field-label">Data</label>
-                <textarea
-                  className="v6-textarea"
-                  value={typeof editingItem.data === "string" ? editingItem.data : JSON.stringify(editingItem.data, null, 2)}
-                  onChange={(e) => setEditingItem({ ...editingItem, data: e.target.value })}
-                  rows={4}
-                />
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  className="v6-btn v6-primary"
-                  onClick={() => updateItem(editingItem.id, { name: editingItem.name, data: editingItem.data })}
-                >
-                  <SvgIcon d="M4 12l5 5L20 6" size={14} /> Save Changes
-                </button>
-                <button className="v6-btn" onClick={() => setEditingItem(null)}>Cancel</button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Content */}
-      {loading ? (
-        <div className="v6-media-grid">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="v6-media-card">
-              <div className="v6-skeleton v6-skeleton-media" />
-              <div className="v6-media-card-body">
-                <div className="v6-skeleton v6-skeleton-text" style={{ width: "60%" }} />
-                <div className="v6-skeleton v6-skeleton-text v6-short" />
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : items.length === 0 ? (
-        <div className="v6-empty-state v6-entrance" style={{ padding: "60px 0" }}>
-          <div className="v6-empty-orbit">
-            <SvgIcon d={TAB_META[activeTab].icon} size={26} color={tabMeta.color} />
           </div>
-          <h2>No {activeTabLabel.toLowerCase()} yet</h2>
-          <p>{TABS.find(t => t.id === activeTab)?.desc || "Add items to build your project memory."}</p>
-          <button className="v6-btn v6-primary" onClick={() => setShowAdd(true)} style={{ marginTop: 8 }}>
-            <SvgIcon d="M12 5v14M5 12h14" size={14} /> Add First {activeTabLabel.slice(0, -1)}
-          </button>
-        </div>
-      ) : (
-        <div className="v6-media-grid v6-stagger">
-          {items.map((item, i) => {
-            const meta = TAB_META[activeTab];
-            return (
-              <motion.div
-                key={item.id}
-                className="v6-media-card"
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.04, duration: 0.35, ease: EASE }}
-              >
-                {/* Type-colored header strip */}
-                <div style={{ width: "100%", height: 3, background: meta.color }} />
-                <div
-                  style={{
-                    width: "100%",
-                    aspectRatio: "4/3",
-                    background: `linear-gradient(135deg, ${meta.color}18, ${meta.color}05)`,
-                    display: "grid",
-                    placeItems: "center",
-                  }}
-                >
-                  <SvgIcon d={TAB_META[activeTab].icon} size={36} color={meta.color} />
+        )}
+        {notice && !error && (
+          <div className="hs-notice hs-notice--signal" style={{ marginBottom: "var(--s-4)" }} role="status">
+            <IcCheck className="hs-icon-sm" style={{ marginTop: 2 }} />
+            <span style={{ flex: 1 }}>{notice}</span>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="st-lib__grid" aria-busy="true" aria-label="Loading memory records">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="st-item">
+                <div className="hs-skel" style={{ aspectRatio: "1", borderRadius: 0 }} />
+                <div className="st-item__body">
+                  <div className="hs-skel" style={{ height: 10, width: "68%" }} />
+                  <div className="hs-skel" style={{ height: 8, width: "44%" }} />
                 </div>
-                <div className="v6-media-card-body">
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 3 }}>
-                    <h3 style={{ fontSize: 12, margin: 0 }}>{item.name}</h3>
-                    <span className="v6-tiny v6-muted" style={{ flexShrink: 0 }}>
-                      {new Date(item.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    </span>
+              </div>
+            ))}
+          </div>
+        ) : shown.length === 0 ? (
+          <div className="hs-empty">
+            <span className="hs-empty__mark"><IcBrain /></span>
+            {query.trim() ? (
+              <>
+                <h3>No {meta.label.toLowerCase()} match that search</h3>
+                <p>Search covers the name and the saved contents of every record in this list.</p>
+                <button type="button" className="hs-btn hs-btn--outline" onClick={() => setQuery("")}>
+                  <IcClose className="hs-icon-sm" /> Clear search
+                </button>
+              </>
+            ) : (
+              <>
+                <h3>No {meta.label.toLowerCase()} saved yet</h3>
+                <p>{meta.blurb} Saved records are pulled into prompts so the same subject or look comes back the next time.</p>
+                <button type="button" className="hs-btn hs-btn--primary" onClick={openNew}>
+                  <IcPlus className="hs-icon-sm" /> Save the first {meta.one}
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="st-lib__grid" ref={gridRef} role="list" aria-label={meta.label} onKeyDown={onGridKey}>
+            {shown.map((item) => {
+              const k = kindOf(item.type || kind);
+              const Icon = k.icon;
+              const fields = fieldCount(item.data);
+              return (
+                <div key={item.id} className="st-item" role="listitem">
+                  <button
+                    type="button"
+                    data-card
+                    onClick={() => openEdit(item)}
+                    aria-label={`${item.name} — ${k.one}, updated ${dateLabel(item.updatedAt) || "recently"}. Open the editor.`}
+                    style={{
+                      display: "block", width: "100%", padding: 0, border: 0,
+                      background: "transparent", color: "inherit", font: "inherit",
+                      textAlign: "left", cursor: "pointer",
+                    }}
+                  >
+                    <div className="st-item__frame">
+                      <span style={{ display: "grid", placeItems: "center", height: "100%", padding: "var(--s-4)", gap: "var(--s-2)" }}>
+                        <Icon style={{ width: 28, height: 28, color: "var(--tx-ghost)" }} />
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute", inset: "auto var(--s-3) var(--s-3)",
+                          fontSize: 9.5, lineHeight: 1.4, color: "var(--tx-mute)",
+                          display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {summarise(item.data)}
+                      </span>
+                      <span className="st-item__kind">{k.one}</span>
+                    </div>
+                    <div className="st-item__body">
+                      <span className="st-item__name">{item.name}</span>
+                      <span className="st-item__meta">
+                        {[dateLabel(item.updatedAt), fields != null ? `${fields} field${fields === 1 ? "" : "s"}` : null]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </div>
+                  </button>
+
+                  <div className="st-item__acts">
+                    <button
+                      type="button"
+                      className="hs-btn hs-btn--sm hs-btn--icon"
+                      onClick={() => copyRecord(item)}
+                      aria-label={`Copy the contents of ${item.name}`}
+                      title={copied === item.id ? "Copied" : "Copy contents"}
+                    >
+                      {copied === item.id ? <IcCheck className="hs-icon-sm" /> : <IcCopy className="hs-icon-sm" />}
+                    </button>
+                    <button
+                      type="button"
+                      className="hs-btn hs-btn--sm hs-btn--icon hs-btn--danger"
+                      onClick={() => setPending(item)}
+                      aria-label={`Delete ${item.name}`}
+                      title="Delete"
+                    >
+                      <IcTrash className="hs-icon-sm" />
+                    </button>
                   </div>
-                  <p style={{ fontSize: 9, color: "var(--v6-muted)", lineHeight: 1.4 }}>
-                    {formatData(item.data)}
-                  </p>
                 </div>
-                <div className="v6-card-actions">
-                  <button
-                    className="v6-btn v6-icon-only v6-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingItem(item);
-                    }}
-                    title="Edit"
-                  >
-                    <SvgIcon d="M15 3l6 6-15 15H3v-3L18 3z" size={13} />
-                  </button>
-                  <button
-                    className="v6-btn v6-icon-only v6-sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (confirm("Delete this memory?")) deleteItem(item.id);
-                    }}
-                    title="Delete"
-                    style={{ color: "var(--v6-bad)" }}
-                  >
-                    <SvgIcon d="M6 6l12 12M18 6L6 18" size={13} />
-                  </button>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── Record editor ────────────────────────────────────────────── */}
+      <Modal
+        open={!!editor}
+        onClose={() => setEditor(null)}
+        title={editorView?.mode === "new" ? `New ${editorKind.one}` : `Edit ${editorKind.one}`}
+        footer={
+          <>
+            <button type="button" className="hs-btn hs-btn--ghost" onClick={() => setEditor(null)}>Cancel</button>
+            <button
+              type="button"
+              className="hs-btn hs-btn--primary"
+              onClick={save}
+              disabled={saving || !editor?.name.trim() || brokenJson}
+            >
+              {saving
+                ? <><span className="hs-spin" /> Saving</>
+                : <><IcCheck className="hs-icon-sm" /> {editorView?.mode === "new" ? "Save record" : "Save changes"}</>}
+            </button>
+          </>
+        }
+      >
+        {editorView && (
+          <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+            <p className="hs-hint">{editorKind.blurb}</p>
+
+            {editorView.mode === "new" && (
+              <Field label="Type">
+                <Segmented
+                  label="Record type"
+                  value={editorView.type}
+                  onChange={(v) => setEditor((e) => ({ ...e, type: v }))}
+                  options={KINDS.map((k) => ({ value: k.value, label: k.label }))}
+                />
+              </Field>
+            )}
+
+            <Field label="Name" hint="How you will pick this record out of a list later.">
+              {(id) => (
+                <input
+                  id={id}
+                  className="hs-input"
+                  value={editorView.name}
+                  onChange={(e) => setEditor((s) => ({ ...s, name: e.target.value }))}
+                  placeholder={editorKind.value === "character" ? "Mara, lead" : "Cold winter grade"}
+                  autoFocus
+                />
+              )}
+            </Field>
+
+            <Field
+              label="Contents"
+              hint="Write prose, or a JSON object for named traits. Both are stored as-is and read back into prompts."
+              error={brokenJson ? "This starts like JSON but does not parse. Close the braces, or remove them to store it as prose." : undefined}
+            >
+              {(id) => (
+                <textarea
+                  id={id}
+                  className="hs-input hs-textarea hs-mono"
+                  style={{ minHeight: 160, fontSize: 11, lineHeight: 1.6 }}
+                  value={editorView.text}
+                  onChange={(e) => setEditor((s) => ({ ...s, text: e.target.value }))}
+                  placeholder={editorKind.example}
+                  spellCheck="false"
+                />
+              )}
+            </Field>
+
+            {editorView.mode === "edit" && (
+              <p className="hs-mono hs-mute" style={{ fontSize: 10 }}>
+                id {editorView.id}
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Confirm ──────────────────────────────────────────────────── */}
+      <Confirm
+        open={!!pending}
+        onClose={() => setPending(null)}
+        onConfirm={() => pending && remove(pending)}
+        title="Delete this record?"
+        body={
+          doomed
+            ? `“${doomed.name}” stops being available to prompts. Anything already generated with it keeps what it made.`
+            : ""
+        }
+        confirmLabel="Delete"
+      />
     </div>
   );
 }

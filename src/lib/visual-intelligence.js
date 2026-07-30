@@ -9,9 +9,12 @@ const VISION_MODEL = process.env.VISION_MODEL || "deepseek/deepseek-v4-flash";
 export async function analyzeImage(imageUrl, options = {}) {
   if (!imageUrl) throw new Error("Image URL required");
 
-  // Check cache first (spec §11.3)
+  const userId = options.userId || null;
+
+  // Check cache first (spec §11.3). Scoped to the requesting user so one
+  // user's analysis is never served to (or read by) another.
   const cached = await prisma.visualAnalysis.findFirst({
-    where: { assetUrl: imageUrl },
+    where: { assetUrl: imageUrl, ...(userId ? { userId } : {}) },
     orderBy: { createdAt: "desc" },
   });
   if (cached && !options.force) return cached;
@@ -73,6 +76,7 @@ export async function analyzeImage(imageUrl, options = {}) {
 
     const record = await prisma.visualAnalysis.create({
       data: {
+        userId,
         assetUrl: imageUrl,
         caption: analysis.caption || null,
         background: analysis.background || null,
