@@ -1,6 +1,5 @@
 "use client";
 
-import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
 
 import { useState, useCallback, useEffect } from "react";
 import {
@@ -205,5 +204,4 @@ function MarketingStudioV2() {
 // CreationWorkspace is the canonical Command Universe composition; the adapter
 // preserves this instrument's proven API behavior while its controls use the
 // shared spatial workspace contract.
-void CreationWorkspace;
-export default withUniverseCreation(MarketingStudioV2, { tool: "marketing" });
+export default MarketingStudioV2;

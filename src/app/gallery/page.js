@@ -165,7 +165,7 @@ export default function GalleryPage() {
       <Navbar />
       <div className="grain" aria-hidden="true" />
 
-      <div className="page">
+      <div className="universe-gallery page">
         <div className="page__row">
           <div>
             <div className="eyebrow mb-4">Your Work</div>

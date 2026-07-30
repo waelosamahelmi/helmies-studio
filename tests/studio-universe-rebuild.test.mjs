@@ -47,15 +47,23 @@ test("command surface remains unmounted until explicitly opened", () => {
   assert.match(source, /if \(!open\) return null/);
 });
 
-test("all routed creation studios use the canonical Universe workspace", () => {
-  const files = ["ImageStudioV2.js", "VideoStudioV2.js", "AudioStudioV2.js", "CinemaStudioV2.js", "LipSyncStudioV2.js", "RecastStudioV2.js", "InfluencerStudioV2.js", "MarketingStudioV2.js", "MotionStudioV2.js", "AvatarStudio.js", "VideoEditStudio.js", "MusicStudio.js", "ClippingStudioV2.js"];
-  for (const file of files) assert.match(read(`src/components/studio/${file}`), /CreationWorkspace/);
+test("all routed creation studios use a native Universe workspace", () => {
+  for (const file of ["ImageStudioV2.js", "VideoStudioV2.js"]) {
+    assert.match(read(`src/components/studio/${file}`), /CreationWorkspace/);
+  }
+  for (const file of ["AudioStudioV2.js", "CinemaStudioV2.js", "LipSyncStudioV2.js", "RecastStudioV2.js", "InfluencerStudioV2.js", "MarketingStudioV2.js", "MotionStudioV2.js", "ClippingStudioV2.js"]) {
+    assert.match(read(`src/components/studio/${file}`), /WorkspaceShell/);
+  }
+  for (const file of ["AvatarStudio.js", "VideoEditStudio.js", "MusicStudio.js"]) {
+    assert.match(read(`src/components/studio/${file}`), /media-lab/);
+    assert.doesNotMatch(read(`src/components/studio/${file}`), /withUniverseCreation/);
+  }
 });
 
-test("specialized Studio routes use the Universe spatial contract without flattening their workflows", () => {
+test("specialized Studio routes mount their native spatial workspaces without a flattening wrapper", () => {
   const source = read("src/app/studio/StudioClient.js");
-  assert.match(source, /SpecializedWorkspace/);
-  for (const tool of ["agent", "director", "canvas", "workflows", "assets", "brands", "projects"]) assert.match(source, new RegExp(`tool="${tool}"`));
+  assert.doesNotMatch(source, /SpecializedWorkspace/);
+  for (const component of ["ChatStudio", "DirectorWorkspace", "CanvasWorkspace", "WorkflowBuilder", "AssetLibrary", "BrandKitsView", "ProjectMemory"]) assert.match(source, new RegExp(`<${component}`));
 });
 
 test("Agent is a native Command Universe workspace instead of a decorated legacy chat", () => {
@@ -94,4 +102,33 @@ test("Video Studio composes the canonical workspace directly", () => {
   assert.match(source, /return\s*\(\s*<CreationWorkspace/);
   assert.doesNotMatch(source, /withUniverseCreation|studio__pane--left|StagedProgress/);
   for (const behavior of ["handleGenerate", "duration", "resolution", "aspectRatio", "useCreditCost", "useAsyncGeneration"]) assert.match(source, new RegExp(behavior));
+});
+
+test("Canvas is a native spatial Universe editor with canvas generation field", () => {
+  const source = read("src/components/studio/CanvasWorkspace.js");
+  for (const contract of ["canvas-universe", "canvas-universe__tools", "canvas-universe__artboard", "canvas-universe__inspector", "canvas-universe__dock", "GenerationField"]) assert.match(source, new RegExp(contract));
+  assert.doesNotMatch(source, /studio__spinner|TOOL_DEFS[\s\S]*[🖼✏]/);
+  for (const behavior of ["undo", "redo", "applyZoom", "compile", "addImageFromUrl", "handleGenerate"]) assert.match(source, new RegExp(behavior));
+});
+
+test("shared production tools use a spatial stage, context orbit, and prompt dock", () => {
+  const shell = read("src/components/studio/StudioComponents.js");
+  for (const contract of ["production-universe", "production-universe__stage", "production-universe__context", "production-universe__dock"]) assert.match(shell, new RegExp(contract));
+  assert.doesNotMatch(shell, /studio__pane--inputs|canonical three-pane/);
+  for (const file of ["AudioStudioV2.js", "CinemaStudioV2.js", "LipSyncStudioV2.js", "RecastStudioV2.js", "InfluencerStudioV2.js", "MarketingStudioV2.js", "MotionStudioV2.js", "ClippingStudioV2.js"]) assert.doesNotMatch(read(`src/components/studio/${file}`), /withUniverseCreation/);
+});
+
+test("remaining build, library, account, and operations pages carry the dark Universe design contract", () => {
+  const contracts = [
+    ["src/components/studio/DirectorWorkspace.js", "director-universe"],
+    ["src/components/studio/WorkflowBuilder.js", "workflow-universe"],
+    ["src/components/studio/AssetLibrary.js", "asset-universe"],
+    ["src/components/studio/BrandKitsView.js", "brand-universe"],
+    ["src/components/studio/ProjectMemory.js", "memory-universe"],
+    ["src/app/gallery/page.js", "universe-gallery"],
+    ["src/app/settings/page.js", "universe-settings"],
+    ["src/components/admin/AdminShell.js", "admin-universe"],
+  ];
+  for (const [file, contract] of contracts) assert.match(read(file), new RegExp(contract));
+  assert.doesNotMatch(read("src/components/admin/AdminShell.js"), /📊|💰|🤖|👥|📝|⚙️/);
 });

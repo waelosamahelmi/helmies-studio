@@ -1,6 +1,5 @@
 "use client";
 
-import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -311,5 +310,4 @@ function AudioStudioV2() {
 // CreationWorkspace is the canonical Command Universe composition; the adapter
 // preserves this instrument's proven API behavior while its controls use the
 // shared spatial workspace contract.
-void CreationWorkspace;
-export default withUniverseCreation(AudioStudioV2, { tool: "audio" });
+export default AudioStudioV2;

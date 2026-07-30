@@ -91,14 +91,14 @@ export default function BrandKitsView() {
 
   if (loading) {
     return (
-      <div className="studio__brands">
+      <div className="brand-universe studio__brands">
         <div className="studio__idle"><IconPalette style={{ width: 48, height: 48, opacity: 0.3 }} /><p>Loading brand kits...</p></div>
       </div>
     );
   }
 
   return (
-    <div className="studio__brands">
+    <div className="brand-universe studio__brands">
       <div className="studio__brands-sidebar">
         <div className="studio__brands-sidebar-header">
           <h2><IconPalette /> Brand Kits</h2>

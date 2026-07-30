@@ -575,7 +575,7 @@ export default function DirectorWorkspace() {
   );
 
   return (
-    <div style={{ height: "100%", padding: 24, overflow: "hidden", background: "var(--color-void)" }}>
+    <div className="director-universe" style={{ height: "100%", padding: 24, overflow: "hidden" }}>
       <AnimatePresence mode="wait">
         {mode === "brief" && <motion.div key="brief" className="h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderBriefForm()}</motion.div>}
         {mode === "plan" && <motion.div key="plan" className="h-full" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>{renderPlanView()}</motion.div>}

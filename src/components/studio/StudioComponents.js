@@ -594,9 +594,7 @@ export function ResultCard({ result, type = "image", credits, model, actions = [
 }
 
 // ── WorkspaceShell ──────────────────────────────────────────
-// The canonical three-pane layout every Studio workspace composes.
-// Desktop: Inputs (240px) · Center (flex) · Inspector (240px) + bottom bar.
-// Mobile: Inputs → bottom sheet, Inspector → drawer, bottom bar stays.
+// Stage-first production shell shared by the specialist tools.
 export function WorkspaceShell({
   title,
   Icon,
@@ -613,38 +611,40 @@ export function WorkspaceShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <div className="studio__workspace">
-      {/* Desktop left — inputs */}
-      <aside className="studio__pane studio__pane--inputs">
-        <div className="studio__pane-head">
-          <span className="studio__pane-title">{title}</span>
-          {onModeChange && <BasicAdvancedToggle mode={mode} onChange={onModeChange} />}
-        </div>
-        <div className="studio__pane-body">{inputs}</div>
-      </aside>
-
-      {/* Center — canvas/preview + bottom bar */}
-      <main className="studio__pane studio__pane--center">
-        <div className="studio__pane-center-topbar">
-          {/* Mobile controls */}
-          <button className="studio__pane-mobile-btn md:hidden" onClick={() => setSheetOpen(true)}>
+    <div className="production-universe">
+      <main className="production-universe__stage">
+        <div className="production-universe__mobile-actions md:hidden">
+          <button className="studio__pane-mobile-btn" onClick={() => setSheetOpen(true)}>
             <IconImage style={{ width: 16, height: 16 }} /> Settings
           </button>
-          <button className="studio__pane-mobile-btn md:hidden" onClick={() => setDrawerOpen(true)}>
+          <button className="studio__pane-mobile-btn" onClick={() => setDrawerOpen(true)}>
             <IconSparkle style={{ width: 16, height: 16 }} /> Inspector
           </button>
         </div>
-        <div className="studio__pane-canvas">{children}</div>
-        {bottomBar && <div className="studio__pane-bottom">{bottomBar}</div>}
+        {children}
       </main>
 
-      {/* Desktop right — inspector */}
-      <aside className="studio__pane studio__pane--inspector">
-        <div className="studio__pane-head">
-          <span className="studio__pane-title">Inspector</span>
+      <aside className="production-universe__context">
+        <div className="production-universe__context-head">
+          <div className="production-universe__eyebrow">Production workspace</div>
+          <span className="production-universe__title">{title}</span>
+          {onModeChange && <BasicAdvancedToggle mode={mode} onChange={onModeChange} />}
         </div>
-        <div className="studio__pane-body">{inspector}</div>
+        <div className="production-universe__context-body">
+          <section className="production-universe__context-section">
+            <div className="production-universe__section-label">Source &amp; controls</div>
+            {inputs}
+          </section>
+          {inspector && (
+            <section className="production-universe__context-section">
+              <div className="production-universe__section-label">Inspector</div>
+              {inspector}
+            </section>
+          )}
+        </div>
       </aside>
+
+      {bottomBar && <div className="production-universe__dock">{bottomBar}</div>}
 
       {/* Mobile bottom sheet for inputs */}
       <AnimatePresence>

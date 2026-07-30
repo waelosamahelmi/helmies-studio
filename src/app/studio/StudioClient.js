@@ -9,7 +9,6 @@ import InstrumentOrbit from "@/components/studio/universe/InstrumentOrbit";
 import InstrumentIndex from "@/components/studio/universe/InstrumentIndex";
 import RecentConstellation from "@/components/studio/universe/RecentConstellation";
 import CommandSurface from "@/components/studio/universe/CommandSurface";
-import SpecializedWorkspace from "@/components/studio/universe/SpecializedWorkspace";
 import ChatStudio from "@/components/studio/ChatStudio";
 import WorkflowBuilder from "@/components/studio/WorkflowBuilder";
 import ProjectMemory from "@/components/studio/ProjectMemory";
@@ -38,7 +37,7 @@ const TOOLS = [
 const QUICK = ["orchestrator", "image", "video", "director", "canvas", "assets", "workflows", "brands"];
 
 function Tool({ id, initialModel }) {
-  const map = { orchestrator: <SpecializedWorkspace tool="agent"><ChatStudio tool="orchestrator" initialModel={initialModel} /></SpecializedWorkspace>, workflows: <SpecializedWorkspace tool="workflows"><WorkflowBuilder /></SpecializedWorkspace>, memory: <SpecializedWorkspace tool="projects"><ProjectMemory /></SpecializedWorkspace>, brands: <SpecializedWorkspace tool="brands"><BrandKitsView /></SpecializedWorkspace>, canvas: <SpecializedWorkspace tool="canvas"><CanvasWorkspace /></SpecializedWorkspace>, director: <SpecializedWorkspace tool="director"><DirectorWorkspace /></SpecializedWorkspace>, assets: <SpecializedWorkspace tool="assets"><AssetLibrary /></SpecializedWorkspace>, music: <MusicStudio />, "video-edit": <VideoEditStudio />, avatar: <AvatarStudio />, image: <ImageStudioV2 initialModel={initialModel} />, video: <VideoStudioV2 initialModel={initialModel} />, audio: <AudioStudioV2 />, cinema: <CinemaStudioV2 />, lipsync: <LipSyncStudioV2 />, "body-swap": <RecastStudioV2 />, influencer: <InfluencerStudioV2 />, marketing: <MarketingStudioV2 />, "vibe-motion": <MotionStudioV2 />, clipping: <ClippingStudioV2 /> };
+  const map = { orchestrator: <ChatStudio tool="orchestrator" initialModel={initialModel} />, workflows: <WorkflowBuilder />, memory: <ProjectMemory />, brands: <BrandKitsView />, canvas: <CanvasWorkspace />, director: <DirectorWorkspace />, assets: <AssetLibrary />, music: <MusicStudio />, "video-edit": <VideoEditStudio />, avatar: <AvatarStudio />, image: <ImageStudioV2 initialModel={initialModel} />, video: <VideoStudioV2 initialModel={initialModel} />, audio: <AudioStudioV2 />, cinema: <CinemaStudioV2 />, lipsync: <LipSyncStudioV2 />, "body-swap": <RecastStudioV2 />, influencer: <InfluencerStudioV2 />, marketing: <MarketingStudioV2 />, "vibe-motion": <MotionStudioV2 />, clipping: <ClippingStudioV2 /> };
   return map[id] || map.orchestrator;
 }
 

@@ -11,17 +11,18 @@ import { IconSparkle, IconClose, IconImage, IconChevron, IconBolt, IconArrowUpRi
 import { IMAGE_MODELS, I2I_MODELS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { apiFetch } from "@/lib/client-fetch";
+import GenerationField from "./universe/GenerationField";
 
 const EASE = [0.32, 0.72, 0, 1];
 
 const TOOL_DEFS = [
-  { id: TOOLS.SELECT, label: "Select", icon: "↖", shortcut: "V" },
-  { id: TOOLS.ADD_IMAGE, label: "Image", icon: "🖼", shortcut: "I" },
+  { id: TOOLS.SELECT, label: "Select", icon: "V", shortcut: "V" },
+  { id: TOOLS.ADD_IMAGE, label: "Image", icon: "IMG", shortcut: "I" },
   { id: TOOLS.ADD_TEXT, label: "Text", icon: "T", shortcut: "T" },
-  { id: TOOLS.ADD_SHAPE, label: "Shape", icon: "◻", shortcut: "S" },
-  { id: TOOLS.FREE_DRAW, label: "Draw", icon: "✏", shortcut: "D" },
-  { id: TOOLS.MASK_INCLUDE, label: "Mask +", icon: "⊕", shortcut: "M" },
-  { id: TOOLS.MASK_EXCLUDE, label: "Mask −", icon: "⊖", shortcut: "N" },
+  { id: TOOLS.ADD_SHAPE, label: "Shape", icon: "SH", shortcut: "S" },
+  { id: TOOLS.FREE_DRAW, label: "Draw", icon: "DR", shortcut: "D" },
+  { id: TOOLS.MASK_INCLUDE, label: "Mask +", icon: "+M", shortcut: "M" },
+  { id: TOOLS.MASK_EXCLUDE, label: "Mask −", icon: "-M", shortcut: "N" },
 ];
 
 // Canvas-capable models: edit models (multi-reference + masks) first, then
@@ -190,12 +191,12 @@ export default function CanvasWorkspace() {
 
   return (
     <div
-      className="studio__canvas-workspace"
+      className="canvas-universe studio__canvas-workspace"
       onKeyDown={handleKeyDown}
       tabIndex={0}
     >
       {/* ── Top Toolbar ────────────────────────────────── */}
-      <Toolbar
+      <div className="canvas-universe__tools"><Toolbar
         tools={TOOL_DEFS}
         activeTool={mode}
         onSelectTool={handleToolSelect}
@@ -206,12 +207,12 @@ export default function CanvasWorkspace() {
         onRefreshZoom={refreshZoom}
         rightPanelOpen={rightPanelOpen}
         onToggleRightPanel={() => setRightPanelOpen((v) => !v)}
-      />
+      /></div>
 
       {/* ── Main Content ───────────────────────────────── */}
       <div className="studio__canvas-main">
         {/* Center: Canvas */}
-        <div className="studio__canvas-center">
+        <div className="canvas-universe__artboard studio__canvas-center">
           <CanvasEditor
             mode={mode}
             onModeChange={setMode}
@@ -240,12 +241,7 @@ export default function CanvasWorkspace() {
                     </button>
                   </div>
                   <div className="studio__canvas-result-body">
-                    {generating && (
-                      <div className="studio__canvas-result-loading">
-                        <span className="studio__spinner" />
-                        <span>{elapsed}s elapsed</span>
-                      </div>
-                    )}
+                    {generating && <GenerationField phase="generating" elapsed={elapsed} model={currentModel.name} />}
                     {error && <div className="studio__error">{error}</div>}
                     {result?.url && !generating && (
                       <>
@@ -283,7 +279,7 @@ export default function CanvasWorkspace() {
         <AnimatePresence>
           {rightPanelOpen && (
             <motion.aside
-              className="studio__canvas-right-panel"
+              className="canvas-universe__inspector studio__canvas-right-panel"
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: 260, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
@@ -300,7 +296,7 @@ export default function CanvasWorkspace() {
       </div>
 
       {/* ── Bottom Prompt Bar ──────────────────────────────── */}
-      <div className="studio__canvas-promptbar">
+      <div className="canvas-universe__dock studio__canvas-promptbar">
         <div className="studio__canvas-promptbar-inner">
           {/* Model selector */}
           <div className="studio__canvas-model-select" onClick={(e) => { e.stopPropagation(); setShowModelMenu(!showModelMenu); }}>

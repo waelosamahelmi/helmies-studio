@@ -58,7 +58,7 @@ export default function ProjectMemoryPanel() {
   };
 
   return (
-    <div className="memory-panel">
+    <div className="memory-universe memory-panel">
       <div className="memory-panel__header">
         <h3>Project Memory</h3>
         <p>Save and reuse characters, styles, assets, and brand context.</p>

@@ -73,7 +73,7 @@ export default function SettingsPage() {
   return (
     <>
       <Navbar />
-      <div className="page settings">
+      <div className="universe-settings page settings">
         <div className="settings__header">
           <h1>Settings</h1>
           <p>Manage your account, credits, and API keys.</p>

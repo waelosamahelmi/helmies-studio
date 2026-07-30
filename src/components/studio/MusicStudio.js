@@ -1,6 +1,6 @@
 "use client";
 
-import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+import GenerationField from "./universe/GenerationField";
 
 import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -323,9 +323,9 @@ function MusicStudio() {
   const musicCharLimit = 1000;
 
   return (
-    <div className="studio__workspace" onKeyDown={handleKeyDown}>
-      <div className="studio__workspace-body">
-        <aside className="studio__pane studio__pane--models studio__glass studio__glass--flush">
+    <div className="media-lab media-lab--music studio__workspace" onKeyDown={handleKeyDown}>
+      <div className="media-lab__body studio__workspace-body">
+        <aside className="media-lab__catalog studio__pane studio__pane--models studio__glass studio__glass--flush">
           <div className="studio__tabs" style={{ borderBottom: "1px solid var(--color-hairline)" }}>
             {TABS.map((t) => {
               const Icon = t.icon;
@@ -551,7 +551,7 @@ function MusicStudio() {
           </div>
         </aside>
 
-        <main className="studio__pane studio__pane--center">
+        <main className="media-lab__stage studio__pane studio__pane--center">
           <AnimatePresence mode="wait">
             {error ? (
               <motion.div
@@ -573,7 +573,7 @@ function MusicStudio() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <PremiumProgress elapsed={elapsed} tab={tab} />
+                <GenerationField phase="generating" elapsed={elapsed} model={tab === "music" ? "Music composition" : "Voice synthesis"} />
               </motion.div>
             ) : audioUrl ? (
               <AudioResult
@@ -591,7 +591,7 @@ function MusicStudio() {
         </main>
       </div>
 
-      <div className="studio__bottombar">
+      <div className="media-lab__dock studio__bottombar">
         <div className="studio__composer-wrap">
           <AnimatePresence mode="wait">
             {tab === "music" ? (
@@ -677,4 +677,4 @@ function MusicStudio() {
 // preserves this instrument's proven API behavior while its controls use the
 // shared spatial workspace contract.
 void CreationWorkspace;
-export default withUniverseCreation(MusicStudio, { tool: "music" });
+export default MusicStudio;

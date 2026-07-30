@@ -193,7 +193,7 @@ export default function WorkflowBuilder() {
   };
 
   return (
-    <div className="workflow-builder" style={wbStyle}>
+    <div className="workflow-universe workflow-builder" style={wbStyle}>
       {/* Left pane */}
       <div style={leftPaneStyle}>
         <div style={{ padding: "16px 16px 8px" }}>

@@ -1,6 +1,6 @@
 "use client";
 
-import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+import GenerationField from "./universe/GenerationField";
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -383,9 +383,9 @@ function AvatarStudio() {
   );
 
   return (
-    <div className="studio__workspace" onKeyDown={onKeyDown}>
-      <div className="studio__workspace-body">
-        <aside className="studio__pane studio__pane--models studio__glass studio__glass--flush">
+    <div className="media-lab media-lab--avatar studio__workspace" onKeyDown={onKeyDown}>
+      <div className="media-lab__body studio__workspace-body">
+        <aside className="media-lab__catalog studio__pane studio__pane--models studio__glass studio__glass--flush">
           <div className="studio__models-search">
             <IconSearch className="studio__models-search-icon" />
             <input
@@ -444,7 +444,7 @@ function AvatarStudio() {
           </div>
         </aside>
 
-        <main className="studio__pane studio__pane--center">
+        <main className="media-lab__stage studio__pane studio__pane--center">
           <AnimatePresence mode="wait">
             {error ? (
               <motion.div
@@ -466,7 +466,7 @@ function AvatarStudio() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
               >
-                <PremiumProgress elapsed={elapsed} />
+                <GenerationField phase="generating" elapsed={elapsed} model={model || "Avatar"} />
               </motion.div>
             ) : result?.url ? (
               <ResultDisplay key="result" result={result} onRetry={handleGenerate} />
@@ -511,7 +511,7 @@ function AvatarStudio() {
         ))}
       </div>
 
-      <div className="studio__bottombar">
+      <div className="media-lab__dock studio__bottombar">
         <div className="studio__composer-wrap">
           <PromptComposer
             value={prompt}
@@ -569,4 +569,4 @@ function AvatarStudio() {
 // preserves this instrument's proven API behavior while its controls use the
 // shared spatial workspace contract.
 void CreationWorkspace;
-export default withUniverseCreation(AvatarStudio, { tool: "avatar" });
+export default AvatarStudio;

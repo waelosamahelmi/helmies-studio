@@ -16,30 +16,30 @@ import toast from "react-hot-toast";
 const EASE = [0.32, 0.72, 0, 1];
 
 const TOP_LEVEL_TABS = [
-  { id: "overview", label: "Overview", icon: "📊" },
+  { id: "overview", label: "Overview", icon: "OV" },
   {
     id: "business",
     label: "Business",
-    icon: "💰",
+    icon: "BU",
     subs: ["Revenue", "Plans", "Credit Packs", "Promo Codes", "Pricing", "Margin Advisor"],
   },
   {
     id: "ai-platform",
     label: "AI Platform",
-    icon: "🤖",
+    icon: "AI",
     subs: ["Models", "Routes", "Providers", "Prompt Guides", "Quality", "Generations", "Director"],
   },
-  { id: "users", label: "Users", icon: "👥" },
+  { id: "users", label: "Users", icon: "US" },
   {
     id: "content",
     label: "Content",
-    icon: "📝",
+    icon: "CO",
     subs: ["Website Content", "Announcements"],
   },
   {
     id: "operations",
     label: "Operations",
-    icon: "⚙️",
+    icon: "OP",
     subs: ["Jobs", "Provider Health", "Feature Flags", "Audit Logs"],
   },
 ];
@@ -71,7 +71,7 @@ export default function AdminShell() {
   return (
     <>
       <Navbar />
-      <div className="admin">
+      <div className="admin-universe admin">
         <div className="admin__header">
           <h1>Admin Panel</h1>
           <p>Manage users, credits, models, pricing, content, and operations.</p>

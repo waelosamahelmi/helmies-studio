@@ -1,6 +1,5 @@
 "use client";
 
-import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
 
 import { useState, useCallback, useEffect } from "react";
 import {
@@ -123,5 +122,4 @@ function ClippingStudioV2() {
   );
 }
 
-void CreationWorkspace;
-export default withUniverseCreation(ClippingStudioV2, { tool: "clipping" });
+export default ClippingStudioV2;

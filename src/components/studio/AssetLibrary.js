@@ -86,7 +86,7 @@ export default function AssetLibrary() {
   };
 
   return (
-    <div className="studio__workspace">
+    <div className="asset-universe studio__workspace">
       <div className="studio__workspace-body" style={{ flexDirection: "column" }}>
         <div className="studio__asset-header">
           <h2>Asset Library</h2>
@@ -209,7 +209,7 @@ export default function AssetLibrary() {
                 {selected.type === "image" && (
                   <>
                     <button onClick={() => window.open(`/studio/canvas`, "_blank")} className="studio__chip">Add to Canvas</button>
-                    <button onClick={() => window.open(`/studio/image`, "_blank")} className="studio__chip">↻ Use as reference</button>
+                    <button onClick={() => window.open(`/studio/image`, "_blank")} className="studio__chip">Use as reference</button>
                     <button onClick={() => window.open(`/studio/lipsync`, "_blank")} className="studio__chip">Lip Sync</button>
                     <button onClick={() => window.open(`/studio/body-swap`, "_blank")} className="studio__chip">Recast</button>
                   </>
@@ -217,7 +217,7 @@ export default function AssetLibrary() {
                 {selected.type === "video" && (
                   <>
                     <button onClick={() => window.open(`/studio/body-swap`, "_blank")} className="studio__chip">Recast</button>
-                    <button onClick={() => window.open(`/studio/clipping`, "_blank")} className="studio__chip">✂ Clip</button>
+                    <button onClick={() => window.open(`/studio/clipping`, "_blank")} className="studio__chip">Create clips</button>
                   </>
                 )}
                 <button onClick={async () => {
