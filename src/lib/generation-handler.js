@@ -184,12 +184,14 @@ export async function handleGeneration(req, tool, cost, apiFn) {
           break;
         } catch (e) {
           lastError = e;
+          console.error(`[Provider:${prov.name}] ${tool}: ${e.message}`, e.stack?.split("\n").slice(0, 3).join("\n"));
           await logProviderError(prov.name, tool, e.message, user.id).catch(() => {});
           continue;
         }
       }
 
       if (!result) {
+        console.error(`[handleGeneration] All providers failed for model=${model} tool=${tool}. Last error:`, lastError?.message, lastError?.stack);
         throw lastError || new Error("All providers failed");
       }
 
