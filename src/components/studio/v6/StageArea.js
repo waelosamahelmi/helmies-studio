@@ -20,23 +20,6 @@ const IconDownload = () => (
   </svg>
 );
 
-const IconCanvas = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" />
-    <line x1="3" y1="9" x2="21" y2="9" />
-    <line x1="9" y1="21" x2="9" y2="9" />
-  </svg>
-);
-
-const IconReference = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="7" height="7" />
-    <rect x="14" y="3" width="7" height="7" />
-    <rect x="3" y="14" width="7" height="7" />
-    <rect x="14" y="14" width="7" height="7" />
-  </svg>
-);
-
 const IconRefresh = () => (
   <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="23,4 23,10 17,10" />
@@ -63,30 +46,11 @@ const IconCross = () => (
   </svg>
 );
 
-const IconMaximize = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="15,3 21,3 21,9" /><polyline points="9,21 3,21 3,15" />
-    <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+const IconBoltSmall = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13,2 3,14 12,14 11,22 21,10 12,10" />
   </svg>
 );
-
-/* ── Determine generation phase from progress ── */
-function getPhase(progress) {
-  if (progress == null) return "generate";
-  if (progress < 20) return "prepare";
-  if (progress < 85) return "generate";
-  return "refine";
-}
-
-function getPhaseLabel(phase, stage) {
-  if (stage) return stage;
-  switch (phase) {
-    case "prepare": return "Preparing\u2026";
-    case "generate": return "Generating";
-    case "refine":  return "Refining";
-    default:        return "Generating";
-  }
-}
 
 /* ── Prompt suggestions for empty state ── */
 const DEFAULT_SUGGESTIONS = [
@@ -122,31 +86,34 @@ export default function StageArea({
   const handleDownload = async () => {
     if (!onDownload) return;
     setDownloading(true);
-    try {
-      await onDownload();
-    } finally {
+    try { await onDownload(); } finally {
       setTimeout(() => setDownloading(false), 1200);
     }
   };
 
-  /* ── Empty state ── */
+  /* ── Empty state — ethereal glass ring + suggestions ── */
   if (!generating && !result) {
     return (
       <div className="v6-stage">
         <div className="v6-stage-grid" />
-        <div className="v6-empty-state">
-          <div className="v6-empty-orbit">
+        <div className="v6-empty-state" style={{ maxWidth: 500 }}>
+          {/* 128px glowing ring */}
+          <div className="v6-glow-ring" style={{ margin: "0 auto 28px" }}>
             {toolIcon || <IconOrbit />}
           </div>
-          <h2>{toolLabel}</h2>
-          <p>{toolDesc}</p>
-          {/* Prompt suggestions */}
+          <h2 style={{ fontFamily: "var(--v6-display)", fontWeight: 600, fontSize: 28, letterSpacing: "-0.04em", margin: "0 0 10px", background: "linear-gradient(135deg, var(--v6-text) 30%, var(--v6-muted) 80%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+            {toolLabel}
+          </h2>
+          <p style={{ fontSize: 14, lineHeight: 1.6, color: "var(--v6-muted)", maxWidth: 380, margin: "0 auto 24px" }}>
+            {toolDesc}
+          </p>
+          {/* Suggestion cluster with varied chip sizes */}
           {suggestions.length > 0 && (
-            <div className="v6-prompt-suggestions">
+            <div className="v6-suggestion-cluster" style={{ marginBottom: 20 }}>
               {suggestions.slice(0, 4).map((s, i) => (
                 <button
                   key={i}
-                  className="v6-prompt-suggestion"
+                  className={`v6-suggestion-chip${i === 0 ? " v6-chip-lg" : ""}`}
                   onClick={() => onSuggestionClick?.(s)}
                 >
                   {s.length > 60 ? s.slice(0, 60) + "\u2026" : s}
@@ -154,9 +121,17 @@ export default function StageArea({
               ))}
             </div>
           )}
+          {/* Button-in-button */}
           {onNew && (
-            <button className="v6-btn v6-primary" onClick={onNew} style={{ marginTop: 8 }}>
-              <IconMaximize /> Load art direction
+            <button
+              className="v6-btn-glow"
+              onClick={onNew}
+              style={{ margin: "0 auto" }}
+            >
+              Start a new project
+              <span className="v6-btn-icon-nest">
+                <IconBoltSmall />
+              </span>
             </button>
           )}
         </div>
@@ -164,7 +139,7 @@ export default function StageArea({
     );
   }
 
-  /* ── Result view ── */
+  /* ── Result view — double-bezel frame with capsules ── */
   if (result && !generating) {
     const url = result?.url || result?.outputUrl || result;
     const title = resultTitle || result?.name || "New creative output";
@@ -175,9 +150,9 @@ export default function StageArea({
     return (
       <div className="v6-stage">
         <div className="v6-stage-grid" />
-        <div className="v6-result-view v6-entrance-scale">
-          {/* Media panel */}
-          <div className="v6-result-media">
+        <div className="v6-result-bezel">
+          {/* Media panel with inner shadow */}
+          <div className="v6-result-media-bezel">
             {typeof url === "string" ? (
               url.endsWith(".mp4") || url.endsWith(".webm") || url.includes("/video/") ? (
                 <video src={url} controls playsInline />
@@ -188,62 +163,47 @@ export default function StageArea({
           </div>
 
           {/* Info panel */}
-          <div className="v6-result-info">
-            <div className="v6-entrance-fade">
+          <div className="v6-result-info-bezel">
+            <div>
               <div className="v6-eyebrow">Generation complete</div>
               <h2>{title}</h2>
             </div>
 
-            {/* Specs */}
-            <div className="v6-quote">
-              <div className="v6-quote-row">
-                <span className="v6-muted">Model</span>
-                <strong>{model || "\u2014"}</strong>
+            {/* Specs as glass capsules */}
+            <div className="v6-specs-grid">
+              <div className="v6-capsule">
+                <IconBoltSmall />
+                <span>{credits} credits</span>
               </div>
-              {resolution && (
-                <div className="v6-quote-row">
-                  <span className="v6-muted">Resolution</span>
-                  <strong>{resolution}</strong>
+              <div className="v6-capsule">
+                <IconClock />
+                <span>{elapsed}s</span>
+              </div>
+              {resolution && resolution !== "\u2014" && (
+                <div className="v6-capsule" style={{ gridColumn: "span 2" }}>
+                  <span>Resolution: <strong>{resolution}</strong></span>
                 </div>
               )}
-              <div className="v6-quote-row">
-                <span className="v6-muted">Cost</span>
-                <strong>
-                  <IconBolt /> {credits}
-                </strong>
-              </div>
-              <div className="v6-quote-row">
-                <span className="v6-muted">Time</span>
-                <strong>
-                  <IconClock /> {elapsed}s
-                </strong>
-              </div>
             </div>
 
             {/* Actions */}
-            <div className="v6-result-actions">
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {onDownload && (
                 <button
-                  className={`v6-btn v6-primary${downloading ? " v6-downloading" : ""}`}
+                  className={`v6-btn-glow${downloading ? "" : ""}`}
                   onClick={handleDownload}
                   disabled={downloading}
                 >
-                  <IconDownload /> {downloading ? "Saving\u2026" : "Download"}
+                  <IconDownload />
+                  {downloading ? "Saving\u2026" : "Download"}
+                  <span className="v6-btn-icon-nest">
+                    <IconBoltSmall />
+                  </span>
                 </button>
               )}
               {onNew && (
-                <button className="v6-btn" onClick={onNew}>
+                <button className="v6-btn v6-btn-glow" onClick={onNew} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "none", color: "var(--v6-muted)" }}>
                   <IconRefresh /> New
-                </button>
-              )}
-              {onReference && (
-                <button className="v6-btn" onClick={onReference}>
-                  <IconReference /> Reference
-                </button>
-              )}
-              {onCanvas && (
-                <button className="v6-btn" onClick={onCanvas}>
-                  <IconCanvas /> Canvas
                 </button>
               )}
             </div>
@@ -253,27 +213,24 @@ export default function StageArea({
     );
   }
 
-  /* ── Generating state ── */
+  /* ── Generating state — cinematic 180px core ── */
   const progressPct = progress != null ? Math.min(Math.max(progress, 0), 100) : null;
-  const phase = getPhase(progressPct);
-  const stageText = getPhaseLabel(phase, stage);
-  const phaseClass = `v6-phase-${phase}`;
+  const stageText = stage || "Generating";
 
   return (
-    <div className={`v6-stage v6-generating ${phaseClass}`}>
+    <div className="v6-stage v6-generating">
       <div className="v6-stage-grid" />
 
-      <div className="v6-generation-space">
-        {/* ── Creative loading visuals ── */}
-        {/* Light beam sweep */}
-        <div className="v6-gen-beams" />
-
-        {/* Orbiting rings */}
+      <div className="v6-generation-space" style={{
+        background:
+          "radial-gradient(ellipse 60% 40% at 50% 40%, rgba(255,65,111,0.1) 0%, transparent 55%)," +
+          "radial-gradient(ellipse 40% 30% at 30% 55%, rgba(242,179,93,0.06) 0%, transparent 45%)",
+      }}>
+        {/* Orbiting rings + dots */}
         <div className="v6-generation-orbits">
           <div className="v6-gen-orbit" />
           <div className="v6-gen-orbit" />
           <div className="v6-gen-orbit" />
-          {/* Orbiting dots (atoms) */}
           <div className="v6-gen-dot" />
           <div className="v6-gen-dot" />
           <div className="v6-gen-dot" />
@@ -286,13 +243,15 @@ export default function StageArea({
           ))}
         </div>
 
-        {/* Caption */}
-        <div className={`v6-generation-caption ${phaseClass}`}>{stageText}</div>
+        {/* Stage label pill */}
+        <div className="v6-stage-label" style={{ position: "absolute", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 5 }}>
+          {stageText}
+        </div>
 
-        {/* HUD with CSS-only spinning core */}
+        {/* Cinematic loading core */}
         <div className="v6-generation-hud">
-          <div className="v6-generation-core">
-            <div className="v6-generation-core-inner">
+          <div className="v6-cinematic-core">
+            <div className="v6-cinematic-core-inner">
               {progressPct != null ? (
                 <strong>{Math.round(progressPct)}%</strong>
               ) : (
@@ -306,23 +265,17 @@ export default function StageArea({
         {/* Bottom meta */}
         <div className="v6-generation-meta">
           {model && (
-            <div>
-              <span>Model</span>
-              <strong>{model}</strong>
-            </div>
+            <div><span>Model</span><strong>{model}</strong></div>
           )}
           {(quality || ratio) && (
-            <div>
-              <span>Settings</span>
-              <strong>{[quality, ratio].filter(Boolean).join(" \u00b7 ")}</strong>
-            </div>
+            <div><span>Settings</span><strong>{[quality, ratio].filter(Boolean).join(" \u00b7 ")}</strong></div>
           )}
         </div>
 
         {/* Cancel button */}
         {onCancel && (
           <div className="v6-generation-cancel">
-            <button className="v6-btn v6-ghost" onClick={onCancel}>
+            <button className="v6-btn v6-btn-glow" onClick={onCancel} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.08)", boxShadow: "none", color: "var(--v6-muted)" }}>
               <IconCross /> Cancel
             </button>
           </div>

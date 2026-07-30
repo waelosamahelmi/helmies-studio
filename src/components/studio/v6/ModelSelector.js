@@ -60,7 +60,7 @@ function modelGradient(model) {
   for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
   const h1 = Math.abs(hash % 360);
   const h2 = (h1 + 30) % 360;
-  return `linear-gradient(135deg, hsl(${h1}, 55%, 18%), hsl(${h2}, 40%, 10%))`;
+  return `linear-gradient(135deg, hsl(${h1}, 45%, 14%), hsl(${h2}, 35%, 7%))`;
 }
 
 /* ══════════════════════════════════════════════════════════════ */
@@ -99,6 +99,11 @@ export default function ModelSelector({
 
   const showModeBar = !!filterMode;
 
+  /* Pick a featured model (premium tier, first in list) for the lg bento slot */
+  const hasBentoLayout = filtered.length >= 3;
+  const featuredModel = hasBentoLayout ? (filtered.find(m => m.speedTier === "premium") || filtered[0]) : null;
+  const regularModels = hasBentoLayout ? filtered.filter(m => m !== featuredModel) : filtered;
+
   return (
     <div className="v6-model-browser">
       {/* ── Header ── */}
@@ -123,106 +128,111 @@ export default function ModelSelector({
 
       {/* ── Quick filter row ── */}
       <div className="v6-model-filters">
-        <button
-          className={quickFilter === null ? "v6-active" : ""}
-          onClick={() => setQuickFilter(null)}
-        >
-          All
-        </button>
-        <button
-          className={quickFilter === "best" ? "v6-active" : ""}
-          onClick={() => setQuickFilter("best")}
-        >
-          <IconZap /> Best match
-        </button>
-        <button
-          className={quickFilter === "fast" ? "v6-active" : ""}
-          onClick={() => setQuickFilter("fast")}
-        >
-          <IconClock /> Fast
-        </button>
-        <button
-          className={quickFilter === "cheap" ? "v6-active" : ""}
-          onClick={() => setQuickFilter("cheap")}
-        >
-          Lowest cost
-        </button>
+        <button className={quickFilter === null ? "v6-active" : ""} onClick={() => setQuickFilter(null)}>All</button>
+        <button className={quickFilter === "best" ? "v6-active" : ""} onClick={() => setQuickFilter("best")}><IconZap /> Best match</button>
+        <button className={quickFilter === "fast" ? "v6-active" : ""} onClick={() => setQuickFilter("fast")}><IconClock /> Fast</button>
+        <button className={quickFilter === "cheap" ? "v6-active" : ""} onClick={() => setQuickFilter("cheap")}>Lowest cost</button>
       </div>
 
-      {/* ── Model grid ── */}
-      <div className="v6-model-list v6-stagger">
-        {filtered.map((model) => {
-          const id = model.id;
-          const selected = selectedModelId === id;
-          const score = modelScore(model);
-          const url = model.backgroundImage || model.image || model.thumbnailUrl;
-          const gradient = modelGradient(model);
-
+      {/* ── Asymmetric bento grid ── */}
+      <div className="v6-bento-grid">
+        {/* Featured model (col-span-8 row-span-2) */}
+        {featuredModel && (
+          <ModelBentoCard
+            model={featuredModel}
+            selected={selectedModelId === featuredModel.id}
+            onSelect={() => onSelect?.(featuredModel.id)}
+            size="lg"
+          />
+        )}
+        {/* Regular models — get md (4 cols) or sm (4 cols) */}
+        {regularModels.map((model) => {
+          const size = filtered.length <= 4 ? "md" : "sm";
           return (
-            <button
-              key={id}
-              className={`v6-model-card${selected ? " v6-active" : ""}`}
-              onClick={() => onSelect?.(id)}
-              style={{ backgroundImage: url ? `url(${url})` : gradient }}
-              title={`${model.displayName || model.name || id} — ${costLabel(model)} per generation`}
-            >
-              <div className="v6-model-card-content">
-                {/* Selected checkmark */}
-                {selected && (
-                  <span className="v6-check-indicator" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20,6 9,17 4,12" />
-                    </svg>
-                  </span>
-                )}
-
-                {/* Recommendation badge */}
-                {model.speedTier === "premium" && (
-                  <span className="v6-model-rec">Premium</span>
-                )}
-                {!model.speedTier && !model.maxImages && (
-                  <span />
-                )}
-
-                {/* Name + cost */}
-                <div className="v6-model-head">
-                  <span>{model.displayName || model.name || id}</span>
-                  <span className="v6-model-cost">{costLabel(model)}</span>
-                </div>
-
-                {/* Meta: provider + caps summary */}
-                <div className="v6-model-meta">
-                  <span>{model.provider || "Provider"}</span>
-                  <span>
-                    {model.aspectRatios
-                      ? `${model.aspectRatios.length} ratios`
-                      : model.durations
-                        ? `${model.durations.length}s`
-                        : ""}
-                  </span>
-                </div>
-
-                {/* Score bars with gradient colors */}
-                <div className="v6-model-score">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <i key={n} className={n <= score ? "v6-on" : ""} />
-                  ))}
-                </div>
-              </div>
-            </button>
+            <ModelBentoCard
+              key={model.id}
+              model={model}
+              selected={selectedModelId === model.id}
+              onSelect={() => onSelect?.(model.id)}
+              size={size}
+            />
           );
         })}
       </div>
 
       {/* ── Compare bar ── */}
-      <div className="v6-model-compare">
-        <span>
-          <IconGrid /> {filtered.length} compatible
-        </span>
-        <span className="v6-muted v6-tiny">
-          {selectedModelId ? "1 selected" : "None selected"}
-        </span>
+      <div className="v6-model-compare" style={{ marginTop: 10 }}>
+        <span><IconGrid /> {filtered.length} compatible</span>
+        <span className="v6-muted v6-tiny">{selectedModelId ? "1 selected" : "None selected"}</span>
       </div>
     </div>
+  );
+}
+
+/* ── Model Bento Card (double-bezel) ── */
+function ModelBentoCard({ model, selected, onSelect, size = "md" }) {
+  const id = model.id;
+  const score = modelScore(model);
+  const url = model.backgroundImage || model.image || model.thumbnailUrl;
+  const gradient = modelGradient(model);
+  const sizeClass = size === "lg" ? "v6-bento-lg" : size === "sm" ? "v6-bento-sm" : "v6-bento-md";
+  const displayName = model.displayName || model.name || id;
+  const provider = model.provider || "Provider";
+  const cost = costLabel(model);
+
+  return (
+    <button
+      className={`v6-bento-card ${sizeClass}`}
+      onClick={onSelect}
+      style={{ cursor: "pointer", background: "transparent", border: 0, padding: 0, textAlign: "left", color: "inherit" }}
+    >
+      <div className={`v6-bezel${selected ? " v6-bezel-accent" : ""}`} style={{ height: "100%" }}>
+        <div className="v6-bezel-inner" style={{
+          height: "100%",
+          backgroundImage: url ? `url(${url})` : gradient,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: size === "lg" ? "16px" : "12px",
+        }}>
+          {/* Gradient overlay */}
+          <div style={{
+            position: "absolute", inset: 0, borderRadius: "inherit",
+            background: "linear-gradient(180deg, rgba(6,4,10,0.1), rgba(4,2,8,0.92))",
+            zIndex: 0,
+          }} />
+          {/* Selected checkmark */}
+          {selected && (
+            <span className="v6-check-indicator" aria-hidden="true" style={{ zIndex: 2 }}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20,6 9,17 4,12" />
+              </svg>
+            </span>
+          )}
+          {/* Premium badge */}
+          {model.speedTier === "premium" && (
+            <span className="v6-model-rec" style={{ zIndex: 1 }}>Premium</span>
+          )}
+          {/* Content */}
+          <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: size === "lg" ? 14 : 11, lineHeight: 1.2, marginBottom: 2 }}>{displayName}</div>
+                <div style={{ fontSize: 10, opacity: 0.65 }}>{provider}</div>
+              </div>
+              <span className="v6-model-cost">{cost}</span>
+            </div>
+            {/* Score orbs */}
+            <div className="v6-score-orbs">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <div key={n} className={`v6-score-orb${n <= score ? " v6-on" : ""}`} />
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
   );
 }

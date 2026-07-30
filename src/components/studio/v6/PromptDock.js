@@ -35,6 +35,12 @@ const IconBolt = () => (
   </svg>
 );
 
+const IconBoltSmall = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13,2 3,14 12,14 11,22 21,10 12,10" />
+  </svg>
+);
+
 /* ══════════════════════════════════════════════════════════════ */
 export default function PromptDock({
   value,
@@ -70,7 +76,6 @@ export default function PromptDock({
   };
 
   const triggerSubmit = useCallback(() => {
-    // Brief pulse animation on generate button
     setPulse(true);
     setTimeout(() => setPulse(false), 700);
     onSubmit?.();
@@ -90,76 +95,79 @@ export default function PromptDock({
   const Icon = icon === "bolt" ? IconBolt : IconSpark;
 
   return (
-    <div className="v6-prompt-dock">
-      <textarea
-        value={value}
-        onChange={(e) => handleChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Direct the output with a precise creative brief"
-        rows={2}
-        aria-label="Creative prompt"
-      />
+    <div className="v6-prompt-bezel">
+      <div className="v6-prompt-inner">
+        <textarea
+          value={value}
+          onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Direct the output with a precise creative brief"
+          rows={2}
+          aria-label="Creative prompt"
+        />
 
-      {/* Character count */}
-      {showCharCount && (
-        <div className={`v6-char-count${countClass}`}>
-          {charCount}{maxChars ? ` / ${maxChars}` : ""}
-          {atLimit && " \u00b7 limit reached"}
-        </div>
-      )}
+        {/* Character count */}
+        {showCharCount && (
+          <div className={`v6-char-count${countClass}`}>
+            {charCount}{maxChars ? ` / ${maxChars}` : ""}
+            {atLimit && " \u00b7 limit reached"}
+          </div>
+        )}
 
-      <div className="v6-prompt-actions">
-        {/* ── Left side: upload + enhance ── */}
-        <div>
-          {onUpload && (
-            <button
-              className="v6-btn v6-ghost v6-icon-only v6-tooltip"
-              onClick={onUpload}
-              title="Upload reference"
-              data-tooltip="Upload reference"
-              disabled={generating}
-            >
-              <IconUpload />
-            </button>
-          )}
-          {onEnhance && (
-            <button
-              className="v6-btn v6-ghost v6-sm"
-              onClick={onEnhance}
-              disabled={generating || !value?.trim()}
-            >
-              <IconEnhance />
-              Enhance
-            </button>
-          )}
-        </div>
+        <div className="v6-prompt-actions">
+          {/* Left: upload + enhance */}
+          <div>
+            {onUpload && (
+              <button
+                className="v6-btn v6-ghost v6-icon-only v6-tooltip"
+                onClick={onUpload}
+                title="Upload reference"
+                data-tooltip="Upload reference"
+                disabled={generating}
+              >
+                <IconUpload />
+              </button>
+            )}
+            {onEnhance && (
+              <button
+                className="v6-btn v6-ghost v6-sm"
+                onClick={onEnhance}
+                disabled={generating || !value?.trim()}
+              >
+                <IconEnhance />
+                Enhance
+              </button>
+            )}
+          </div>
 
-        {/* ── Right side: generate / cancel ── */}
-        <div>
-          {generating ? (
-            <button
-              className="v6-btn v6-ghost"
-              onClick={triggerSubmit}
-            >
-              <IconCross />
-              Cancel{stageLabel ? ` \u00b7 ${stageLabel}` : ""}
-            </button>
-          ) : (
-            <button
-              ref={btnRef}
-              className={`v6-btn v6-primary${pulse ? " v6-btn-pulse" : ""}`}
-              onClick={triggerSubmit}
-              disabled={!value?.trim()}
-            >
-              <Icon />
-              Generate
-              {cost != null && (
-                <span className="v6-model-cost">
-                  <IconBolt /> {cost}
+          {/* Right: generate / cancel */}
+          <div>
+            {generating ? (
+              <button className="v6-btn v6-ghost" onClick={triggerSubmit}>
+                <IconCross />
+                Cancel{stageLabel ? ` \u00b7 ${stageLabel}` : ""}
+              </button>
+            ) : (
+              <button
+                ref={btnRef}
+                className={`v6-btn-glow${pulse ? " v6-btn-pulse" : ""}`}
+                onClick={triggerSubmit}
+                disabled={!value?.trim()}
+              >
+                <Icon />
+                Generate
+                <span className="v6-btn-icon-nest">
+                  {cost != null ? (
+                    <span style={{ fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", gap: 2 }}>
+                      <IconBoltSmall />{cost}
+                    </span>
+                  ) : (
+                    <IconBoltSmall />
+                  )}
                 </span>
-              )}
-            </button>
-          )}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

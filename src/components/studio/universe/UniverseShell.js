@@ -171,7 +171,7 @@ export default function UniverseShell({
   if (isMobile) {
     return (
       <div className="v6-app">
-        <div className="v6-universe-shell">
+        <div className="v6-universe-shell v6-mesh-bg">
 
           {/* ── Mobile Topbar ── */}
           <header className="v6-universe-topbar">
@@ -250,13 +250,13 @@ export default function UniverseShell({
     );
   }
 
-  /* ── Desktop render (unchanged) ── */
+  /* ── Desktop render — glass pill topbar, mesh background ── */
   return (
     <div className="v6-app">
-      <div className={`v6-universe-shell v6-orbit-speed-${orbitSpeed}`}>
+      <div className={`v6-universe-shell v6-mesh-bg v6-orbit-speed-${orbitSpeed}`}>
 
-        {/* ── Topbar ── */}
-        <header className="v6-universe-topbar">
+        {/* ── Floating Glass Topbar (detached from edges) ── */}
+        <header className="v6-topbar-glass">
           <Link href="/" className="v6-universe-brand" title="Helmies Studio — Home">
             <img src="/ico.svg" alt="" />
             <strong>Helmies</strong>
@@ -271,7 +271,6 @@ export default function UniverseShell({
               setTimeout(() => setSearchExpanded(false), 3000);
             }}
             aria-label="Open command palette (Ctrl+K)"
-            data-tooltip="Search instruments, models & settings"
           >
             <IconSearch className="v6-icon" />
             <span>Ask Helmies or launch any creative instrument</span>
@@ -279,29 +278,14 @@ export default function UniverseShell({
           </button>
 
           <div className="v6-universe-topbar-actions">
-            {/* Connection status */}
             <ConnectionDot />
-
-            {/* Credit counter with animation */}
             <AnimatedCredits credits={credits} />
-
             {pendingCount > 0 && (
-              <Link
-                href="/gallery"
-                className="v6-universe-live"
-                title={`${pendingCount} generation${pendingCount !== 1 ? "s" : ""} in progress`}
-              >
-                <i />
-                {pendingCount} running
+              <Link href="/gallery" className="v6-universe-live" title={`${pendingCount} generation${pendingCount !== 1 ? "s" : ""} in progress`}>
+                <i />{pendingCount} running
               </Link>
             )}
-
-            <Link
-              href="/settings"
-              className="v6-btn v6-icon-only v6-sm v6-tooltip"
-              aria-label="Account settings"
-              data-tooltip="Settings"
-            >
+            <Link href="/settings" className="v6-btn v6-icon-only v6-sm v6-tooltip" aria-label="Account settings" data-tooltip="Settings">
               <IconSettings className="v6-icon" />
             </Link>
           </div>
@@ -315,7 +299,7 @@ export default function UniverseShell({
         )}
 
         {/* ── Main Page Area ── */}
-        <main className={`v6-universe-page${!orbit ? " v6-full" : ""}`}>
+        <main className={`v6-universe-page${!orbit ? " v6-full" : ""}`} style={{ top: 80 }}>
           <AnimatePresence mode="wait">
             <motion.div
               key={typeof window !== "undefined" ? window.location.pathname : "page"}
