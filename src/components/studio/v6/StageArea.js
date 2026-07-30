@@ -107,7 +107,7 @@ export default function StageArea({
   result,
   resultTitle,
   toolLabel = "Creative instrument",
-  toolDesc = "Describe what you want to create and watch it materialize in the command universe.",
+  toolDesc = "Describe your vision with precision — every detail, every nuance — and watch it emerge in seconds.",
   toolIcon,
   onCancel,
   onNew,
