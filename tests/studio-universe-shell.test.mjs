@@ -10,6 +10,9 @@ test("production Studio mounts the Command Universe shell", () => {
   assert.match(client, /studio--universe/);
   assert.match(client, /studio__universe-orbits/);
   assert.match(client, /studio__universe-status/);
+  assert.match(client, /studio__universe-menu/);
+  assert.match(client, /studio__universe-recents/);
+  assert.match(client, /UNIVERSE_QUICK/);
 });
 
 test("generation state uses an animated synthesis canvas instead of a progress bar", () => {

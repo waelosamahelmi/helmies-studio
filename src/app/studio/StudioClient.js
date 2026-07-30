@@ -93,6 +93,7 @@ const ADMIN_GROUP = {
 
 // Bottom nav on mobile: quick-switch tools + drawer trigger.
 const MOBILE_PRIMARY = ["orchestrator", "image", "video", "assets"];
+const UNIVERSE_QUICK = ["orchestrator", "image", "video", "director", "canvas", "assets", "workflows", "brands"];
 
 export default function StudioPage({ initialTool, initialModel }) {
   const [activeTab, setActiveTab] = useState(initialTool || "orchestrator");
@@ -100,6 +101,8 @@ export default function StudioPage({ initialTool, initialModel }) {
   const [openGroups, setOpenGroups] = useState({ create: true, build: true });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [cmdOpen, setCmdOpen] = useState(false);
+  const [universeMenuOpen, setUniverseMenuOpen] = useState(false);
+  const [recentAssets, setRecentAssets] = useState([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [credits, setCredits] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -109,6 +112,13 @@ export default function StudioPage({ initialTool, initialModel }) {
     try {
       if (window.localStorage.getItem(SIDEBAR_KEY) === "1") setCollapsed(true);
     } catch {}
+  }, []);
+
+  useEffect(() => {
+    apiFetch("/api/assets?limit=5")
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setRecentAssets((data?.assets || []).filter((asset) => asset.url || asset.outputUrl).slice(0, 5)))
+      .catch(() => {});
   }, []);
 
   const toggleCollapsed = () => {
@@ -199,6 +209,7 @@ export default function StudioPage({ initialTool, initialModel }) {
   const selectTool = (id) => {
     setActiveTab(id);
     setMobileNavOpen(false);
+    setUniverseMenuOpen(false);
   };
 
   const toggleGroup = (id) => setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -315,15 +326,44 @@ export default function StudioPage({ initialTool, initialModel }) {
             </button>
           </div>
 
-          <nav className="studio__side-nav" aria-label="Studio tools">
-            {TOOL_GROUPS.map((group) =>
-              renderGroup(group, TOOLS.filter((t) => t.group === group.id), () =>
-                TOOLS.filter((t) => t.group === group.id).map(renderToolItem)
-              )
-            )}
-            {linkGroups.map((group) => renderGroup(group, group.items, () => group.items.map(renderLinkItem)))}
-          </nav>
-        </aside>
+              <nav className="studio__side-nav" aria-label="Studio tools">
+                <div className="studio__side-group-inner">
+                  {UNIVERSE_QUICK.map((id) => TOOLS.find((tool) => tool.id === id)).filter(Boolean).map(renderToolItem)}
+                  <button className="studio__side-item studio__universe-all" onClick={() => setUniverseMenuOpen(true)} aria-label="Open every Studio tool">
+                    <span className="studio__side-item-icon"><IconMenu /></span>
+                    <span className="studio__side-item-label">All tools</span>
+                  </button>
+                </div>
+              </nav>
+            </aside>
+
+            <AnimatePresence>
+              {universeMenuOpen && (
+                <motion.div className="studio__universe-menu" initial={{ opacity: 0, scale: .97, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .98, y: 8 }} transition={{ duration: .24, ease: EASE }}>
+                  <div className="studio__universe-menu-head">
+                    <div><span>Instrument index</span><h2>Every creative system</h2></div>
+                    <button onClick={() => setUniverseMenuOpen(false)} aria-label="Close instrument index"><IconClose /></button>
+                  </div>
+                  <div className="studio__universe-menu-grid">
+                    {TOOL_GROUPS.map((group) => (
+                      <section key={group.id}>
+                        <h3>{group.label}</h3>
+                        {TOOLS.filter((tool) => tool.group === group.id).map((tool) => {
+                          const MenuIcon = tool.Icon;
+                          return <button key={tool.id} onClick={() => selectTool(tool.id)}><MenuIcon /><span><strong>{tool.label}</strong><small>{tool.desc}</small></span></button>;
+                        })}
+                      </section>
+                    ))}
+                    {linkGroups.map((group) => (
+                      <section key={group.id}>
+                        <h3>{group.label}</h3>
+                        {group.items.map((item) => { const MenuIcon = item.Icon; return <Link key={item.id} href={item.href}><MenuIcon /><span><strong>{item.label}</strong><small>{item.desc}</small></span></Link>; })}
+                      </section>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
         {/* Workspace column */}
         <div className="studio__content">
@@ -346,6 +386,15 @@ export default function StudioPage({ initialTool, initialModel }) {
                 <span className="studio__topbar-desc">{activeTool.desc}</span>
               </div>
             </div>
+
+            {recentAssets.length > 0 && (
+              <div className="studio__universe-recents" aria-label="Recent work constellation">
+                <span>recent orbit</span>
+                {recentAssets.map((asset) => (
+                  <button key={asset.id} onClick={() => selectTool("assets")} title={asset.name || "Recent generation"} style={{ backgroundImage: `url(${asset.thumbnailUrl || asset.url || asset.outputUrl})` }} />
+                ))}
+              </div>
+            )}
 
             <div className="studio__topbar-actions">
               <div className="studio__universe-status" aria-label="Studio system online">
