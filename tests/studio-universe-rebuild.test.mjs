@@ -81,3 +81,10 @@ test("every StudioClient destination is accepted by the dynamic Studio route", (
     assert.match(route, new RegExp(`(?:^|\\s)(?:["']${key}["']|${key})\\s*:`, "m"), `${id} must be routable`);
   }
 });
+
+test("Image Studio composes the canonical workspace directly", () => {
+  const source = read("src/components/studio/ImageStudioV2.js");
+  assert.match(source, /return\s*\(\s*<CreationWorkspace/);
+  assert.doesNotMatch(source, /withUniverseCreation|studio__pane--left|StagedProgress/);
+  for (const behavior of ["handleAddRefs", "handleUpload", "handleGenerate", "useCreditCost", "useAsyncGeneration"]) assert.match(source, new RegExp(behavior));
+});
