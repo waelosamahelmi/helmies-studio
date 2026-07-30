@@ -39,7 +39,7 @@ export async function logProviderError(provider, endpoint, originalError, userId
   }
 }
 
-const PROVIDERS = {
+export const PROVIDERS = {
   kie: {
     name: "KIE",
     type: "llm+generation",
@@ -121,7 +121,7 @@ const LLM_PROVIDER = {
   },
 };
 
-const DEFAULT_PROVIDER = "kie";
+export const DEFAULT_PROVIDER = "kie";
 
 // Map any providerName (DB ModelPricing.providerName, ProviderConfig.name) to an adapter key.
 // Unknown names resolve to KIE (the primary provider) — never to a removed provider.

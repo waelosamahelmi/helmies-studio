@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
-import { resolveProvider, resolveProviderWithFallback, brandError, logProviderError, submitAndPoll } from "@/lib/providers";
+import { resolveProvider, resolveProviderWithFallback, brandError, logProviderError, submitAndPoll, PROVIDERS, DEFAULT_PROVIDER } from "@/lib/providers";
 import { checkRateLimit, logAudit } from "@/lib/security";
 import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
 import { applyMemoryToPrompt } from "@/lib/memory";
@@ -183,9 +183,8 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       // fall back to a direct KIE + Alibaba chain so users can still generate.
       if (providers.length === 0) {
         console.error(`[handleGeneration] WARNING: empty provider chain. Falling back to [kie, alibaba].`);
-        const { PROVIDERS: _PROVIDERS, DEFAULT_PROVIDER } = await import("@/lib/providers");
-        const fallbackNames = [DEFAULT_PROVIDER, "alibaba"].filter((n) => _PROVIDERS[n]);
-        providers = fallbackNames.map((n) => ({ name: n, ..._PROVIDERS[n], apiKey: _PROVIDERS[n].getKey() }));
+        const fallbackNames = [DEFAULT_PROVIDER, "alibaba"].filter((n) => PROVIDERS[n]);
+        providers = fallbackNames.map((n) => ({ name: n, ...PROVIDERS[n], apiKey: PROVIDERS[n].getKey() }));
       }
 
       for (const prov of providers) {
