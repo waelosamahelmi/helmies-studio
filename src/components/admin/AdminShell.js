@@ -50,16 +50,28 @@ export default function AdminShell() {
         </div>
 
         {/* Top-level tab bar */}
-        <div className="v6-chip-row" style={{ marginBottom: 6 }}>
-          {TOP_LEVEL_TABS.map((t) => (
-            <button
-              key={t.id}
-              className={`v6-chip ${topTab === t.id ? "v6-active" : ""}`}
-              onClick={() => selectTopTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="v6-segmented" style={{ marginBottom: 8, maxWidth: 700 }}>
+          {TOP_LEVEL_TABS.map((t) => {
+            const isActive = topTab === t.id;
+            return (
+              <button
+                key={t.id}
+                className={isActive ? "v6-active" : ""}
+                onClick={() => selectTopTab(t.id)}
+                style={{ position: "relative" }}
+              >
+                {t.label}
+                {t.subs?.length > 0 && (
+                  <span style={{
+                    fontSize: 8, color: isActive ? "var(--v6-accent)" : "var(--v6-muted)",
+                    fontWeight: 700, marginLeft: 3,
+                  }}>
+                    ({t.subs.length})
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
         {/* Sub-tab bar */}
@@ -72,18 +84,24 @@ export default function AdminShell() {
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.2, ease: EASE }}
               className="v6-chip-row"
-              style={{ marginBottom: 16, marginTop: 6 }}
+              style={{ marginBottom: 16, marginTop: 8 }}
             >
-              {currentTopTab.subs.map((sub) => (
-                <button
-                  key={sub}
-                  className={`v6-chip ${subTab === sub ? "v6-active" : ""}`}
-                  style={{ fontSize: 10 }}
-                  onClick={() => selectSubTab(sub)}
-                >
-                  {sub}
-                </button>
-              ))}
+              {currentTopTab.subs.map((sub) => {
+                const isActive = subTab === sub;
+                return (
+                  <button
+                    key={sub}
+                    className={`v6-chip ${isActive ? "v6-active" : ""}`}
+                    style={{
+                      fontSize: 10,
+                      ...(isActive ? {} : { borderColor: "transparent" }),
+                    }}
+                    onClick={() => selectSubTab(sub)}
+                  >
+                    {sub}
+                  </button>
+                );
+              })}
             </motion.div>
           )}
         </AnimatePresence>
@@ -219,15 +237,18 @@ function UsersTab() {
       <div style={{ overflow: "auto" }}>
         <table className="v6-data-table">
           <thead>
-            <tr><th>Name</th><th>Email</th><th>Credits</th><th>Role</th><th>Gen</th><th>Joined</th><th></th></tr>
+            <tr><th>User</th><th>Email</th><th>Credits</th><th>Role</th><th>Generations</th><th>Joined</th><th></th></tr>
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id}>
-                <td>{u.name || "—"}</td>
+              <tr key={u.id} style={{ transition: "background 0.15s" }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = "var(--v6-surface2)"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
+              >
+                <td><strong>{u.name || "—"}</strong></td>
                 <td>{u.email}</td>
                 <td><IconBolt style={{ display: "inline", width: 12, height: 12, verticalAlign: "middle", marginRight: 2 }} /> {u.credits}</td>
-                <td><span className="v6-chip v6-active" style={{ fontSize: 9, padding: "2px 6px" }}>{u.role}</span></td>
+                <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 7px", background: u.role === "admin" ? "var(--v6-accent)" : "var(--v6-surface2)", color: u.role === "admin" ? "#fff" : "var(--v6-muted)", borderColor: u.role === "admin" ? "var(--v6-accent)" : "var(--v6-line)" }}>{u.role}</span></td>
                 <td>{u._count?.generations || 0}</td>
                 <td className="v6-mono v6-tiny">{new Date(u.createdAt).toLocaleDateString()}</td>
                 <td><button className="v6-btn v6-sm" onClick={() => setEditingUser({ ...u })}>Edit</button></td>
@@ -435,19 +456,19 @@ function LegacyFlagsTab() {
           {flags.length === 0 && <p className="v6-muted" style={{ fontSize: 11 }}>No feature flags set.</p>}
           {flags.map((f) => (
             <div key={f.id} className="v6-quote" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <strong style={{ fontSize: 12 }}>{f.name}</strong>
                 <span className="v6-mono v6-tiny v6-muted" style={{ marginLeft: 8 }}>{f.key}</span>
                 {f.description && <p className="v6-tiny v6-muted" style={{ margin: "4px 0 0" }}>{f.description}</p>}
               </div>
               <button
                 onClick={() => toggleFlag(f)}
-                style={{
-                  position: "relative", width: 36, height: 20, borderRadius: 99, border: "1px solid var(--v6-line)",
-                  background: f.enabled ? "var(--v6-accent)" : "var(--v6-surface2)", cursor: "pointer", flexShrink: 0,
-                }}
+                className="v6-toggle"
+                style={{ border: 0, background: "transparent", fontFamily: "inherit", textAlign: "left", cursor: "pointer", width: "auto", flexShrink: 0 }}
               >
-                <span style={{ position: "absolute", width: 14, height: 14, borderRadius: "50%", background: "#fff", top: 2, left: f.enabled ? 19 : 2, transition: "0.2s" }} />
+                <div className={`v6-toggle-track ${f.enabled ? "v6-on" : ""}`}>
+                  <div className="v6-toggle-thumb" />
+                </div>
               </button>
             </div>
           ))}
@@ -510,13 +531,13 @@ function RevenueTab() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className="v6-metric-grid">
-        <div className="v6-metric"><span className="v6-eyebrow">Total Revenue</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.retailValue || 0).toFixed(2)}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Provider Cost</span><strong>€{(totals.providerCost || 0).toFixed(2)}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Gross Profit</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.profit || 0).toFixed(2)}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Margin %</span><strong>{totals.marginPct || 0}%</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Credits Granted</span><strong>{(totals.creditsGranted || 0).toLocaleString()}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Credits Consumed</span><strong>{(totals.creditsUsed || 0).toLocaleString()}</strong></div>
+      <div className="v6-metric-grid v6-stagger">
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Total Revenue</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.retailValue || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Provider Cost</span><strong>€{(totals.providerCost || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Gross Profit</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.profit || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Margin %</span><strong>{totals.marginPct || 0}%</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Credits Granted</span><strong>{(totals.creditsGranted || 0).toLocaleString()}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Credits Consumed</span><strong>{(totals.creditsUsed || 0).toLocaleString()}</strong></div>
       </div>
 
       <div className="v6-settings-block">
@@ -561,11 +582,11 @@ function MarginAdvisorTab() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className="v6-metric-grid">
-        <div className="v6-metric"><span className="v6-eyebrow">Retail Value</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.retailValue || 0).toFixed(2)}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Provider Cost</span><strong>€{(totals.providerCost || 0).toFixed(2)}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Gross Margin</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.profit || 0).toFixed(2)}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Margin %</span><strong>{totals.marginPct || 0}%</strong></div>
+      <div className="v6-metric-grid v6-stagger">
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Retail Value</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.retailValue || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Provider Cost</span><strong>€{(totals.providerCost || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Gross Margin</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.profit || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Margin %</span><strong>{totals.marginPct || 0}%</strong></div>
       </div>
 
       <div className="v6-settings-block">
@@ -610,13 +631,13 @@ function GenerationsTab() {
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className="v6-metric-grid">
-        <div className="v6-metric"><span className="v6-eyebrow">Total Generations</span><strong>{totals.generations || 0}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Completed</span><strong style={{ color: "var(--v6-good)" }}>{totals.completed || 0}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Failed</span><strong style={{ color: "var(--v6-bad)" }}>{totals.failed || 0}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Success Rate</span><strong>{totals.successRate || 0}%</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Total Credits</span><strong>{totals.creditsUsed || 0}</strong></div>
-        <div className="v6-metric"><span className="v6-eyebrow">Provider Cost</span><strong className="v6-mono">€{(totals.providerCost || 0).toFixed(2)}</strong></div>
+      <div className="v6-metric-grid v6-stagger">
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Total Generations</span><strong>{totals.generations || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Completed</span><strong style={{ color: "var(--v6-good)" }}>{totals.completed || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Failed</span><strong style={{ color: "var(--v6-bad)" }}>{totals.failed || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Success Rate</span><strong>{totals.successRate || 0}%</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Total Credits</span><strong>{totals.creditsUsed || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow" style={{ display: "block" }}>Provider Cost</span><strong className="v6-mono">€{(totals.providerCost || 0).toFixed(2)}</strong></div>
       </div>
 
       <div className="v6-settings-block">
@@ -708,7 +729,17 @@ function ProviderHealthTab() {
                 <td className="v6-mono v6-tiny">{p.modelCount || "—"}</td>
                 <td className="v6-mono">{p.latencyMs ? `${p.latencyMs}ms` : "—"}</td>
                 <td>{p.successRate != null ? `${(p.successRate * 100).toFixed(1)}%` : "—"}</td>
-                <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px", background: p.healthy ? "var(--v6-good)" : "var(--v6-bad)", color: p.healthy ? "var(--v6-bg)" : "#fff" }}>{p.healthy ? "Healthy" : "Down"}</span></td>
+                <td>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10 }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: "50%",
+                      background: p.healthy ? "var(--v6-good)" : "var(--v6-bad)",
+                      boxShadow: p.healthy ? "0 0 6px var(--v6-good)" : "0 0 6px var(--v6-bad)",
+                      flexShrink: 0,
+                    }} />
+                    {p.healthy ? "Healthy" : "Down"}
+                  </span>
+                </td>
               </tr>
             ))}
             {(!health?.providers || health.providers.length === 0) && (

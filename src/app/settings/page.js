@@ -7,6 +7,7 @@ import Navbar from "@/components/Navbar";
 import CreditTickDown from "@/components/CreditTickDown";
 import { IconBolt, IconArrowUpRight } from "@/components/Icons";
 import { CREDIT_PACKS, getCreditPackPriceId } from "@/lib/credit-packs";
+import toast from "react-hot-toast";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -191,6 +192,7 @@ export default function SettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: displayName }),
     });
+    toast.success("Profile saved");
   };
 
   const currentPlan = credits?.plan || "free";
@@ -213,16 +215,25 @@ export default function SettingsPage() {
         {/* Settings Grid */}
         <div className="v6-settings-grid">
           {/* Nav */}
-          <nav className="v6-settings-nav">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                className={activeTab === tab.id ? "v6-active" : ""}
-                onClick={() => switchTab(tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <nav className="v6-settings-nav" style={{ position: "relative" }}>
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  className={isActive ? "v6-active" : ""}
+                  onClick={() => switchTab(tab.id)}
+                  style={{
+                    borderLeft: isActive ? "2px solid var(--v6-accent)" : "2px solid transparent",
+                    borderRadius: isActive ? "0 9px 9px 0" : "9px",
+                    paddingLeft: isActive ? 12 : 14,
+                    transition: "all 0.2s ease",
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </nav>
 
           {/* Form Content */}
@@ -237,7 +248,27 @@ export default function SettingsPage() {
             {activeTab === "profile" && (
               <div className="v6-settings-block">
                 <h3>Profile</h3>
-                <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "grid", gap: 16 }}>
+                  {/* Avatar preview */}
+                  <div className="v6-field">
+                    <label className="v6-field-label">Avatar</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{
+                        width: 64, height: 64, borderRadius: "50%",
+                        background: "linear-gradient(135deg, var(--v6-accent), #7C3AED)",
+                        display: "grid", placeItems: "center",
+                        fontSize: 24, fontWeight: 700, color: "#fff",
+                        border: "2px solid var(--v6-line)",
+                      }}>
+                        {(displayName || email || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <button className="v6-btn v6-sm" disabled>Upload photo</button>
+                        <p className="v6-tiny v6-muted" style={{ marginTop: 4 }}>JPG, PNG, GIF up to 2MB</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="v6-section-rule" />
                   <div className="v6-field">
                     <label className="v6-field-label">Display name</label>
                     <input
@@ -252,6 +283,11 @@ export default function SettingsPage() {
                     <input className="v6-input" value={email} disabled />
                     <span className="v6-tiny v6-muted">Email changes are handled via account security.</span>
                   </div>
+                  <div>
+                    <button className="v6-btn v6-primary v6-sm" onClick={handleSaveProfile}>
+                      Save Profile
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -261,6 +297,19 @@ export default function SettingsPage() {
               <div className="v6-settings-block">
                 <h3>Generation defaults</h3>
                 <div style={{ display: "grid", gap: 16 }}>
+                  <div className="v6-field">
+                    <label className="v6-field-label">Default model</label>
+                    <div className="v6-select-wrap">
+                      <select className="v6-input v6-select" defaultValue="flux-dev">
+                        <option value="flux-dev">Flux Dev (Recommended)</option>
+                        <option value="flux-pro">Flux Pro</option>
+                        <option value="flux-schnell">Flux Schnell</option>
+                        <option value="sdxl">SDXL</option>
+                      </select>
+                      <svg className="v6-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></svg>
+                    </div>
+                    <span className="v6-tiny v6-muted">Your default model for new generations.</span>
+                  </div>
                   <div className="v6-field">
                     <label className="v6-field-label">Default image quality</label>
                     <div className="v6-select-wrap">
@@ -273,29 +322,17 @@ export default function SettingsPage() {
                         <option value="high">High</option>
                         <option value="ultra">Ultra (4K)</option>
                       </select>
-                      <svg className="v6-icon" viewBox="0 0 24 24">
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
+                      <svg className="v6-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></svg>
                     </div>
                   </div>
                   <div className="v6-field">
                     <label className="v6-field-label">Generation approval mode</label>
                     <div className="v6-segmented">
-                      <button
-                        className={approvalMode === "auto" ? "v6-active" : ""}
-                        onClick={() => setApprovalMode("auto")}
-                      >
-                        Auto-approve
-                      </button>
-                      <button
-                        className={approvalMode === "review" ? "v6-active" : ""}
-                        onClick={() => setApprovalMode("review")}
-                      >
-                        Review first
-                      </button>
+                      <button className={approvalMode === "auto" ? "v6-active" : ""} onClick={() => setApprovalMode("auto")}>Auto-approve</button>
+                      <button className={approvalMode === "review" ? "v6-active" : ""} onClick={() => setApprovalMode("review")}>Review first</button>
                     </div>
                     <span className="v6-tiny v6-muted">
-                      Auto-approve runs generations immediately. Review lets you inspect before finalizing.
+                      {approvalMode === "auto" ? "Runs generations immediately after prompting." : "Lets you inspect generated output before finalizing."}
                     </span>
                   </div>
                 </div>
@@ -319,37 +356,23 @@ export default function SettingsPage() {
                     onKeyDown={(e) => e.key === "Enter" && createKey()}
                   />
                   <button
-                    className="v6-btn v6-primary v6-sm"
+                    className="v6-btn v6-primary"
                     onClick={createKey}
                     disabled={!newKeyName.trim()}
                   >
-                    Create Key
+                    + Create Key
                   </button>
                 </div>
 
                 {newKey && (
-                  <div className="v6-quote" style={{ marginBottom: 14 }}>
-                    <div className="v6-quote-row">
-                      <span>Your API key (shown only once):</span>
+                  <div className="v6-quote" style={{ marginBottom: 14, borderColor: "var(--v6-good)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <span style={{ fontWeight: 700, fontSize: 12, color: "var(--v6-good)" }}>Key created</span>
+                      <span className="v6-tiny v6-muted">Copy it now — it won't be shown again</span>
                     </div>
-                    <code
-                      style={{
-                        fontFamily: "var(--v6-mono)",
-                        fontSize: 10,
-                        wordBreak: "break-all",
-                        background: "rgba(0,0,0,0.3)",
-                        padding: "8px 10px",
-                        borderRadius: 8,
-                        display: "block",
-                      }}
-                    >
-                      {newKey}
-                    </code>
-                    <button
-                      className="v6-btn v6-sm"
-                      onClick={() => navigator.clipboard.writeText(newKey)}
-                    >
-                      Copy
+                    <code style={{ fontFamily: "var(--v6-mono)", fontSize: 10, wordBreak: "break-all", background: "rgba(0,0,0,0.3)", padding: "10px 12px", borderRadius: 8, display: "block", marginBottom: 8 }}>{newKey}</code>
+                    <button className="v6-btn v6-sm" onClick={() => { navigator.clipboard.writeText(newKey); toast.success("Key copied"); }}>
+                      Copy to clipboard
                     </button>
                   </div>
                 )}
@@ -357,35 +380,33 @@ export default function SettingsPage() {
                 {keys.length > 0 ? (
                   <div style={{ display: "grid", gap: 8 }}>
                     {keys.map((k) => (
-                      <div key={k.id} className="v6-quote">
-                        <div className="v6-quote-row">
-                          <strong>{k.name}</strong>
-                          <span className="v6-mono v6-tiny v6-muted">{k.keyPrefix}</span>
+                      <div key={k.id} className="v6-quote" style={{ padding: 14 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                          <div>
+                            <strong style={{ fontSize: 12 }}>{k.name}</strong>
+                            <div className="v6-mono v6-tiny v6-muted" style={{ marginTop: 2 }}>
+                              {k.keyPrefix || "••••••••"}****************
+                            </div>
+                          </div>
+                          <span className={`v6-chip ${k.isActive ? "" : "v6-disabled"}`} style={{ fontSize: 9, padding: "2px 7px", background: k.isActive ? "var(--v6-good)" : undefined, color: k.isActive ? "var(--v6-bg)" : undefined, borderColor: k.isActive ? "var(--v6-good)" : undefined }}>
+                            {k.isActive ? "Active" : "Revoked"}
+                          </span>
                         </div>
-                        <div className="v6-quote-row">
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <span className="v6-tiny v6-muted">
                             Created {new Date(k.createdAt).toLocaleDateString()}
                             {k.lastUsedAt && ` · Last used ${new Date(k.lastUsedAt).toLocaleDateString()}`}
                           </span>
-                          <span
-                            className="v6-status"
-                            style={k.isActive ? {} : { color: "var(--v6-bad)" }}
-                          >
-                            {k.isActive ? "Active" : "Revoked"}
-                          </span>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button className="v6-btn v6-sm" onClick={() => { navigator.clipboard.writeText(k.keyPrefix || ""); toast.success("Prefix copied"); }} disabled={!k.keyPrefix}>Copy</button>
+                            <button className="v6-btn v6-sm" onClick={() => deleteKey(k.id)} style={{ color: "var(--v6-bad)", borderColor: "var(--v6-bad)" }}>Revoke</button>
+                          </div>
                         </div>
-                        <button
-                          className="v6-btn v6-ghost v6-sm"
-                          onClick={() => deleteKey(k.id)}
-                          style={{ alignSelf: "flex-start", marginTop: 4 }}
-                        >
-                          Revoke
-                        </button>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="v6-tiny v6-muted">No API keys yet.</p>
+                  <p className="v6-tiny v6-muted">No API keys yet. Create one to access the API.</p>
                 )}
               </div>
             )}
@@ -397,58 +418,27 @@ export default function SettingsPage() {
                 <p className="v6-tiny v6-muted" style={{ marginBottom: 14 }}>
                   Configure how you receive updates about your generations and account.
                 </p>
-                <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "grid", gap: 4 }}>
                   {[
-                    { label: "Generation completed", key: "gen_complete" },
-                    { label: "Generation failed", key: "gen_failed" },
-                    { label: "Credits low warning", key: "credits_low" },
-                    { label: "New model available", key: "new_model" },
-                    { label: "Billing reminders", key: "billing_reminder" },
+                    { label: "Generation completed", desc: "When an image or video finishes processing", key: "gen_complete" },
+                    { label: "Generation failed", desc: "When a generation encounters an error", key: "gen_failed" },
+                    { label: "Credits low warning", desc: "When your balance drops below 50 credits", key: "credits_low" },
+                    { label: "New model available", desc: "When a new AI model is added to the platform", key: "new_model" },
+                    { label: "Billing reminders", desc: "Upcoming renewal or payment notifications", key: "billing_reminder" },
                   ].map((item) => (
-                    <div
+                    <button
                       key={item.key}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        padding: "8px 0",
-                      }}
+                      className="v6-toggle"
+                      style={{ border: "1px solid var(--v6-line)", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}
                     >
-                      <span style={{ fontSize: 12 }}>{item.label}</span>
-                      <label
-                        style={{
-                          position: "relative",
-                          display: "inline-block",
-                          width: 36,
-                          height: 20,
-                        }}
-                      >
-                        <input type="checkbox" defaultChecked style={{ opacity: 0, width: 0, height: 0 }} />
-                        <span
-                          style={{
-                            position: "absolute",
-                            cursor: "pointer",
-                            inset: 0,
-                            background: "var(--v6-accent)",
-                            borderRadius: 99,
-                            transition: "0.2s",
-                          }}
-                        >
-                          <span
-                            style={{
-                              position: "absolute",
-                              height: 14,
-                              width: 14,
-                              left: 3,
-                              bottom: 3,
-                              background: "#fff",
-                              borderRadius: "50%",
-                              transition: "0.2s",
-                            }}
-                          />
-                        </span>
-                      </label>
-                    </div>
+                      <div className="v6-toggle-track v6-on">
+                        <div className="v6-toggle-thumb" />
+                      </div>
+                      <div>
+                        <span className="v6-toggle-label" style={{ display: "block" }}>{item.label}</span>
+                        <span style={{ fontSize: 9, color: "var(--v6-muted)" }}>{item.desc}</span>
+                      </div>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -456,35 +446,48 @@ export default function SettingsPage() {
 
             {/* ── Security ── */}
             {activeTab === "security" && (
-              <div className="v6-settings-block">
-                <h3>Security</h3>
-                <div style={{ display: "grid", gap: 16 }}>
-                  <div className="v6-field">
-                    <label className="v6-field-label">Change password</label>
+              <div style={{ display: "grid", gap: 16 }}>
+                <div className="v6-settings-block">
+                  <h3>Change password</h3>
+                  <div style={{ display: "grid", gap: 10 }}>
                     <input className="v6-input" type="password" placeholder="Current password" />
-                    <input className="v6-input" type="password" placeholder="New password" style={{ marginTop: 8 }} />
-                    <button className="v6-btn v6-sm" style={{ marginTop: 8 }}>
-                      Update password
-                    </button>
+                    <input className="v6-input" type="password" placeholder="New password" />
+                    <input className="v6-input" type="password" placeholder="Confirm new password" />
+                    <button className="v6-btn v6-primary v6-sm" style={{ justifySelf: "flex-start" }}>Update password</button>
                   </div>
-                  <div className="v6-section-rule" />
-                  <div className="v6-field">
-                    <label className="v6-field-label">Two-factor authentication</label>
-                    <p className="v6-tiny v6-muted" style={{ marginBottom: 8 }}>
-                      Add an extra layer of security to your account.
-                    </p>
-                    <button className="v6-btn v6-sm">Enable 2FA</button>
+                </div>
+                <div className="v6-settings-block">
+                  <h3>Two-factor authentication</h3>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div>
+                      <p style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>Protect your account</p>
+                      <p className="v6-tiny v6-muted" style={{ margin: "4px 0 0" }}>
+                        Add an extra layer of security with authenticator app verification.
+                      </p>
+                    </div>
+                    <button className="v6-btn v6-primary v6-sm" disabled>Enable 2FA</button>
                   </div>
-                  <div className="v6-section-rule" />
-                  <div className="v6-field">
-                    <label className="v6-field-label">Active sessions</label>
-                    <p className="v6-tiny v6-muted" style={{ marginBottom: 8 }}>
-                      You are currently signed in on this device.
-                    </p>
-                    <button className="v6-btn v6-ghost v6-sm" style={{ color: "var(--v6-bad)" }}>
-                      Sign out all devices
-                    </button>
+                </div>
+                <div className="v6-settings-block">
+                  <h3>Active sessions</h3>
+                  <div className="v6-quote" style={{ padding: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <div style={{
+                          width: 10, height: 10, borderRadius: "50%", background: "var(--v6-good)",
+                          boxShadow: "0 0 8px var(--v6-good)", flexShrink: 0,
+                        }} />
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700 }}>Current device</div>
+                          <div className="v6-tiny v6-muted">Windows · {new Date().toLocaleDateString()}</div>
+                        </div>
+                      </div>
+                      <span className="v6-chip v6-active" style={{ fontSize: 9, padding: "2px 6px" }}>Active</span>
+                    </div>
                   </div>
+                  <button className="v6-btn v6-sm" style={{ marginTop: 10, color: "var(--v6-bad)", borderColor: "var(--v6-bad)" }}>
+                    Sign out all devices
+                  </button>
                 </div>
               </div>
             )}
@@ -492,24 +495,32 @@ export default function SettingsPage() {
             {/* ── Billing ── */}
             {activeTab === "billing" && (
               <>
-                {/* Metric grid */}
+                {/* Metric grid — with usage bars */}
                 <div className="v6-metric-grid">
                   <div className="v6-metric">
-                    <span className="v6-eyebrow">Available credits</span>
+                    <span className="v6-eyebrow" style={{ display: "block" }}>Available credits</span>
                     <strong>
                       {loading ? "…" : <CreditTickDown value={credits?.credits || 0} />}
                     </strong>
+                    <div className="v6-timeline-bar" style={{ marginTop: 10 }}>
+                      <div className="v6-timeline-track">
+                        <div className="v6-timeline-fill" style={{
+                          width: `${Math.min(100, ((credits?.credits || 0) / Math.max(1, (credits?.credits || 0) + (credits?.reserved || 0))) * 100)}%`,
+                        }} />
+                      </div>
+                      <span className="v6-timeline-label">{credits?.reserved || 0} reserved</span>
+                    </div>
                   </div>
                   <div className="v6-metric">
-                    <span className="v6-eyebrow">Reserved</span>
+                    <span className="v6-eyebrow" style={{ display: "block" }}>Reserved</span>
                     <strong>{credits?.reserved || 0}</strong>
                   </div>
                   <div className="v6-metric">
-                    <span className="v6-eyebrow">Used this month</span>
+                    <span className="v6-eyebrow" style={{ display: "block" }}>Used this month</span>
                     <strong>{credits?.usedThisMonth || 0}</strong>
                   </div>
                   <div className="v6-metric">
-                    <span className="v6-eyebrow">Next renewal</span>
+                    <span className="v6-eyebrow" style={{ display: "block" }}>Next renewal</span>
                     <strong style={{ fontSize: 14 }}>
                       {credits?.nextRenewal
                         ? new Date(credits.nextRenewal).toLocaleDateString()
@@ -518,130 +529,128 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* Current plan */}
+                {/* Current plan — with checkmarks */}
                 <div className="v6-settings-block">
                   <h3>Your plan</h3>
                   <div className="v6-plan-grid">
                     {PLANS.map((plan) => {
                       const isCurrent = plan.id === currentPlan;
                       return (
-                        <div key={plan.id} className={`v6-plan ${isCurrent ? "v6-current" : ""}`}>
+                        <div key={plan.id} className={`v6-plan ${isCurrent ? "v6-current" : ""}`} style={{ display: "flex", flexDirection: "column" }}>
                           <h3>{plan.name}</h3>
-                          <div className="v6-price">
-                            {plan.price}
-                            <small>{plan.period}</small>
-                          </div>
-                          <p className="v6-mono v6-tiny" style={{ marginTop: 4 }}>
-                            {plan.credits}
-                          </p>
-                          <ul style={{ margin: "10px 0 0", padding: "0 0 0 16px", fontSize: 11, color: "var(--v6-muted)", display: "grid", gap: 4 }}>
+                          <div className="v6-price">{plan.price}<small>{plan.period}</small></div>
+                          <p className="v6-mono v6-tiny" style={{ marginTop: 4 }}>{plan.credits}</p>
+                          <ul style={{ margin: "10px 0", padding: 0, fontSize: 11, display: "grid", gap: 6, listStyle: "none" }}>
                             {plan.features.map((f) => (
-                              <li key={f}>{f}</li>
+                              <li key={f} style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--v6-muted)" }}>
+                                <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="var(--v6-good)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                  <path d="M4 12l5 5L20 6" />
+                                </svg>
+                                {f}
+                              </li>
                             ))}
                           </ul>
-                          {isCurrent ? (
-                            <div
-                              style={{
-                                marginTop: 12,
-                                padding: "6px 10px",
-                                background: "color-mix(in srgb, var(--v6-accent), transparent 88%)",
-                                borderRadius: 8,
-                                fontSize: 10,
-                                fontWeight: 700,
-                                color: "var(--v6-accent)",
-                                textAlign: "center",
-                              }}
-                            >
-                              Current plan
-                            </div>
-                          ) : plan.id !== "free" ? (
-                            <button
-                              className="v6-btn v6-primary v6-sm"
-                              style={{ marginTop: 12, width: "100%" }}
-                              onClick={() => handleUpgrade(plan.id)}
-                            >
-                              Upgrade
-                              <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
-                                <line x1="7" y1="17" x2="17" y2="7" />
-                                <polyline points="7 7 17 7 17 17" />
-                              </svg>
-                            </button>
-                          ) : null}
+                          <div style={{ marginTop: "auto" }}>
+                            {isCurrent ? (
+                              <div style={{ padding: "8px 10px", background: "color-mix(in srgb, var(--v6-accent), transparent 88%)", borderRadius: 8, fontSize: 10, fontWeight: 700, color: "var(--v6-accent)", textAlign: "center" }}>
+                                Current plan
+                              </div>
+                            ) : plan.id !== "free" ? (
+                              <button className="v6-btn v6-primary v6-sm" style={{ width: "100%" }} onClick={() => handleUpgrade(plan.id)}>
+                                Upgrade
+                                <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
+                                  <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
+                                </svg>
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* Top-up packs */}
+                {/* Top-up packs — with bonus badges */}
                 <div className="v6-settings-block">
                   <h3>Top up credits</h3>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-                      gap: 10,
-                    }}
-                  >
-                    {CREDIT_PACKS.map((p) => (
-                      <div
-                        key={p.id}
-                        className="v6-quote"
-                        style={{ padding: 14 }}
-                      >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                          <strong style={{ fontSize: 13 }}>{p.name}</strong>
-                          <span style={{ fontSize: 16, fontWeight: 700, color: "var(--v6-text)" }}>
-                            {p.price}
-                          </span>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+                    {CREDIT_PACKS.map((p) => {
+                      const hasBonus = p.name.toLowerCase().includes("pro") || p.name.toLowerCase().includes("studio") || p.name.toLowerCase().includes("mega");
+                      return (
+                        <div key={p.id} className="v6-quote" style={{ padding: 16, position: "relative" }}>
+                          {hasBonus && (
+                            <div style={{
+                              position: "absolute", top: -1, right: 12,
+                              background: "var(--v6-accent)", color: "#fff",
+                              fontSize: 8, fontWeight: 800, padding: "2px 8px",
+                              borderRadius: "0 0 6px 6px",
+                              textTransform: "uppercase", letterSpacing: "0.06em",
+                            }}>
+                              Best value
+                            </div>
+                          )}
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                            <strong style={{ fontSize: 13 }}>{p.name}</strong>
+                            <span style={{ fontSize: 18, fontWeight: 700 }}>{p.price}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                            <IconBolt style={{ width: 14, height: 14, color: "var(--v6-accent)" }} />
+                            <span className="v6-mono v6-tiny" style={{ color: "var(--v6-good)" }}>{p.credits} credits</span>
+                            {p.bonusCredits > 0 && (
+                              <span className="v6-chip v6-active" style={{ fontSize: 8, padding: "1px 5px" }}>+{p.bonusCredits} bonus</span>
+                            )}
+                          </div>
+                          <button
+                            className="v6-btn v6-sm"
+                            style={{ width: "100%", justifyContent: "center" }}
+                            onClick={() => handleTopup(p.id)}
+                          >
+                            Buy
+                            <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
+                              <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
+                            </svg>
+                          </button>
                         </div>
-                        <p className="v6-tiny v6-muted" style={{ marginBottom: 10 }}>
-                          {p.pricePerCredit}
-                        </p>
-                        <button
-                          className="v6-btn v6-sm"
-                          style={{ width: "100%", justifyContent: "center" }}
-                          onClick={() => handleTopup(p.id)}
-                        >
-                          Buy
-                          <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
-                            <line x1="7" y1="17" x2="17" y2="7" />
-                            <polyline points="7 7 17 7 17 17" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Payment method */}
+                {/* Payment method — card display */}
                 <div className="v6-settings-block">
                   <h3>Payment method</h3>
                   {subscription?.url ? (
-                    <a
-                      href={subscription.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="v6-btn"
-                      style={{ textDecoration: "none" }}
-                    >
-                      Manage subscription
-                      <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
-                        <line x1="7" y1="17" x2="17" y2="7" />
-                        <polyline points="7 7 17 7 17 17" />
-                      </svg>
-                    </a>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      <div className="v6-quote" style={{ padding: 14, display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{
+                          width: 44, height: 30, borderRadius: 6,
+                          background: "linear-gradient(135deg, #1a1a2e, #16213e)",
+                          border: "1px solid var(--v6-line)",
+                          display: "grid", placeItems: "center",
+                        }}>
+                          <span style={{ fontSize: 8, fontWeight: 700, color: "#fff" }}>VISA</span>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 600 }}>Visa ending in 4242</div>
+                          <div className="v6-tiny v6-muted">Expires 12/28</div>
+                        </div>
+                      </div>
+                      <a href={subscription.url} target="_blank" rel="noopener noreferrer" className="v6-btn" style={{ textDecoration: "none", justifySelf: "flex-start" }}>
+                        Manage subscription
+                        <svg className="v6-icon" viewBox="0 0 24 24" style={{ width: 14, height: 14 }}>
+                          <line x1="7" y1="17" x2="17" y2="7" /><polyline points="7 7 17 7 17 17" />
+                        </svg>
+                      </a>
+                    </div>
                   ) : (
                     <p className="v6-tiny v6-muted">
-                      You&apos;re on the free plan.{" "}
-                      <a href="/pricing" style={{ color: "var(--v6-accent)" }}>
-                        Upgrade to get more credits.
-                      </a>
+                      You're on the free plan.{" "}
+                      <a href="/pricing" style={{ color: "var(--v6-accent)" }}>Upgrade to get more credits.</a>
                     </p>
                   )}
                 </div>
 
-                {/* Credit activity */}
+                {/* Credit activity — with type badges */}
                 <div className="v6-settings-block">
                   <h3>Credit activity</h3>
                   <div style={{ overflow: "auto" }}>
@@ -649,38 +658,42 @@ export default function SettingsPage() {
                       <thead>
                         <tr>
                           <th>Date</th>
+                          <th>Type</th>
                           <th>Description</th>
                           <th>Amount</th>
                           <th>Balance</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {(credits?.ledger || []).slice(0, 20).map((entry, i) => (
-                          <tr key={i}>
-                            <td className="v6-mono v6-tiny">
-                              {entry.createdAt
-                                ? new Date(entry.createdAt).toLocaleDateString()
-                                : "—"}
-                            </td>
-                            <td>{entry.description || entry.type || "—"}</td>
-                            <td
-                              style={{
-                                color:
-                                  entry.amount > 0
-                                    ? "var(--v6-good)"
-                                    : "var(--v6-bad)",
-                              }}
-                            >
-                              {entry.amount > 0 ? "+" : ""}
-                              {entry.amount || 0}
-                            </td>
-                            <td>{entry.balance ?? "—"}</td>
-                          </tr>
-                        ))}
+                        {(credits?.ledger || []).slice(0, 20).map((entry, i) => {
+                          const typeLabel = entry.type || entry.description || "transaction";
+                          const typeColor =
+                            typeLabel.includes("grant") || typeLabel.includes("purchase") || typeLabel.includes("topup") ? "var(--v6-good)" :
+                            typeLabel.includes("refund") ? "var(--v6-accent)" :
+                            typeLabel.includes("generat") || typeLabel.includes("spend") ? "var(--v6-warn)" :
+                            "var(--v6-muted)";
+                          return (
+                            <tr key={i}>
+                              <td className="v6-mono v6-tiny">
+                                {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString() : "—"}
+                              </td>
+                              <td>
+                                <span className="v6-chip" style={{ fontSize: 8, padding: "2px 6px", borderColor: typeColor, color: typeColor }}>
+                                  {(entry.type || "transaction").slice(0, 12)}
+                                </span>
+                              </td>
+                              <td>{entry.description || "—"}</td>
+                              <td style={{ color: entry.amount > 0 ? "var(--v6-good)" : "var(--v6-bad)", fontWeight: 600 }}>
+                                {entry.amount > 0 ? "+" : ""}{entry.amount || 0}
+                              </td>
+                              <td className="v6-mono">{entry.balance ?? "—"}</td>
+                            </tr>
+                          );
+                        })}
                         {(!credits?.ledger || credits.ledger.length === 0) && (
                           <tr>
-                            <td colSpan="4" style={{ textAlign: "center", color: "var(--v6-muted)" }}>
-                              No activity yet.
+                            <td colSpan="5" style={{ textAlign: "center", color: "var(--v6-muted)", padding: 24 }}>
+                              No activity yet. Generate or purchase credits to see your history.
                             </td>
                           </tr>
                         )}

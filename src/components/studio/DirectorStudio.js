@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
 
 /* ── Inline SVG Icons (v6 style: 24x24, stroke currentColor, strokeWidth 1.7) ── */
@@ -60,7 +61,17 @@ const IconHash = () => (
   </svg>
 );
 
-const Icons = { IconSpark, IconBolt, IconCheck, IconCross, IconClock, IconPlay, IconRefresh, IconDownload, IconHash };
+const IconList = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" />
+  </svg>
+);
+
+const IconAlert = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+  </svg>
+);
 
 /* ── Status Badge ── */
 function StatusBadge({ status }) {
@@ -76,17 +87,19 @@ function StatusBadge({ status }) {
   return (
     <span
       style={{
-        display: "inline-block", fontSize: "0.6rem", padding: "2px 7px", borderRadius: 100,
-        fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
+        display: "inline-flex", alignItems: "center", gap: 4, fontSize: "0.6rem",
+        padding: "2px 7px", borderRadius: 100, fontWeight: 700,
+        textTransform: "uppercase", letterSpacing: "0.06em",
         background: `${color}20`, color, border: `1px solid ${color}30`,
       }}
     >
+      <span style={{ width: 5, height: 5, borderRadius: "50%", background: color, flexShrink: 0 }} />
       {label}
     </span>
   );
 }
 
-/* ── Production Type Options ── */
+/* ── Production Type Definitions ── */
 const PRODUCTION_TYPES = [
   { id: "music_video", label: "Music Video" },
   { id: "short_form", label: "Short Form" },
@@ -110,6 +123,13 @@ const ON_FAILURE_OPTIONS = [
   { id: "retry", label: "Retry once, then skip" },
 ];
 
+const BRIEF_IDEAS = [
+  { title: "Cosmic Dancer", concept: "A dancer floats through zero gravity inside a nebula, stars swirling with each movement. Neon silhouette against cosmic dust." },
+  { title: "Urban Noir", concept: "A detective walks rain-slicked streets under flickering neon signs. Long shadows, cigarette smoke, 1940s atmosphere meets cyberpunk." },
+  { title: "Product Reel", concept: "Cinematic close-ups of a luxury watch. Light caresses the polished surfaces. Slow motion, macro lens, dramatic score." },
+  { title: "Nature Awakens", concept: "Time-lapse journey from frozen winter to blooming spring. A single tree through four seasons, morning mist to golden sunset." },
+];
+
 /* ══════════════════════════════════════════════════════════════ */
 export default function DirectorStudio() {
   /* ── State ── */
@@ -120,13 +140,14 @@ export default function DirectorStudio() {
   const [plan, setPlan] = useState(null);
   const [costEstimate, setCostEstimate] = useState(null);
   const [pipelineStatus, setPipelineStatus] = useState(null);
-  const [mode, setMode] = useState("brief"); // "brief" | "plan" | "execute"
+  const [mode, setMode] = useState("brief");
   const [activePipelineId, setActivePipelineId] = useState(null);
   const [shots, setShots] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [approvalMode, setApprovalMode] = useState("auto");
   const [onFailure, setOnFailure] = useState("skip");
+  const [outputFormat, setOutputFormat] = useState("mp4");
   const [pipelines, setPipelines] = useState([]);
   const [brandContext, setBrandContext] = useState(null);
 
@@ -156,8 +177,14 @@ export default function DirectorStudio() {
     });
   };
 
-  const formatCredits = (n) => (n != null ? `${n} credits` : "—");
+  const fillBriefIdea = (idea) => {
+    setBrief((prev) => ({ ...prev, title: idea.title, concept: idea.concept }));
+  };
+
+  const formatCredits = (n) => (n != null ? `${n} credits` : "\u2014");
   const aspectRatio = brief.aspectRatio || PLATFORMS.find((p) => p.id === brief.platform)?.ratio || "16:9";
+  const completedShots = shots.filter((s) => s.status === "completed").length;
+  const shotProgressPct = shots.length > 0 ? Math.round((completedShots / shots.length) * 100) : 0;
 
   /* ── Build Production Plan ── */
   const handleCreatePlan = async () => {
@@ -216,7 +243,7 @@ export default function DirectorStudio() {
         if (!data.pipeline) return;
         setPipelineStatus(data.pipeline.status);
         setShots(data.pipeline.shots || []);
-        if (data.pipeline.status === "completed" || data.pipeline.status === "failed" || data.pipeline.status === "cancelled") {
+        if (["completed", "failed", "cancelled"].includes(data.pipeline.status)) {
           clearInterval(pollRef.current); pollRef.current = null;
           if (data.pipeline.status === "completed") setPipelineStatus("completed");
         }
@@ -269,7 +296,7 @@ export default function DirectorStudio() {
   /* ── Estimated runtime ── */
   const estimatedRuntime = plan ? Math.ceil((plan.shots?.length || 0) * 8 / 60) : 0;
 
-  /* ── Layout: node positions for shots ── */
+  /* ── Node positions with stagger ── */
   const nodePositions = (shots.length > 0)
     ? shots.map((_, i) => {
         const cols = Math.ceil(Math.sqrt(shots.length));
@@ -284,168 +311,125 @@ export default function DirectorStudio() {
 
   /* ═══════════════════ RENDER: Brief Panel (Left) ═══════════════ */
   const renderBriefPanel = () => (
-    <div className="v6-builder-panel" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div className="v6-builder-panel v6-entrance-fade" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div className="v6-eyebrow">Production Brief</div>
 
       {/* Title */}
-      <div>
-        <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Title</label>
+      <div className="v6-field">
+        <label className="v6-field-label">Title</label>
         <input
+          className="v6-input"
           value={brief.title}
           onChange={(e) => updateBrief("title", e.target.value)}
-          placeholder="e.g. Midnight Drive — Official Music Video"
-          style={inputStyle}
+          placeholder="e.g. Midnight Drive \u2014 Official Music Video"
         />
       </div>
 
-      {/* Type select */}
-      <div>
-        <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Production Type</label>
-        <select
-          value={brief.type}
-          onChange={(e) => updateBrief("type", e.target.value)}
-          style={inputStyle}
-        >
-          {PRODUCTION_TYPES.map((t) => (
-            <option key={t.id} value={t.id}>{t.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* Platform chips */}
-      <div>
-        <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Platform</label>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {PLATFORMS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => updateBrief("platform", p.id)}
-              style={{
-                padding: "4px 10px", borderRadius: 100, border: `1px solid ${brief.platform === p.id ? "var(--v6-accent)" : "var(--v6-line)"}`,
-                background: brief.platform === p.id ? "var(--v6-accent)" : "transparent",
-                color: brief.platform === p.id ? "var(--v6-accent-text)" : "var(--v6-muted)",
-                fontSize: 11, cursor: "pointer", fontWeight: 600, fontFamily: "inherit",
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Duration */}
+      {/* Type + Platform */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div>
-          <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Duration (sec)</label>
-          <input
-            type="number"
-            value={brief.duration}
-            onChange={(e) => updateBrief("duration", parseInt(e.target.value) || 30)}
-            min={5} max={600}
-            style={inputStyle}
-          />
+        <div className="v6-field">
+          <label className="v6-field-label">Type</label>
+          <div className="v6-select-wrap">
+            <select className="v6-select" value={brief.type} onChange={(e) => updateBrief("type", e.target.value)}>
+              {PRODUCTION_TYPES.map((t) => (<option key={t.id} value={t.id}>{t.label}</option>))}
+            </select>
+          </div>
         </div>
-        <div>
-          <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Aspect</label>
-          <input value={aspectRatio} readOnly style={{ ...inputStyle, background: "var(--v6-surface2)" }} />
+        <div className="v6-field">
+          <label className="v6-field-label">Platform</label>
+          <div className="v6-select-wrap">
+            <select className="v6-select" value={brief.platform} onChange={(e) => updateBrief("platform", e.target.value)}>
+              {PLATFORMS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Duration + Aspect */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <div className="v6-field">
+          <label className="v6-field-label">Duration (sec)</label>
+          <input className="v6-input" type="number" value={brief.duration} onChange={(e) => updateBrief("duration", parseInt(e.target.value) || 30)} min={5} max={600} />
+        </div>
+        <div className="v6-field">
+          <label className="v6-field-label">Aspect</label>
+          <input className="v6-input" value={aspectRatio} readOnly style={{ opacity: 0.6 }} />
         </div>
       </div>
 
       {/* Style + Mood */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-        <div>
-          <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Visual Style</label>
-          <input
-            value={brief.style}
-            onChange={(e) => updateBrief("style", e.target.value)}
-            placeholder="Cyberpunk anime, noir thriller..."
-            style={inputStyle}
-          />
+        <div className="v6-field">
+          <label className="v6-field-label">Visual Style</label>
+          <input className="v6-input" value={brief.style} onChange={(e) => updateBrief("style", e.target.value)} placeholder="Cyberpunk anime, noir thriller..." />
         </div>
-        <div>
-          <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Mood / Tone</label>
-          <input
-            value={brief.mood}
-            onChange={(e) => updateBrief("mood", e.target.value)}
-            placeholder="Dark, atmospheric, hopeful..."
-            style={inputStyle}
-          />
+        <div className="v6-field">
+          <label className="v6-field-label">Mood / Tone</label>
+          <input className="v6-input" value={brief.mood} onChange={(e) => updateBrief("mood", e.target.value)} placeholder="Dark, atmospheric, hopeful..." />
         </div>
       </div>
 
       {/* Concept */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Creative Concept</label>
+      <div className="v6-field" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        <label className="v6-field-label">Creative Concept</label>
         <textarea
+          className="v6-textarea"
           value={brief.concept}
           onChange={(e) => updateBrief("concept", e.target.value)}
-          placeholder="Describe your vision…&#10;&#10;A lone traveler walks through neon-lit streets at midnight, chasing a memory that keeps slipping away…"
-          style={{ ...inputStyle, flex: 1, resize: "vertical", minHeight: 100, fontFamily: "inherit" }}
+          placeholder="Describe your vision\u2026\n\nA lone traveler walks through neon-lit streets at midnight, chasing a memory that keeps slipping away\u2026"
+          style={{ flex: 1 }}
         />
       </div>
 
       {/* Brand context */}
-      <div>
-        <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Brand Context</label>
-        <select
-          value={brandContext?.id || ""}
-          onChange={(e) => setBrandContext(e.target.value ? { id: e.target.value } : null)}
-          style={inputStyle}
-        >
-          <option value="">No brand kit</option>
-          <option value="brand_1">Helmies Studio</option>
-        </select>
+      <div className="v6-field">
+        <label className="v6-field-label">Brand Context</label>
+        <div className="v6-select-wrap">
+          <select className="v6-select" value={brandContext?.id || ""} onChange={(e) => setBrandContext(e.target.value ? { id: e.target.value } : null)}>
+            <option value="">No brand kit</option>
+            <option value="brand_1">Helmies Studio</option>
+          </select>
+        </div>
       </div>
 
       {/* Budget quote */}
       {costEstimate && (
-        <div style={{
-          padding: 10, borderRadius: 10, background: "var(--v6-surface2)",
-          border: "1px solid var(--v6-line)", display: "flex", flexDirection: "column", gap: 6,
-        }}>
-          <span className="v6-muted" style={{ fontSize: 10 }}>Budget Quote</span>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 700 }}>
-            <span>Planned</span>
-            <span style={{ fontFamily: "var(--font-mono, monospace)", color: "var(--v6-accent)" }}>{formatCredits(costEstimate.totalCredits)}</span>
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          className="v6-quote" style={{ borderColor: "color-mix(in srgb, var(--v6-accent), var(--v6-line) 50%)" }}>
+          <div className="v6-quote-row"><span className="v6-muted">Budget Quote</span></div>
+          <div className="v6-quote-row">
+            <strong>Planned</strong>
+            <strong style={{ color: "var(--v6-accent)", fontFamily: "var(--v6-mono)" }}>{formatCredits(costEstimate.totalCredits)}</strong>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--v6-muted)" }}>
-            <span>Max ({costEstimate.shotCount} shots)</span>
-            <span>{formatCredits((costEstimate.totalCredits || 0) + (costEstimate.assemblyCost || 0))}</span>
+          <div className="v6-quote-row">
+            <span className="v6-muted">Max ({costEstimate.shotCount} shots)</span>
+            <span className="v6-muted">{formatCredits((costEstimate.totalCredits || 0) + (costEstimate.assemblyCost || 0))}</span>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Build button */}
-      <button
-        className="v6-btn v6-primary"
-        onClick={handleCreatePlan}
-        disabled={loading}
-        style={{ width: "100%" }}
-      >
-        <IconSpark /> {loading ? "Planning…" : "Build Production Plan"}
+      <button className="v6-btn v6-primary" onClick={handleCreatePlan} disabled={loading} style={{ width: "100%" }}>
+        <IconSpark /> {loading ? "Planning\u2026" : "Build Production Plan"}
       </button>
+      <span className="v6-kbd-hint" style={{ textAlign: "center" }}>Shift + Enter to execute</span>
 
       {/* Load existing */}
       {pipelines.length > 0 && (
-        <div>
-          <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Load Pipeline</label>
-          <select
-            defaultValue=""
-            onChange={(e) => e.target.value && handleLoadPipeline(e.target.value)}
-            style={inputStyle}
-          >
-            <option value="" disabled>Select a pipeline…</option>
-            {pipelines.map((p) => (
-              <option key={p.id} value={p.id}>{p.title} ({p.status})</option>
-            ))}
-          </select>
+        <div className="v6-field">
+          <label className="v6-field-label">Load Pipeline</label>
+          <div className="v6-select-wrap">
+            <select className="v6-select" defaultValue="" onChange={(e) => e.target.value && handleLoadPipeline(e.target.value)}>
+              <option value="" disabled>Select a pipeline\u2026</option>
+              {pipelines.map((p) => (<option key={p.id} value={p.id}>{p.title} ({p.status})</option>))}
+            </select>
+          </div>
         </div>
       )}
     </div>
   );
 
-  /* ═══════════════════ RENDER: Center Panel (Plan or Execute) ═══════════════ */
+  /* ═══════════════════ RENDER: Center Panel ═══════════════ */
   const renderCenterPanel = () => (
     <div className="v6-builder-panel" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Header bar */}
@@ -468,57 +452,50 @@ export default function DirectorStudio() {
         )}
       </div>
 
-      {/* ── Plan Mode: Node Canvas ── */}
+      {/* ── Plan Mode: Node Canvas with stagger ── */}
       {mode === "plan" && plan && (
         <div className="v6-node-canvas" style={{ flex: 1, borderRadius: 10 }}>
           {shots.map((shot, i) => {
             const pos = nodePositions[i] || { left: "10%", top: `${10 + i * 15}%` };
             return (
-              <div
+              <motion.div
                 key={shot.id}
                 className="v6-node"
                 style={{ left: pos.left, top: pos.top }}
+                initial={{ opacity: 0, scale: 0.9, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ delay: i * 0.08, duration: 0.35, ease: "easeOut" }}
               >
-                <strong>{shot.title || `Shot ${i + 1}`}</strong>
-                <p>{shot.section} · {shot.durationSec}s</p>
-                <p>{shot.camera?.framing} · {shot.camera?.lens}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{
+                    width: 18, height: 18, borderRadius: 5, background: "var(--v6-accent)",
+                    color: "#fff", fontSize: 9, fontWeight: 800, display: "grid", placeItems: "center", flexShrink: 0
+                  }}>{i + 1}</span>
+                  <strong>{shot.title || `Shot ${i + 1}`}</strong>
+                </div>
+                <p>{shot.section} \u00b7 {shot.durationSec}s</p>
+                <p>{shot.camera?.framing} \u00b7 {shot.camera?.lens}</p>
                 <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                   <StatusBadge status="draft" />
-                  <span style={{ fontSize: 9, color: "var(--v6-muted)" }}>
-                    <IconBolt width={10} height={10} />
-                    {costEstimate?.shotCosts?.[i]?.total || "?"}c
+                  <span style={{ fontSize: 9, color: "var(--v6-muted)", display: "flex", alignItems: "center", gap: 2 }}>
+                    <IconBolt />{costEstimate?.shotCosts?.[i]?.total || "?"}c
                   </span>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-          {/* Connecting lines between nodes */}
+          {/* Connecting lines */}
           {shots.length > 1 && shots.slice(0, -1).map((_, i) => {
-            const a = nodePositions[i];
-            const b = nodePositions[i + 1];
-            const angle = Math.atan2(
-              parseFloat(b.top) - parseFloat(a.top),
-              parseFloat(b.left) - parseFloat(a.left)
-            ) * (180 / Math.PI);
-            const len = Math.sqrt(
-              Math.pow(parseFloat(b.left) - parseFloat(a.left), 2) +
-              Math.pow(parseFloat(b.top) - parseFloat(a.top), 2)
-            );
+            const a = nodePositions[i]; const b = nodePositions[i + 1];
+            if (!a || !b) return null;
+            const angle = Math.atan2(parseFloat(b.top) - parseFloat(a.top), parseFloat(b.left) - parseFloat(a.left)) * (180 / Math.PI);
+            const len = Math.sqrt(Math.pow(parseFloat(b.left) - parseFloat(a.left), 2) + Math.pow(parseFloat(b.top) - parseFloat(a.top), 2));
             return (
-              <div
-                key={`line-${i}`}
-                style={{
-                  position: "absolute",
-                  left: a.left,
-                  top: a.top,
-                  width: `${len}%`,
-                  transform: `rotate(${angle}deg)`,
-                  transformOrigin: "0 0",
-                  borderTop: "1px dashed var(--v6-line)",
-                  opacity: 0.5,
-                  pointerEvents: "none",
-                }}
-              />
+              <div key={`line-${i}`} style={{
+                position: "absolute", left: a.left, top: a.top, width: `${len}%`,
+                transform: `rotate(${angle}deg)`, transformOrigin: "0 0",
+                borderTop: "1px dashed var(--v6-line)", opacity: 0.5, pointerEvents: "none",
+              }} />
             );
           })}
         </div>
@@ -527,108 +504,127 @@ export default function DirectorStudio() {
       {/* ── Execute Mode: Shot Cards ── */}
       {mode === "execute" && (
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
-          {shots.length === 0 && !loading && (
-            <div className="v6-empty-state" style={{ flex: 1 }}>
-              <p className="v6-muted">No shots to display</p>
+          {/* Progress bar */}
+          {shots.length > 0 && (
+            <div className="v6-progress-bar-wrap">
+              <IconList />
+              <div className="v6-progress-bar">
+                <div className="v6-progress-fill" style={{ width: `${shotProgressPct}%` }} />
+              </div>
+              <span className="v6-progress-label">{completedShots}/{shots.length}</span>
             </div>
           )}
 
-          {shots.map((shot, i) => {
-            const status = shot.status || "pending";
-            const imageUrl = shot.imageResult?.url || shot.imageResult?.rawUrl;
-            const videoUrl = shot.videoResult?.url || shot.videoResult?.rawUrl;
-            return (
-              <div
-                key={shot.id || i}
-                style={{
-                  padding: 12, borderRadius: 10, border: "1px solid var(--v6-line)",
-                  background: "var(--v6-surface2)", display: "flex", alignItems: "flex-start", gap: 12,
-                }}
-              >
-                {/* Thumb */}
-                <div style={{
-                  width: 72, height: 48, borderRadius: 8, flexShrink: 0, overflow: "hidden",
-                  background: "var(--v6-surface)", border: "1px solid var(--v6-line)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  {imageUrl ? (
-                    <img src={imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  ) : videoUrl ? (
-                    <video src={videoUrl} style={{ width: "100%", height: "100%", objectFit: "cover" }} muted />
-                  ) : (
-                    <IconHash width={16} height={16} style={{ color: "var(--v6-line)" }} />
+          {shots.length === 0 && !loading && (
+            <div className="v6-empty-state" style={{ flex: 1 }}>
+              <div className="v6-empty-orbit"><IconPlay /></div>
+              <p className="v6-muted">Pipeline is queued. Shots will appear as they generate.</p>
+            </div>
+          )}
+
+          <div className="v6-stagger" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {shots.map((shot, i) => {
+              const status = shot.status || "pending";
+              const imageUrl = shot.imageResult?.url || shot.imageResult?.rawUrl;
+              const videoUrl = shot.videoResult?.url || shot.videoResult?.rawUrl;
+              const statusColors = {
+                completed: "var(--v6-good)", failed: "var(--v6-bad)",
+                processing: "var(--v6-warn)", generating_images: "var(--v6-warn)",
+                generating_video: "var(--v6-warn)", pending: "var(--v6-muted)",
+              };
+              const barColor = statusColors[status] || "var(--v6-muted)";
+
+              return (
+                <div key={shot.id || i} className="v6-shot-card" style={{ animationDelay: `${i * 0.05}s` }}>
+                  {/* Status bar */}
+                  <div className="v6-shot-status-bar" style={{ background: barColor }} />
+
+                  {/* Thumbnail */}
+                  <div className="v6-shot-thumb">
+                    {imageUrl
+                      ? <img src={imageUrl} alt="" />
+                      : videoUrl
+                        ? <video src={videoUrl} muted />
+                        : <IconHash style={{ width: 18, height: 18, color: "var(--v6-line)" }} />
+                    }
+                    <span className="v6-shot-number">#{i + 1}</span>
+                  </div>
+
+                  {/* Info */}
+                  <div className="v6-shot-info">
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <strong>{shot.title || shot.plan?.title || `Shot ${i + 1}`}</strong>
+                      <StatusBadge status={status} />
+                    </div>
+                    {shot.section && <p>{shot.section} \u00b7 {shot.durationSec}s \u00b7 {shot.camera?.framing}</p>}
+                    {shot.error && <p style={{ color: "var(--v6-bad)", fontSize: 10, margin: 0 }}>{shot.error.slice(0, 100)}</p>}
+                    {shot.videoResult?.prompt && (
+                      <p style={{ fontSize: 10, color: "var(--v6-muted)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {shot.videoResult.prompt.slice(0, 80)}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Rerun actions */}
+                  {(status === "completed" || status === "failed") && (
+                    <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                      <button className="v6-btn v6-ghost v6-sm v6-tooltip" data-tooltip="Rerun image" onClick={() => handleRerunShot(shot.id, "image")}>Img</button>
+                      <button className="v6-btn v6-ghost v6-sm v6-tooltip" data-tooltip="Rerun video" onClick={() => handleRerunShot(shot.id, "video")}>Vid</button>
+                      <button className="v6-btn v6-primary v6-sm" onClick={() => handleRerunShot(shot.id, "full")}>All</button>
+                    </div>
                   )}
                 </div>
-
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <strong style={{ fontSize: 12, letterSpacing: "-0.01em" }}>{shot.title || shot.plan?.title || `Shot ${i + 1}`}</strong>
-                    <StatusBadge status={status} />
-                  </div>
-                  {shot.error && (
-                    <p style={{ fontSize: 10, color: "#ef4444", margin: 0 }}>{shot.error.slice(0, 100)}</p>
-                  )}
-                  {shot.videoResult?.prompt && (
-                    <p style={{ fontSize: 10, color: "var(--v6-muted)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{shot.videoResult.prompt.slice(0, 80)}</p>
-                  )}
-                </div>
-
-                {/* Rerun actions */}
-                {(status === "completed" || status === "failed") && (
-                  <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                    <button className="v6-btn v6-ghost v6-sm" onClick={() => handleRerunShot(shot.id, "image")} title="Rerun image">Img</button>
-                    <button className="v6-btn v6-ghost v6-sm" onClick={() => handleRerunShot(shot.id, "video")} title="Rerun video">Vid</button>
-                    <button className="v6-btn v6-primary v6-sm" onClick={() => handleRerunShot(shot.id, "full")} title="Full rerun">All</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
 
           {/* Completed banner */}
           {pipelineStatus === "completed" && (
-            <div style={{
-              padding: 14, borderRadius: 10, background: "rgba(74,222,128,0.06)",
-              border: "1px solid rgba(74,222,128,0.15)", marginTop: 4,
-            }}>
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+              style={{ padding: 14, borderRadius: 10, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.15)", marginTop: 4 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <IconCheck width={16} height={16} style={{ color: "#4ade80" }} />
+                <IconCheck style={{ width: 16, height: 16, color: "#4ade80" }} />
                 <strong style={{ color: "#4ade80", fontSize: 13 }}>Production Complete</strong>
               </div>
               <p style={{ fontSize: 11, color: "var(--v6-muted)", margin: 0 }}>
-                {shots.filter((s) => s.status === "completed").length}/{shots.length} shots rendered
-                {costEstimate && ` · Total: ${formatCredits(costEstimate.totalCredits)}`}
+                {completedShots}/{shots.length} shots rendered{costEstimate && ` \u00b7 Total: ${formatCredits(costEstimate.totalCredits)}`}
               </p>
-            </div>
+            </motion.div>
           )}
 
           {/* Generating state */}
           {pipelineStatus && pipelineStatus !== "completed" && pipelineStatus !== "failed" && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16 }}>
-              <div style={{
-                width: 14, height: 14, borderRadius: "50%",
-                border: "2px solid var(--v6-accent)", borderTopColor: "transparent",
-                animation: "spin 1s linear infinite",
-              }} />
+              <div className="v6-typing-dots"><span /><span /><span /></div>
               <span className="v6-muted" style={{ fontSize: 12 }}>
-                {pipelineStatus.replace(/_/g, " ")}
-                {pipelineStatus === "queued" && " · Starting soon…"}
+                {pipelineStatus.replace(/_/g, " ")}{pipelineStatus === "queued" ? " \u00b7 Starting soon\u2026" : ""}
               </span>
             </div>
           )}
         </div>
       )}
 
-      {/* ── Empty plan state ── */}
+      {/* ── Empty plan state with brief ideas ── */}
       {mode === "plan" && !plan && (
         <div className="v6-empty-state" style={{ flex: 1 }}>
-          <div style={{ width: 56, height: 56, borderRadius: 14, background: "var(--v6-surface2)", border: "1px solid var(--v6-line)", display: "grid", placeItems: "center", marginBottom: 12 }}>
-            <IconSpark width={24} height={24} style={{ color: "var(--v6-muted)" }} />
+          <div className="v6-empty-orbit"><IconSpark /></div>
+          <h2>Create your first production</h2>
+          <p>Fill in the production brief and build a shot-by-shot plan, or start from one of these ideas.</p>
+          <div className="v6-brief-ideas">
+            {BRIEF_IDEAS.map((idea, i) => (
+              <motion.button
+                key={i}
+                className="v6-brief-idea"
+                onClick={() => fillBriefIdea(idea)}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.08 }}
+              >
+                <strong style={{ display: "block", fontSize: 10, marginBottom: 2, color: "var(--v6-text)" }}>{idea.title}</strong>
+                {idea.concept.slice(0, 90)}\u2026
+              </motion.button>
+            ))}
           </div>
-          <p className="v6-muted" style={{ textAlign: "center" }}>
-            Fill in the production brief and click <strong>"Build Production Plan"</strong> to create a shot list
-          </p>
         </div>
       )}
     </div>
@@ -636,85 +632,85 @@ export default function DirectorStudio() {
 
   /* ═══════════════════ RENDER: Guardrails Panel (Right) ═══════════════ */
   const renderGuardrailsPanel = () => (
-    <div className="v6-builder-panel" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+    <div className="v6-builder-panel v6-entrance-fade" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div className="v6-eyebrow">Guardrails</div>
 
       {/* Approval mode */}
-      <div>
-        <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Approval Mode</label>
-        <select
-          value={approvalMode}
-          onChange={(e) => setApprovalMode(e.target.value)}
-          style={inputStyle}
-        >
-          <option value="auto">Auto-approve all shots</option>
-          <option value="manual">Manual review per shot</option>
-          <option value="critical">Review only key shots</option>
-        </select>
+      <div className="v6-field">
+        <label className="v6-field-label">Approval Mode</label>
+        <div className="v6-select-wrap">
+          <select className="v6-select" value={approvalMode} onChange={(e) => setApprovalMode(e.target.value)}>
+            <option value="auto">Auto-approve all shots</option>
+            <option value="manual">Manual review per shot</option>
+            <option value="critical">Review only key shots</option>
+          </select>
+        </div>
       </div>
 
       {/* On-failure behavior */}
-      <div>
-        <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>On Failure</label>
-        <select
-          value={onFailure}
-          onChange={(e) => setOnFailure(e.target.value)}
-          style={inputStyle}
-        >
-          {ON_FAILURE_OPTIONS.map((o) => (
-            <option key={o.id} value={o.id}>{o.label}</option>
-          ))}
-        </select>
+      <div className="v6-field">
+        <label className="v6-field-label">On Failure</label>
+        <div className="v6-select-wrap">
+          <select className="v6-select" value={onFailure} onChange={(e) => setOnFailure(e.target.value)}>
+            {ON_FAILURE_OPTIONS.map((o) => (<option key={o.id} value={o.id}>{o.label}</option>))}
+          </select>
+        </div>
       </div>
 
       {/* Output format */}
-      <div>
-        <label className="v6-muted" style={{ fontSize: 10, display: "block", marginBottom: 4 }}>Output Format</label>
-        <select
-          style={inputStyle}
-          defaultValue="mp4"
-        >
-          <option value="mp4">MP4 (H.264)</option>
-          <option value="webm">WebM</option>
-          <option value="individual">Individual clips</option>
-        </select>
+      <div className="v6-field">
+        <label className="v6-field-label">Output Format</label>
+        <div className="v6-select-wrap">
+          <select className="v6-select" value={outputFormat} onChange={(e) => setOutputFormat(e.target.value)}>
+            <option value="mp4">MP4 (H.264)</option>
+            <option value="webm">WebM</option>
+            <option value="individual">Individual clips</option>
+          </select>
+        </div>
       </div>
 
-      {/* Separator */}
-      <div style={{ borderTop: "1px solid var(--v6-line)", margin: "4px 0" }} />
+      <div className="v6-section-rule" />
 
-      {/* Metric Grid */}
+      {/* Pipeline Metrics */}
       <div className="v6-eyebrow">Pipeline Metrics</div>
       <div className="v6-metric-grid" style={{ gridTemplateColumns: "repeat(2, 1fr)" }}>
         <div className="v6-metric" style={{ padding: 12 }}>
           <span>State</span>
-          <strong style={{ fontSize: 12, textTransform: "capitalize", marginTop: 4 }}>
+          <motion.strong
+            key={pipelineStatus || mode}
+            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+            style={{ fontSize: 12, textTransform: "capitalize", marginTop: 4, display: "block" }}
+          >
             {pipelineStatus ? pipelineStatus.replace(/_/g, " ") : (mode === "brief" ? "Draft" : mode === "plan" ? "Planning" : "Active")}
-          </strong>
+          </motion.strong>
         </div>
         <div className="v6-metric" style={{ padding: 12 }}>
           <span>Shots</span>
-          <strong style={{ fontSize: 12, marginTop: 4 }}>
+          <motion.strong
+            key={shots.length}
+            initial={{ scale: 1.2 }} animate={{ scale: 1 }}
+            style={{ fontSize: 18, marginTop: 4, display: "block", letterSpacing: "-0.03em" }}
+          >
             {plan ? plan.shots?.length || shots.length : 0}
-          </strong>
+          </motion.strong>
         </div>
         <div className="v6-metric" style={{ padding: 12 }}>
           <span>Runtime</span>
-          <strong style={{ fontSize: 12, marginTop: 4 }}>
-            <IconClock width={11} height={11} /> ~{estimatedRuntime}m
+          <strong style={{ fontSize: 12, marginTop: 4, display: "flex", alignItems: "center", gap: 4 }}>
+            <IconClock /> ~{estimatedRuntime}m
           </strong>
         </div>
         <div className="v6-metric" style={{ padding: 12 }}>
           <span>Budget</span>
-          <strong style={{ fontSize: 12, marginTop: 4, color: "var(--v6-accent)" }}>
-            <IconBolt width={11} height={11} /> {costEstimate ? costEstimate.totalCredits : "—"}
+          <strong style={{ fontSize: 12, marginTop: 4, color: "var(--v6-accent)", display: "flex", alignItems: "center", gap: 4 }}>
+            <IconBolt /> {costEstimate ? costEstimate.totalCredits : "\u2014"}
           </strong>
         </div>
       </div>
 
-      {/* Completed shots */}
+      {/* Shot Breakdown */}
       {shots.length > 0 && pipelineStatus === "completed" && (
-        <div style={{ marginTop: 8 }}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ marginTop: 8 }}>
           <div className="v6-eyebrow">Shot Breakdown</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
             {shots.slice(0, 6).map((shot, i) => (
@@ -723,21 +719,17 @@ export default function DirectorStudio() {
                 <span style={{ fontSize: 11 }}>{shot.title || `Shot ${i + 1}`}</span>
               </div>
             ))}
-            {shots.length > 6 && (
-              <span className="v6-muted" style={{ fontSize: 10, marginLeft: 8 }}>+{shots.length - 6} more shots</span>
-            )}
+            {shots.length > 6 && <span className="v6-muted v6-tiny" style={{ marginLeft: 8 }}>+{shots.length - 6} more shots</span>}
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* Error display */}
       {error && (
-        <div style={{
-          padding: 10, borderRadius: 10, background: "rgba(239,68,68,0.08)",
-          border: "1px solid rgba(239,68,68,0.2)", fontSize: 11, color: "#ef4444",
-        }}>
-          {error}
-        </div>
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+          style={{ padding: 10, borderRadius: 10, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", fontSize: 11, color: "#ef4444", display: "flex", alignItems: "flex-start", gap: 6 }}>
+          <IconAlert style={{ width: 14, height: 14, flexShrink: 0, marginTop: 1 }} /> {error}
+        </motion.div>
       )}
     </div>
   );
@@ -753,20 +745,21 @@ export default function DirectorStudio() {
           Multi-shot production pipeline director
         </p>
       </div>
-      {/* Mode indicator */}
-      <div style={{ display: "flex", gap: 6 }}>
+      <div style={{ display: "flex", gap: 4 }}>
         {["brief", "plan", "execute"].map((m) => (
-          <span
+          <motion.span
             key={m}
+            whileTap={{ scale: 0.95 }}
             style={{
-              fontSize: 10, fontWeight: 600, padding: "3px 10px", borderRadius: 100,
+              fontSize: 10, fontWeight: 600, padding: "4px 12px", borderRadius: 100, cursor: "pointer",
               background: mode === m ? "var(--v6-accent)" : "var(--v6-surface2)",
               color: mode === m ? "var(--v6-accent-text)" : "var(--v6-muted)",
               textTransform: "capitalize", letterSpacing: "0.04em",
+              transition: "all 0.2s",
             }}
           >
             {m}
-          </span>
+          </motion.span>
         ))}
       </div>
     </div>
@@ -776,28 +769,12 @@ export default function DirectorStudio() {
   return (
     <div style={{ height: "100%", padding: 18, overflow: "hidden", display: "flex", flexDirection: "column" }}>
       {renderHeader()}
-
       <div className="v6-builder-grid" style={{ flex: 1, minHeight: 0 }}>
         {renderBriefPanel()}
         {renderCenterPanel()}
         {renderGuardrailsPanel()}
       </div>
-
-      {/* Inline keyframes for spinner */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }
-
-/* ── Input Style ── */
-const inputStyle = {
-  width: "100%",
-  padding: "8px 10px",
-  borderRadius: 8,
-  background: "var(--v6-surface2)",
-  border: "1px solid var(--v6-line)",
-  color: "var(--v6-text)",
-  fontSize: 12,
-  outline: "none",
-  fontFamily: "inherit",
-};

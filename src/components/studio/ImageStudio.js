@@ -55,30 +55,57 @@ const IconChevronDown = () => (
   </svg>
 );
 
+/* ── Prompt suggestions ── */
+const PROMPT_SUGGESTIONS = [
+  "A cinematic portrait with soft golden light and shallow depth of field",
+  "Abstract geometric composition, neon color palette, retro-wave aesthetic",
+  "Moody landscape at golden hour, 35mm film grain, atmospheric haze",
+  "Product photography on dark reflective surface, rim lighting",
+  "Architectural interior with natural light, minimalist Scandinavian design",
+  "Character concept art, fantasy illustration, detailed armor and textures",
+];
+
 /* ── Helpers ── */
 function getModelDisplayName(model) {
   return model.displayName || model.name || model.id;
 }
 
+/** Parse aspect ratio into width/height numbers for visual indicator */
+function parseAspectRatio(ar) {
+  const parts = String(ar).split(":").map(Number);
+  if (parts.length === 2 && parts[0] && parts[1]) return parts;
+  return [16, 9];
+}
+
 /* ══════════════════════════════════════════════════════════════ */
 export default function ImageStudio() {
   /* ── State ── */
-  const [mode, setMode] = useState("tti"); // "tti" | "iti"
+  const [mode, setMode] = useState("tti");
   const [selectedModelId, setSelectedModelId] = useState(null);
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [resolution, setResolution] = useState("2K");
   const [seed, setSeed] = useState(null);
-  const [referenceImage, setReferenceImage] = useState(null); // { url, file }
+  const [referenceImage, setReferenceImage] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const fileInputRef = useRef(null);
 
+  /* ── Drag-drop state ── */
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounter = useRef(0);
+
+  /* ── Cost pulse ── */
+  const [costPulse, setCostPulse] = useState(false);
+  const prevCostRef = useRef(0);
+
+  /* ── Before/after comparison ── */
+  const [comparePos, setComparePos] = useState(50);
+  const compareRef = useRef(null);
+
   /* ── Hooks ── */
   const { loading: generating, result, error: genError, elapsed, submit } = useAsyncGeneration();
-
-  /* ── Model catalog ── */
   const { models: allModels, loading } = useModelCatalog({ modelType: "image" });
 
   /* ── Model selection ── */
@@ -89,7 +116,6 @@ export default function ImageStudio() {
   }, [allModels, mode]);
   const currentModel = activeModels.find((m) => m.id === selectedModelId) || activeModels[0];
 
-  /* ── Default selected model from catalog ── */
   useEffect(() => {
     if (activeModels?.length && !selectedModelId) {
       setSelectedModelId(activeModels[0]?.id);
@@ -107,6 +133,17 @@ export default function ImageStudio() {
     }
   );
 
+  const cost = estCredits || 0;
+
+  /* ── Cost pulse effect ── */
+  useEffect(() => {
+    if (prevCostRef.current !== 0 && cost !== prevCostRef.current) {
+      setCostPulse(true);
+      setTimeout(() => setCostPulse(false), 500);
+    }
+    prevCostRef.current = cost;
+  }, [cost]);
+
   /* ── Sync model when mode changes ── */
   useEffect(() => {
     if (activeModels.length && !activeModels.some((m) => m.id === selectedModelId)) {
@@ -121,8 +158,45 @@ export default function ImageStudio() {
   const resolutions = currentModel?.resolutions?.length
     ? currentModel.resolutions
     : ["1K", "2K", "4K"];
-  const cost = estCredits || 0;
   const error = genError || uploadError;
+
+  /* ── Comparison slider mouse handling ── */
+  const handleCompareMouseDown = useCallback((e) => {
+    e.preventDefault();
+    const el = compareRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const onMove = (ev) => {
+      const x = ev.clientX - rect.left;
+      setComparePos(Math.min(100, Math.max(0, (x / rect.width) * 100)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
+
+  /* ── Drag-drop handlers ── */
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer?.types?.includes("Files")) setDragOver(true);
+  }, []);
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) { dragCounter.current = 0; setDragOver(false); }
+  }, []);
+  const handleDragOver = useCallback((e) => { e.preventDefault(); e.stopPropagation(); }, []);
+  const handleDrop = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCounter.current = 0;
+    setDragOver(false);
+    const files = e.dataTransfer?.files;
+    if (files?.length) handleUpload(files);
+  }, []);
 
   /* ── Handlers ── */
   const handleUpload = useCallback(async (files) => {
@@ -166,6 +240,20 @@ export default function ImageStudio() {
     setSelectedModelId(id);
   }, []);
 
+  const pickSuggestion = useCallback((s) => {
+    setPrompt((prev) => prev ? `${prev}. ${s}` : s);
+  }, []);
+
+  /* ── Aspect ratio visual dimensions ── */
+  const [arW, arH] = parseAspectRatio(aspectRatio);
+  const arMaxDim = 32;
+  const arScale = arMaxDim / Math.max(arW, arH);
+  const arBoxW = Math.round(arW * arScale);
+  const arBoxH = Math.round(arH * arScale);
+
+  /* ── Has reference + result for comparison view ── */
+  const showCompare = mode === "iti" && referenceImage?.url && result?.url && !generating;
+
   /* ── Render helpers ── */
   const controls = (
     <div className="v6-control-stack">
@@ -188,9 +276,18 @@ export default function ImageStudio() {
         </div>
       </div>
 
-      {/* Aspect Ratio */}
+      {/* Aspect Ratio with visual indicator */}
       <div className="v6-field">
-        <div className="v6-field-label">Aspect ratio</div>
+        <div className="v6-field-label">
+          Aspect ratio
+          <span className="v6-aspect-visual" style={{ marginLeft: 8, verticalAlign: "middle" }}>
+            <span
+              className="v6-aspect-box"
+              style={{ display: "inline-block", width: arBoxW, height: arBoxH }}
+            />
+            <span className="v6-mono v6-tiny">{aspectRatio}</span>
+          </span>
+        </div>
         <div className="v6-chip-row">
           {allAspectRatios.map((ar) => (
             <button
@@ -229,7 +326,7 @@ export default function ImageStudio() {
           className="v6-input v6-textarea"
           value={negativePrompt}
           onChange={(e) => setNegativePrompt(e.target.value)}
-          placeholder="Elements, styles, or artifacts to avoid…"
+          placeholder="Elements, styles, or artifacts to avoid\u2026"
           rows={2}
         />
       </div>
@@ -263,7 +360,7 @@ export default function ImageStudio() {
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
             >
-              {uploading ? "Uploading…" : "Drop or click to upload"}
+              {uploading ? "Uploading\u2026" : "Drop or click to upload"}
             </button>
           )}
           <input
@@ -293,30 +390,92 @@ export default function ImageStudio() {
     </div>
   );
 
-  /* ── Stage area ── */
+  /* ── Stage area (with drag-drop overlay for ITI) ── */
   const center = (
     <>
-      <StageArea
-        generating={generating}
-        progress={null}
-        stage={generating ? "generating" : undefined}
-        model={currentModel?.name || currentModel?.id}
-        quality={resolution}
-        ratio={aspectRatio}
-        result={result}
-        resultTitle="Image generation"
-        toolLabel="Image Studio"
-        toolDesc="Compose an image with a precise brief, visual references, and a model matched to the intended format."
-        toolIcon={<IconImage />}
-        onNew={() => {
-          setPrompt("");
-          setReferenceImage(null);
-        }}
-        onDownload={() => {
-          if (result?.url) window.open(result.url, "_blank");
-        }}
-        onCancel={() => {}}
-      />
+      {/* Drag-drop overlay on stage (ITI mode) */}
+      {mode === "iti" && !generating && !result && (
+        <div
+          className={`v6-drop-zone${dragOver ? " v6-drag-over" : ""}`}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          style={{ pointerEvents: dragOver ? "auto" : "none", zIndex: dragOver ? 11 : 10 }}
+        >
+          {!dragOver && referenceImage?.url && (
+            <span className="v6-drop-zone-label">
+              <IconUpload /> Drop an image to replace reference
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Before/After comparison or normal stage */}
+      {showCompare ? (
+        <div className="v6-stage">
+          <div className="v6-stage-grid" />
+          <div className="v6-result-view v6-entrance-scale" style={{ padding: 0, background: "transparent", border: 0 }}>
+            <div className="v6-compare-view" ref={compareRef}>
+              <img src={referenceImage.url} alt="Before" />
+              <div className="v6-compare-label v6-compare-before">Reference</div>
+              <img
+                src={result.url || result.outputUrl}
+                alt="Generated"
+                className="v6-compare-after"
+                style={{ clipPath: `inset(0 0 0 ${comparePos}%)` }}
+              />
+              <div className="v6-compare-label v6-compare-after">Generated</div>
+              <div
+                className="v6-compare-slider"
+                style={{ left: `${comparePos}%` }}
+                onMouseDown={handleCompareMouseDown}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        <StageArea
+          generating={generating}
+          progress={null}
+          stage={generating ? "generating" : undefined}
+          model={currentModel?.name || currentModel?.id}
+          quality={resolution}
+          ratio={aspectRatio}
+          result={result}
+          resultTitle="Image generation"
+          toolLabel="Image Studio"
+          toolDesc="Compose an image with a precise brief, visual references, and a model matched to the intended format."
+          toolIcon={<IconImage />}
+          suggestions={PROMPT_SUGGESTIONS}
+          onSuggestionClick={pickSuggestion}
+          onNew={() => {
+            setPrompt("");
+            setReferenceImage(null);
+          }}
+          onDownload={() => {
+            if (result?.url) window.open(result.url, "_blank");
+          }}
+          onCancel={() => {}}
+        />
+      )}
+
+      {/* Prompt suggestions above dock */}
+      {!generating && !result && (
+        <div className="v6-suggestions-row" style={{ padding: "0 12px" }}>
+          {PROMPT_SUGGESTIONS.slice(0, 4).map((s, i) => (
+            <button
+              key={i}
+              className="v6-prompt-suggestion"
+              onClick={() => pickSuggestion(s)}
+              title={`Use suggestion: ${s.slice(0, 60)}\u2026`}
+            >
+              {s.length > 55 ? s.slice(0, 55) + "\u2026" : s}
+            </button>
+          ))}
+        </div>
+      )}
+
       <PromptDock
         value={prompt}
         onChange={setPrompt}
@@ -343,15 +502,17 @@ export default function ImageStudio() {
       <div className="v6-quote">
         <div className="v6-quote-row">
           <span className="v6-muted">Estimated cost</span>
-          <strong><IconBolt /> {cost || "—"}</strong>
+          <strong className={costPulse ? "v6-cost-badge-pulse" : ""}>
+            <IconBolt /> {cost || "\u2014"}
+          </strong>
         </div>
         <div className="v6-quote-row">
           <span className="v6-muted">Balance</span>
-          <strong className="v6-balance">{balance ?? "—"}</strong>
+          <strong className="v6-balance">{balance ?? "\u2014"}</strong>
         </div>
         <div className="v6-quote-row">
           <span className="v6-muted">Model</span>
-          <strong>{currentModel?.name || "—"}</strong>
+          <strong>{currentModel?.name || "\u2014"}</strong>
         </div>
       </div>
       {!affordable && cost > 0 && (

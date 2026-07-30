@@ -16,6 +16,15 @@ const ENFORCEMENT_MODES = [
 
 const modeColors = { off: "#555", suggest: "#ffb400", strong: "#ff6b35", locked: "#ff4444" };
 
+const TONE_CHIPS = ["Professional", "Playful", "Minimal", "Luxury", "Warm", "Bold", "Technical", "Whimsical", "Authoritative"];
+
+const SAMPLE_IDEAS = [
+  { name: "Tech Startup", desc: "Modern, clean, blue-toned" },
+  { name: "Luxury Fashion", desc: "Elegant, minimal, gold accents" },
+  { name: "Gaming Channel", desc: "Bold, neon, energetic" },
+  { name: "Wellness Brand", desc: "Soft, natural, earthy" },
+];
+
 /* ── Inline SVG Icons ── */
 function SvgIcon({ d, size = 18 }) {
   return (
@@ -36,6 +45,7 @@ const icons = {
   delete: "M6 6l12 12M18 6L6 18",
   sparkle: "M12 3l2 7 7 2-7 2-2 7-2-7-7-2 7-2z",
   arrowDown: "M12 5v14M5 12l7 7 7-7",
+  type: "M4 7V4h16v3M9 20h6M12 4v16",
 };
 
 export default function BrandKitStudio() {
@@ -153,6 +163,11 @@ export default function BrandKitStudio() {
   if (loading) {
     return (
       <div className="v6-builder-grid" style={{ minHeight: "100%" }}>
+        <div className="v6-builder-panel" style={{ display: "grid", gap: 8 }}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="v6-skeleton v6-skeleton-card" />
+          ))}
+        </div>
         <div className="v6-builder-panel" style={{ display: "grid", placeItems: "center" }}>
           <div className="v6-empty-state">
             <div className="v6-empty-orbit"><SvgIcon d={icons.sparkle} size={26} /></div>
@@ -173,61 +188,69 @@ export default function BrandKitStudio() {
             <SvgIcon d={icons.plus} size={14} /> New
           </button>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {brands.map((b) => (
-            <button
-              key={b.id}
-              onClick={() => setSelected(b)}
-              className={`v6-btn v6-ghost ${selected?.id === b.id ? "v6-active" : ""}`}
-              style={{
-                justifyContent: "flex-start",
-                gap: 10,
-                padding: "10px 12px",
-                width: "100%",
-                textAlign: "left",
-                ...(selected?.id === b.id
-                  ? { borderColor: modeColors[b.enforcement || "off"], background: "rgba(255,65,111,0.08)" }
-                  : {}),
-              }}
-            >
-              <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
-                {(b.primaryColors || b.colors || []).slice(0, 3).map((c, i) => (
-                  <span
-                    key={i}
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: "50%",
-                      background: c,
-                      border: "1px solid rgba(255,255,255,0.15)",
-                    }}
-                  />
-                ))}
-                {(b.primaryColors || b.colors || []).length === 0 && (
-                  <span
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: "50%",
-                      background: "#333",
-                      border: "1px solid rgba(255,255,255,0.15)",
-                    }}
-                  />
-                )}
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.2 }}>{b.name}</div>
-                <div className="v6-tiny v6-muted" style={{ marginTop: 1 }}>
-                  {b.description || "No description"}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {brands.map((b) => {
+            const brandColors = (b.primaryColors || b.colors || []).slice(0, 5);
+            const isActive = selected?.id === b.id;
+            return (
+              <button
+                key={b.id}
+                onClick={() => setSelected(b)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  border: `1px solid ${isActive ? modeColors[b.enforcement || "off"] : "var(--v6-line)"}`,
+                  borderRadius: "var(--v6-r)",
+                  background: isActive ? "rgba(255,65,111,0.08)" : "var(--v6-surface2)",
+                  overflow: "hidden",
+                  cursor: "pointer",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: 0,
+                  transition: "all 0.2s ease",
+                  fontFamily: "inherit",
+                }}
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = "color-mix(in srgb, var(--v6-accent), var(--v6-line) 45%)"; }}
+                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = "var(--v6-line)"; }}
+              >
+                {/* Color bar strip */}
+                <div style={{ display: "flex", height: 4 }}>
+                  {brandColors.length > 0
+                    ? brandColors.map((c, i) => (
+                        <div key={i} style={{ flex: 1, background: c }} />
+                      ))
+                    : <div style={{ flex: 1, background: "#333" }} />
+                  }
+                  {brandColors.length === 0 && Array.from({ length: 5 }).map((_, i) => (
+                    <div key={i} style={{ flex: 1, background: i === 0 ? "#333" : "#1a1a1a" }} />
+                  ))}
                 </div>
-              </div>
-            </button>
-          ))}
+                <div style={{ padding: "10px 12px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.2 }}>{b.name}</div>
+                  <div className="v6-tiny v6-muted" style={{ marginTop: 2 }}>
+                    {(b.primaryColors || b.colors || []).length || 0} colors · {b.enforcement || "off"}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
           {brands.length === 0 && (
             <div className="v6-empty-state" style={{ padding: "24px 12px" }}>
-              <SvgIcon d={icons.palette} size={32} />
-              <p className="v6-muted" style={{ fontSize: 11, marginTop: 8 }}>No brand kits yet.</p>
-              <p className="v6-muted v6-tiny">Create one to enforce brand consistency.</p>
+              <div className="v6-empty-orbit"><SvgIcon d={icons.palette} size={26} /></div>
+              <h2 style={{ fontSize: 16 }}>Create your first brand kit</h2>
+              <p>Define brand identity, generate rules via visual fingerprinting, and enforce consistency.</p>
+              <div className="v6-brief-ideas" style={{ marginTop: 10 }}>
+                {SAMPLE_IDEAS.map((idea) => (
+                  <button
+                    key={idea.name}
+                    className="v6-brief-idea"
+                    onClick={() => { setNewName(idea.name); setShowNew(true); }}
+                  >
+                    <strong style={{ display: "block", fontSize: 11 }}>{idea.name}</strong>
+                    {idea.desc}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -308,24 +331,47 @@ export default function BrandKitStudio() {
 
             <div className="v6-section-rule" />
 
-            {/* Color Palette */}
+            {/* Color Palette — swatches with copy-on-click */}
             <div className="v6-field">
               <label className="v6-field-label">Color Palette</label>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {colors.length > 0 ? (
                   colors.map((c, i) => (
-                    <div key={i} style={{ display: "grid", gap: 4, justifyItems: "center" }}>
+                    <button
+                      key={i}
+                      className="v6-tooltip"
+                      data-tooltip={`Click to copy ${c}`}
+                      onClick={async () => {
+                        try { await navigator.clipboard.writeText(c); toast.success(`Copied ${c}`); } catch { toast.error("Failed to copy"); }
+                      }}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 6,
+                        border: 0,
+                        background: "transparent",
+                        cursor: "pointer",
+                        padding: 0,
+                        fontFamily: "inherit",
+                        transition: "transform 0.2s",
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
+                    >
                       <div
                         style={{
-                          width: 42,
-                          height: 42,
-                          borderRadius: 10,
+                          width: 48,
+                          height: 48,
+                          borderRadius: 12,
                           background: c,
-                          border: "1px solid rgba(255,255,255,0.1)",
+                          border: "2px solid rgba(255,255,255,0.12)",
+                          boxShadow: `0 4px 16px ${c}33`,
+                          transition: "box-shadow 0.2s",
                         }}
                       />
-                      <span className="v6-tiny v6-mono v6-muted">{c}</span>
-                    </div>
+                      <span className="v6-tiny v6-mono" style={{ color: "var(--v6-muted)", fontSize: 9 }}>{c}</span>
+                    </button>
                   ))
                 ) : (
                   <p className="v6-muted v6-tiny" style={{ padding: "12px 0" }}>
@@ -335,29 +381,35 @@ export default function BrandKitStudio() {
               </div>
             </div>
 
-            {/* Typography */}
+            {/* Typography — with sample text */}
             <div className="v6-field">
               <label className="v6-field-label">Typography</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div
                   className="v6-quote"
-                  style={{ cursor: "pointer" }}
-                  onClick={() =>
-                    setEditField({ key: "displayFont", value: displayFont })
-                  }
+                  style={{ cursor: "pointer", gap: 6 }}
+                  onClick={() => setEditField({ key: "displayFont", value: displayFont })}
                 >
-                  <span className="v6-tiny v6-muted">Display</span>
-                  <span style={{ fontSize: 18, fontWeight: 700, fontFamily: displayFont }}>{displayFont}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span className="v6-tiny v6-muted">Display</span>
+                    <SvgIcon d={icons.type} size={12} />
+                  </div>
+                  <span style={{ fontSize: 24, fontWeight: 700, fontFamily: `${displayFont}, serif`, lineHeight: 1.1 }}>Headline</span>
+                  <span className="v6-tiny v6-mono v6-muted">{displayFont}</span>
                 </div>
                 <div
                   className="v6-quote"
-                  style={{ cursor: "pointer" }}
-                  onClick={() =>
-                    setEditField({ key: "interfaceFont", value: interfaceFont })
-                  }
+                  style={{ cursor: "pointer", gap: 6 }}
+                  onClick={() => setEditField({ key: "interfaceFont", value: interfaceFont })}
                 >
-                  <span className="v6-tiny v6-muted">Interface</span>
-                  <span style={{ fontSize: 13, fontWeight: 400, fontFamily: interfaceFont }}>{interfaceFont}</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span className="v6-tiny v6-muted">Interface</span>
+                    <SvgIcon d={icons.type} size={12} />
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: 400, fontFamily: `${interfaceFont}, sans-serif`, lineHeight: 1.4 }}>
+                    Body text sample — The quick brown fox
+                  </span>
+                  <span className="v6-tiny v6-mono v6-muted">{interfaceFont}</span>
                 </div>
               </div>
               {(editField?.key === "displayFont" || editField?.key === "interfaceFont") && (
@@ -366,22 +418,17 @@ export default function BrandKitStudio() {
                     className="v6-input"
                     value={editField.value}
                     onChange={(e) => setEditField({ ...editField, value: e.target.value })}
-                    placeholder="Font name"
+                    placeholder="Font family name"
                     autoFocus
                     style={{ fontSize: 12 }}
                   />
                   <button
                     className="v6-btn v6-primary v6-sm"
-                    onClick={() => {
-                      updateBrand(selected.id, { [editField.key]: editField.value });
-                    }}
+                    onClick={() => { updateBrand(selected.id, { [editField.key]: editField.value }); }}
                   >
                     <SvgIcon d={icons.check} size={14} />
                   </button>
-                  <button
-                    className="v6-btn v6-sm"
-                    onClick={() => setEditField(null)}
-                  >
+                  <button className="v6-btn v6-sm" onClick={() => setEditField(null)}>
                     <SvgIcon d={icons.delete} size={14} />
                   </button>
                 </div>
@@ -394,28 +441,76 @@ export default function BrandKitStudio() {
             <div>
               <h3 style={{ fontSize: 13, margin: "0 0 10px" }}>Generation Rules</h3>
 
-              {/* Tone of Voice */}
-              <div className="v6-field" style={{ marginBottom: 12 }}>
+              {/* Tone of Voice — with example chips */}
+              <div className="v6-field" style={{ marginBottom: 14 }}>
                 <label className="v6-field-label">Tone of Voice</label>
+                <div className="v6-chip-row" style={{ marginBottom: 8 }}>
+                  {TONE_CHIPS.map((tone) => {
+                    const isSelected = toneOfVoice.toLowerCase().includes(tone.toLowerCase());
+                    return (
+                      <button
+                        key={tone}
+                        className={`v6-chip ${isSelected ? "v6-active" : ""}`}
+                        style={{ fontSize: 9 }}
+                        onClick={() => {
+                          const current = toneOfVoice;
+                          const newTone = current ? `${current}, ${tone.toLowerCase()}` : tone.toLowerCase();
+                          setSelected({ ...selected, toneOfVoice: newTone });
+                          updateBrand(selected.id, { toneOfVoice: newTone });
+                        }}
+                      >
+                        {tone}
+                      </button>
+                    );
+                  })}
+                </div>
                 <textarea
                   className="v6-textarea"
                   value={toneOfVoice}
-                  onChange={(e) => {
-                    setSelected({ ...selected, toneOfVoice: e.target.value });
-                  }}
+                  onChange={(e) => { setSelected({ ...selected, toneOfVoice: e.target.value }); }}
                   onBlur={() => updateBrand(selected.id, { toneOfVoice: selected.toneOfVoice })}
                   placeholder="e.g. Warm, authoritative, playful — avoid corporate jargon..."
                   style={{ minHeight: 72, fontSize: 12 }}
                 />
               </div>
 
-              {/* Visual Avoid List */}
-              <div className="v6-field" style={{ marginBottom: 12 }}>
+              {/* Visual Avoid List — tag chips with X */}
+              <div className="v6-field" style={{ marginBottom: 14 }}>
                 <label className="v6-field-label">Visual Avoid-List</label>
                 <div className="v6-chip-row">
                   {avoidList.map((item, i) => (
-                    <span key={i} className="v6-chip v6-active" style={{ borderColor: "var(--v6-bad)", color: "var(--v6-bad)" }}>
+                    <span
+                      key={i}
+                      className="v6-chip"
+                      style={{
+                        borderColor: "var(--v6-bad)",
+                        color: "var(--v6-bad)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        cursor: "default",
+                      }}
+                    >
                       {item}
+                      <button
+                        onClick={() => {
+                          const next = avoidList.filter((_, j) => j !== i);
+                          updateBrand(selected.id, { avoid: next });
+                        }}
+                        style={{
+                          border: 0,
+                          background: "transparent",
+                          padding: 0,
+                          cursor: "pointer",
+                          color: "inherit",
+                          display: "flex",
+                          alignItems: "center",
+                          lineHeight: 1,
+                        }}
+                        title="Remove"
+                      >
+                        <SvgIcon d={icons.delete} size={11} />
+                      </button>
                     </span>
                   ))}
                   <button
@@ -436,9 +531,7 @@ export default function BrandKitStudio() {
                 <textarea
                   className="v6-textarea"
                   value={compositionRules}
-                  onChange={(e) => {
-                    setSelected({ ...selected, compositionRules: e.target.value });
-                  }}
+                  onChange={(e) => { setSelected({ ...selected, compositionRules: e.target.value }); }}
                   onBlur={() => updateBrand(selected.id, { compositionRules: selected.compositionRules })}
                   placeholder="e.g. Subject centered, negative space on left, golden ratio layout..."
                   style={{ minHeight: 72, fontSize: 12 }}
@@ -451,8 +544,16 @@ export default function BrandKitStudio() {
               <button
                 onClick={() => deleteBrand(selected.id)}
                 className="v6-chip"
-                style={{ borderColor: "var(--v6-bad)", color: "var(--v6-bad)", cursor: "pointer" }}
+                style={{
+                  borderColor: "var(--v6-bad)",
+                  color: "var(--v6-bad)",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
               >
+                <SvgIcon d={icons.delete} size={12} />
                 Delete Brand Kit
               </button>
             </div>
@@ -462,6 +563,20 @@ export default function BrandKitStudio() {
             <div className="v6-empty-orbit"><SvgIcon d={icons.palette} size={26} /></div>
             <h2>{brands.length === 0 ? "Create your first brand kit" : "Select a Brand Kit"}</h2>
             <p>Define brand identity, generate rules via visual fingerprinting, and enforce consistency.</p>
+            {brands.length === 0 && (
+              <div className="v6-brief-ideas">
+                {SAMPLE_IDEAS.map((idea) => (
+                  <button
+                    key={idea.name}
+                    className="v6-brief-idea"
+                    onClick={() => { setNewName(idea.name); setShowNew(true); }}
+                  >
+                    <strong style={{ display: "block", fontSize: 11 }}>{idea.name}</strong>
+                    {idea.desc}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -472,17 +587,32 @@ export default function BrandKitStudio() {
           <div style={{ display: "grid", gap: 16 }}>
             <h3 style={{ fontSize: 13, margin: 0 }}>Actions</h3>
 
-            {/* Fingerprint */}
+            {/* Fingerprint — better loading state */}
             <div className="v6-field">
               <label className="v6-field-label">Visual Intelligence</label>
               <button
-                className="v6-btn"
-                style={{ width: "100%" }}
+                className="v6-btn v6-primary"
+                style={{ width: "100%", position: "relative" }}
                 onClick={runFingerprint}
                 disabled={fingerprinting}
               >
-                <SvgIcon d={icons.fingerprint} size={16} />
-                {fingerprinting ? "Analyzing..." : "Run Fingerprint"}
+                {fingerprinting ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{
+                      width: 14, height: 14, borderRadius: "50%",
+                      border: "2px solid rgba(255,255,255,0.4)",
+                      borderTopColor: "#fff",
+                      animation: "v6-gen-orbit-spin 0.8s linear infinite",
+                      display: "inline-block",
+                    }} />
+                    Analyzing...
+                  </span>
+                ) : (
+                  <>
+                    <SvgIcon d={icons.fingerprint} size={16} />
+                    Run Fingerprint
+                  </>
+                )}
               </button>
               <p className="v6-tiny v6-muted" style={{ marginTop: 6 }}>
                 Analyzes brand assets to extract colors, typography, and style patterns automatically.
@@ -491,7 +621,7 @@ export default function BrandKitStudio() {
 
             <div className="v6-section-rule" />
 
-            {/* Compliance Mode */}
+            {/* Compliance Mode — segmented control with descriptions */}
             <div className="v6-field">
               <label className="v6-field-label">Compliance Mode</label>
               <div style={{ display: "grid", gap: 6 }}>
@@ -501,18 +631,29 @@ export default function BrandKitStudio() {
                     <button
                       key={m.id}
                       onClick={() => updateEnforcement(m.id)}
-                      className={`v6-btn v6-ghost`}
                       style={{
-                        width: "100%",
-                        justifyContent: "flex-start",
+                        display: "flex",
+                        alignItems: "flex-start",
                         gap: 10,
                         padding: "10px 12px",
-                        ...(isActive
-                          ? { borderColor: modeColors[m.id], color: modeColors[m.id], background: `${modeColors[m.id]}11` }
-                          : {}),
+                        width: "100%",
+                        border: `1px solid ${isActive ? modeColors[m.id] : "var(--v6-line)"}`,
+                        borderRadius: 10,
+                        background: isActive ? `${modeColors[m.id]}14` : "transparent",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontFamily: "inherit",
+                        color: isActive ? modeColors[m.id] : "var(--v6-muted)",
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) { e.currentTarget.style.borderColor = "color-mix(in srgb, var(--v6-accent), var(--v6-line) 45%)"; e.currentTarget.style.color = "var(--v6-text)"; }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) { e.currentTarget.style.borderColor = "var(--v6-line)"; e.currentTarget.style.color = "var(--v6-muted)"; }
                       }}
                     >
-                      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 1 }}>
                         {(m.id === "off" && (<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />)) ||
                           (m.id === "suggest" && (<>
                             <circle cx="13.5" cy="6.5" r="2.5"/>
@@ -528,8 +669,11 @@ export default function BrandKitStudio() {
                       </svg>
                       <div>
                         <div style={{ fontSize: 11, fontWeight: 700 }}>{m.label}</div>
-                        <div className="v6-tiny v6-muted">{m.desc}</div>
+                        <div style={{ fontSize: 9, color: isActive ? modeColors[m.id] : "var(--v6-muted)", opacity: 0.8, marginTop: 1, lineHeight: 1.3 }}>{m.desc}</div>
                       </div>
+                      {isActive && (
+                        <SvgIcon d={icons.check} size={14} />
+                      )}
                     </button>
                   );
                 })}
@@ -538,26 +682,22 @@ export default function BrandKitStudio() {
 
             <div className="v6-section-rule" />
 
-            {/* Active Toggle */}
+            {/* Active Toggle — visual toggle switch */}
             <div className="v6-field">
               <label className="v6-field-label">Active Brand</label>
               <button
-                className="v6-btn"
-                style={{ width: "100%" }}
+                className="v6-toggle"
+                style={{ border: 0, background: "transparent", fontFamily: "inherit", textAlign: "left" }}
                 onClick={toggleActive}
               >
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: "50%",
-                    background: selected.isActive !== false ? "var(--v6-good)" : "var(--v6-bad)",
-                    boxShadow: selected.isActive !== false ? "0 0 8px var(--v6-good)" : "none",
-                  }}
-                />
-                {selected.isActive !== false ? "Active" : "Inactive"} — Click to toggle
+                <div className={`v6-toggle-track ${selected.isActive !== false ? "v6-on" : ""}`}>
+                  <div className="v6-toggle-thumb" />
+                </div>
+                <span className="v6-toggle-label">
+                  {selected.isActive !== false ? "Active" : "Inactive"}
+                </span>
               </button>
-              <p className="v6-tiny v6-muted" style={{ marginTop: 6 }}>
+              <p className="v6-tiny v6-muted" style={{ marginTop: 8 }}>
                 Inactive brands won't influence generation but remain saved.
               </p>
             </div>
@@ -580,29 +720,71 @@ export default function BrandKitStudio() {
             onClick={() => setShowNew(false)}
           >
             <motion.div
-              className="v6-modal"
+              className="v6-modal v6-entrance-scale"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.25, ease: EASE }}
               onClick={(e) => e.stopPropagation()}
             >
-              <h2 style={{ fontSize: 20, fontWeight: 700, margin: "0 0 6px" }}>New Brand Kit</h2>
-              <p className="v6-muted v6-tiny" style={{ margin: "0 0 14px" }}>
-                Create a brand identity system to maintain visual consistency.
-              </p>
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Brand name (e.g. Acme Corp)"
-                className="v6-input"
-                autoFocus
-                onKeyDown={(e) => e.key === "Enter" && createBrand()}
-              />
-              <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+                <div>
+                  <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>New Brand Kit</h2>
+                  <p className="v6-muted v6-tiny" style={{ margin: "4px 0 0" }}>
+                    Create a brand identity system to maintain visual consistency.
+                  </p>
+                </div>
+                <button
+                  className="v6-btn v6-icon-only v6-sm"
+                  onClick={() => setShowNew(false)}
+                >
+                  <SvgIcon d={icons.delete} size={14} />
+                </button>
+              </div>
+
+              <div className="v6-section-rule" style={{ marginBottom: 14 }} />
+
+              {/* Name section */}
+              <div className="v6-field" style={{ marginBottom: 14 }}>
+                <label className="v6-field-label">Brand Name</label>
+                <input
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Acme Corp, Luxury Fashion Co."
+                  className="v6-input"
+                  autoFocus
+                  onKeyDown={(e) => e.key === "Enter" && createBrand()}
+                />
+              </div>
+
+              {/* Quick start ideas */}
+              <div className="v6-field">
+                <label className="v6-field-label">Quick Start</label>
+                <div className="v6-brief-ideas" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                  {SAMPLE_IDEAS.map((idea) => (
+                    <button
+                      key={idea.name}
+                      className="v6-brief-idea"
+                      onClick={() => setNewName(idea.name)}
+                    >
+                      <strong style={{ display: "block", fontSize: 11 }}>{idea.name}</strong>
+                      {idea.desc}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="v6-section-rule" style={{ margin: "14px 0" }} />
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                 <button onClick={() => setShowNew(false)} className="v6-btn">Cancel</button>
-                <button onClick={createBrand} disabled={!newName.trim()} className="v6-btn v6-primary">
-                  <SvgIcon d={icons.plus} size={14} /> Create
+                <button
+                  onClick={createBrand}
+                  disabled={!newName.trim()}
+                  className="v6-btn v6-primary"
+                >
+                  <SvgIcon d={icons.plus} size={14} /> Create Brand
                 </button>
               </div>
             </motion.div>

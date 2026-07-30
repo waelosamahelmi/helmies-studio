@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 /* ── Inline SVGs ── */
 const IconOrbit = () => (
   <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -68,6 +70,38 @@ const IconMaximize = () => (
   </svg>
 );
 
+const IconSpark = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6.4-4.8-6.4 4.8 2.4-7.2-6-4.8h7.6z" />
+  </svg>
+);
+
+/* ── Determine generation phase from progress ── */
+function getPhase(progress) {
+  if (progress == null) return "generate";
+  if (progress < 20) return "prepare";
+  if (progress < 85) return "generate";
+  return "refine";
+}
+
+function getPhaseLabel(phase, stage) {
+  if (stage) return stage;
+  switch (phase) {
+    case "prepare": return "Preparing\u2026";
+    case "generate": return "Generating";
+    case "refine":  return "Refining";
+    default:        return "Generating";
+  }
+}
+
+/* ── Prompt suggestions for empty state ── */
+const DEFAULT_SUGGESTIONS = [
+  "A cinematic portrait with soft golden light",
+  "Abstract geometric composition, neon palette",
+  "Moody landscape at golden hour, film grain",
+  "Product photography on dark reflective surface",
+];
+
 /* ══════════════════════════════════════════════════════════════ */
 export default function StageArea({
   generating = false,
@@ -86,7 +120,21 @@ export default function StageArea({
   onDownload,
   onCanvas,
   onReference,
+  suggestions = DEFAULT_SUGGESTIONS,
+  onSuggestionClick,
 }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    if (!onDownload) return;
+    setDownloading(true);
+    try {
+      await onDownload();
+    } finally {
+      setTimeout(() => setDownloading(false), 1200);
+    }
+  };
+
   /* ── Empty state ── */
   if (!generating && !result) {
     return (
@@ -98,8 +146,22 @@ export default function StageArea({
           </div>
           <h2>{toolLabel}</h2>
           <p>{toolDesc}</p>
+          {/* Prompt suggestions */}
+          {suggestions.length > 0 && (
+            <div className="v6-prompt-suggestions">
+              {suggestions.slice(0, 4).map((s, i) => (
+                <button
+                  key={i}
+                  className="v6-prompt-suggestion"
+                  onClick={() => onSuggestionClick?.(s)}
+                >
+                  {s.length > 60 ? s.slice(0, 60) + "\u2026" : s}
+                </button>
+              ))}
+            </div>
+          )}
           {onNew && (
-            <button className="v6-btn v6-primary" onClick={onNew}>
+            <button className="v6-btn v6-primary" onClick={onNew} style={{ marginTop: 8 }}>
               <IconMaximize /> Load art direction
             </button>
           )}
@@ -112,28 +174,28 @@ export default function StageArea({
   if (result && !generating) {
     const url = result?.url || result?.outputUrl || result;
     const title = resultTitle || result?.name || "New creative output";
-    const credits = result?.creditsUsed ?? result?.credits ?? "—";
-    const elapsed = result?.elapsed ?? "—";
-    const resolution = result?.resolution ?? result?.dimensions ?? (quality && ratio ? `${quality} · ${ratio}` : "—");
+    const credits = result?.creditsUsed ?? result?.credits ?? "\u2014";
+    const elapsed = result?.elapsed ?? "\u2014";
+    const resolution = result?.resolution ?? result?.dimensions ?? (quality && ratio ? `${quality} \u00b7 ${ratio}` : "\u2014");
 
     return (
       <div className="v6-stage">
         <div className="v6-stage-grid" />
-        <div className="v6-result-view">
+        <div className="v6-result-view v6-entrance-scale">
           {/* Media panel */}
           <div className="v6-result-media">
             {typeof url === "string" ? (
               url.endsWith(".mp4") || url.endsWith(".webm") || url.includes("/video/") ? (
                 <video src={url} controls playsInline />
               ) : (
-                <img src={url} alt={title} />
+                <img src={url} alt={title} loading="lazy" />
               )
             ) : null}
           </div>
 
           {/* Info panel */}
           <div className="v6-result-info">
-            <div>
+            <div className="v6-entrance-fade">
               <div className="v6-eyebrow">Generation complete</div>
               <h2>{title}</h2>
             </div>
@@ -142,7 +204,7 @@ export default function StageArea({
             <div className="v6-quote">
               <div className="v6-quote-row">
                 <span className="v6-muted">Model</span>
-                <strong>{model || "—"}</strong>
+                <strong>{model || "\u2014"}</strong>
               </div>
               {resolution && (
                 <div className="v6-quote-row">
@@ -167,8 +229,12 @@ export default function StageArea({
             {/* Actions */}
             <div className="v6-result-actions">
               {onDownload && (
-                <button className="v6-btn v6-primary" onClick={onDownload}>
-                  <IconDownload /> Download
+                <button
+                  className={`v6-btn v6-primary${downloading ? " v6-downloading" : ""}`}
+                  onClick={handleDownload}
+                  disabled={downloading}
+                >
+                  <IconDownload /> {downloading ? "Saving\u2026" : "Download"}
                 </button>
               )}
               {onNew && (
@@ -195,15 +261,39 @@ export default function StageArea({
 
   /* ── Generating state ── */
   const progressPct = progress != null ? Math.min(Math.max(progress, 0), 100) : null;
-  const stageText = stage || "Generating";
+  const phase = getPhase(progressPct);
+  const stageText = getPhaseLabel(phase, stage);
+  const phaseClass = `v6-phase-${phase}`;
 
   return (
-    <div className="v6-stage v6-generating">
+    <div className={`v6-stage v6-generating ${phaseClass}`}>
       <div className="v6-stage-grid" />
 
       <div className="v6-generation-space">
+        {/* ── Creative loading visuals ── */}
+        {/* Light beam sweep */}
+        <div className="v6-gen-beams" />
+
+        {/* Orbiting rings */}
+        <div className="v6-generation-orbits">
+          <div className="v6-gen-orbit" />
+          <div className="v6-gen-orbit" />
+          <div className="v6-gen-orbit" />
+          {/* Orbiting dots (atoms) */}
+          <div className="v6-gen-dot" />
+          <div className="v6-gen-dot" />
+          <div className="v6-gen-dot" />
+        </div>
+
+        {/* Floating particles */}
+        <div className="v6-gen-particles">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="v6-gen-particle" />
+          ))}
+        </div>
+
         {/* Caption */}
-        <div className="v6-generation-caption">{stageText}</div>
+        <div className={`v6-generation-caption ${phaseClass}`}>{stageText}</div>
 
         {/* HUD with CSS-only spinning core */}
         <div className="v6-generation-hud">
@@ -230,7 +320,7 @@ export default function StageArea({
           {(quality || ratio) && (
             <div>
               <span>Settings</span>
-              <strong>{[quality, ratio].filter(Boolean).join(" · ")}</strong>
+              <strong>{[quality, ratio].filter(Boolean).join(" \u00b7 ")}</strong>
             </div>
           )}
         </div>

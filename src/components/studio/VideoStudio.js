@@ -75,12 +75,41 @@ const IconTrash = () => (
   </svg>
 );
 
+const IconUpload = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+    <polyline points="17,8 12,3 7,8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
+/* ── Video prompt suggestions ── */
+const VIDEO_SUGGESTIONS = [
+  "Cinematic drone shot over a misty mountain range at dawn, slow reveal",
+  "Product showcase with rotating camera, glossy reflections, macro detail",
+  "Time-lapse of a city skyline from day to night, neon lights activating",
+  "Nature close-up: butterfly emerging from chrysalis, shallow depth of field",
+  "Anime-style character transformation sequence with particle effects",
+  "Abstract fluid simulation with vibrant iridescent colors, 60fps smooth",
+];
+
 /* ── Capability filter map ── */
 const MODE_CAPABILITY = {
   ttv: "text-to-video",
   i2v: "image-to-video",
   v2v: "video-to-video",
 };
+
+/* ── Camera motion presets ── */
+const CAMERA_MOTIONS = [
+  { key: "static", label: "Static", desc: "No camera movement" },
+  { key: "pan", label: "Pan", desc: "Horizontal sweep" },
+  { key: "zoom", label: "Zoom", desc: "Push in or pull out" },
+  { key: "tracking", label: "Tracking", desc: "Follow subject motion" },
+];
+
+/* ── Resolution map for visual bar ── */
+const RES_MAX = { "480p": 0.25, "720p": 0.5, "1080p": 0.75, "2K": 0.85, "4K": 1 };
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function VideoStudio() {
@@ -103,20 +132,29 @@ export default function VideoStudio() {
   const [cameraMotion, setCameraMotion] = useState("static");
 
   /* ── References ── */
-  const [referenceImage, setReferenceImage] = useState(null); // { url, name, uploading }
-  const [referenceVideo, setReferenceVideo] = useState(null); // { url, name, uploading }
-  const [startFrame, setStartFrame] = useState(null); // { url, name, uploading }
-  const [endFrame, setEndFrame] = useState(null); // { url, name, uploading }
+  const [referenceImage, setReferenceImage] = useState(null);
+  const [referenceVideo, setReferenceVideo] = useState(null);
+  const [startFrame, setStartFrame] = useState(null);
+  const [endFrame, setEndFrame] = useState(null);
   const [uploadError, setUploadError] = useState("");
 
   /* ── Generation ── */
   const [genStage, setGenStage] = useState("");
   const { loading: generating, result, error, elapsed, submit } = useAsyncGeneration();
 
+  /* ── Drag-drop ── */
+  const [dragOver, setDragOver] = useState(false);
+  const dragCounter = useRef(0);
+
+  /* ── Scrub state ── */
+  const [scrubPos, setScrubPos] = useState(0);
+  const [scrubHover, setScrubHover] = useState(false);
+  const scrubRef = useRef(null);
+
   /* ── Current model ── */
   const currentModel = filteredModels.find((m) => m.id === selectedModelId) || filteredModels[0] || {};
 
-  /* ── Derived options from current model ── */
+  /* ── Derived options ── */
   const durations = currentModel.durations?.length ? currentModel.durations : [3, 5, 10, 15];
   const aspects = currentModel.aspectRatios?.length ? currentModel.aspectRatios : ["16:9", "9:16", "1:1"];
   const resolutions = currentModel.resolutions?.length ? currentModel.resolutions : ["720p"];
@@ -194,6 +232,26 @@ export default function VideoStudio() {
     fileInputRef.current?.click();
   }, []);
 
+  /* ── Drag-drop handlers ── */
+  const handleDragEnter = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer?.types?.includes("Files")) setDragOver(true);
+  }, []);
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) { dragCounter.current = 0; setDragOver(false); }
+  }, []);
+  const handleDragOver = useCallback((e) => { e.preventDefault(); e.stopPropagation(); }, []);
+  const handleDrop = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    dragCounter.current = 0;
+    setDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleUpload(file);
+  }, [handleUpload]);
+
   /* ── Generate ── */
   const handleGenerate = useCallback(() => {
     if (!prompt.trim() || !affordable) return;
@@ -249,6 +307,25 @@ export default function VideoStudio() {
     if (result?.url) window.open(result.url, "_blank");
   }, [result]);
 
+  const pickSuggestion = useCallback((s) => {
+    setPrompt((prev) => prev ? `${prev}. ${s}` : s);
+  }, []);
+
+  /* ── Scrubber mouse ── */
+  const handleScrubMove = useCallback((e) => {
+    if (!scrubRef.current) return;
+    const rect = scrubRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    setScrubPos(Math.min(100, Math.max(0, (x / rect.width) * 100)));
+  }, []);
+
+  /* ── Duration markers ── */
+  const maxDur = Math.max(...durations.map(Number), 15);
+  const durMarkers = durations.map(Number).filter((d) => d > 0);
+
+  /* ── Resolution bar width ── */
+  const resBarPct = (RES_MAX[resolution] || 0.5) * 100;
+
   /* ── Controls sidebar ── */
   const controls = (
     <div className="v6-control-stack">
@@ -272,7 +349,7 @@ export default function VideoStudio() {
         </div>
       </div>
 
-      {/* ── Duration ── */}
+      {/* ── Duration with timeline ── */}
       <div className="v6-field">
         <span className="v6-field-label">
           Duration <span className="v6-muted">{duration}s</span>
@@ -287,6 +364,21 @@ export default function VideoStudio() {
               {d}s
             </button>
           ))}
+        </div>
+        {/* Duration timeline visual */}
+        <div className="v6-timeline-bar" style={{ marginTop: 6 }}>
+          <span className="v6-timeline-label">0s</span>
+          <div className="v6-timeline-track">
+            <div className="v6-timeline-fill" style={{ width: `${(Number(duration) / maxDur) * 100}%` }} />
+            {durMarkers.map((d) => (
+              <div
+                key={d}
+                className="v6-timeline-marker"
+                style={{ left: `${(d / maxDur) * 100}%` }}
+              />
+            ))}
+          </div>
+          <span className="v6-timeline-label">{maxDur}s</span>
         </div>
       </div>
 
@@ -308,7 +400,7 @@ export default function VideoStudio() {
         </div>
       </div>
 
-      {/* ── Resolution ── */}
+      {/* ── Resolution with visual bar ── */}
       <div className="v6-field">
         <span className="v6-field-label">Resolution</span>
         <div className="v6-chip-row">
@@ -322,23 +414,34 @@ export default function VideoStudio() {
             </button>
           ))}
         </div>
+        <div className="v6-resolution-bar" style={{ marginTop: 6 }}>
+          <span className="v6-tiny v6-muted">SD</span>
+          <div className="v6-timeline-track" style={{ flex: 1 }}>
+            <div className="v6-resolution-bar-fill" style={{ width: `${resBarPct}%` }} />
+          </div>
+          <span className="v6-tiny v6-muted">4K</span>
+        </div>
       </div>
 
-      {/* ── Camera motion ── */}
+      {/* ── Camera motion with animated preview ── */}
       <div className="v6-field">
         <span className="v6-field-label">Camera Motion</span>
-        <div className="v6-select-wrap">
-          <select
-            className="v6-select"
-            value={cameraMotion}
-            onChange={(e) => setCameraMotion(e.target.value)}
-          >
-            <option value="static">Static</option>
-            <option value="pan">Pan</option>
-            <option value="zoom">Zoom</option>
-            <option value="tracking">Tracking</option>
-          </select>
-          <IconChevronDown />
+        <div className="v6-camera-motion-grid">
+          {CAMERA_MOTIONS.map((cm) => (
+            <button
+              key={cm.key}
+              className={`v6-camera-motion-chip${cameraMotion === cm.key ? " v6-active" : ""}`}
+              onClick={() => setCameraMotion(cm.key)}
+            >
+              <div className={`v6-camera-motion-icon v6-camera-${cm.key}`}>
+                <div className="v6-camera-inner" />
+              </div>
+              <div>
+                <span className="v6-motion-label">{cm.label}</span>
+                <span className="v6-motion-desc">{cm.desc}</span>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -356,7 +459,7 @@ export default function VideoStudio() {
                   </button>
                 )}
                 {referenceImage.uploading && (
-                  <span className="v6-muted v6-tiny">Uploading…</span>
+                  <span className="v6-muted v6-tiny">Uploading\u2026</span>
                 )}
               </div>
             </div>
@@ -376,19 +479,21 @@ export default function VideoStudio() {
           <div className="v6-field">
             <span className="v6-field-label">Reference Video</span>
             {referenceVideo ? (
-              <div className="v6-upload-preview">
-                <div className="v6-upload-preview-item">
-                  {referenceVideo.name}
-                  {!referenceVideo.uploading && (
-                    <button onClick={() => setReferenceVideo(null)}>
-                      <IconTrash />
-                    </button>
-                  )}
-                  {referenceVideo.uploading && (
-                    <span className="v6-muted v6-tiny">Uploading…</span>
-                  )}
+              <>
+                <div className="v6-video-preview">
+                  <video src={referenceVideo.url} controls={false} muted />
+                  <span className="v6-video-duration-badge">{referenceVideo.name}</span>
                 </div>
-              </div>
+                {!referenceVideo.uploading && (
+                  <button
+                    className="v6-btn v6-sm v6-ghost"
+                    onClick={() => setReferenceVideo(null)}
+                    style={{ marginTop: 4 }}
+                  >
+                    <IconTrash /> Remove
+                  </button>
+                )}
+              </>
             ) : (
               <button
                 className="v6-drop"
@@ -494,21 +599,44 @@ export default function VideoStudio() {
     </div>
   );
 
-  /* ── Center: StageArea ── */
+  /* ── Center: StageArea with drag-drop ── */
   const stageArea = (
-    <StageArea
-      generating={generating}
-      progress={elapsed > 0 ? Math.min((elapsed % 30) * 3.3, 99) : null}
-      stage={genStage}
-      model={currentModel.name || selectedModelId}
-      result={result}
-      resultTitle="Video generation"
-      toolLabel="Video Studio"
-      toolDesc="Direct motion from text or frames with duration-aware pricing and model-aware controls."
-      toolIcon={<IconFilm />}
-      onNew={handleNew}
-      onDownload={handleDownload}
-    />
+    <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
+      {/* Drag-drop overlay (I2V / V2V modes) */}
+      {(mode === "i2v" || mode === "v2v") && !generating && !result && (
+        <div
+          className={`v6-drop-zone${dragOver ? " v6-drag-over" : ""}`}
+          onDragEnter={handleDragEnter}
+          onDragLeave={handleDragLeave}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+          style={{ pointerEvents: dragOver ? "auto" : "none", zIndex: dragOver ? 11 : 10, position: "absolute" }}
+        >
+          {!dragOver && !referenceImage && !referenceVideo && (
+            <span className="v6-drop-zone-label">
+              <IconUpload />
+              {mode === "i2v" ? "Drop an image to start" : "Drop a video to start"}
+            </span>
+          )}
+        </div>
+      )}
+
+      <StageArea
+        generating={generating}
+        progress={elapsed > 0 ? Math.min((elapsed % 30) * 3.3, 99) : null}
+        stage={genStage}
+        model={currentModel.name || selectedModelId}
+        result={result}
+        resultTitle="Video generation"
+        toolLabel="Video Studio"
+        toolDesc="Direct motion from text or frames with duration-aware pricing and model-aware controls."
+        toolIcon={<IconFilm />}
+        suggestions={VIDEO_SUGGESTIONS}
+        onSuggestionClick={pickSuggestion}
+        onNew={handleNew}
+        onDownload={handleDownload}
+      />
+    </div>
   );
 
   /* ── Bottom: PromptDock ── */
@@ -524,10 +652,38 @@ export default function VideoStudio() {
     />
   );
 
+  /* ── Result scrubber (video result) ── */
+  const resultScrub = result?.url && !generating ? (
+    <div
+      className="v6-scrub-bar"
+      ref={scrubRef}
+      onMouseMove={handleScrubMove}
+      onMouseEnter={() => setScrubHover(true)}
+      onMouseLeave={() => { setScrubHover(false); setScrubPos(0); }}
+      style={{ margin: "0 12px 6px" }}
+    >
+      <div className="v6-timeline-label" style={{ marginRight: 6 }}>0s</div>
+      <div className="v6-scrub-track">
+        <div className="v6-scrub-thumb" style={{ left: `${scrubPos}%` }} />
+        {scrubHover && (
+          <div className="v6-scrub-preview" style={{ left: `${scrubPos}%` }}>
+            <img
+              src={result.url || result.outputUrl}
+              alt="Frame preview"
+              style={{ objectFit: "cover", width: "100%", height: "100%" }}
+            />
+          </div>
+        )}
+      </div>
+      <div className="v6-timeline-label" style={{ marginLeft: 6 }}>
+        {currentModel.durations?.[0] || duration}s
+      </div>
+    </div>
+  ) : null;
+
   /* ── Inspector sidebar ── */
   const inspector = (
     <>
-      {/* Model selector */}
       <ModelSelector
         models={filteredModels}
         selectedModelId={selectedModelId}
@@ -538,12 +694,11 @@ export default function VideoStudio() {
 
       <div className="v6-section-rule" style={{ margin: "14px 0" }} />
 
-      {/* Cost quote */}
       <div className="v6-quote">
         <div className="v6-quote-row">
           <span className="v6-muted">Estimated Cost</span>
           <strong>
-            <IconBolt /> {credits || "—"}
+            <IconBolt /> {credits || "\u2014"}
           </strong>
         </div>
         <div className="v6-quote-row">
@@ -557,16 +712,15 @@ export default function VideoStudio() {
         <div className="v6-quote-row">
           <span className="v6-muted">Balance</span>
           <strong className={balance != null ? "v6-balance" : ""}>
-            {balance ?? "—"}
+            {balance ?? "\u2014"}
           </strong>
         </div>
       </div>
 
-      {/* Provider info */}
       <div className="v6-quote" style={{ marginTop: 10 }}>
         <div className="v6-quote-row">
           <span className="v6-muted">Provider</span>
-          <strong>{currentModel.provider || "—"}</strong>
+          <strong>{currentModel.provider || "\u2014"}</strong>
         </div>
         <div className="v6-quote-row">
           <span className="v6-muted">Speed</span>
@@ -576,7 +730,6 @@ export default function VideoStudio() {
         </div>
       </div>
 
-      {/* Insufficient credits warning */}
       {!affordable && credits > 0 && (
         <div className="v6-quote" style={{ marginTop: 10, borderColor: "var(--v6-bad)" }}>
           <div className="v6-quote-row">
@@ -590,7 +743,6 @@ export default function VideoStudio() {
         </div>
       )}
 
-      {/* Error display */}
       {error && (
         <div className="v6-quote" style={{ marginTop: 10, borderColor: "var(--v6-bad)" }}>
           <div className="v6-quote-row">
@@ -604,12 +756,27 @@ export default function VideoStudio() {
     </>
   );
 
-  /* ── Layout ── */
   return (
     <StudioLayout controls={controls} inspector={inspector}>
       {stageArea}
       {!generating && (
-        <div style={{ padding: "0 20px 20px" }}>
+        <div style={{ padding: "0 12px 12px" }}>
+          {resultScrub}
+          {/* Prompt suggestions */}
+          {!result && (
+            <div className="v6-suggestions-row" style={{ padding: "0 0 4px" }}>
+              {VIDEO_SUGGESTIONS.slice(0, 4).map((s, i) => (
+                <button
+                  key={i}
+                  className="v6-prompt-suggestion"
+                  onClick={() => pickSuggestion(s)}
+                  title={`Use: ${s.slice(0, 60)}\u2026`}
+                >
+                  {s.length > 55 ? s.slice(0, 55) + "\u2026" : s}
+                </button>
+              ))}
+            </div>
+          )}
           {promptDock}
         </div>
       )}

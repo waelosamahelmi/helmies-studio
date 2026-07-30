@@ -33,6 +33,9 @@ const iconPaths = {
   more: "M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z M19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z M5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
   upload: "M12 3v12M7 10l5-5 5 5M5 21h14",
   arrowRight: "M5 12h14M13 6l6 6-6 6",
+  copy: "M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M16 20h2a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-8a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2z",
+  grid: "M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z",
+  list: "M3 12h18M3 6h18M3 18h18",
 };
 
 export default function AssetLibraryStudio() {
@@ -44,6 +47,7 @@ export default function AssetLibraryStudio() {
   const [selected, setSelected] = useState(null);
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState(null);
+  const [viewMode, setViewMode] = useState("grid");
 
   const loadAssets = useCallback(
     async (cursor = null) => {
@@ -120,6 +124,14 @@ export default function AssetLibraryStudio() {
     return true;
   });
 
+  // Counts per type
+  const typeCounts = {};
+  assets.forEach((a) => {
+    const t = a.type || "image";
+    typeCounts[t] = (typeCounts[t] || 0) + 1;
+  });
+  const allCount = assets.length;
+
   return (
     <div className="v6-page-content">
       {/* Page Head */}
@@ -129,27 +141,78 @@ export default function AssetLibraryStudio() {
           <h1>Asset Studio</h1>
           <p>Browse, organize, and reuse your generated media assets.</p>
         </div>
-        <button
-          className="v6-btn v6-primary"
-          onClick={() => toast.success("Import dialog coming soon")}
-        >
-          <SvgIcon d={iconPaths.upload} size={14} />
-          Import Assets
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* View toggle */}
+          <div style={{ display: "flex", borderRadius: 9, border: "1px solid var(--v6-line)", overflow: "hidden" }}>
+            <button
+              onClick={() => setViewMode("grid")}
+              className="v6-btn v6-icon-only v6-sm"
+              style={{
+                borderRadius: 0, border: 0,
+                ...(viewMode === "grid" ? { background: "var(--v6-surface2)", color: "var(--v6-text)" } : { color: "var(--v6-muted)" }),
+              }}
+            >
+              <SvgIcon d={iconPaths.grid} size={14} />
+            </button>
+            <button
+              onClick={() => setViewMode("list")}
+              className="v6-btn v6-icon-only v6-sm"
+              style={{
+                borderRadius: 0, border: 0, borderLeft: "1px solid var(--v6-line)",
+                ...(viewMode === "list" ? { background: "var(--v6-surface2)", color: "var(--v6-text)" } : { color: "var(--v6-muted)" }),
+              }}
+            >
+              <SvgIcon d={iconPaths.list} size={14} />
+            </button>
+          </div>
+          <button
+            className="v6-btn v6-primary"
+            onClick={() => toast.success("Import dialog coming soon")}
+          >
+            <SvgIcon d={iconPaths.upload} size={14} />
+            Import
+          </button>
+        </div>
       </div>
 
       {/* Filter Chips + Search */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
         <div className="v6-chip-row">
-          {TYPE_FILTERS.map((f) => (
-            <button
-              key={f.id}
-              onClick={() => setTypeFilter(f.id)}
-              className={`v6-chip ${typeFilter === f.id ? "v6-active" : ""}`}
-            >
-              <SvgIcon d={f.d} size={12} /> {f.label}
-            </button>
-          ))}
+          <button
+            onClick={() => setTypeFilter("all")}
+            className={`v6-chip ${typeFilter === "all" ? "v6-active" : ""}`}
+            style={{ display: "flex", alignItems: "center", gap: 5 }}
+          >
+            <SvgIcon d={TYPE_FILTERS[0].d} size={12} /> All
+            <span style={{
+              fontSize: 9, background: typeFilter === "all" ? "var(--v6-accent)" : "var(--v6-surface2)",
+              color: typeFilter === "all" ? "#fff" : "var(--v6-muted)",
+              padding: "1px 5px", borderRadius: 99, minWidth: 18, textAlign: "center",
+            }}>
+              {allCount}
+            </span>
+          </button>
+          {TYPE_FILTERS.slice(1).map((f) => {
+            const count = typeCounts[f.id] || 0;
+            const isActive = typeFilter === f.id;
+            return (
+              <button
+                key={f.id}
+                onClick={() => setTypeFilter(f.id)}
+                className={`v6-chip ${isActive ? "v6-active" : ""}`}
+                style={{ display: "flex", alignItems: "center", gap: 5 }}
+              >
+                <SvgIcon d={f.d} size={12} /> {f.label}
+                <span style={{
+                  fontSize: 9, background: isActive ? "var(--v6-accent)" : "var(--v6-surface2)",
+                  color: isActive ? "#fff" : "var(--v6-muted)",
+                  padding: "1px 5px", borderRadius: 99, minWidth: 18, textAlign: "center",
+                }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
           <div className="v6-section-rule" style={{ width: 1, height: 20, alignSelf: "center", margin: "0 4px" }} />
           <button
             onClick={() => setFavoriteFilter(!favoriteFilter)}
@@ -177,19 +240,94 @@ export default function AssetLibraryStudio() {
 
       {/* Content */}
       {loading ? (
-        <div className="v6-empty-state" style={{ padding: "40px 0" }}>
-          <div className="v6-empty-orbit"><SvgIcon d={iconPaths.image} size={26} /></div>
-          <p className="v6-muted">Loading assets...</p>
+        <div className="v6-media-grid">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="v6-media-card">
+              <div className="v6-skeleton v6-skeleton-media" />
+              <div className="v6-media-card-body">
+                <div className="v6-skeleton v6-skeleton-text" style={{ width: "60%" }} />
+                <div className="v6-skeleton v6-skeleton-text v6-short" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="v6-empty-state" style={{ padding: "40px 0" }}>
-          <div className="v6-empty-orbit"><SvgIcon d={iconPaths.image} size={26} /></div>
-          <h2>No assets found</h2>
+        <div className="v6-empty-state v6-entrance" style={{ padding: "60px 0" }}>
+          <div className="v6-empty-orbit">
+            <SvgIcon d={iconPaths.image} size={26} />
+          </div>
+          <h2>No assets yet</h2>
           <p>Generated images, videos, and audio will appear here. Start creating in the Studio.</p>
           {search && <p className="v6-muted v6-tiny">Try adjusting your search or filters.</p>}
+          {!search && (
+            <button className="v6-btn v6-primary" style={{ marginTop: 8 }}>
+              <SvgIcon d={iconPaths.upload} size={14} /> Upload your first asset
+            </button>
+          )}
+        </div>
+      ) : viewMode === "list" ? (
+        /* ── List View ── */
+        <div style={{ border: "1px solid var(--v6-line)", borderRadius: "var(--v6-r)", overflow: "hidden", background: "var(--v6-surface)" }}>
+          <table className="v6-data-table" style={{ marginBottom: 0 }}>
+            <thead>
+              <tr>
+                <th>Preview</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Dimensions</th>
+                <th>Created</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((asset, i) => (
+                <motion.tr
+                  key={asset.id}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.02, duration: 0.25 }}
+                  style={{ cursor: "pointer" }}
+                  onClick={() => setSelected(asset)}
+                >
+                  <td>
+                    <div style={{ width: 48, height: 36, borderRadius: 6, overflow: "hidden", background: "var(--v6-surface2)" }}>
+                      {asset.thumbnailUrl ? (
+                        <img src={asset.thumbnailUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <div style={{ display: "grid", placeItems: "center", height: "100%" }}>
+                          <SvgIcon d={getTypeIcon(asset.type)} size={16} />
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td><strong style={{ fontSize: 11 }}>{asset.name || `Untitled ${asset.type || "asset"}`}</strong></td>
+                  <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px" }}>{asset.type || "image"}</span></td>
+                  <td className="v6-mono v6-tiny">{asset.width && asset.height ? `${asset.width}×${asset.height}` : "—"}</td>
+                  <td className="v6-mono v6-tiny">{new Date(asset.createdAt).toLocaleDateString()}</td>
+                  <td>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {asset.url && (
+                        <a href={asset.url} download className="v6-btn v6-icon-only v6-sm" onClick={(e) => e.stopPropagation()}>
+                          <SvgIcon d={iconPaths.download} size={13} />
+                        </a>
+                      )}
+                      <button
+                        className="v6-btn v6-icon-only v6-sm"
+                        onClick={(e) => { e.stopPropagation(); toggleFavorite(asset); }}
+                        style={{ color: asset.isFavorite ? "#fbbf24" : undefined }}
+                      >
+                        <SvgIcon d={iconPaths.star} size={13} />
+                      </button>
+                    </div>
+                  </td>
+                </motion.tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : (
-        <div className="v6-media-grid">
+        /* ── Grid View ── */
+        <div className="v6-media-grid v6-stagger">
           {filtered.map((asset, i) => (
             <motion.div
               key={asset.id}
@@ -200,35 +338,52 @@ export default function AssetLibraryStudio() {
               transition={{ delay: i * 0.03, duration: 0.35, ease: EASE }}
               style={selected?.id === asset.id ? { borderColor: "var(--v6-accent)" } : {}}
             >
-              {asset.url && (asset.type === "image" || !asset.type) ? (
-                <img src={asset.thumbnailUrl || asset.url} alt={asset.name || ""} loading="lazy" />
-              ) : asset.url && asset.type === "video" ? (
-                <video src={asset.url} muted preload="metadata" />
-              ) : asset.url && asset.type === "audio" ? (
-                <div
+              <div style={{ position: "relative", overflow: "hidden" }}>
+                {asset.url && (asset.type === "image" || !asset.type) ? (
+                  <img
+                    src={asset.thumbnailUrl || asset.url}
+                    alt={asset.name || ""}
+                    loading="lazy"
+                    style={{ transition: "transform 0.4s ease" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.08)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                  />
+                ) : asset.url && asset.type === "video" ? (
+                  <video src={asset.url} muted preload="metadata" />
+                ) : asset.url && asset.type === "audio" ? (
+                  <div style={{ width: "100%", aspectRatio: "4/3", background: "linear-gradient(135deg, #00E68A22, #00E68A08)", display: "grid", placeItems: "center" }}>
+                    <SvgIcon d={iconPaths.audio} size={32} />
+                  </div>
+                ) : (
+                  <div style={{ width: "100%", aspectRatio: "4/3", background: "linear-gradient(135deg, var(--v6-surface2), transparent)", display: "grid", placeItems: "center" }}>
+                    <SvgIcon d={getTypeIcon(asset.type)} size={32} />
+                  </div>
+                )}
+                {/* Type icon overlay bottom-left */}
+                <div style={{
+                  position: "absolute", bottom: 6, left: 6,
+                  background: "rgba(0,0,0,0.65)", borderRadius: 6,
+                  padding: "3px 6px", display: "flex", alignItems: "center", gap: 4,
+                  fontSize: 9, color: "#fff", backdropFilter: "blur(4px)",
+                }}>
+                  <SvgIcon d={getTypeIcon(asset.type)} size={11} />
+                  {asset.type || "image"}
+                </div>
+                {/* Favorite star top-right */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleFavorite(asset); }}
                   style={{
-                    width: "100%",
-                    aspectRatio: "4/3",
-                    background: "linear-gradient(135deg, #00E68A22, #00E68A08)",
-                    display: "grid",
-                    placeItems: "center",
+                    position: "absolute", top: 6, right: 6,
+                    border: 0, background: "rgba(0,0,0,0.5)", borderRadius: "50%",
+                    width: 26, height: 26, display: "grid", placeItems: "center",
+                    cursor: "pointer", backdropFilter: "blur(4px)",
+                    color: asset.isFavorite ? "#fbbf24" : "rgba(255,255,255,0.5)",
+                    transition: "all 0.2s",
                   }}
                 >
-                  <SvgIcon d={iconPaths.audio} size={32} />
-                </div>
-              ) : (
-                <div
-                  style={{
-                    width: "100%",
-                    aspectRatio: "4/3",
-                    background: "linear-gradient(135deg, var(--v6-surface2), transparent)",
-                    display: "grid",
-                    placeItems: "center",
-                  }}
-                >
-                  <SvgIcon d={getTypeIcon(asset.type)} size={32} />
-                </div>
-              )}
+                  <SvgIcon d={iconPaths.star} size={13} />
+                </button>
+              </div>
               <div className="v6-media-card-body">
                 <h3>{asset.name || `Untitled ${asset.type || "asset"}`}</h3>
                 <p>
@@ -236,27 +391,19 @@ export default function AssetLibraryStudio() {
                   {asset.model && <span> · {asset.model}</span>}
                   {asset.width && asset.height && <span> · {asset.width}×{asset.height}</span>}
                 </p>
+                {asset.createdAt && (
+                  <div className="v6-tiny v6-muted" style={{ marginTop: 3 }}>
+                    {new Date(asset.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  </div>
+                )}
               </div>
               <div className="v6-card-actions">
                 {asset.url && (
-                  <a
-                    href={asset.url}
-                    download
-                    className="v6-btn v6-icon-only v6-sm"
-                    title="Download"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <a href={asset.url} download className="v6-btn v6-icon-only v6-sm" title="Download" onClick={(e) => e.stopPropagation()}>
                     <SvgIcon d={iconPaths.download} size={13} />
                   </a>
                 )}
-                <button
-                  className="v6-btn v6-icon-only v6-sm"
-                  title="More actions"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelected(asset);
-                  }}
-                >
+                <button className="v6-btn v6-icon-only v6-sm" title="Details" onClick={(e) => { e.stopPropagation(); setSelected(asset); }}>
                   <SvgIcon d={iconPaths.more} size={13} />
                 </button>
               </div>
@@ -274,7 +421,7 @@ export default function AssetLibraryStudio() {
         </div>
       )}
 
-      {/* Detail Slide-over */}
+      {/* Detail Modal */}
       <AnimatePresence>
         {selected && (
           <motion.div
@@ -285,43 +432,49 @@ export default function AssetLibraryStudio() {
             onClick={() => setSelected(null)}
           >
             <motion.div
-              className="v6-modal"
+              className="v6-modal v6-entrance-scale"
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
               onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: 560 }}
+              style={{ maxWidth: 600 }}
             >
-              <div className="v6-panel-title">
+              <div className="v6-panel-title" style={{ marginBottom: 14 }}>
                 <h3>Asset Details</h3>
-                <button onClick={() => setSelected(null)} className="v6-btn v6-icon-only v6-sm">
-                  <SvgIcon d={iconPaths.close} size={14} />
-                </button>
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button onClick={() => toggleFavorite(selected)} className="v6-btn v6-icon-only v6-sm" style={{ color: selected.isFavorite ? "#fbbf24" : undefined }}>
+                    <SvgIcon d={iconPaths.star} size={14} />
+                  </button>
+                  <button onClick={() => setSelected(null)} className="v6-btn v6-icon-only v6-sm">
+                    <SvgIcon d={iconPaths.close} size={14} />
+                  </button>
+                </div>
               </div>
 
-              {/* Preview */}
+              {/* Preview — larger */}
               {selected.url && (selected.type === "image" || !selected.type) && (
-                <img
-                  src={selected.url}
-                  alt=""
-                  style={{ width: "100%", borderRadius: 10, marginBottom: 14, maxHeight: 300, objectFit: "contain", background: "#111" }}
-                />
+                <div style={{ borderRadius: 12, overflow: "hidden", marginBottom: 16, background: "#111" }}>
+                  <img
+                    src={selected.url}
+                    alt=""
+                    style={{ width: "100%", maxHeight: 360, objectFit: "contain", display: "block" }}
+                  />
+                </div>
               )}
               {selected.url && selected.type === "video" && (
-                <video
-                  src={selected.url}
-                  controls
-                  style={{ width: "100%", borderRadius: 10, marginBottom: 14, maxHeight: 300, background: "#111" }}
-                />
+                <div style={{ borderRadius: 12, overflow: "hidden", marginBottom: 16, background: "#111" }}>
+                  <video src={selected.url} controls style={{ width: "100%", maxHeight: 360 }} />
+                </div>
               )}
               {selected.url && selected.type === "audio" && (
-                <div style={{ padding: 16, borderRadius: 10, marginBottom: 14, background: "var(--v6-surface2)" }}>
+                <div style={{ padding: 16, borderRadius: 12, marginBottom: 16, background: "var(--v6-surface2)" }}>
                   <audio src={selected.url} controls style={{ width: "100%" }} />
                 </div>
               )}
 
-              {/* Metadata */}
-              <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
+              {/* Metadata — styled table */}
+              <div className="v6-section-rule" style={{ marginBottom: 12 }} />
+              <div style={{ display: "grid", gap: 0, marginBottom: 14, borderRadius: 10, overflow: "hidden", border: "1px solid var(--v6-line)" }}>
                 {[
                   ["Name", selected.name || `Untitled ${selected.type || "asset"}`],
                   ["Type", selected.type],
@@ -333,80 +486,63 @@ export default function AssetLibraryStudio() {
                   ["Created", new Date(selected.createdAt).toLocaleString()],
                 ]
                   .filter(([, v]) => v)
-                  .map(([label, value]) => (
-                    <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}>
+                  .map(([label, value], idx, arr) => (
+                    <div
+                      key={label}
+                      style={{
+                        display: "flex", justifyContent: "space-between", fontSize: 11,
+                        padding: "9px 12px",
+                        background: idx % 2 === 0 ? "var(--v6-surface)" : "var(--v6-surface2)",
+                        borderBottom: idx < arr.length - 1 ? "1px solid var(--v6-line)" : "none",
+                      }}
+                    >
                       <span className="v6-muted">{label}</span>
-                      <span style={{ fontWeight: 600 }}>{value}</span>
+                      <span style={{ fontWeight: 600, textAlign: "right" }}>{value}</span>
                     </div>
                   ))}
               </div>
 
               {/* Actions */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <div className="v6-chip-row">
                 {selected.url && (
-                  <a href={selected.url} download className="v6-chip v6-active">
+                  <a href={selected.url} download className="v6-chip v6-active" style={{ textDecoration: "none" }}>
                     <SvgIcon d={iconPaths.download} size={12} /> Download
                   </a>
+                )}
+                {selected.url && (
+                  <button
+                    className="v6-chip"
+                    onClick={async () => {
+                      try { await navigator.clipboard.writeText(selected.url); toast.success("URL copied"); } catch { toast.error("Failed to copy"); }
+                    }}
+                  >
+                    <SvgIcon d={iconPaths.copy} size={12} /> Copy URL
+                  </button>
                 )}
                 <button onClick={() => toggleFavorite(selected)} className="v6-chip">
                   <SvgIcon d={iconPaths.star} size={12} /> {selected.isFavorite ? "Unfavorite" : "Favorite"}
                 </button>
                 {selected.type === "image" && (
                   <>
-                    <button
-                      onClick={() => window.open("/studio/canvas", "_blank")}
-                      className="v6-chip"
-                    >
-                      Add to Canvas
-                    </button>
-                    <button
-                      onClick={() => window.open("/studio/image", "_blank")}
-                      className="v6-chip"
-                    >
-                      Use as Reference
-                    </button>
-                    <button
-                      onClick={() => window.open("/studio/lipsync", "_blank")}
-                      className="v6-chip"
-                    >
-                      Lip Sync
-                    </button>
-                    <button
-                      onClick={() => window.open("/studio/body-swap", "_blank")}
-                      className="v6-chip"
-                    >
-                      Recast
-                    </button>
+                    <button onClick={() => window.open("/studio/canvas", "_blank")} className="v6-chip">Add to Canvas</button>
+                    <button onClick={() => window.open("/studio/image", "_blank")} className="v6-chip">Use as Reference</button>
+                    <button onClick={() => window.open("/studio/lipsync", "_blank")} className="v6-chip">Lip Sync</button>
+                    <button onClick={() => window.open("/studio/body-swap", "_blank")} className="v6-chip">Recast</button>
                   </>
                 )}
                 {selected.type === "video" && (
                   <>
-                    <button
-                      onClick={() => window.open("/studio/body-swap", "_blank")}
-                      className="v6-chip"
-                    >
-                      Recast
-                    </button>
-                    <button
-                      onClick={() => window.open("/studio/clipping", "_blank")}
-                      className="v6-chip"
-                    >
-                      Create Clips
-                    </button>
+                    <button onClick={() => window.open("/studio/body-swap", "_blank")} className="v6-chip">Recast</button>
+                    <button onClick={() => window.open("/studio/clipping", "_blank")} className="v6-chip">Create Clips</button>
                   </>
                 )}
-                <button
-                  onClick={() => window.open("/studio/brands", "_blank")}
-                  className="v6-chip"
-                >
-                  Add to Brand Kit
-                </button>
+                <button onClick={() => window.open("/studio/brands", "_blank")} className="v6-chip">Add to Brand Kit</button>
                 <button
                   onClick={() => deleteAsset(selected.id)}
                   className="v6-chip"
                   style={{ borderColor: "var(--v6-bad)", color: "var(--v6-bad)" }}
                 >
-                  Delete
+                  <SvgIcon d={iconPaths.close} size={12} /> Delete
                 </button>
               </div>
             </motion.div>

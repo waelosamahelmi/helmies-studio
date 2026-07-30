@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useCallback, useRef } from "react";
+
 /* ── Inline SVGs ── */
 const IconSpark = () => (
   <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
@@ -44,12 +46,41 @@ export default function PromptDock({
   generating = false,
   stage,
   icon = "spark",
+  maxChars = 2000,
+  showCharCount = true,
 }) {
+  const [pulse, setPulse] = useState(false);
+  const btnRef = useRef(null);
+
+  const charCount = (value || "").length;
+  const nearLimit = charCount > maxChars * 0.8;
+  const atLimit = charCount >= maxChars;
+
+  let countClass = "";
+  if (atLimit) countClass = " v6-at-limit";
+  else if (nearLimit) countClass = " v6-near-limit";
+
   const handleKeyDown = (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      if (!generating && value?.trim()) onSubmit?.();
+      if (!generating && value?.trim()) {
+        triggerSubmit();
+      }
     }
+  };
+
+  const triggerSubmit = useCallback(() => {
+    // Brief pulse animation on generate button
+    setPulse(true);
+    setTimeout(() => setPulse(false), 700);
+    onSubmit?.();
+  }, [onSubmit]);
+
+  const handleChange = (text) => {
+    if (maxChars && text.length > maxChars) {
+      text = text.slice(0, maxChars);
+    }
+    onChange?.(text);
   };
 
   const stageLabel = stage
@@ -62,20 +93,30 @@ export default function PromptDock({
     <div className="v6-prompt-dock">
       <textarea
         value={value}
-        onChange={(e) => onChange?.(e.target.value)}
+        onChange={(e) => handleChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Direct the output with a precise creative brief"
         rows={2}
+        aria-label="Creative prompt"
       />
+
+      {/* Character count */}
+      {showCharCount && (
+        <div className={`v6-char-count${countClass}`}>
+          {charCount}{maxChars ? ` / ${maxChars}` : ""}
+          {atLimit && " \u00b7 limit reached"}
+        </div>
+      )}
 
       <div className="v6-prompt-actions">
         {/* ── Left side: upload + enhance ── */}
         <div>
           {onUpload && (
             <button
-              className="v6-btn v6-ghost v6-icon-only"
+              className="v6-btn v6-ghost v6-icon-only v6-tooltip"
               onClick={onUpload}
               title="Upload reference"
+              data-tooltip="Upload reference"
               disabled={generating}
             >
               <IconUpload />
@@ -98,15 +139,16 @@ export default function PromptDock({
           {generating ? (
             <button
               className="v6-btn v6-ghost"
-              onClick={onSubmit}
+              onClick={triggerSubmit}
             >
               <IconCross />
-              Cancel{stageLabel ? ` · ${stageLabel}` : ""}
+              Cancel{stageLabel ? ` \u00b7 ${stageLabel}` : ""}
             </button>
           ) : (
             <button
-              className="v6-btn v6-primary"
-              onClick={onSubmit}
+              ref={btnRef}
+              className={`v6-btn v6-primary${pulse ? " v6-btn-pulse" : ""}`}
+              onClick={triggerSubmit}
               disabled={!value?.trim()}
             >
               <Icon />

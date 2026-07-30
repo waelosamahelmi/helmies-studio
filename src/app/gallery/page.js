@@ -141,11 +141,23 @@ function GalleryCard({ item, index }) {
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
           <span className="v6-tiny v6-muted">{getTimeAgo(item.createdAt)}</span>
-          {item.creditsUsed > 0 && (
-            <span className="v6-tiny" style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--v6-good)" }}>
-              <SvgIcon d={iconPaths.bolt} size={10} /> {item.creditsUsed}
-            </span>
-          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {item.status && (
+              <span
+                style={{
+                  width: 5, height: 5, borderRadius: "50%",
+                  background: item.status === "completed" ? "var(--v6-good)" : item.status === "failed" ? "var(--v6-bad)" : item.status === "processing" ? "var(--v6-warn)" : "var(--v6-muted)",
+                  flexShrink: 0,
+                }}
+                title={item.status}
+              />
+            )}
+            {item.creditsUsed > 0 && (
+              <span className="v6-tiny" style={{ display: "flex", alignItems: "center", gap: 3, color: "var(--v6-good)" }}>
+                <SvgIcon d={iconPaths.bolt} size={10} /> {item.creditsUsed}
+              </span>
+            )}
+          </div>
         </div>
       </div>
       <div className="v6-card-actions">
@@ -402,40 +414,34 @@ export default function GalleryPage() {
         {loading ? (
           <div className="v6-media-grid">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div
-                key={i}
-                className="v6-media-card"
-                style={{ minHeight: 200, animation: `pulse 1.5s ${i * 0.08}s infinite` }}
-              >
-                <div
-                  style={{
-                    width: "100%",
-                    aspectRatio: "4/3",
-                    background: "var(--v6-surface2)",
-                  }}
-                />
+              <div key={i} className="v6-media-card" style={{ animation: `v6-slide-up 0.35s ${i * 0.04}s ease-out both` }}>
+                <div className="v6-skeleton v6-skeleton-media" />
                 <div className="v6-media-card-body">
-                  <div style={{ height: 11, width: "60%", background: "var(--v6-surface2)", borderRadius: 4, marginBottom: 6 }} />
-                  <div style={{ height: 8, width: "40%", background: "var(--v6-surface2)", borderRadius: 4 }} />
+                  <div className="v6-skeleton v6-skeleton-text" style={{ width: "60%" }} />
+                  <div className="v6-skeleton v6-skeleton-text v6-short" />
                 </div>
               </div>
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="v6-empty-state" style={{ padding: "60px 0" }}>
+          <div className="v6-empty-state v6-entrance" style={{ padding: "60px 0" }}>
             <div className="v6-empty-orbit">
               <SvgIcon d={iconPaths.image} size={26} color="var(--v6-accent)" />
             </div>
-            <h2>No creations found</h2>
+            <h2>No generations yet</h2>
             <p>Generate something in the studio to see it here.</p>
-            <Link href="/studio" className="v6-btn v6-primary">
-              Go to Studio
+            <Link href="/studio" className="v6-btn v6-primary" style={{ marginTop: 8 }}>
+              Start Creating
               <SvgIcon d={iconPaths.arrowUpRight} size={14} />
             </Link>
           </div>
         ) : viewMode === "table" ? (
           /* ── Table View ── */
-          <div style={{ border: "1px solid var(--v6-line)", borderRadius: "var(--v6-r)", overflow: "hidden", background: "var(--v6-surface)" }}>
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <p className="v6-tiny v6-muted">Showing {visible.length} of {filtered.length} results</p>
+            </div>
+            <div style={{ border: "1px solid var(--v6-line)", borderRadius: "var(--v6-r)", overflow: "hidden", background: "var(--v6-surface)" }}>
             <table className="v6-data-table" style={{ marginBottom: 0 }}>
               <thead>
                 <tr>
@@ -462,9 +468,14 @@ export default function GalleryPage() {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           /* ── Grid View ── */
-          <div className="v6-media-grid">
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <p className="v6-tiny v6-muted">Showing {visible.length} of {filtered.length} results</p>
+            </div>
+            <div className="v6-media-grid">
             {visible.map((c, i) => (
               <GalleryCard key={c.id} item={c} index={i} />
             ))}
@@ -472,6 +483,7 @@ export default function GalleryPage() {
               <div ref={sentinelRef} style={{ height: 1, width: "100%" }} />
             )}
           </div>
+          </>
         )}
       </div>
     </>
