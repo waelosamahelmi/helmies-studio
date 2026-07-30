@@ -2,8 +2,8 @@
 // code is always served. The actual UI is in StudioClient.js (a client component).
 export const dynamic = "force-dynamic";
 
-import UniverseStudio from "@/components/studio/UniverseStudio";
+import StudioClient from "./StudioClient";
 
 export default function StudioPage(props) {
-  return <UniverseStudio initialTool="image" />;
+  return <StudioClient {...props} />;
 }
