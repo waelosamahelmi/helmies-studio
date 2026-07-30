@@ -1,176 +1,384 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { IMAGE_MODELS } from "@/lib/models";
-import { IconBolt, IconArrowUpRight, IconImage } from "@/components/Icons";
-import { useCreditCost } from "@/components/studio/useCreditCost";
-import RichIdle from "@/components/studio/RichIdle";
-import RichModelPicker from "@/components/studio/RichModelPicker";
-import StagedProgress from "@/components/studio/StagedProgress";
-import BeforeAfterSlider from "@/components/studio/BeforeAfterSlider";
-import { useAsyncGeneration } from "@/components/studio/useAsyncGeneration";
-import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { StudioLayout, ModelSelector, PromptDock, StageArea } from "@/components/studio/v6";
+import { IMAGE_MODELS, I2I_MODELS } from "@/lib/models";
+import { useAsyncGeneration } from "./useAsyncGeneration";
+import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
 
-export default function ImageStudio() {
-  const [model, setModel] = useState(IMAGE_MODELS[0]);
-  const [prompt, setPrompt] = useState("");
-  const [aspectRatio, setAspectRatio] = useState("1:1");
-  const [resolution, setResolution] = useState("1k");
-  const [width, setWidth] = useState(1024);
-  const [height, setHeight] = useState(1024);
-  const [imageUrl, setImageUrl] = useState("");
-  const [seed, setSeed] = useState(-1);
-  const { cost, affordable, shortfall, topUpPacks } = useCreditCost("image", model.id, { aspect_ratio: aspectRatio, resolution, width, height, image_url: imageUrl });
-  const { loading, result, error, elapsed, submit } = useAsyncGeneration();
-  const fileRef = useRef(null);
+/* ── Inline SVGs ── */
+const IconImage = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+    <circle cx="8.5" cy="8.5" r="1.5" />
+    <polyline points="21,15 16,10 5,21" />
+  </svg>
+);
 
-  const handleSubmit = () => {
-    if (!prompt.trim()) return;
-    submit("image", model.id, {
-      endpoint: model.endpoint || model.id,
-      prompt,
+const IconUpload = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+    <polyline points="17,8 12,3 7,8" />
+    <line x1="12" y1="3" x2="12" y2="15" />
+  </svg>
+);
+
+const IconBolt = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="13,2 3,14 12,14 11,22 21,10 12,10" />
+  </svg>
+);
+
+const IconCross = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
+const IconMaximize = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="15,3 21,3 21,9" /><polyline points="9,21 3,21 3,15" />
+    <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+  </svg>
+);
+
+const IconSpark = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6.4-4.8-6.4 4.8 2.4-7.2-6-4.8h7.6z" />
+  </svg>
+);
+
+const IconChevronDown = () => (
+  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6,9 12,15 18,9" />
+  </svg>
+);
+
+/* ── Helpers ── */
+function getModelDisplayName(model) {
+  return model.displayName || model.name || model.id;
+}
+
+/* ══════════════════════════════════════════════════════════════ */
+export default function ImageStudio() {
+  /* ── State ── */
+  const [mode, setMode] = useState("tti"); // "tti" | "iti"
+  const [selectedModelId, setSelectedModelId] = useState(IMAGE_MODELS[0]?.id || "");
+  const [prompt, setPrompt] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("");
+  const [aspectRatio, setAspectRatio] = useState("16:9");
+  const [resolution, setResolution] = useState("2K");
+  const [seed, setSeed] = useState(null);
+  const [referenceImage, setReferenceImage] = useState(null); // { url, file }
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const fileInputRef = useRef(null);
+
+  /* ── Hooks ── */
+  const { loading: generating, result, error: genError, elapsed, submit } = useAsyncGeneration();
+
+  /* ── Model selection ── */
+  const activeModels = mode === "tti" ? IMAGE_MODELS : I2I_MODELS;
+  const currentModel = activeModels.find((m) => m.id === selectedModelId) || activeModels[0];
+
+  /* ── Credit cost ── */
+  const { cost: estCredits, affordable, balance, shortfall, topUpPacks } = useCreditCost(
+    "image",
+    currentModel?.id || "",
+    {
       aspect_ratio: aspectRatio,
       resolution,
-      width,
-      height,
-      image_url: imageUrl || undefined,
-      seed: seed !== -1 ? seed : undefined,
-    });
-  };
+      image_url: referenceImage?.url || undefined,
+    }
+  );
 
-  const handleUpload = async (e) => {
-    const file = e.target.files?.[0];
+  /* ── Sync model when mode changes ── */
+  useEffect(() => {
+    if (activeModels.length && !activeModels.some((m) => m.id === selectedModelId)) {
+      setSelectedModelId(activeModels[0].id);
+    }
+  }, [mode]);
+
+  /* ── Derived ── */
+  const allAspectRatios = currentModel?.aspectRatios?.length
+    ? currentModel.aspectRatios
+    : ["1:1", "4:5", "9:16", "16:9", "3:2", "2:3"];
+  const resolutions = currentModel?.resolutions?.length
+    ? currentModel.resolutions
+    : ["1K", "2K", "4K"];
+  const cost = estCredits || 0;
+  const error = genError || uploadError;
+
+  /* ── Handlers ── */
+  const handleUpload = useCallback(async (files) => {
+    const file = files?.[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append("file", file);
+    setUploading(true);
+    setUploadError("");
+    const body = new FormData();
+    body.append("file", file);
     try {
-      const res = await apiFetch("/api/upload", { method: "POST", body: formData });
+      const res = await apiFetch("/api/upload", { method: "POST", body });
       const data = await res.json();
-      if (data.url) setImageUrl(data.url);
-    } catch {}
-  };
+      if (!res.ok || !data.url) throw new Error(data.error || "Upload failed");
+      setReferenceImage({ url: data.url, file });
+    } catch (e) {
+      setUploadError(e.message);
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  const handleClearReference = useCallback(() => {
+    setReferenceImage(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const handleGenerate = useCallback(() => {
+    if (!prompt.trim() || !affordable) return;
+    submit("image", currentModel?.id, {
+      endpoint: currentModel?.endpoint || currentModel?.id,
+      prompt,
+      negative_prompt: negativePrompt || undefined,
+      aspect_ratio: aspectRatio,
+      resolution,
+      image_url: referenceImage?.url || undefined,
+      seed: seed ?? undefined,
+    });
+  }, [affordable, aspectRatio, currentModel, negativePrompt, prompt, referenceImage, resolution, seed, submit]);
+
+  const handleModelSelect = useCallback((id) => {
+    setSelectedModelId(id);
+  }, []);
+
+  /* ── Render helpers ── */
+  const controls = (
+    <div className="v6-control-stack">
+      {/* Mode Toggle */}
+      <div className="v6-field">
+        <div className="v6-field-label">Mode</div>
+        <div className="v6-segmented">
+          <button
+            className={mode === "tti" ? "v6-active" : ""}
+            onClick={() => setMode("tti")}
+          >
+            Text → Image
+          </button>
+          <button
+            className={mode === "iti" ? "v6-active" : ""}
+            onClick={() => setMode("iti")}
+          >
+            Image → Image
+          </button>
+        </div>
+      </div>
+
+      {/* Aspect Ratio */}
+      <div className="v6-field">
+        <div className="v6-field-label">Aspect ratio</div>
+        <div className="v6-chip-row">
+          {allAspectRatios.map((ar) => (
+            <button
+              key={ar}
+              className={`v6-chip${aspectRatio === ar ? " v6-active" : ""}`}
+              onClick={() => setAspectRatio(ar)}
+            >
+              {ar}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Resolution */}
+      {!currentModel?.hasDimensions && (
+        <div className="v6-field">
+          <div className="v6-field-label">Resolution</div>
+          <div className="v6-segmented">
+            {resolutions.map((r) => (
+              <button
+                key={r}
+                className={String(resolution).toLowerCase() === String(r).toLowerCase() ? "v6-active" : ""}
+                onClick={() => setResolution(r)}
+              >
+                {r.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Negative prompt */}
+      <div className="v6-field">
+        <label className="v6-field-label">Negative direction</label>
+        <textarea
+          className="v6-input v6-textarea"
+          value={negativePrompt}
+          onChange={(e) => setNegativePrompt(e.target.value)}
+          placeholder="Elements, styles, or artifacts to avoid…"
+          rows={2}
+        />
+      </div>
+
+      {/* Seed */}
+      <div className="v6-field">
+        <label className="v6-field-label">Seed</label>
+        <input
+          className="v6-input"
+          type="number"
+          value={seed ?? ""}
+          onChange={(e) => setSeed(e.target.value ? Number(e.target.value) : null)}
+          placeholder="Random"
+        />
+      </div>
+
+      {/* Reference image (ITI mode) */}
+      {mode === "iti" && (
+        <div className="v6-field">
+          <div className="v6-field-label">Reference image</div>
+          {referenceImage?.url ? (
+            <div className="v6-upload-preview">
+              <div className="v6-upload-preview-item">
+                <img src={referenceImage.url} alt="Reference" />
+                <button onClick={handleClearReference}><IconCross /></button>
+              </div>
+            </div>
+          ) : (
+            <button
+              className="v6-drop"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? "Uploading…" : "Drop or click to upload"}
+            </button>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => handleUpload(e.target.files)}
+          />
+          {uploadError && (
+            <span className="v6-muted v6-tiny" style={{ color: "var(--v6-bad)", marginTop: 4 }}>
+              {uploadError}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Upload drop zone */}
+      <button
+        className="v6-drop"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={uploading}
+        style={{ minHeight: 54 }}
+      >
+        <IconUpload /> Upload source
+      </button>
+    </div>
+  );
+
+  /* ── Stage area ── */
+  const center = (
+    <>
+      <StageArea
+        generating={generating}
+        progress={null}
+        stage={generating ? "generating" : undefined}
+        model={currentModel?.name || currentModel?.id}
+        quality={resolution}
+        ratio={aspectRatio}
+        result={result}
+        resultTitle="Image generation"
+        toolLabel="Image Studio"
+        toolDesc="Compose an image with a precise brief, visual references, and a model matched to the intended format."
+        toolIcon={<IconImage />}
+        onNew={() => {
+          setPrompt("");
+          setReferenceImage(null);
+        }}
+        onDownload={() => {
+          if (result?.url) window.open(result.url, "_blank");
+        }}
+        onCancel={() => {}}
+      />
+      <PromptDock
+        value={prompt}
+        onChange={setPrompt}
+        onSubmit={generating ? undefined : handleGenerate}
+        cost={cost}
+        generating={generating}
+        stage={generating ? "generating" : undefined}
+        icon="spark"
+      />
+    </>
+  );
+
+  /* ── Inspector ── */
+  const inspector = (
+    <div className="v6-control-stack">
+      <ModelSelector
+        models={activeModels.map((m) => ({
+          ...m,
+          displayName: m.displayName || m.name,
+        }))}
+        selectedModelId={selectedModelId}
+        onSelect={handleModelSelect}
+        label="Choose model"
+        filterMode={mode}
+      />
+      <div className="v6-section-rule" />
+      <div className="v6-quote">
+        <div className="v6-quote-row">
+          <span className="v6-muted">Estimated cost</span>
+          <strong><IconBolt /> {cost || "—"}</strong>
+        </div>
+        <div className="v6-quote-row">
+          <span className="v6-muted">Balance</span>
+          <strong className="v6-balance">{balance ?? "—"}</strong>
+        </div>
+        <div className="v6-quote-row">
+          <span className="v6-muted">Model</span>
+          <strong>{currentModel?.name || "—"}</strong>
+        </div>
+      </div>
+      {!affordable && cost > 0 && (
+        <div style={{ fontSize: 11, color: "var(--v6-warn)", lineHeight: 1.4 }}>
+          <strong>{shortfall} more credits required</strong>
+        </div>
+      )}
+      <div className="v6-section-rule" />
+      <div className="v6-field">
+        <div className="v6-field-label">Mode</div>
+        <div className="v6-segmented">
+          <button className="v6-active">{mode === "tti" ? "Text → Image" : "Image → Image"}</button>
+        </div>
+      </div>
+      <div className="v6-field">
+        <div className="v6-field-label">Aspect</div>
+        <span className="v6-mono v6-tiny">{aspectRatio}</span>
+      </div>
+      <div className="v6-field">
+        <div className="v6-field-label">Resolution</div>
+        <span className="v6-mono v6-tiny">{resolution}</span>
+      </div>
+      <div className="v6-field">
+        <div className="v6-field-label">Seed</div>
+        <span className="v6-mono v6-tiny">{seed ?? "Random"}</span>
+      </div>
+      {referenceImage && (
+        <div className="v6-field">
+          <div className="v6-field-label">Reference</div>
+          <span className="v6-mono v6-tiny">Uploaded</span>
+        </div>
+      )}
+    </div>
+  );
 
   return (
-    <div className="studio-panel">
-      <div className="studio-panel__left">
-        <RichModelPicker
-          models={IMAGE_MODELS}
-          selected={model}
-          onSelect={(m) => { setModel(m); if (m.aspectRatios) setAspectRatio(m.aspectRatios[0]); }}
-          tool="image"
-        />
-
-        <div className="field-group">
-          <label className="field-label">Prompt</label>
-          <textarea
-            className="field-textarea"
-            placeholder="A portrait of a warrior princess in golden armor..."
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={5}
-          />
-        </div>
-
-        {model.aspectRatios && (
-          <div className="field-group">
-            <label className="field-label">Aspect Ratio</label>
-            <div className="field-pills">
-              {model.aspectRatios.map((ar) => (
-                <button key={ar} className={`pill ${aspectRatio === ar ? "pill--active" : ""}`} onClick={() => setAspectRatio(ar)}>{ar}</button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {model.resolutions && (
-          <div className="field-group">
-            <label className="field-label">Resolution</label>
-            <div className="field-pills">
-              {model.resolutions.map((r) => (
-                <button key={r} className={`pill ${resolution === r ? "pill--active" : ""}`} onClick={() => setResolution(r)}>{r}</button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {model.hasDimensions && (
-          <div className="field-row">
-            <div className="field-group">
-              <label className="field-label">Width</label>
-              <input className="field-input" type="number" value={width} onChange={(e) => setWidth(parseInt(e.target.value) || 1024)} step={64} min={128} max={2048} />
-            </div>
-            <div className="field-group">
-              <label className="field-label">Height</label>
-              <input className="field-input" type="number" value={height} onChange={(e) => setHeight(parseInt(e.target.value) || 1024)} step={64} min={128} max={2048} />
-            </div>
-          </div>
-        )}
-
-        <details className="field-group" style={{ marginTop: "0.5rem" }}>
-          <summary className="field-label" style={{ cursor: "pointer", opacity: 0.6, fontSize: "0.75rem" }}>Advanced</summary>
-          <div className="field-group" style={{ marginTop: "0.5rem" }}>
-            <label className="field-label">Seed (-1 = random)</label>
-            <input className="field-input" type="number" value={seed} onChange={(e) => setSeed(parseInt(e.target.value) || -1)} min={-1} />
-          </div>
-        </details>
-
-        <div className="field-group">
-          <label className="field-label">Reference Image (optional)</label>
-          <input ref={fileRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: "none" }} />
-          <button className="btn btn-secondary" onClick={() => fileRef.current?.click()}>
-            {imageUrl ? "Image loaded ✓" : "Upload image"}
-          </button>
-          {imageUrl && <button className="btn btn-ghost" onClick={() => setImageUrl("")}>Remove</button>}
-        </div>
-
-        <button
-          className="btn btn-primary btn-lg w-full"
-          onClick={handleSubmit}
-          disabled={loading || !prompt.trim() || !affordable}
-        >
-          {loading ? "Generating..." : (
-            <>Generate{cost ? ` — ${cost} credits` : ""}<span className="btn__icon"><IconBolt /></span></>
-          )}
-        </button>
-        {!affordable && cost && (
-          <div className="studio__cost-warning">
-            <p>Insufficient credits. Need {cost} (shortfall: {shortfall}).</p>
-            {topUpPacks.length > 0 && (
-              <div className="studio__topup-packs">
-                {topUpPacks.slice(0, 2).map((p) => (
-                  <Link key={p.id} href={`/pricing?pack=${p.id}`} className="btn btn-sm btn-secondary">
-                    Top up {p.credits} credits — {p.price}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="studio-panel__right">
-        {error && <div className="studio-error">{error}</div>}
-        {loading && <StagedProgress tool="image" elapsed={elapsed} />}
-        {result && result.url && (
-          <div className="studio-result">
-            {imageUrl ? (
-              <BeforeAfterSlider beforeSrc={imageUrl} afterSrc={result.url} beforeLabel="Reference" afterLabel="Generated" />
-            ) : (
-              <img src={result.url} alt="Generated" className="studio-result__img" />
-            )}
-            <div className="studio-result__meta">
-              <a href={result.url} download className="btn btn-secondary btn-sm">
-                Download<span className="btn__icon"><IconArrowUpRight /></span>
-              </a>
-              <span className="studio-result__credits"><IconBolt /> {result.creditsUsed} credits</span>
-            </div>
-          </div>
-        )}
-        {!loading && !result && !error && (
-          <RichIdle tool="image" icon={IconImage} title="Image Studio" description="Enter a prompt and click Generate to create stunning AI images." />
-        )}
-      </div>
-    </div>
+    <StudioLayout controls={controls} inspector={inspector} inspectorVisible>
+      {center}
+    </StudioLayout>
   );
 }

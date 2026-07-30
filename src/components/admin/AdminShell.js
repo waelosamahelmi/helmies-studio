@@ -2,10 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import UniverseNav from "@/components/studio/universe/UniverseNav";
-import {
-  IconChevron, IconBolt, IconSparkle, IconSearch
-} from "@/components/Icons";
+import Navbar from "@/components/Navbar";
+import { IconBolt, IconSparkle } from "@/components/Icons";
 import OverviewDashboard from "./OverviewDashboard";
 import ModelManager from "./ModelManager";
 import PlanEditor from "./PlanEditor";
@@ -16,84 +14,55 @@ import toast from "react-hot-toast";
 const EASE = [0.32, 0.72, 0, 1];
 
 const TOP_LEVEL_TABS = [
-  { id: "overview", label: "Overview", icon: "OV" },
-  {
-    id: "business",
-    label: "Business",
-    icon: "BU",
-    subs: ["Revenue", "Plans", "Credit Packs", "Promo Codes", "Pricing", "Margin Advisor"],
-  },
-  {
-    id: "ai-platform",
-    label: "AI Platform",
-    icon: "AI",
-    subs: ["Models", "Routes", "Providers", "Prompt Guides", "Quality", "Generations", "Director"],
-  },
-  { id: "users", label: "Users", icon: "US" },
-  {
-    id: "content",
-    label: "Content",
-    icon: "CO",
-    subs: ["Website Content", "Announcements"],
-  },
-  {
-    id: "operations",
-    label: "Operations",
-    icon: "OP",
-    subs: ["Jobs", "Provider Health", "Feature Flags", "Audit Logs"],
-  },
+  { id: "overview", label: "Overview" },
+  { id: "business", label: "Business", subs: ["Revenue", "Plans", "Credit Packs", "Promo Codes", "Pricing", "Margin Advisor"] },
+  { id: "ai-platform", label: "AI Platform", subs: ["Models", "Routes", "Providers", "Prompt Guides", "Quality", "Generations", "Director"] },
+  { id: "users", label: "Users" },
+  { id: "content", label: "Content", subs: ["Website Content", "Announcements"] },
+  { id: "operations", label: "Operations", subs: ["Jobs", "Provider Health", "Feature Flags", "Audit Logs"] },
 ];
 
 export default function AdminShell() {
   const [topTab, setTopTab] = useState("overview");
   const [subTab, setSubTab] = useState(null);
-  const [expandedTab, setExpandedTab] = useState(null);
 
-  // Change top tab — also open subs if available
   const selectTopTab = (tabId) => {
     setTopTab(tabId);
-    const tab = TOP_LEVEL_TABS.find((t) => t.id === tabId);
-    if (tab?.subs?.length > 0) {
-      setExpandedTab(tabId);
-      setSubTab(null); // let user pick a sub
-    } else {
-      setExpandedTab(null);
-      setSubTab(null);
-    }
+    setSubTab(null);
   };
 
-  const selectSubTab = (sub) => {
-    setSubTab(sub);
-  };
-
+  const selectSubTab = (sub) => setSubTab(sub);
   const currentTopTab = TOP_LEVEL_TABS.find((t) => t.id === topTab);
 
   return (
-    <div className="universe-page-shell">
-      <UniverseNav />
-      <div className="universe-page-shell__content">
-      <div className="admin-universe admin">
-        <div className="admin__header">
-          <h1>Admin Panel</h1>
-          <p>Manage users, credits, models, pricing, content, and operations.</p>
+    <>
+      <Navbar />
+      <div className="v6-page-content">
+        {/* Page Head */}
+        <div className="v6-page-head">
+          <div>
+            <p className="v6-eyebrow">Helmies Studio</p>
+            <h1>Admin</h1>
+          </div>
+          <button className="v6-btn v6-sm" onClick={() => selectTopTab("operations")}>
+            Audit log
+          </button>
         </div>
 
         {/* Top-level tab bar */}
-        <div className="admin__tabs" style={{ marginBottom: "0.5rem" }}>
+        <div className="v6-chip-row" style={{ marginBottom: 6 }}>
           {TOP_LEVEL_TABS.map((t) => (
             <button
               key={t.id}
-              className={`admin__tab ${topTab === t.id ? "admin__tab--active" : ""}`}
-              style={topTab === t.id ? {} : {}}
+              className={`v6-chip ${topTab === t.id ? "v6-active" : ""}`}
               onClick={() => selectTopTab(t.id)}
             >
-              <span style={{ marginRight: "0.35rem" }}>{t.icon}</span>
               {t.label}
             </button>
           ))}
         </div>
 
-        {/* Sub-tab bar (if expanded) */}
+        {/* Sub-tab bar */}
         <AnimatePresence mode="wait">
           {currentTopTab?.subs?.length > 0 && (
             <motion.div
@@ -101,22 +70,15 @@ export default function AdminShell() {
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.25, ease: EASE }}
-              className="admin__tabs"
-              style={{ marginBottom: "1rem", marginTop: "0.25rem" }}
+              transition={{ duration: 0.2, ease: EASE }}
+              className="v6-chip-row"
+              style={{ marginBottom: 16, marginTop: 6 }}
             >
               {currentTopTab.subs.map((sub) => (
                 <button
                   key={sub}
-                  className={`admin__tab ${subTab === sub ? "admin__tab--active" : ""}`}
-                  style={{
-                    fontSize: "0.75rem",
-                    padding: "0.4rem 0.75rem",
-                    borderColor: subTab === sub ? "rgba(124, 58, 237, 0.3)" : undefined,
-                    ...(subTab === sub
-                      ? { background: "rgba(124, 58, 237, 0.08)", color: "#7C3AED" }
-                      : {}),
-                  }}
+                  className={`v6-chip ${subTab === sub ? "v6-active" : ""}`}
+                  style={{ fontSize: 10 }}
                   onClick={() => selectSubTab(sub)}
                 >
                   {sub}
@@ -129,83 +91,101 @@ export default function AdminShell() {
         {/* Content body */}
         <motion.div
           key={`${topTab}-${subTab || "none"}`}
-          initial={{ opacity: 0, y: 8 }}
+          initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25, ease: EASE }}
-          className="admin__body"
+          transition={{ duration: 0.2, ease: EASE }}
         >
           <AdminContent topTab={topTab} subTab={subTab} />
         </motion.div>
       </div>
-      </div>
-    </div>
+    </>
   );
 }
 
 // ── Content router ──
 function AdminContent({ topTab, subTab }) {
-  // Overview
-  if (topTab === "overview") return <OverviewDashboard />;
-
-  // Business
-  if (topTab === "business") {
-    if (subTab === "Pricing") return <LegacyPricingTab />;
-    if (subTab === "Plans") return <PlanEditor type="plans" />;
-    if (subTab === "Credit Packs") return <PlanEditor type="credit-packs" />;
-    if (subTab === "Promo Codes") return <PromoManager />;
-    if (subTab === "Revenue") return <RevenueTab />;
-    if (subTab === "Margin Advisor") return <MarginAdvisorTab />;
-    return <PlaceholderTab title="Business" message="Select a sub-tab above: Revenue, Plans, Credit Packs, Promo Codes, Pricing, or Margin Advisor." />;
-  }
-
-  // AI Platform
-  if (topTab === "ai-platform") {
-    if (subTab === "Models") return <ModelManager />;
-    if (subTab === "Providers") return <LegacyProvidersTab />;
-    if (subTab === "Prompts Guide") return <PlaceholderTab title="Prompt Guides" subtitle="Model-specific prompt guide registry — coming soon." />;
-    if (subTab === "Quality") return <PlaceholderTab title="Quality" subtitle="Quality gate configuration and benchmarks — coming soon." />;
-    if (subTab === "Generations") return <GenerationsTab />;
-    if (subTab === "Director") return <PlaceholderTab title="Director" subtitle="Director pipeline management — coming soon." />;
-    if (subTab === "Routes") return <PlaceholderTab title="Routes" subtitle="Model routing configuration — coming soon." />;
-    return <PlaceholderTab title="AI Platform" message="Select a sub-tab above: Models, Routes, Providers, Prompt Guides, Quality, Generations, or Director." />;
-  }
-
-  // Users
+  if (topTab === "overview") return <OverviewTab />;
+  if (topTab === "business") return <BusinessContent subTab={subTab} />;
+  if (topTab === "ai-platform") return <AIPlatformContent subTab={subTab} />;
   if (topTab === "users") return <UsersTab />;
-
-  // Content
-  if (topTab === "content") {
-    if (subTab === "Website Content") return <CmsEditor />;
-    if (subTab === "Announcements") return <AnnouncementsTab />;
-    return <PlaceholderTab title="Content" message="Select a sub-tab: Website Content or Announcements." />;
-  }
-
-  // Operations
-  if (topTab === "operations") {
-    if (subTab === "Feature Flags") return <LegacyFlagsTab />;
-    if (subTab === "Audit Logs") return <AuditLogsTab />;
-    if (subTab === "Jobs") return <JobsTab />;
-    if (subTab === "Provider Health") return <ProviderHealthTab />;
-    return <PlaceholderTab title="Operations" message="Select a sub-tab: Jobs, Provider Health, Feature Flags, or Audit Logs." />;
-  }
-
+  if (topTab === "content") return <ContentContent subTab={subTab} />;
+  if (topTab === "operations") return <OperationsContent subTab={subTab} />;
   return <PlaceholderTab title="Admin" message="Select a tab to begin." />;
 }
 
-// ── Reusable Placeholder ──
+function BusinessContent({ subTab }) {
+  if (subTab === "Pricing") return <LegacyPricingTab />;
+  if (subTab === "Plans") return <PlanEditor type="plans" />;
+  if (subTab === "Credit Packs") return <PlanEditor type="credit-packs" />;
+  if (subTab === "Promo Codes") return <PromoManager />;
+  if (subTab === "Revenue") return <RevenueTab />;
+  if (subTab === "Margin Advisor") return <MarginAdvisorTab />;
+  return <PlaceholderTab title="Business" message="Select a sub-tab: Revenue, Plans, Credit Packs, Promo Codes, Pricing, or Margin Advisor." />;
+}
+
+function AIPlatformContent({ subTab }) {
+  if (subTab === "Models") return <ModelManager />;
+  if (subTab === "Providers") return <LegacyProvidersTab />;
+  if (subTab === "Generations") return <GenerationsTab />;
+  if (subTab === "Prompt Guides") return <PlaceholderTab title="Prompt Guides" subtitle="Model-specific prompt guide registry — coming soon." />;
+  if (subTab === "Quality") return <PlaceholderTab title="Quality" subtitle="Quality gate configuration — coming soon." />;
+  if (subTab === "Director") return <PlaceholderTab title="Director" subtitle="Director pipeline management — coming soon." />;
+  if (subTab === "Routes") return <PlaceholderTab title="Routes" subtitle="Model routing configuration — coming soon." />;
+  return <PlaceholderTab title="AI Platform" message="Select a sub-tab: Models, Routes, Providers, Prompt Guides, Quality, Generations, or Director." />;
+}
+
+function ContentContent({ subTab }) {
+  if (subTab === "Website Content") return <CmsEditor />;
+  if (subTab === "Announcements") return <AnnouncementsTab />;
+  return <PlaceholderTab title="Content" message="Select a sub-tab: Website Content or Announcements." />;
+}
+
+function OperationsContent({ subTab }) {
+  if (subTab === "Feature Flags") return <LegacyFlagsTab />;
+  if (subTab === "Audit Logs") return <AuditLogsTab />;
+  if (subTab === "Jobs") return <JobsTab />;
+  if (subTab === "Provider Health") return <ProviderHealthTab />;
+  return <PlaceholderTab title="Operations" message="Select a sub-tab: Jobs, Provider Health, Feature Flags, or Audit Logs." />;
+}
+
+// ── Overview Tab ──
+function OverviewTab() {
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <OverviewDashboard />
+      <div className="v6-builder-grid" style={{ minHeight: "auto" }}>
+        <div className="v6-builder-panel" style={{ gridColumn: "1 / 3" }}>
+          <ProviderHealthTab />
+        </div>
+        <div className="v6-builder-panel">
+          <div className="v6-panel-title"><h3>Quick Actions</h3></div>
+          <div style={{ display: "grid", gap: 6 }}>
+            <button className="v6-btn v6-sm" onClick={() => window.location.hash = "#"}>Model catalog</button>
+            <button className="v6-btn v6-sm" onClick={() => window.location.hash = "#"}>Pricing rules</button>
+            <button className="v6-btn v6-sm" onClick={() => window.location.hash = "#"}>Users and credits</button>
+            <button className="v6-btn v6-sm" onClick={() => window.location.hash = "#"}>Refund queue</button>
+            <button className="v6-btn v6-sm" onClick={() => window.location.hash = "#"}>Feature flags</button>
+            <button className="v6-btn v6-sm" onClick={() => window.location.hash = "#"}>CMS content</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Placeholder ──
 function PlaceholderTab({ title, subtitle, message }) {
   return (
-    <div className="admin__chart" style={{ textAlign: "center", padding: "3rem" }}>
-      <h3 style={{ fontSize: "1.25rem", marginBottom: "0.5rem" }}>{title}</h3>
-      <p style={{ color: "rgba(242,242,247,0.5)", fontSize: "0.85rem" }}>
+    <div className="v6-settings-block" style={{ textAlign: "center", padding: "3rem 2rem" }}>
+      <h3>{title}</h3>
+      <p className="v6-muted" style={{ fontSize: 12, marginTop: 8 }}>
         {subtitle || message || "This section is coming soon."}
       </p>
     </div>
   );
 }
 
-// ── Legacy sub-tab wrappers (reuse existing API routes) ──
-
+// ── Users Tab ──
 function UsersTab() {
   const [users, setUsers] = useState([]);
   const [editingUser, setEditingUser] = useState(null);
@@ -226,27 +206,18 @@ function UsersTab() {
     const res = await fetch("/api/admin/users", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userId: editingUser.id,
-        credits: parseInt(editingUser.credits),
-        role: editingUser.role,
-      }),
+      body: JSON.stringify({ userId: editingUser.id, credits: parseInt(editingUser.credits), role: editingUser.role }),
     });
-    if (res.ok) {
-      toast.success("User updated");
-      setEditingUser(null);
-      loadUsers();
-    } else {
-      toast.error("Failed to update user");
-    }
+    if (res.ok) { toast.success("User updated"); setEditingUser(null); loadUsers(); }
+    else toast.error("Failed to update user");
   };
 
-  if (loading) return <div className="admin__empty"><IconSparkle className="admin__spinner" /> Loading users…</div>;
+  if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading users…</p>;
 
   return (
     <div>
-      <div className="admin__table-wrap">
-        <table className="admin__table">
+      <div style={{ overflow: "auto" }}>
+        <table className="v6-data-table">
           <thead>
             <tr><th>Name</th><th>Email</th><th>Credits</th><th>Role</th><th>Gen</th><th>Joined</th><th></th></tr>
           </thead>
@@ -256,18 +227,10 @@ function UsersTab() {
                 <td>{u.name || "—"}</td>
                 <td>{u.email}</td>
                 <td><IconBolt style={{ display: "inline", width: 12, height: 12, verticalAlign: "middle", marginRight: 2 }} /> {u.credits}</td>
-                <td><span className={`admin__badge ${u.role === "admin" ? "enabled" : "disabled"}`}>{u.role}</span></td>
+                <td><span className="v6-chip v6-active" style={{ fontSize: 9, padding: "2px 6px" }}>{u.role}</span></td>
                 <td>{u._count?.generations || 0}</td>
-                <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                <td>
-                  <button
-                    className="btn btn-sm btn-secondary"
-                    onClick={() => setEditingUser({ ...u })}
-                    style={{ fontSize: "0.75rem" }}
-                  >
-                    Edit
-                  </button>
-                </td>
+                <td className="v6-mono v6-tiny">{new Date(u.createdAt).toLocaleDateString()}</td>
+                <td><button className="v6-btn v6-sm" onClick={() => setEditingUser({ ...u })}>Edit</button></td>
               </tr>
             ))}
           </tbody>
@@ -275,33 +238,27 @@ function UsersTab() {
       </div>
 
       {editingUser && (
-        <div className="admin__edit-form">
-          <h4>Edit: {editingUser.email}</h4>
-          <div className="admin__edit-row">
-            <div className="field-group">
-              <label className="field-label">Credits</label>
-              <input
-                className="field-input"
-                type="number"
-                value={editingUser.credits}
-                onChange={(e) => setEditingUser({ ...editingUser, credits: e.target.value })}
-              />
+        <div className="v6-settings-block" style={{ marginTop: 16 }}>
+          <h3 style={{ fontSize: 14, margin: "0 0 12px" }}>Edit: {editingUser.email}</h3>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            <div className="v6-field" style={{ flex: "1 1 140px" }}>
+              <label className="v6-field-label">Credits</label>
+              <input className="v6-input" type="number" value={editingUser.credits} onChange={(e) => setEditingUser({ ...editingUser, credits: e.target.value })} />
             </div>
-            <div className="field-group">
-              <label className="field-label">Role</label>
-              <select
-                className="field-select"
-                value={editingUser.role}
-                onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
-              >
-                <option value="user">user</option>
-                <option value="admin">admin</option>
-              </select>
+            <div className="v6-field" style={{ flex: "0 1 120px" }}>
+              <label className="v6-field-label">Role</label>
+              <div className="v6-select-wrap">
+                <select className="v6-input v6-select" value={editingUser.role} onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}>
+                  <option value="user">user</option>
+                  <option value="admin">admin</option>
+                </select>
+                <svg className="v6-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></svg>
+              </div>
             </div>
           </div>
-          <div className="admin__edit-actions">
-            <button className="btn btn-primary btn-sm" onClick={saveUser}>Save</button>
-            <button className="btn btn-secondary btn-sm" onClick={() => setEditingUser(null)}>Cancel</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="v6-btn v6-primary v6-sm" onClick={saveUser}>Save</button>
+            <button className="v6-btn v6-sm" onClick={() => setEditingUser(null)}>Cancel</button>
           </div>
         </div>
       )}
@@ -309,22 +266,16 @@ function UsersTab() {
   );
 }
 
+// ── Pricing Tab ──
 function LegacyPricingTab() {
   const [pricing, setPricing] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [newPricing, setNewPricing] = useState({
-    modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1,
-  });
+  const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 });
 
   const loadPricing = useCallback(() => {
     setLoading(true);
-    fetch("/api/admin/pricing")
-      .then((r) => r.json())
-      .then(setPricing)
-      .catch(() => toast.error("Failed to load pricing"))
-      .finally(() => setLoading(false));
+    fetch("/api/admin/pricing").then((r) => r.json()).then(setPricing).catch(() => toast.error("Failed to load pricing")).finally(() => setLoading(false));
   }, []);
-
   useEffect(() => { loadPricing(); }, [loadPricing]);
 
   const savePricing = async () => {
@@ -332,73 +283,67 @@ function LegacyPricingTab() {
     const res = await fetch("/api/admin/pricing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...newPricing,
-        providerCost: parseFloat(newPricing.providerCost),
-        creditsCost: parseInt(newPricing.creditsCost),
-      }),
+      body: JSON.stringify({ ...newPricing, providerCost: parseFloat(newPricing.providerCost), creditsCost: parseInt(newPricing.creditsCost) }),
     });
-    if (res.ok) {
-      toast.success("Pricing set");
-      setNewPricing({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 });
-      loadPricing();
-    } else {
-      toast.error("Failed to set pricing");
-    }
+    if (res.ok) { toast.success("Pricing set"); setNewPricing({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 }); loadPricing(); }
+    else toast.error("Failed to set pricing");
   };
 
   return (
-    <div>
-      <div className="admin__add-form">
-        <h4>Set Model Pricing</h4>
-        <div className="admin__edit-row">
-          <input className="field-input" placeholder="Model ID (e.g. flux-dev)" value={newPricing.modelId} onChange={(e) => setNewPricing({ ...newPricing, modelId: e.target.value })} />
-          <select className="field-select" value={newPricing.modelType} onChange={(e) => setNewPricing({ ...newPricing, modelType: e.target.value })}>
-            <option>image</option><option>video</option><option>audio</option><option>lipsync</option>
-          </select>
-          <input className="field-input" placeholder="Provider" value={newPricing.providerName} onChange={(e) => setNewPricing({ ...newPricing, providerName: e.target.value })} />
-          <input className="field-input" type="number" step="0.0001" placeholder="Cost (€)" value={newPricing.providerCost} onChange={(e) => setNewPricing({ ...newPricing, providerCost: e.target.value })} />
-          <input className="field-input" type="number" placeholder="Credits" value={newPricing.creditsCost} onChange={(e) => setNewPricing({ ...newPricing, creditsCost: e.target.value })} />
-          <button className="btn btn-primary btn-sm" onClick={savePricing}>Add/Update</button>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="v6-settings-block">
+        <h3 style={{ fontSize: 14, margin: "0 0 12px" }}>Set Model Pricing</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <input className="v6-input" style={{ flex: "1 1 140px" }} placeholder="Model ID (e.g. flux-dev)" value={newPricing.modelId} onChange={(e) => setNewPricing({ ...newPricing, modelId: e.target.value })} />
+          <div className="v6-select-wrap" style={{ flex: "0 1 100px" }}>
+            <select className="v6-input v6-select" value={newPricing.modelType} onChange={(e) => setNewPricing({ ...newPricing, modelType: e.target.value })}>
+              <option>image</option><option>video</option><option>audio</option><option>lipsync</option>
+            </select>
+            <svg className="v6-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></svg>
+          </div>
+          <input className="v6-input" style={{ flex: "1 1 120px" }} placeholder="Provider" value={newPricing.providerName} onChange={(e) => setNewPricing({ ...newPricing, providerName: e.target.value })} />
+          <input className="v6-input" style={{ flex: "1 1 80px" }} type="number" step="0.0001" placeholder="Cost (€)" value={newPricing.providerCost} onChange={(e) => setNewPricing({ ...newPricing, providerCost: e.target.value })} />
+          <input className="v6-input" style={{ flex: "1 1 80px" }} type="number" placeholder="Credits" value={newPricing.creditsCost} onChange={(e) => setNewPricing({ ...newPricing, creditsCost: e.target.value })} />
+          <button className="v6-btn v6-primary v6-sm" onClick={savePricing}>Add/Update</button>
         </div>
       </div>
-      {loading ? (
-        <div className="admin__empty">Loading pricing…</div>
-      ) : (
-        <div className="admin__pricing-list">
-          {pricing.length === 0 && <p className="admin__empty">No custom pricing set. Using defaults with 2.5x markup.</p>}
-          {pricing.map((p) => (
-            <div key={p.id} className="admin__pricing-row">
-              <span><strong>{p.modelId}</strong></span>
-              <span>{p.modelType}</span>
-              <span>{p.providerName}</span>
-              <span>€{p.providerCost?.toFixed(4)}</span>
-              <span><IconBolt style={{ display: "inline", width: 12, height: 12, verticalAlign: "middle" }} /> {p.creditsCost}</span>
-              <span className={`admin__badge ${p.isActive ? "enabled" : "disabled"}`}>{p.isActive ? "Active" : "Off"}</span>
-            </div>
-          ))}
+
+      {loading ? <p className="v6-muted">Loading pricing…</p> : (
+        <div className="v6-settings-block">
+          <div style={{ overflow: "auto" }}>
+            <table className="v6-data-table">
+              <thead><tr><th>Model</th><th>Type</th><th>Provider</th><th>Cost</th><th>Credits</th><th>Status</th></tr></thead>
+              <tbody>
+                {pricing.length === 0 && <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--v6-muted)" }}>No custom pricing set. Using defaults.</td></tr>}
+                {pricing.map((p) => (
+                  <tr key={p.id}>
+                    <td><strong>{p.modelId}</strong></td>
+                    <td>{p.modelType}</td>
+                    <td>{p.providerName}</td>
+                    <td className="v6-mono">€{p.providerCost?.toFixed(4)}</td>
+                    <td><IconBolt style={{ display: "inline", width: 12, height: 12, verticalAlign: "middle" }} /> {p.creditsCost}</td>
+                    <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px", background: p.isActive ? "var(--v6-good)" : undefined, color: p.isActive ? "var(--v6-bg)" : undefined }}>{p.isActive ? "Active" : "Off"}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
+// ── Providers Tab ──
 function LegacyProvidersTab() {
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [newProvider, setNewProvider] = useState({
-    name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true,
-  });
+  const [newProvider, setNewProvider] = useState({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true });
 
   const loadProviders = useCallback(() => {
     setLoading(true);
-    fetch("/api/admin/providers")
-      .then((r) => r.json())
-      .then(setProviders)
-      .catch(() => toast.error("Failed to load providers"))
-      .finally(() => setLoading(false));
+    fetch("/api/admin/providers").then((r) => r.json()).then(setProviders).catch(() => toast.error("Failed to load providers")).finally(() => setLoading(false));
   }, []);
-
   useEffect(() => { loadProviders(); }, [loadProviders]);
 
   const saveProvider = async () => {
@@ -408,40 +353,42 @@ function LegacyProvidersTab() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...newProvider, markup: parseFloat(newProvider.markup) }),
     });
-    if (res.ok) {
-      toast.success("Provider saved");
-      setNewProvider({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true });
-      loadProviders();
-    } else {
-      toast.error("Failed to save provider");
-    }
+    if (res.ok) { toast.success("Provider saved"); setNewProvider({ name: "", type: "image+video", apiKey: "", baseUrl: "", markup: 2.5, isActive: true }); loadProviders(); }
+    else toast.error("Failed to save provider");
   };
 
   return (
-    <div>
-      <div className="admin__add-form">
-        <h4>Configure Provider</h4>
-        <div className="admin__edit-row">
-          <input className="field-input" placeholder="Name (e.g. Alibaba)" value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} />
-          <select className="field-select" value={newProvider.type} onChange={(e) => setNewProvider({ ...newProvider, type: e.target.value })}>
-            <option>image+video</option><option>image</option><option>video</option><option>llm</option><option>image+video+llm</option>
-          </select>
-          <input className="field-input" placeholder="API Key" type="password" value={newProvider.apiKey} onChange={(e) => setNewProvider({ ...newProvider, apiKey: e.target.value })} />
-          <input className="field-input" placeholder="Base URL" value={newProvider.baseUrl} onChange={(e) => setNewProvider({ ...newProvider, baseUrl: e.target.value })} />
-          <input className="field-input" type="number" step="0.1" placeholder="Markup" value={newProvider.markup} onChange={(e) => setNewProvider({ ...newProvider, markup: e.target.value })} />
-          <button className="btn btn-primary btn-sm" onClick={saveProvider}>Save</button>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="v6-settings-block">
+        <h3 style={{ fontSize: 14, margin: "0 0 12px" }}>Configure Provider</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          <input className="v6-input" style={{ flex: "1 1 130px" }} placeholder="Name (e.g. Alibaba)" value={newProvider.name} onChange={(e) => setNewProvider({ ...newProvider, name: e.target.value })} />
+          <div className="v6-select-wrap" style={{ flex: "0 1 130px" }}>
+            <select className="v6-input v6-select" value={newProvider.type} onChange={(e) => setNewProvider({ ...newProvider, type: e.target.value })}>
+              <option>image+video</option><option>image</option><option>video</option><option>llm</option><option>image+video+llm</option>
+            </select>
+            <svg className="v6-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></svg>
+          </div>
+          <input className="v6-input" style={{ flex: "1 1 120px" }} placeholder="API Key" type="password" value={newProvider.apiKey} onChange={(e) => setNewProvider({ ...newProvider, apiKey: e.target.value })} />
+          <input className="v6-input" style={{ flex: "1 1 180px" }} placeholder="Base URL" value={newProvider.baseUrl} onChange={(e) => setNewProvider({ ...newProvider, baseUrl: e.target.value })} />
+          <input className="v6-input" style={{ flex: "1 1 70px" }} type="number" step="0.1" placeholder="Markup" value={newProvider.markup} onChange={(e) => setNewProvider({ ...newProvider, markup: e.target.value })} />
+          <button className="v6-btn v6-primary v6-sm" onClick={saveProvider}>Save</button>
         </div>
       </div>
-      {loading ? (
-        <div className="admin__empty">Loading providers…</div>
-      ) : (
-        <div className="admin__providers">
-          {providers.length === 0 && <p className="admin__empty">No providers configured in DB.</p>}
+
+      {loading ? <p className="v6-muted">Loading providers…</p> : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {providers.length === 0 && <p className="v6-muted" style={{ fontSize: 11 }}>No providers configured in DB.</p>}
           {providers.map((p) => (
-            <div key={p.id} className="admin__provider">
-              <div><strong>{p.name}</strong> <span className="admin__badge">{p.type}</span></div>
-              <div>Markup: {p.markup}x</div>
-              <span className={`admin__badge ${p.isActive ? "enabled" : "disabled"}`}>{p.isActive ? "Active" : "Inactive"}</span>
+            <div key={p.id} className="v6-quote">
+              <div className="v6-quote-row">
+                <strong>{p.name}</strong>
+                <span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px" }}>{p.type}</span>
+              </div>
+              <div className="v6-quote-row">
+                <span className="v6-tiny v6-muted">Markup: {p.markup}x</span>
+                <span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px", background: p.isActive ? "var(--v6-good)" : undefined, color: p.isActive ? "var(--v6-bg)" : undefined }}>{p.isActive ? "Active" : "Inactive"}</span>
+              </div>
             </div>
           ))}
         </div>
@@ -450,19 +397,15 @@ function LegacyProvidersTab() {
   );
 }
 
+// ── Feature Flags Tab ──
 function LegacyFlagsTab() {
   const [flags, setFlags] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadFlags = useCallback(() => {
     setLoading(true);
-    fetch("/api/admin/flags")
-      .then((r) => r.json())
-      .then(setFlags)
-      .catch(() => toast.error("Failed to load feature flags"))
-      .finally(() => setLoading(false));
+    fetch("/api/admin/flags").then((r) => r.json()).then(setFlags).catch(() => toast.error("Failed to load feature flags")).finally(() => setLoading(false));
   }, []);
-
   useEffect(() => { loadFlags(); }, [loadFlags]);
 
   const toggleFlag = async (flag) => {
@@ -471,46 +414,40 @@ function LegacyFlagsTab() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key: flag.key, name: flag.name, description: flag.description, enabled: !flag.enabled, config: flag.config }),
     });
-    if (res.ok) {
-      toast.success("Flag toggled");
-      loadFlags();
-    } else {
-      toast.error("Failed to toggle flag");
-    }
+    if (res.ok) { toast.success("Flag toggled"); loadFlags(); }
+    else toast.error("Failed to toggle flag");
   };
 
   const addFlag = () => {
     const key = prompt("Flag key (e.g. enable_workflows):");
     if (!key) return;
     const name = prompt("Flag name:") || key;
-    fetch("/api/admin/flags", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, name, description: "", enabled: false }),
-    })
-      .then((res) => {
-        if (res.ok) { toast.success("Flag created"); loadFlags(); }
-        else toast.error("Failed to create flag");
-      })
+    fetch("/api/admin/flags", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, name, description: "", enabled: false }) })
+      .then((res) => { if (res.ok) { toast.success("Flag created"); loadFlags(); } else toast.error("Failed to create flag"); })
       .catch(() => toast.error("Failed to create flag"));
   };
 
   return (
-    <div>
-      <div className="admin__add-form">
-        <button className="btn btn-primary btn-sm" onClick={addFlag}>Add Flag</button>
-      </div>
-      {loading ? (
-        <div className="admin__empty">Loading feature flags…</div>
-      ) : (
-        <div className="admin__flags">
-          {flags.length === 0 && <p className="admin__empty">No feature flags set.</p>}
+    <div style={{ display: "grid", gap: 12 }}>
+      <button className="v6-btn v6-primary v6-sm" onClick={addFlag} style={{ justifySelf: "flex-start" }}>Add Flag</button>
+      {loading ? <p className="v6-muted">Loading feature flags…</p> : (
+        <div style={{ display: "grid", gap: 8 }}>
+          {flags.length === 0 && <p className="v6-muted" style={{ fontSize: 11 }}>No feature flags set.</p>}
           {flags.map((f) => (
-            <div key={f.id} className="admin__flag">
-              <div><strong>{f.name}</strong> <span style={{ fontSize: "0.7rem", color: "rgba(242,242,247,0.4)" }}>{f.key}</span></div>
-              <div style={{ fontSize: "0.75rem", color: "rgba(242,242,247,0.5)" }}>{f.description}</div>
-              <button className={`admin__toggle ${f.enabled ? "admin__toggle--on" : ""}`} onClick={() => toggleFlag(f)}>
-                <span className="admin__toggle-knob" />
+            <div key={f.id} className="v6-quote" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <strong style={{ fontSize: 12 }}>{f.name}</strong>
+                <span className="v6-mono v6-tiny v6-muted" style={{ marginLeft: 8 }}>{f.key}</span>
+                {f.description && <p className="v6-tiny v6-muted" style={{ margin: "4px 0 0" }}>{f.description}</p>}
+              </div>
+              <button
+                onClick={() => toggleFlag(f)}
+                style={{
+                  position: "relative", width: 36, height: 20, borderRadius: 99, border: "1px solid var(--v6-line)",
+                  background: f.enabled ? "var(--v6-accent)" : "var(--v6-surface2)", cursor: "pointer", flexShrink: 0,
+                }}
+              >
+                <span style={{ position: "absolute", width: 14, height: 14, borderRadius: "50%", background: "#fff", top: 2, left: f.enabled ? 19 : 2, transition: "0.2s" }} />
               </button>
             </div>
           ))}
@@ -520,112 +457,85 @@ function LegacyFlagsTab() {
   );
 }
 
+// ── Audit Logs Tab ──
 function AuditLogsTab() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const loadLogs = useCallback(() => {
     setLoading(true);
-    fetch("/api/admin/audit")
-      .then((r) => r.json())
-      .then(setLogs)
-      .catch(() => toast.error("Failed to load audit logs"))
-      .finally(() => setLoading(false));
+    fetch("/api/admin/audit").then((r) => r.json()).then(setLogs).catch(() => toast.error("Failed to load audit logs")).finally(() => setLoading(false));
   }, []);
-
   useEffect(() => { loadLogs(); }, [loadLogs]);
 
-  if (loading) return <div className="admin__empty">Loading audit logs…</div>;
+  if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading audit logs…</p>;
 
   return (
-    <div className="admin__table-wrap">
-      <table className="admin__table">
+    <div style={{ overflow: "auto" }}>
+      <table className="v6-data-table">
         <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Details</th></tr></thead>
         <tbody>
           {logs.map((log) => (
             <tr key={log.id}>
-              <td style={{ fontSize: "0.7rem" }}>{new Date(log.createdAt).toLocaleString()}</td>
+              <td className="v6-mono v6-tiny">{new Date(log.createdAt).toLocaleString()}</td>
               <td>{log.user?.email || "—"}</td>
-              <td><span className="admin__badge">{log.action}</span></td>
+              <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px" }}>{log.action}</span></td>
               <td>{log.resource || "—"}</td>
-              <td style={{ fontSize: "0.7rem", color: "rgba(242,242,247,0.4)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {log.metadata ? JSON.stringify(log.metadata).slice(0, 100) : "—"}
+              <td className="v6-mono v6-tiny v6-muted" style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {log.metadata ? JSON.stringify(log.metadata).slice(0, 80) : "—"}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {logs.length === 0 && <p className="admin__empty">No audit logs yet.</p>}
+      {logs.length === 0 && <p className="v6-muted" style={{ padding: 16, fontSize: 11 }}>No audit logs yet.</p>}
     </div>
   );
 }
 
+// ── Revenue Tab ──
 function RevenueTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/admin/analytics")
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => toast.error("Failed to load revenue data"))
-      .finally(() => setLoading(false));
+    fetch("/api/admin/analytics").then((r) => r.json()).then(setData).catch(() => toast.error("Failed to load revenue data")).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="admin__empty">Loading revenue data…</div>;
+  if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading revenue data…</p>;
 
   const totals = data?.totals || {};
   const marginByTool = data?.marginByTool || [];
 
   return (
-    <div className="admin__overview">
-      <div className="admin__stats">
-        <div className="admin__stat admin__stat--revenue">
-          <span className="admin__stat-label">Total Revenue</span>
-          <span className="admin__stat-value">€{(totals.retailValue || 0).toFixed(2)}</span>
-        </div>
-        <div className="admin__stat">
-          <span className="admin__stat-label">Provider Cost</span>
-          <span className="admin__stat-value">€{(totals.providerCost || 0).toFixed(2)}</span>
-        </div>
-        <div className="admin__stat admin__stat--profit">
-          <span className="admin__stat-label">Gross Profit</span>
-          <span className="admin__stat-value">€{(totals.profit || 0).toFixed(2)}</span>
-        </div>
-        <div className="admin__stat">
-          <span className="admin__stat-label">Margin %</span>
-          <span className="admin__stat-value">{totals.marginPct || 0}%</span>
-        </div>
-        <div className="admin__stat">
-          <span className="admin__stat-label">Credits Granted</span>
-          <span className="admin__stat-value">{(totals.creditsGranted || 0).toLocaleString()}</span>
-        </div>
-        <div className="admin__stat">
-          <span className="admin__stat-label">Credits Consumed</span>
-          <span className="admin__stat-value">{(totals.creditsUsed || 0).toLocaleString()}</span>
-        </div>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="v6-metric-grid">
+        <div className="v6-metric"><span className="v6-eyebrow">Total Revenue</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.retailValue || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Provider Cost</span><strong>€{(totals.providerCost || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Gross Profit</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.profit || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Margin %</span><strong>{totals.marginPct || 0}%</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Credits Granted</span><strong>{(totals.creditsGranted || 0).toLocaleString()}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Credits Consumed</span><strong>{(totals.creditsUsed || 0).toLocaleString()}</strong></div>
       </div>
 
-      <div className="admin__chart">
-        <h3>Revenue vs Cost by Tool (30 days)</h3>
-        <div className="admin__table-wrap">
-          <table className="admin__table">
+      <div className="v6-settings-block">
+        <h3 style={{ fontSize: 14, margin: "0 0 12px" }}>Revenue vs Cost by Tool (30 days)</h3>
+        <div style={{ overflow: "auto" }}>
+          <table className="v6-data-table">
             <thead><tr><th>Tool</th><th>Gens</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Margin %</th></tr></thead>
             <tbody>
               {marginByTool.map((t) => (
                 <tr key={t.tool}>
                   <td>{t.tool}</td>
                   <td>{t.generations}</td>
-                  <td>€{t.revenue.toFixed(2)}</td>
-                  <td>€{t.cost.toFixed(2)}</td>
-                  <td style={{ color: t.margin >= 0 ? "#00d68f" : "#ff3d71" }}>€{t.margin.toFixed(2)}</td>
+                  <td className="v6-mono">€{t.revenue.toFixed(2)}</td>
+                  <td className="v6-mono">€{t.cost.toFixed(2)}</td>
+                  <td className="v6-mono" style={{ color: t.margin >= 0 ? "var(--v6-good)" : "var(--v6-bad)" }}>€{t.margin.toFixed(2)}</td>
                   <td>{t.marginPct}%</td>
                 </tr>
               ))}
-              {marginByTool.length === 0 && (
-                <tr><td colSpan="6" style={{ textAlign: "center", color: "rgba(242,242,247,0.4)" }}>No data yet</td></tr>
-              )}
+              {marginByTool.length === 0 && <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--v6-muted)" }}>No data yet</td></tr>}
             </tbody>
           </table>
         </div>
@@ -634,64 +544,47 @@ function RevenueTab() {
   );
 }
 
+// ── Margin Advisor Tab ──
 function MarginAdvisorTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/admin/analytics")
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => toast.error("Failed to load margin data"))
-      .finally(() => setLoading(false));
+    fetch("/api/admin/analytics").then((r) => r.json()).then(setData).catch(() => toast.error("Failed to load margin data")).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="admin__empty">Loading margin advisor…</div>;
+  if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading margin advisor…</p>;
 
   const totals = data?.totals || {};
   const modelMargins = data?.modelMargins || [];
 
   return (
-    <div className="admin__overview">
-      <div className="admin__stats">
-        <div className="admin__stat admin__stat--revenue">
-          <span className="admin__stat-label">Retail Value</span>
-          <span className="admin__stat-value">€{(totals.retailValue || 0).toFixed(2)}</span>
-        </div>
-        <div className="admin__stat">
-          <span className="admin__stat-label">Provider Cost</span>
-          <span className="admin__stat-value">€{(totals.providerCost || 0).toFixed(2)}</span>
-        </div>
-        <div className="admin__stat admin__stat--profit">
-          <span className="admin__stat-label">Gross Margin</span>
-          <span className="admin__stat-value">€{(totals.profit || 0).toFixed(2)}</span>
-        </div>
-        <div className="admin__stat">
-          <span className="admin__stat-label">Margin %</span>
-          <span className="admin__stat-value">{totals.marginPct || 0}%</span>
-        </div>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="v6-metric-grid">
+        <div className="v6-metric"><span className="v6-eyebrow">Retail Value</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.retailValue || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Provider Cost</span><strong>€{(totals.providerCost || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Gross Margin</span><strong style={{ color: "var(--v6-good)" }}>€{(totals.profit || 0).toFixed(2)}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Margin %</span><strong>{totals.marginPct || 0}%</strong></div>
       </div>
 
-      <div className="admin__chart">
-        <h3>Top Models by Margin (30 days)</h3>
-        <div className="admin__table-wrap">
-          <table className="admin__table">
+      <div className="v6-settings-block">
+        <h3 style={{ fontSize: 14, margin: "0 0 12px" }}>Top Models by Margin (30 days)</h3>
+        <div style={{ overflow: "auto" }}>
+          <table className="v6-data-table">
             <thead><tr><th>Model</th><th>Gens</th><th>Revenue</th><th>Cost</th><th>Margin</th><th>Margin %</th></tr></thead>
             <tbody>
               {modelMargins.map((m) => (
                 <tr key={m.model}>
                   <td>{m.model}</td>
                   <td>{m.generations}</td>
-                  <td>€{m.revenue.toFixed(2)}</td>
-                  <td>€{m.cost.toFixed(2)}</td>
-                  <td style={{ color: m.margin >= 0 ? "#00d68f" : "#ff3d71" }}>€{m.margin.toFixed(2)}</td>
+                  <td className="v6-mono">€{m.revenue.toFixed(2)}</td>
+                  <td className="v6-mono">€{m.cost.toFixed(2)}</td>
+                  <td className="v6-mono" style={{ color: m.margin >= 0 ? "var(--v6-good)" : "var(--v6-bad)" }}>€{m.margin.toFixed(2)}</td>
                   <td>{m.marginPct}%</td>
                 </tr>
               ))}
-              {modelMargins.length === 0 && (
-                <tr><td colSpan="6" style={{ textAlign: "center", color: "rgba(242,242,247,0.4)" }}>No generation data yet</td></tr>
-              )}
+              {modelMargins.length === 0 && <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--v6-muted)" }}>No generation data yet</td></tr>}
             </tbody>
           </table>
         </div>
@@ -700,98 +593,86 @@ function MarginAdvisorTab() {
   );
 }
 
+// ── Generations Tab ──
 function GenerationsTab() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/admin/analytics")
-      .then((r) => r.json())
-      .then(setData)
-      .catch(() => toast.error("Failed to load generation data"))
-      .finally(() => setLoading(false));
+    fetch("/api/admin/analytics").then((r) => r.json()).then(setData).catch(() => toast.error("Failed to load generation data")).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="admin__empty">Loading generation data…</div>;
+  if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading generation data…</p>;
 
   const totals = data?.totals || {};
   const byTool = data?.byTool || [];
 
   return (
-    <div className="admin__overview">
-      <div className="admin__stats">
-        <div className="admin__stat"><span className="admin__stat-label">Total Generations</span><span className="admin__stat-value">{totals.generations || 0}</span></div>
-        <div className="admin__stat"><span className="admin__stat-label">Completed</span><span className="admin__stat-value">{totals.completed || 0}</span></div>
-        <div className="admin__stat"><span className="admin__stat-label">Failed</span><span className="admin__stat-value">{totals.failed || 0}</span></div>
-        <div className="admin__stat"><span className="admin__stat-label">Success Rate</span><span className="admin__stat-value">{totals.successRate || 0}%</span></div>
-        <div className="admin__stat"><span className="admin__stat-label">Total Credits</span><span className="admin__stat-value">{totals.creditsUsed || 0}</span></div>
-        <div className="admin__stat"><span className="admin__stat-label">Provider Cost</span><span className="admin__stat-value">€{(totals.providerCost || 0).toFixed(2)}</span></div>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="v6-metric-grid">
+        <div className="v6-metric"><span className="v6-eyebrow">Total Generations</span><strong>{totals.generations || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Completed</span><strong style={{ color: "var(--v6-good)" }}>{totals.completed || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Failed</span><strong style={{ color: "var(--v6-bad)" }}>{totals.failed || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Success Rate</span><strong>{totals.successRate || 0}%</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Total Credits</span><strong>{totals.creditsUsed || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Provider Cost</span><strong className="v6-mono">€{(totals.providerCost || 0).toFixed(2)}</strong></div>
       </div>
 
-      <div className="admin__chart">
-        <h3>Usage by Tool (30 days)</h3>
-        <div className="admin__bars">
-          {byTool.map((t) => (
-            <div key={t.tool} className="admin__bar">
-              <span className="admin__bar-label">{t.tool}</span>
-              <span className="admin__bar-track">
-                <span
-                  className="admin__bar-fill"
-                  style={{ width: `${Math.min(100, (t._count / (totals.generations || 1)) * 100)}%` }}
-                />
-              </span>
-              <span className="admin__bar-count">{t._count}</span>
-            </div>
-          ))}
-          {byTool.length === 0 && <p className="admin__empty" style={{ padding: "1rem" }}>No generation data yet.</p>}
-        </div>
+      <div className="v6-settings-block">
+        <h3 style={{ fontSize: 14, margin: "0 0 12px" }}>Usage by Tool (30 days)</h3>
+        {byTool.length === 0 ? <p className="v6-muted" style={{ fontSize: 11 }}>No generation data yet.</p> : (
+          <div style={{ display: "grid", gap: 8 }}>
+            {byTool.map((t) => (
+              <div key={t.tool} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 11, minWidth: 110 }}>{t.tool}</span>
+                <div style={{ flex: 1, height: 6, background: "var(--v6-surface2)", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ height: "100%", background: "var(--v6-accent)", borderRadius: 99, width: `${Math.min(100, (t._count / (totals.generations || 1)) * 100)}%`, transition: "width 0.3s" }} />
+                </div>
+                <span className="v6-mono v6-tiny" style={{ minWidth: 40, textAlign: "right" }}>{t._count}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+// ── Jobs Tab ──
 function JobsTab() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/admin/jobs")
-      .then((r) => {
-        if (!r.ok) throw new Error("Not found");
-        return r.json();
-      })
-      .then(setJobs)
-      .catch(() => { /* API may not exist yet */ })
-      .finally(() => setLoading(false));
+    fetch("/api/admin/jobs").then((r) => { if (!r.ok) throw new Error("Not found"); return r.json(); }).then(setJobs).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="admin__empty">Loading jobs…</div>;
+  if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading jobs…</p>;
 
   return (
-    <div>
-      <div className="admin__stats" style={{ marginBottom: "1.5rem" }}>
-        <div className="admin__stat"><span className="admin__stat-label">Active Jobs</span><span className="admin__stat-value">{jobs.active || 0}</span></div>
-        <div className="admin__stat"><span className="admin__stat-label">Queued</span><span className="admin__stat-value">{jobs.queued || 0}</span></div>
-        <div className="admin__stat"><span className="admin__stat-label">Failed Today</span><span className="admin__stat-value">{jobs.failedToday || 0}</span></div>
-        <div className="admin__stat"><span className="admin__stat-label">Avg Wait</span><span className="admin__stat-value">{jobs.avgWaitMs ? `${(jobs.avgWaitMs / 1000).toFixed(1)}s` : "—"}</span></div>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="v6-metric-grid">
+        <div className="v6-metric"><span className="v6-eyebrow">Active Jobs</span><strong>{jobs.active || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Queued</span><strong>{jobs.queued || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Failed Today</span><strong style={{ color: "var(--v6-bad)" }}>{jobs.failedToday || 0}</strong></div>
+        <div className="v6-metric"><span className="v6-eyebrow">Avg Wait</span><strong>{jobs.avgWaitMs ? `${(jobs.avgWaitMs / 1000).toFixed(1)}s` : "—"}</strong></div>
       </div>
-      {(!jobs.recent || jobs.recent.length === 0) && (
-        <p className="admin__empty">Job tracking API not yet available. Active jobs will appear here.</p>
-      )}
-      {(jobs.recent || []).length > 0 && (
-        <div className="admin__table-wrap">
-          <table className="admin__table">
+      {(!jobs.recent || jobs.recent.length === 0) ? (
+        <p className="v6-muted" style={{ fontSize: 11 }}>Job tracking API not yet available. Active jobs will appear here.</p>
+      ) : (
+        <div style={{ overflow: "auto" }}>
+          <table className="v6-data-table">
             <thead><tr><th>Job ID</th><th>Tool</th><th>Status</th><th>User</th><th>Created</th></tr></thead>
             <tbody>
               {jobs.recent.map((j) => (
                 <tr key={j.id || j.jobId}>
-                  <td style={{ fontFamily: "monospace", fontSize: "0.7rem" }}>{(j.id || j.jobId || "").slice(0, 12)}…</td>
+                  <td className="v6-mono v6-tiny">{(j.id || j.jobId || "").slice(0, 12)}…</td>
                   <td>{j.tool || "—"}</td>
-                  <td><span className={`admin__badge ${j.status === "completed" ? "enabled" : j.status === "failed" ? "disabled" : "pending"}`}>{j.status}</span></td>
+                  <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px", background: j.status === "completed" ? "var(--v6-good)" : j.status === "failed" ? "var(--v6-bad)" : "var(--v6-warn)", color: j.status === "failed" ? "#fff" : "var(--v6-bg)" }}>{j.status}</span></td>
                   <td>{j.user?.email || "—"}</td>
-                  <td style={{ fontSize: "0.7rem" }}>{j.createdAt ? new Date(j.createdAt).toLocaleString() : "—"}</td>
+                  <td className="v6-mono v6-tiny">{j.createdAt ? new Date(j.createdAt).toLocaleString() : "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -802,91 +683,77 @@ function JobsTab() {
   );
 }
 
+// ── Provider Health Tab ──
 function ProviderHealthTab() {
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/admin/provider-health")
-      .then((r) => {
-        if (!r.ok) throw new Error("Not found");
-        return r.json();
-      })
-      .then(setHealth)
-      .catch(() => { /* API may not exist yet */ })
-      .finally(() => setLoading(false));
+    fetch("/api/admin/provider-health").then((r) => { if (!r.ok) throw new Error("Not found"); return r.json(); }).then(setHealth).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="admin__empty">Loading provider health…</div>;
+  if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading provider health…</p>;
 
   return (
     <div>
-      <div className="admin__table-wrap">
-        <table className="admin__table">
-          <thead><tr><th>Provider</th><th>Status</th><th>Latency</th><th>Success Rate</th><th>Error Rate</th><th>429 Rate</th><th>Last Check</th></tr></thead>
+      <div className="v6-panel-title"><h3>Provider Health</h3></div>
+      <div style={{ overflow: "auto" }}>
+        <table className="v6-data-table">
+          <thead><tr><th>Provider</th><th>Models</th><th>Latency</th><th>Success Rate</th><th>Status</th></tr></thead>
           <tbody>
             {(health?.providers || []).map((p) => (
               <tr key={p.name}>
                 <td><strong>{p.name}</strong></td>
-                <td><span className={`admin__badge ${p.healthy ? "enabled" : "disabled"}`}>{p.healthy ? "Healthy" : "Down"}</span></td>
-                <td>{p.latencyMs ? `${p.latencyMs}ms` : "—"}</td>
+                <td className="v6-mono v6-tiny">{p.modelCount || "—"}</td>
+                <td className="v6-mono">{p.latencyMs ? `${p.latencyMs}ms` : "—"}</td>
                 <td>{p.successRate != null ? `${(p.successRate * 100).toFixed(1)}%` : "—"}</td>
-                <td>{p.errorRate != null ? `${(p.errorRate * 100).toFixed(1)}%` : "—"}</td>
-                <td>{p.rateLimitRate != null ? `${(p.rateLimitRate * 100).toFixed(1)}%` : "—"}</td>
-                <td style={{ fontSize: "0.7rem" }}>{p.lastCheck ? new Date(p.lastCheck).toLocaleString() : "—"}</td>
+                <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px", background: p.healthy ? "var(--v6-good)" : "var(--v6-bad)", color: p.healthy ? "var(--v6-bg)" : "#fff" }}>{p.healthy ? "Healthy" : "Down"}</span></td>
               </tr>
             ))}
+            {(!health?.providers || health.providers.length === 0) && (
+              <tr><td colSpan="5" style={{ textAlign: "center", color: "var(--v6-muted)", padding: 16 }}>Provider health monitoring not yet configured.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
-      {(!health?.providers || health.providers.length === 0) && (
-        <p className="admin__empty">Provider health monitoring not yet configured. Data will appear when providers report health checks.</p>
-      )}
     </div>
   );
 }
 
+// ── Announcements Tab ──
 function AnnouncementsTab() {
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
-    fetch("/api/admin/announcements")
-      .then((r) => {
-        if (!r.ok) throw new Error("Not found");
-        return r.json();
-      })
-      .then(setAnnouncements)
-      .catch(() => { /* API may not exist yet */ })
-      .finally(() => setLoading(false));
+    fetch("/api/admin/announcements").then((r) => { if (!r.ok) throw new Error("Not found"); return r.json(); }).then(setAnnouncements).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div className="admin__empty">Loading announcements…</div>;
+  if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading announcements…</p>;
 
   return (
-    <div>
-      <div className="admin__add-form">
-        <h4>Create Announcement</h4>
-        <p style={{ color: "rgba(242,242,247,0.5)", fontSize: "0.8rem", marginBottom: "0.75rem" }}>
-          Announcements API coming soon. Use this space to manage in-app banners and notifications.
-        </p>
-        <div className="admin__edit-row">
-          <input className="field-input" placeholder="Message" disabled />
-          <select className="field-select" disabled><option>Info</option></select>
-          <button className="btn btn-primary btn-sm" disabled>Create</button>
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="v6-settings-block">
+        <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>Create Announcement</h3>
+        <p className="v6-tiny v6-muted" style={{ marginBottom: 10 }}>Announcements API coming soon.</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input className="v6-input" style={{ flex: "1 1 200px" }} placeholder="Message" disabled />
+          <div className="v6-select-wrap" style={{ flex: "0 1 100px" }}>
+            <select className="v6-input v6-select" disabled><option>Info</option></select>
+            <svg className="v6-icon" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9" /></svg>
+          </div>
+          <button className="v6-btn v6-primary v6-sm" disabled>Create</button>
         </div>
       </div>
-      {announcements.length === 0 && (
-        <p className="admin__empty">No announcements yet.</p>
-      )}
+      {announcements.length === 0 && <p className="v6-muted" style={{ fontSize: 11 }}>No announcements yet.</p>}
       {announcements.length > 0 && (
-        <div className="admin__flags">
+        <div style={{ display: "grid", gap: 8 }}>
           {announcements.map((a) => (
-            <div key={a.id} className="admin__flag">
-              <div><strong>{a.message}</strong></div>
-              <div style={{ fontSize: "0.75rem", color: "rgba(242,242,247,0.5)" }}>{a.style} · {a.dates}</div>
+            <div key={a.id} className="v6-quote">
+              <div className="v6-quote-row"><strong>{a.message}</strong></div>
+              <div className="v6-quote-row"><span className="v6-tiny v6-muted">{a.style} · {a.dates}</span></div>
             </div>
           ))}
         </div>
