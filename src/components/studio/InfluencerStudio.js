@@ -13,6 +13,7 @@ import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "./useModelCatalog";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 const ASPECTS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
 const SCENE_SUGGESTIONS = [
@@ -50,7 +51,8 @@ export default function InfluencerStudio() {
   const [selectedModelId, setSelectedModelId] = useState("flux-dev");
   const [genStage, setGenStage] = useState("");
 
-  const { models: imageModels } = useModelCatalog({ modelType: "image", capability: "text-to-image" });
+  const { models: catalogModels } = useModelCatalog({});
+  const imageModels = useMemo(() => catalogModels.filter((m) => matchesGroup(m, "tti")), [catalogModels]);
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
   const currentModel = imageModels.find((m) => m.id === selectedModelId) || imageModels[0] || {};
   const { cost, affordable, shortfall } = useCreditCost("image", selectedModelId, { aspect_ratio: aspectRatio });

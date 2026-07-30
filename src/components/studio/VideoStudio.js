@@ -12,6 +12,7 @@ import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVGs ── */
 const IconFilm = () => (
@@ -95,13 +96,6 @@ const VIDEO_SUGGESTIONS = [
   "Abstract fluid simulation with vibrant iridescent colors, 60fps smooth",
 ];
 
-/* ── Capability filter map ── */
-const MODE_CAPABILITY = {
-  ttv: "text-to-video",
-  i2v: "image-to-video",
-  v2v: "video-to-video",
-};
-
 /* ── Camera motion presets ── */
 const CAMERA_MOTIONS = [
   { key: "static", label: "Static", desc: "No camera movement" },
@@ -118,12 +112,13 @@ export default function VideoStudio() {
   /* ── Mode & model catalog ── */
   const [mode, setMode] = useState("ttv");
   const isMobile = useIsMobile();
-  const { models: allModels, loading } = useModelCatalog({ modelType: "video" });
+  const { models: allModels, loading } = useModelCatalog({});
   const filteredModels = useMemo(() => {
     if (!allModels?.length) return [];
-    const cap = MODE_CAPABILITY[mode];
-    if (!cap) return allModels;
-    return allModels.filter((m) => m.capability === cap);
+    // mode is "ttv" | "i2v" | "v2v" — matches CAPABILITY_GROUPS keys.
+    // "reference-to-video" models are NOT in any of these groups, so they are
+    // excluded: they require reference-image inputs this studio never sends.
+    return allModels.filter((m) => matchesGroup(m, mode));
   }, [allModels, mode]);
   const [selectedModelId, setSelectedModelId] = useState("");
 
@@ -303,7 +298,6 @@ export default function VideoStudio() {
     setDuration(5);
     setAspectRatio("16:9");
     setCameraMotion("static");
-    window.location.reload();
   }, []);
 
   const handleDownload = useCallback(() => {
@@ -714,6 +708,9 @@ export default function VideoStudio() {
           filterMode={mode}
         />
       )}
+      {!loading && filteredModels.length === 0 && (
+        <div className="v6-muted v6-tiny" style={{ marginTop: 6 }}>No models available for this mode</div>
+      )}
 
       <div className="v6-section-rule" style={{ margin: "14px 0" }} />
 
@@ -785,21 +782,6 @@ export default function VideoStudio() {
       {!generating && (
         <div style={{ padding: "0 12px 12px" }}>
           {resultScrub}
-          {/* Prompt suggestions */}
-          {!result && (
-            <div className="v6-suggestions-row" style={{ padding: "0 0 4px" }}>
-              {VIDEO_SUGGESTIONS.slice(0, 4).map((s, i) => (
-                <button
-                  key={i}
-                  className="v6-prompt-suggestion"
-                  onClick={() => pickSuggestion(s)}
-                  title={`Use: ${s.slice(0, 60)}\u2026`}
-                >
-                  {s.length > 55 ? s.slice(0, 55) + "\u2026" : s}
-                </button>
-              ))}
-            </div>
-          )}
           {promptDock}
         </div>
       )}

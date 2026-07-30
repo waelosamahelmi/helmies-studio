@@ -9,6 +9,7 @@ import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "./useModelCatalog";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVGs ── */
 const IconCamera = () => (
@@ -61,7 +62,8 @@ const CAMERA_PREVIEWS = {
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function CinemaStudio() {
-  const { models: imageModels } = useModelCatalog({ modelType: "image", capability: "text-to-image" });
+  const { models: catalogModels } = useModelCatalog({});
+  const imageModels = useMemo(() => catalogModels.filter((m) => matchesGroup(m, "tti")), [catalogModels]);
   const isMobile = useIsMobile();
 
   const [selectedModelId, setSelectedModelId] = useState("");

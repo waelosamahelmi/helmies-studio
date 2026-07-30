@@ -9,6 +9,7 @@ import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVGs ── */
 const IconMic = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" /><path d="M19 10v2a7 7 0 01-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>);
@@ -23,8 +24,8 @@ const IconCheck = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none
 const WAVEFORMS = [3, 8, 4, 10, 6, 9, 5, 7, 3, 8, 5, 10, 4, 7, 6, 5];
 
 export default function LipSyncStudio() {
-  const { models: rawModels } = useModelCatalog({ modelType: "lipsync" });
-  const MODELS = useMemo(() => rawModels.map((m) => ({ id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: (m.mode === "video") ? "premium" : undefined, mode: m.mode || (m.id?.includes("video") ? "video" : "image"), endpoint: m.endpoint })), [rawModels]);
+  const { models: rawModels } = useModelCatalog({});
+  const MODELS = useMemo(() => rawModels.filter((m) => matchesGroup(m, "lipsync")).map((m) => ({ id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: (m.mode === "video") ? "premium" : undefined, mode: m.mode || (m.id?.includes("video") ? "video" : "image"), endpoint: m.endpoint })), [rawModels]);
 
   const [model, setModel] = useState("");
   useEffect(() => { if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) setModel(MODELS[0].id); }, [MODELS, model]);

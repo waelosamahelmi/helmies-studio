@@ -7,6 +7,7 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import PromptDock from "./v6/PromptDock";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ═══════════════════════════════════════════════════════════
    CONSTANTS
@@ -121,11 +122,14 @@ export default function CanvasStudio() {
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const isMobile = useIsMobile();
-  const { models: canvasModels } = useModelCatalog({ modelType: "image" });
+  const { models: catalogModels } = useModelCatalog({});
+  // Canvas generation supports both text-to-image and image-to-image models;
+  // merge both capability groups from the full catalog.
+  const canvasModels = useMemo(() => catalogModels.filter((m) => matchesGroup(m, "tti") || matchesGroup(m, "iti")), [catalogModels]);
   useEffect(() => { if (canvasModels.length > 0 && !selectedModelId) setSelectedModelId(canvasModels[0].id); }, [canvasModels, selectedModelId]);
   const { loading: generationLoading, result: genResult, error: genError, elapsed, submit } = useAsyncGeneration();
   useEffect(() => { setGenerating(generationLoading); }, [generationLoading]);
-  useEffect(() => { if (genResult?.url && !generating) { const l = addLayer("image", { src: genResult.url, name: `Generated ${layers.length + 1}` }); if (canvasModels.length && !selectedModelId) setSelectedModelId(canvasModels[0].id); } }, [genResult?.url, generating]);
+  useEffect(() => { if (genResult?.url && !generating) { addLayer("image", { src: genResult.url, name: `Generated ${layers.length + 1}`, x: (canvasWidth - 500) / 2, y: (canvasHeight - 500) / 2 }); } }, [genResult?.url, generating]);
 
   const currentModel = canvasModels.find(m => m.id === selectedModelId) || canvasModels[0];
 
@@ -144,17 +148,20 @@ export default function CanvasStudio() {
   const uploadRef = useRef(null);
   const canvasWrapRef = useRef(null);
   const canvasInnerRef = useRef(null);
-  const dragRef = useRef(null);
   const historyRef = useRef({ past: [], future: [] });
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   /* ── Interaction state ── */
   const [isDrawing, setIsDrawing] = useState(false); // shape drawing
   const [drawStart, setDrawStart] = useState(null); // shape start coords
   const [drawPreview, setDrawPreview] = useState(null); // shape preview rect
+  const [editingTextId, setEditingTextId] = useState(null); // text layer being edited
 
   /* ── Derived ── */
   const activeLayer = useMemo(() => layers.find(l => l.id === activeLayerId), [layers, activeLayerId]);
   const visibleLayers = useMemo(() => layers.filter(l => l.visible), [layers]);
+  // eslint-disable-next-line no-unused-vars
+  const _hv = historyVersion; // force re-render when history changes
   const canUndo = historyRef.current.past.length > 0;
   const canRedo = historyRef.current.future.length > 0;
   const scale = zoom / 100;
@@ -170,6 +177,7 @@ export default function CanvasStudio() {
     historyRef.current.past.push(snap);
     historyRef.current.future = [];
     if (historyRef.current.past.length > MAX_HISTORY) historyRef.current.past.shift();
+    setHistoryVersion(v => v + 1);
   }, [captureLayers, canvasWidth, canvasHeight, canvasBg]);
 
   const handleUndo = useCallback(() => {
@@ -183,6 +191,7 @@ export default function CanvasStudio() {
     setCanvasHeight(prev.canvasHeight);
     setCanvasBg(prev.canvasBg);
     setActiveLayerId(null);
+    setHistoryVersion(v => v + 1);
   }, [captureLayers, canvasWidth, canvasHeight, canvasBg]);
 
   const handleRedo = useCallback(() => {
@@ -196,6 +205,7 @@ export default function CanvasStudio() {
     setCanvasHeight(next.canvasHeight);
     setCanvasBg(next.canvasBg);
     setActiveLayerId(null);
+    setHistoryVersion(v => v + 1);
   }, [captureLayers, canvasWidth, canvasHeight, canvasBg]);
 
   /* ═══════════════════════════════════════════════════════════
@@ -218,6 +228,7 @@ export default function CanvasStudio() {
     pushUndo();
     setLayers(prev => prev.filter(l => l.id !== id));
     setActiveLayerId(prev => prev === id ? null : prev);
+    setEditingTextId(prev => prev === id ? null : prev);
   }, [pushUndo]);
 
   const duplicateLayer = useCallback((id) => {
@@ -405,39 +416,42 @@ export default function CanvasStudio() {
     setDrawStart(null);
     setDrawPreview(null);
     if (type === "rectangle" && Math.abs(pos.x - drawStart.x) > 5 && Math.abs(pos.y - drawStart.y) > 5) {
-      pushUndo();
       addLayer("rectangle", { x: Math.min(drawStart.x, pos.x), y: Math.min(drawStart.y, pos.y), width: Math.abs(pos.x - drawStart.x), height: Math.abs(pos.y - drawStart.y) });
       setActiveTool("select");
     }
     if (type === "circle" && Math.abs(pos.x - drawStart.x) > 5) {
-      pushUndo();
       const r = Math.max(Math.abs(pos.x - drawStart.x), Math.abs(pos.y - drawStart.y));
       addLayer("circle", { x: drawStart.x - r, y: drawStart.y - r, width: r * 2, height: r * 2 });
       setActiveTool("select");
     }
-  }, [isDrawing, drawStart, activeTool, screenToCanvas, addLayer, pushUndo]);
+  }, [isDrawing, drawStart, activeTool, screenToCanvas, addLayer]);
 
   /* ═══════════════════════════════════════════════════════════
-     PAN / ZOOM
+     PAN / ZOOM — native wheel listener (React onWheel is passive)
      ═══════════════════════════════════════════════════════════ */
 
-  const handleCanvasWheel = useCallback((e) => {
-    if (e.ctrlKey || e.metaKey) return;
-    e.preventDefault();
-    const rect = canvasWrapRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const oldScale = scale;
-    const delta = e.deltaY > 0 ? -10 : 10;
-    const newZ = Math.max(25, Math.min(400, zoom + delta));
-    const newScale = newZ / 100;
-    const canvasX = (mouseX - panX) / oldScale;
-    const canvasY = (mouseY - panY) / oldScale;
-    setZoom(newZ);
-    setPanX(mouseX - canvasX * newScale);
-    setPanY(mouseY - canvasY * newScale);
-  }, [zoom, scale, panX, panY]);
+  useEffect(() => {
+    const wrap = canvasWrapRef.current;
+    if (!wrap) return;
+    const onWheel = (e) => {
+      if (e.ctrlKey || e.metaKey) return;
+      e.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const s = zoom / 100;
+      const delta = e.deltaY > 0 ? -10 : 10;
+      const newZ = Math.max(25, Math.min(400, zoom + delta));
+      const newS = newZ / 100;
+      const cx = (mouseX - panX) / s;
+      const cy = (mouseY - panY) / s;
+      setZoom(newZ);
+      setPanX(mouseX - cx * newS);
+      setPanY(mouseY - cy * newS);
+    };
+    wrap.addEventListener("wheel", onWheel, { passive: false });
+    return () => wrap.removeEventListener("wheel", onWheel);
+  }, [zoom, panX, panY]);
 
   const startPan = useCallback((e) => {
     if (activeTool !== "hand" && e.button !== 1) return;
@@ -613,6 +627,7 @@ export default function CanvasStudio() {
     if (c.height) setCanvasHeight(c.height);
     if (c.background) setCanvasBg(c.background);
     setActiveLayerId(null);
+    setEditingTextId(null);
     setShowDocList(false);
     setPanX(0); setPanY(0);
   }, []);
@@ -622,6 +637,8 @@ export default function CanvasStudio() {
     setCanvasWidth(1080); setCanvasHeight(1080); setCanvasBg("transparent");
     setShowDocList(false); setPanX(0); setPanY(0); setZoom(100);
     historyRef.current = { past: [], future: [] };
+    setHistoryVersion(v => v + 1);
+    setEditingTextId(null);
   }, []);
 
   /* ═══════════════════════════════════════════════════════════
@@ -666,7 +683,7 @@ export default function CanvasStudio() {
         if (e.key === "h" || e.key === "H") { setActiveTool("hand"); return; }
         if (e.key === "i" || e.key === "I") { setActiveTool("image"); return; }
         if (e.key === "Delete" || e.key === "Backspace") { if (activeLayerId) removeLayer(activeLayerId); return; }
-        if (e.key === "Escape") { setActiveLayerId(null); setActiveTool("select"); return; }
+        if (e.key === "Escape") { if (editingTextId) { setEditingTextId(null); return; } setActiveLayerId(null); setActiveTool("select"); return; }
 
         // Nudge with arrow keys
         if (activeLayerId && activeLayer) {
@@ -680,7 +697,7 @@ export default function CanvasStudio() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeLayerId, activeLayer, handleUndo, handleRedo, saveDocument, duplicateLayer, removeLayer, pushUndo, updateLayer]);
+  }, [activeLayerId, activeLayer, editingTextId, handleUndo, handleRedo, saveDocument, duplicateLayer, removeLayer, pushUndo, updateLayer]);
 
   /* ═══════════════════════════════════════════════════════════
      RENDER
@@ -831,13 +848,13 @@ export default function CanvasStudio() {
           onPointerDown={(e) => { if (activeTool === "hand" || e.button === 1) startPan(e); else handleCanvasPointerDown(e); }}
           onPointerMove={(e) => { if (activeTool === "hand" && e.buttons === 1) return; handleCanvasPointerMove(e); }}
           onPointerUp={handleCanvasPointerUp}
-          onWheel={handleCanvasWheel}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           style={{
             flex: 1, width: "100%", position: "relative", overflow: "hidden",
             cursor: activeTool === "hand" ? "grab" : activeTool === "rectangle" || activeTool === "circle" ? "crosshair" : "default",
             background: "radial-gradient(circle at center, rgba(255,65,111,0.03), transparent 70%), var(--v6-bg)",
+            touchAction: "none",
           }}
         >
           {/* Drop zone indicator */}
@@ -884,10 +901,11 @@ export default function CanvasStudio() {
                     <img src={layer.src} alt={layer.name} style={{ width: "100%", height: "100%", objectFit: "cover", pointerEvents: "none" }} draggable={false} />
                   ) : layer.type === "text" ? (
                     <div
-                      contentEditable={isSelected && !layer.locked}
+                      contentEditable={editingTextId === layer.id && !layer.locked}
                       suppressContentEditableWarning
-                      onBlur={(e) => updateLayer(layer.id, { text: e.target.textContent })}
-                      onPointerDown={(e) => { if (isSelected) e.stopPropagation(); }}
+                      onBlur={(e) => { updateLayer(layer.id, { text: e.target.textContent }); setEditingTextId(null); }}
+                      onPointerDown={(e) => { if (editingTextId === layer.id) e.stopPropagation(); }}
+                      onDoubleClick={(e) => { if (!layer.locked) { e.stopPropagation(); setEditingTextId(layer.id); } }}
                       style={{
                         width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: layer.textAlign === "center" ? "center" : layer.textAlign === "right" ? "flex-end" : "flex-start",
                         fontFamily: `${layer.fontFamily || "Inter"}, system-ui, sans-serif`,
@@ -895,11 +913,13 @@ export default function CanvasStudio() {
                         fontWeight: layer.fontWeight || 700,
                         color: layer.textColor || "#ffffff",
                         textAlign: layer.textAlign || "center",
-                        pointerEvents: isSelected ? "auto" : "none",
+                        pointerEvents: editingTextId === layer.id ? "auto" : "none",
                         overflow: "hidden",
-                        outline: "none",
+                        outline: editingTextId === layer.id ? "1px dashed var(--v6-accent)" : "none",
+                        outlineOffset: 2,
                         padding: "4px 8px",
                         lineHeight: 1.2,
+                        cursor: editingTextId === layer.id ? "text" : undefined,
                       }}
                     >
                       {layer.text || "Text"}
@@ -921,10 +941,10 @@ export default function CanvasStudio() {
                       <div onPointerDown={(e) => startResize(e, layer.id, "bl")} style={cornerHandleStyle({ left: -5, bottom: -5, cursor: "nesw-resize" })} />
                       <div onPointerDown={(e) => startResize(e, layer.id, "br")} style={cornerHandleStyle({ right: -5, bottom: -5, cursor: "nwse-resize" })} />
                       {/* Edge resize handles */}
-                      <div onPointerDown={(e) => startResize(e, layer.id, "top")} style={edgeHandleStyle({ left: layer.width / 2 - 4, top: -5, cursor: "ns-resize" })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "bottom")} style={edgeHandleStyle({ left: layer.width / 2 - 4, top: layer.height - 5, cursor: "ns-resize" })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "left")} style={edgeHandleStyle({ left: -5, top: layer.height / 2 - 4, cursor: "ew-resize" })} />
-                      <div onPointerDown={(e) => startResize(e, layer.id, "right")} style={edgeHandleStyle({ left: layer.width - 5, top: layer.height / 2 - 4, cursor: "ew-resize" })} />
+                      <div onPointerDown={(e) => startResize(e, layer.id, "top")} style={cornerHandleStyle({ left: "50%", top: -5, cursor: "ns-resize", marginLeft: -5 })} />
+                      <div onPointerDown={(e) => startResize(e, layer.id, "bottom")} style={cornerHandleStyle({ left: "50%", bottom: -5, cursor: "ns-resize", marginLeft: -5 })} />
+                      <div onPointerDown={(e) => startResize(e, layer.id, "left")} style={cornerHandleStyle({ left: -5, top: "50%", cursor: "ew-resize", marginTop: -5 })} />
+                      <div onPointerDown={(e) => startResize(e, layer.id, "right")} style={cornerHandleStyle({ right: -5, top: "50%", cursor: "ew-resize", marginTop: -5 })} />
                       {/* Rotation handle */}
                       <div onPointerDown={(e) => startRotate(e, layer.id)} style={{
                         position: "absolute", left: "50%", top: -28, transform: "translateX(-50%)",
@@ -1173,13 +1193,15 @@ export default function CanvasStudio() {
    STYLE HELPERS
    ═══════════════════════════════════════════════════════════ */
 
-function cornerHandleStyle({ left, right, top, bottom, cursor }) {
+function cornerHandleStyle({ left, right, top, bottom, cursor, marginLeft, marginTop }) {
   return {
     position: "absolute",
     ...(left !== undefined ? { left } : {}),
     ...(right !== undefined ? { right } : {}),
     ...(top !== undefined ? { top } : {}),
     ...(bottom !== undefined ? { bottom } : {}),
+    ...(marginLeft !== undefined ? { marginLeft } : {}),
+    ...(marginTop !== undefined ? { marginTop } : {}),
     width: 10, height: 10,
     background: "var(--v6-accent)",
     border: "1.5px solid var(--v6-bg)",
@@ -1187,17 +1209,5 @@ function cornerHandleStyle({ left, right, top, bottom, cursor }) {
     zIndex: 10,
     borderRadius: 2,
     boxShadow: "0 0 6px rgba(255,65,111,0.4)",
-  };
-}
-
-function edgeHandleStyle({ left, top, cursor }) {
-  return {
-    position: "absolute", left, top,
-    width: 8, height: 8,
-    background: "var(--v6-accent)",
-    border: "1.5px solid var(--v6-bg)",
-    cursor, zIndex: 10,
-    borderRadius: 2,
-    boxShadow: "0 0 4px rgba(255,65,111,0.4)",
   };
 }

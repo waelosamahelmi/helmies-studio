@@ -11,6 +11,7 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVGs ── */
 const IconMusic = () => (
@@ -72,8 +73,8 @@ export default function MusicStudio() {
   const [genStage, setGenStage] = useState("");
   const [lyricsExpanded, setLyricsExpanded] = useState(false);
 
-  const { models: audioModels } = useModelCatalog({ modelType: "audio" });
-  const sunoModels = useMemo(() => audioModels?.filter(m => m.provider?.toLowerCase() === "suno") || [], [audioModels]);
+  const { models: catalogModels } = useModelCatalog({});
+  const sunoModels = useMemo(() => catalogModels?.filter(m => matchesGroup(m, "audio") && m.provider?.toLowerCase() === "suno") || [], [catalogModels]);
   const [selectedModelId, setSelectedModelId] = useState(null);
   const isMobile = useIsMobile();
 

@@ -22,7 +22,7 @@ function optionsFromSchema(model) {
   };
 }
 
-export function useModelCatalog({ modelType, capability, fallback = [] }) {
+export function useModelCatalog({ modelType, capability, fallback = [] } = {}) {
   const [remote, setRemote] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -30,9 +30,14 @@ export function useModelCatalog({ modelType, capability, fallback = [] }) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    const qs = new URLSearchParams({ type: modelType });
+    // No modelType → fetch the FULL catalog (no query param). Studios then
+    // filter client-side via capability groups (see lib/capability-groups.js),
+    // because DB modelType values are fragmented across the catalog.
+    const qs = new URLSearchParams();
+    if (modelType) qs.set("type", modelType);
     if (capability) qs.set("capability", capability);
-    apiFetch(`/api/models/catalog?${qs}`)
+    const query = qs.toString();
+    apiFetch(query ? `/api/models/catalog?${query}` : "/api/models/catalog")
       .then(async (response) => {
         if (!response.ok) throw new Error("Catalog unavailable");
         return response.json();
@@ -41,7 +46,7 @@ export function useModelCatalog({ modelType, capability, fallback = [] }) {
       .catch((catalogError) => { if (active) setError(catalogError.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [modelType]);
+  }, [modelType, capability]);
 
   const models = useMemo(() => remote.length ? remote : fallback, [remote, fallback]);
   return { models, loading, error, source: remote.length ? "catalog" : "fallback" };

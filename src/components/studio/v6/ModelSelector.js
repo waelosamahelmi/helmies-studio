@@ -3,21 +3,9 @@
 import { useState, useMemo } from "react";
 
 /* ── Inline SVGs ── */
-const IconSearch = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
-  </svg>
-);
-
 const IconZap = () => (
   <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     <polygon points="13,2 3,14 12,14 11,22 21,10 12,10" />
-  </svg>
-);
-
-const IconCheck = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20,6 9,17 4,12" />
   </svg>
 );
 

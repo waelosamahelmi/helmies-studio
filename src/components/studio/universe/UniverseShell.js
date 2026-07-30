@@ -174,31 +174,32 @@ export default function UniverseShell({
         <div className="v6-universe-shell">
 
           {/* ── Mobile Topbar ── */}
-          <header className="v6-universe-topbar v6-universe-topbar--mobile">
+          <header className="v6-universe-topbar">
             {/* Back button (when navigating from a tool) */}
             {backTo ? (
               <button
-                className="v6-mobile-topbar-back"
+                className="v6-mobile-back"
                 onClick={() => router.push(`/studio/${backTo}`)}
                 aria-label="Go back"
               >
                 <IconChevronLeft />
               </button>
             ) : (
-              <div className="v6-mobile-topbar-back" aria-hidden="true" />
+              <div className="v6-mobile-back" aria-hidden="true" style={{ visibility: "hidden" }} />
             )}
 
             {/* Brand icon only */}
-            <Link href="/" className="v6-universe-brand-mobile" title="Helmies Studio">
+            <Link href="/" className="v6-universe-brand" title="Helmies Studio">
               <img src="/ico.svg" alt="Helmies Studio" />
             </Link>
 
             {/* Credits compact */}
             <Link
               href="/settings?tab=billing"
-              className="v6-universe-credit--mobile"
+              className="v6-credits-badge"
+              style={{ fontSize: 12, fontWeight: 700 }}
             >
-              <i />
+              <i style={{ width: 6, height: 6, background: "var(--v6-good)", borderRadius: "50%", display: "inline-block", marginRight: 6, boxShadow: "0 0 8px var(--v6-good)" }} />
               <span>{credits ?? 0}</span>
             </Link>
 
@@ -206,16 +207,17 @@ export default function UniverseShell({
             {pendingCount > 0 && (
               <Link
                 href="/gallery"
-                className="v6-universe-live--mobile"
+                className="v6-universe-live"
                 title={`${pendingCount} generation${pendingCount !== 1 ? "s" : ""} in progress`}
               >
                 <i />
+                {pendingCount} running
               </Link>
             )}
 
             {/* Search icon button */}
             <button
-              className="v6-universe-search-mobile"
+              className="v6-universe-search"
               onClick={() => {
                 setSearchExpanded(true);
                 onCommand?.();
@@ -228,7 +230,7 @@ export default function UniverseShell({
           </header>
 
           {/* ── Main Page Area (mobile) ── */}
-          <main className="v6-universe-page v6-universe-page--mobile">
+          <main className="v6-universe-page v6-full">
             <AnimatePresence mode="wait">
               <motion.div
                 key={typeof window !== "undefined" ? window.location.pathname : "page"}

@@ -9,6 +9,7 @@ import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVGs ── */
 const IconUsers = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>);
@@ -28,9 +29,15 @@ const AVATAR_SUGGESTIONS = [
 ];
 
 export default function AvatarStudio() {
-  const { models: rawModels } = useModelCatalog({ modelType: "video", capability: "video-to-video" });
+  const { models: rawModels } = useModelCatalog({});
   const AVATAR_IDS = new Set(["kling-ai-avatar-standard", "kling-ai-avatar-pro"]);
-  const MODELS = useMemo(() => rawModels.filter((m) => { const name = (m.displayName || m.id || "").toLowerCase(); const id = (m.id || "").toLowerCase(); return AVATAR_IDS.has(m.id) || name.includes("avatar") || id.includes("avatar"); }).map((m) => ({ id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: m.id?.includes("pro") ? "premium" : "standard", aspectRatios: m.aspectRatios, durations: m.durations, endpoint: m.endpoint })), [rawModels]);
+  const MODELS = useMemo(() => rawModels.filter((m) => {
+    // Avatar-capable pool: v2v group plus the dedicated "avatar-video"
+    // capability (Kling avatar models carry that capability, not v2v).
+    if (!matchesGroup(m, "v2v") && m.capability !== "avatar-video") return false;
+    const name = (m.displayName || m.id || "").toLowerCase(); const id = (m.id || "").toLowerCase();
+    return AVATAR_IDS.has(m.id) || name.includes("avatar") || id.includes("avatar");
+  }).map((m) => ({ id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: m.id?.includes("pro") ? "premium" : "standard", aspectRatios: m.aspectRatios, durations: m.durations, endpoint: m.endpoint })), [rawModels]);
 
   const [model, setModel] = useState("");
   useEffect(() => { if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) setModel(MODELS[0].id); }, [MODELS, model]);

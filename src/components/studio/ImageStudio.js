@@ -8,6 +8,7 @@ import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVGs ── */
 const IconImage = () => (
@@ -48,12 +49,6 @@ const IconMaximize = () => (
 const IconSpark = () => (
   <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6.4-4.8-6.4 4.8 2.4-7.2-6-4.8h7.6z" />
-  </svg>
-);
-
-const IconChevronDown = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6,9 12,15 18,9" />
   </svg>
 );
 
@@ -109,13 +104,16 @@ export default function ImageStudio() {
   /* ── Hooks ── */
   const isMobile = useIsMobile();
   const { loading: generating, result, error: genError, elapsed, submit } = useAsyncGeneration();
-  const { models: allModels, loading } = useModelCatalog({ modelType: "image" });
+  const { models: allModels, loading } = useModelCatalog({});
 
   /* ── Model selection ── */
   const activeModels = useMemo(() => {
     if (!allModels?.length) return [];
-    if (mode === "tti") return allModels.filter(m => m.capability === "text-to-image");
-    return allModels.filter(m => m.capability === "image-to-image");
+    // mode is "tti" | "iti" — matches CAPABILITY_GROUPS keys directly.
+    // Group filtering is required: the catalog splits TTI models across
+    // "text-to-image" and "image", and ITI models across
+    // "image-to-image" / "i2i" / edit capabilities.
+    return allModels.filter((m) => matchesGroup(m, mode));
   }, [allModels, mode]);
   const currentModel = activeModels.find((m) => m.id === selectedModelId) || activeModels[0];
 
@@ -389,15 +387,17 @@ export default function ImageStudio() {
         </div>
       )}
 
-      {/* Upload drop zone */}
-      <button
-        className="v6-drop"
-        onClick={() => fileInputRef.current?.click()}
-        disabled={uploading}
-        style={{ minHeight: 54 }}
-      >
-        <IconUpload /> Upload source
-      </button>
+      {/* Upload drop zone (ITI mode only) */}
+      {mode === "iti" && (
+        <button
+          className="v6-drop"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          style={{ minHeight: 54 }}
+        >
+          <IconUpload /> Upload source
+        </button>
+      )}
     </div>
   );
 
@@ -471,22 +471,6 @@ export default function ImageStudio() {
         />
       )}
 
-      {/* Prompt suggestions above dock */}
-      {!generating && !result && (
-        <div className="v6-suggestions-row" style={{ padding: "0 12px" }}>
-          {PROMPT_SUGGESTIONS.slice(0, 4).map((s, i) => (
-            <button
-              key={i}
-              className="v6-prompt-suggestion"
-              onClick={() => pickSuggestion(s)}
-              title={`Use suggestion: ${s.slice(0, 60)}\u2026`}
-            >
-              {s.length > 55 ? s.slice(0, 55) + "\u2026" : s}
-            </button>
-          ))}
-        </div>
-      )}
-
       <PromptDock
         value={prompt}
         onChange={setPrompt}
@@ -512,6 +496,9 @@ export default function ImageStudio() {
           label="Choose model"
           filterMode={mode}
         />
+      )}
+      {!loading && activeModels.length === 0 && (
+        <div className="v6-muted v6-tiny" style={{ marginTop: 6 }}>No models available for this mode</div>
       )}
       <div className="v6-section-rule" />
       <div className="v6-quote">

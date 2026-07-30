@@ -22,9 +22,9 @@ export default function StudioLayout({
   /* ── Mobile layout ── */
   if (isMobile) {
     return (
-      <div className="v6-workspace v6-workspace--mobile">
+      <div className="v6-workspace">
         {/* Full-width stage (always visible) */}
-        <main className="v6-workspace-center v6-workspace-center--mobile">
+        <main className="v6-workspace-center">
           {children}
         </main>
 

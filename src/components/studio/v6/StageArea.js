@@ -70,12 +70,6 @@ const IconMaximize = () => (
   </svg>
 );
 
-const IconSpark = () => (
-  <svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6.4-4.8-6.4 4.8 2.4-7.2-6-4.8h7.6z" />
-  </svg>
-);
-
 /* ── Determine generation phase from progress ── */
 function getPhase(progress) {
   if (progress == null) return "generate";

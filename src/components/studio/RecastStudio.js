@@ -9,6 +9,7 @@ import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVGs ── */
 const IconUsers = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>);
@@ -21,8 +22,8 @@ const IconArrowRight = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill=
 const IconCompare = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M16 3h5v5M8 3H3v5M3 16v5h5M21 16v5h-5M21 3l-7 7M3 21l7-7" /></svg>);
 
 export default function RecastStudio() {
-  const { models: rawModels } = useModelCatalog({ modelType: "video", capability: "video-to-video" });
-  const MODELS = useMemo(() => rawModels.map((m) => ({ id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: m.id?.includes("pro") ? "premium" : undefined, aspectRatios: m.aspectRatios, hasOrientation: m.hasOrientation, endpoint: m.endpoint })), [rawModels]);
+  const { models: rawModels } = useModelCatalog({});
+  const MODELS = useMemo(() => rawModels.filter((m) => matchesGroup(m, "v2v")).map((m) => ({ id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: m.id?.includes("pro") ? "premium" : undefined, aspectRatios: m.aspectRatios, hasOrientation: m.hasOrientation, endpoint: m.endpoint })), [rawModels]);
 
   const [model, setModel] = useState("");
   useEffect(() => { if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) setModel(MODELS[0].id); }, [MODELS, model]);

@@ -9,14 +9,13 @@ import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVGs ── */
 const IconVideo = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>);
 const IconBolt = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10" /></svg>);
 const IconUpload = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17,8 12,3 7,8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>);
 const IconImage = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2" /><circle cx="8.5" cy="8.5" r="1.5" /><polyline points="21 15 16 10 5 21" /></svg>);
-
-const VIDEO_EDIT_IDS = ["runway-aleph", "runway-extend", "veo3-extend", "wan-2.6-v2v", "wan-2.6-flash-v2v", "wan-2.7-video-edit", "grok-imagine-extend"];
 
 const EDIT_SUGGESTIONS = [
   "Add cinematic motion blur and dramatic color grading",
@@ -28,10 +27,13 @@ const EDIT_SUGGESTIONS = [
 
 export default function VideoEditStudio() {
   const isMobile = useIsMobile();
-  const { models: rawModels } = useModelCatalog({ modelType: "video" });
+  const { models: rawModels } = useModelCatalog({});
   const MODELS = useMemo(() => {
-    const byId = new Map(); for (const m of rawModels) byId.set(m.id, m);
-    return VIDEO_EDIT_IDS.map((id) => { const m = byId.get(id); if (!m) return null; const tier = m.speedTier || (m.id?.includes("flash") ? "fast" : m.id?.includes("pro") || m.id?.includes("veo3") || m.id?.includes("aleph") ? "premium" : "standard"); return { id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: tier, aspectRatios: m.aspectRatios, durations: m.durations, isExtend: m.isExtend, endpoint: m.endpoint }; }).filter(Boolean);
+    // Video-edit pool: v2v group (video-to-video / v2v / video-upscale)
+    // plus any model carrying an explicit "video-edit" capability.
+    return rawModels
+      .filter((m) => matchesGroup(m, "v2v") || m.capability === "video-edit")
+      .map((m) => { const tier = m.speedTier || (m.id?.includes("flash") ? "fast" : m.id?.includes("pro") || m.id?.includes("veo3") || m.id?.includes("aleph") ? "premium" : "standard"); return { id: m.id, displayName: m.displayName || m.name, provider: m.provider, speedTier: tier, aspectRatios: m.aspectRatios, durations: m.durations, isExtend: m.isExtend, endpoint: m.endpoint }; });
   }, [rawModels]);
 
   const [model, setModel] = useState("");

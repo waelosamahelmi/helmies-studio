@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { apiFetch } from "@/lib/client-fetch";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileChipScroller } from "@/components/studio/mobile";
+import { matchesGroup } from "@/lib/capability-groups";
 
 /* ── Inline SVG Icons (v6 style: 24×24, strokeWidth 1.7) ── */
 const IconPrompt = () => (
@@ -167,7 +168,9 @@ export default function WorkflowStudio() {
   const [undoStack, setUndoStack] = useState([]);
   const [connectingFrom, setConnectingFrom] = useState(null);
 
-  const { models: imageModels } = useModelCatalog({ modelType: "image" });
+  const { models: catalogModels } = useModelCatalog({});
+  // Image/video-gen step model picker: merge tti + iti capability groups.
+  const imageModels = useMemo(() => catalogModels.filter((m) => matchesGroup(m, "tti") || matchesGroup(m, "iti")), [catalogModels]);
   const isMobile = useIsMobile();
   const [draggingNodeId, setDraggingNodeId] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
