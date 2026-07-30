@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -28,7 +30,7 @@ const V2_MODELS = IMAGE_MODELS.map((m) => ({
   endpoint: m.endpoint,
 }));
 
-export default function ImageStudioV2() {
+function ImageStudioV2() {
   const [mode, setMode] = useState("basic");
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
@@ -295,3 +297,9 @@ export default function ImageStudioV2() {
     </div>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(ImageStudioV2, { tool: "image" });

@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PromptComposer, GenerateButton } from "./StudioComponents";
@@ -331,7 +333,7 @@ function ResultDisplay({ result, onRetry }) {
   );
 }
 
-export default function VideoEditStudio() {
+function VideoEditStudio() {
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(MODELS[0].id);
   const [duration, setDuration] = useState(5);
@@ -595,3 +597,9 @@ export default function VideoEditStudio() {
     </div>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(VideoEditStudio, { tool: "video-edit" });

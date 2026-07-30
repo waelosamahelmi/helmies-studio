@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   WorkspaceShell, ModelSelector, PromptComposer, GenerateButton,
@@ -25,7 +27,7 @@ const SUGGESTIONS = [
   "A desert highway at dusk, heat shimmer, wide vista",
 ];
 
-export default function CinemaStudioV2() {
+function CinemaStudioV2() {
   const [mode, setMode] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("helmies.studio.cinema.mode") || "basic";
     return "basic";
@@ -157,3 +159,9 @@ export default function CinemaStudioV2() {
     </WorkspaceShell>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(CinemaStudioV2, { tool: "cinema" });

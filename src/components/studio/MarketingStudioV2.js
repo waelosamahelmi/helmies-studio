@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect } from "react";
 import {
   WorkspaceShell, ModelSelector, PromptComposer, GenerateButton,
@@ -34,7 +36,7 @@ const SUGGESTIONS = [
   "Lifestyle ad showing a morning routine with the product",
 ];
 
-export default function MarketingStudioV2() {
+function MarketingStudioV2() {
   const [mode, setMode] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("helmies.studio.marketing.mode") || "basic";
     return "basic";
@@ -199,3 +201,9 @@ export default function MarketingStudioV2() {
     </WorkspaceShell>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(MarketingStudioV2, { tool: "marketing" });

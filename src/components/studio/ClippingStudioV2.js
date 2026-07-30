@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect } from "react";
 import {
   WorkspaceShell, GenerateButton,
@@ -19,7 +21,7 @@ const TIPS = [
   "Tip: Use coordinates-only mode to get timestamps without clips.",
 ];
 
-export default function ClippingStudioV2() {
+function ClippingStudioV2() {
   const [mode, setMode] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("helmies.studio.clipping.mode") || "basic";
     return "basic";
@@ -120,3 +122,6 @@ export default function ClippingStudioV2() {
     </WorkspaceShell>
   );
 }
+
+void CreationWorkspace;
+export default withUniverseCreation(ClippingStudioV2, { tool: "clipping" });

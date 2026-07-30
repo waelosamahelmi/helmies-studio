@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback } from "react";
 import { PromptComposer, GenerateButton, StagedProgress, CostQuote, ModelSelector } from "./StudioComponents";
 import { IconVideo, IconBolt, IconArrowUpRight } from "@/components/Icons";
@@ -23,7 +25,7 @@ const V2_MODELS = VIDEO_MODELS.map((m) => ({
   endpoint: m.endpoint,
 }));
 
-export default function VideoStudioV2() {
+function VideoStudioV2() {
   const { models: catalogModels } = useModelCatalog({ modelType: "video", fallback: V2_MODELS });
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState(V2_MODELS[0].id);
@@ -156,3 +158,9 @@ export default function VideoStudioV2() {
     </div>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(VideoStudioV2, { tool: "video" });

@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect } from "react";
 import {
   WorkspaceShell, PromptComposer, GenerateButton,
@@ -26,7 +28,7 @@ const SUGGESTIONS = [
   "Geometric patterns pulsing to an energetic rhythm",
 ];
 
-export default function MotionStudioV2() {
+function MotionStudioV2() {
   const [mode, setMode] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("helmies.studio.vibe-motion.mode") || "basic";
     return "basic";
@@ -142,3 +144,9 @@ export default function MotionStudioV2() {
     </WorkspaceShell>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(MotionStudioV2, { tool: "motion" });

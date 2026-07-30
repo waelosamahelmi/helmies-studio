@@ -5,26 +5,26 @@ import fs from "node:fs";
 const client = fs.readFileSync(new URL("../src/app/studio/StudioClient.js", import.meta.url), "utf8");
 const css = fs.readFileSync(new URL("../src/styles/studio-universe.css", import.meta.url), "utf8");
 const components = fs.readFileSync(new URL("../src/components/studio/StudioComponents.js", import.meta.url), "utf8");
+const generationField = fs.readFileSync(new URL("../src/components/studio/universe/GenerationField.js", import.meta.url), "utf8");
 
 test("production Studio mounts the Command Universe shell", () => {
-  assert.match(client, /studio--universe/);
-  assert.match(client, /studio__universe-orbits/);
-  assert.match(client, /studio__universe-status/);
-  assert.match(client, /studio__universe-menu/);
-  assert.match(client, /studio__universe-recents/);
-  assert.match(client, /UNIVERSE_QUICK/);
+  assert.match(client, /UniverseShell/);
+  assert.match(client, /InstrumentOrbit/);
+  assert.match(client, /InstrumentIndex/);
+  assert.match(client, /RecentConstellation/);
+  assert.match(client, /QUICK/);
 });
 
 test("generation state uses an animated synthesis canvas instead of a progress bar", () => {
-  assert.match(components, /studio__synthesis-canvas/);
-  assert.match(components, /requestAnimationFrame/);
-  assert.doesNotMatch(components, /studio__progress-bar-premium/);
+  assert.match(generationField, /<canvas/);
+  assert.match(generationField, /requestAnimationFrame/);
+  assert.doesNotMatch(generationField, /progress-bar/);
 });
 
 test("Command Universe is spatial on desktop and usable on mobile", () => {
-  assert.match(css, /\.studio--universe \.studio__side/);
-  assert.match(css, /\.studio__universe-orbits/);
-  assert.match(css, /@media \(max-width: 760px\)/);
+  assert.match(css, /\.universe-orbit/);
+  assert.match(css, /\.universe-shell__rings/);
+  assert.match(css, /@media\(max-width:640px\)/);
   assert.match(css, /prefers-reduced-motion/);
 });
 

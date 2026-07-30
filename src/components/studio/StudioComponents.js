@@ -26,6 +26,14 @@ export function useReducedMotion() {
 
 const TIER_LABEL = { fast: "Fast", premium: "Premium", standard: "Standard" };
 const TIER_BARS = { fast: 1, premium: 3, standard: 2 };
+const MODEL_ART = [
+  "/assets/warrior_girl_e29532086b-40.webp",
+  "/assets/photo-1620121692029-d088224ddc74-11.webp",
+  "/assets/photo-1506905925346-21bda4d32df4-6.webp",
+  "/assets/photo-1502920917128-1aa500764cbd-8.webp",
+  "/assets/J6-BrUzggQUXdbktr9GcH_ZYLM1F22-13.webp",
+  "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.webp",
+];
 
 const STAGES = ["preparing", "submitting", "generating", "processing", "quality_check", "finalizing"];
 const STAGE_LABELS = {
@@ -138,6 +146,11 @@ export function ModelSelector({ models = [], selected, onSelect, recommended, se
       {filtered.map((m) => {
         const bars = TIER_BARS[m.speedTier] || 2;
         const active = m.id === selected;
+        const artIndex = [...String(m.id)].reduce((total, char) => total + char.charCodeAt(0), 0) % MODEL_ART.length;
+        const backgroundImage = m.backgroundImage || m.image || m.thumbnailUrl || MODEL_ART[artIndex];
+        const aspectRatios = m.aspectRatios || [];
+        const resolutions = m.resolutions || [];
+        const durations = m.durations || [];
         return (
           <motion.button
             key={m.id}
@@ -149,6 +162,7 @@ export function ModelSelector({ models = [], selected, onSelect, recommended, se
             className={`studio__model-card ${active ? "studio__model-card--active" : ""} ${m.incompatible ? "studio__model-card--disabled" : ""}`}
             disabled={m.incompatible}
             aria-pressed={active}
+            style={{ backgroundImage: `linear-gradient(180deg, rgba(9,7,12,.12), rgba(9,7,12,.96)), url("${backgroundImage}")` }}
           >
             <div className="studio__model-card-head">
               <span className="studio__model-card-title">
@@ -185,6 +199,11 @@ export function ModelSelector({ models = [], selected, onSelect, recommended, se
                   }</span>
                 )}
               </span>
+            </div>
+            <div className="studio__model-card-capabilities">
+              {resolutions.slice(0, 2).map((value) => <span key={value}>{value}</span>)}
+              {durations.slice(0, 2).map((value) => <span key={value}>{value}s</span>)}
+              {aspectRatios.slice(0, 2).map((value) => <span key={value}>{value}</span>)}
             </div>
             {m.incompatible && m.reason && (
               <div style={{ fontSize: 10, color: "#ff4444" }}>{m.reason}</div>

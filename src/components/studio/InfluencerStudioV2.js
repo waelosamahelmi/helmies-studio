@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect, useMemo } from "react";
 import {
   WorkspaceShell, ModelSelector, PromptComposer, GenerateButton,
@@ -32,7 +34,7 @@ const DEFAULT_SETTINGS = INFLUENCER_TABS.reduce((acc, tab) => {
   return acc;
 }, {});
 
-export default function InfluencerStudioV2() {
+function InfluencerStudioV2() {
   const [mode, setMode] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("helmies.studio.influencer.mode") || "basic";
     return "basic";
@@ -163,3 +165,9 @@ export default function InfluencerStudioV2() {
     </WorkspaceShell>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(InfluencerStudioV2, { tool: "influencer" });

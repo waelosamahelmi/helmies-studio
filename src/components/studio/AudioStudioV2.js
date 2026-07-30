@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -50,7 +52,7 @@ function AudioWaveform({ active }) {
   );
 }
 
-export default function AudioStudioV2() {
+function AudioStudioV2() {
   const [mode, setMode] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("helmies.studio.audio.mode") || "basic";
     return "basic";
@@ -305,3 +307,9 @@ export default function AudioStudioV2() {
     </WorkspaceShell>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(AudioStudioV2, { tool: "audio" });

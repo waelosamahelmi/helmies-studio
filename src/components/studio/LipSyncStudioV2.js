@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
@@ -20,7 +22,7 @@ const TIPS = [
   "Tip: Volcengine Lip Sync works on video; others work on a single image.",
 ];
 
-export default function LipSyncStudioV2() {
+function LipSyncStudioV2() {
   const [mode, setMode] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("helmies.studio.lipsync.mode") || "basic";
     return "basic";
@@ -168,3 +170,9 @@ export default function LipSyncStudioV2() {
     </WorkspaceShell>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(LipSyncStudioV2, { tool: "lipsync" });

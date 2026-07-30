@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect } from "react";
 import {
   WorkspaceShell, ModelSelector, GenerateButton,
@@ -19,7 +21,7 @@ const TIPS = [
   "Tip: Orientation (left/right) should match the subject's facing direction.",
 ];
 
-export default function RecastStudioV2() {
+function RecastStudioV2() {
   const [mode, setMode] = useState(() => {
     if (typeof window !== "undefined") return localStorage.getItem("helmies.studio.recast.mode") || "basic";
     return "basic";
@@ -132,3 +134,9 @@ export default function RecastStudioV2() {
     </WorkspaceShell>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(RecastStudioV2, { tool: "recast" });

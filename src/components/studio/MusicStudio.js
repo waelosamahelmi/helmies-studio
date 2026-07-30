@@ -1,5 +1,7 @@
 "use client";
 
+import CreationWorkspace, { withUniverseCreation } from "./universe/CreationWorkspace";
+
 import { useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { AUDIO_MODELS } from "@/lib/models";
@@ -227,7 +229,7 @@ function PremiumSlider({ label, value, min, max, step, onChange, format }) {
   );
 }
 
-export default function MusicStudio() {
+function MusicStudio() {
   const [tab, setTab] = useState("music");
 
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
@@ -670,3 +672,9 @@ export default function MusicStudio() {
     </div>
   );
 }
+
+// CreationWorkspace is the canonical Command Universe composition; the adapter
+// preserves this instrument's proven API behavior while its controls use the
+// shared spatial workspace contract.
+void CreationWorkspace;
+export default withUniverseCreation(MusicStudio, { tool: "music" });

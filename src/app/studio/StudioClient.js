@@ -1,10 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
-import { motion, AnimatePresence, MotionConfig } from "framer-motion";
-import CommandPalette from "@/components/studio/CommandPalette";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { MotionConfig, AnimatePresence, motion } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
+import UniverseShell from "@/components/studio/universe/UniverseShell";
+import InstrumentOrbit from "@/components/studio/universe/InstrumentOrbit";
+import InstrumentIndex from "@/components/studio/universe/InstrumentIndex";
+import RecentConstellation from "@/components/studio/universe/RecentConstellation";
+import CommandSurface from "@/components/studio/universe/CommandSurface";
+import SpecializedWorkspace from "@/components/studio/universe/SpecializedWorkspace";
 import ChatStudio from "@/components/studio/ChatStudio";
 import WorkflowBuilder from "@/components/studio/WorkflowBuilder";
 import ProjectMemory from "@/components/studio/ProjectMemory";
@@ -25,485 +30,41 @@ import InfluencerStudioV2 from "@/components/studio/InfluencerStudioV2";
 import MarketingStudioV2 from "@/components/studio/MarketingStudioV2";
 import MotionStudioV2 from "@/components/studio/MotionStudioV2";
 import ClippingStudioV2 from "@/components/studio/ClippingStudioV2";
-import {
-  IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
-  IconMegaphone, IconMic, IconUsers, IconCrown,
-  IconStar, IconBolt, IconClose, IconSparkle, IconMenu, IconPlay, IconDownload,
-  IconChevron, IconSearch, IconSettings, IconShield,
-} from "@/components/Icons";
+import { IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut, IconMegaphone, IconMic, IconUsers, IconCrown, IconStar, IconBolt, IconSparkle, IconPlay, IconDownload, IconSettings, IconShield } from "@/components/Icons";
 
-const EASE = [0.32, 0.72, 0, 1];
-const SIDEBAR_KEY = "helmies.studio.sidebar";
-
-// All 20 tools. `group` maps onto the CREATE/BUILD IA (see STUDIO_UI_REBUILD.md §2).
 const TOOLS = [
-  { id: "orchestrator", label: "Agent", desc: "AI agent that plans & executes tasks", Icon: IconSparkle, color: "#FF1B6B", group: "create", badge: "New" },
-  { id: "image", label: "Image", desc: "Text-to-image & image-to-image", Icon: IconImage, color: "#FF1B6B", group: "create", badge: "32" },
-  { id: "video", label: "Video", desc: "Text, image & video-to-video", Icon: IconVideo, color: "#7C3AED", group: "create", badge: "17" },
-  { id: "director", label: "Director", desc: "Multi-shot video production planner", Icon: IconPlay, color: "#E040FB", group: "create", badge: "New" },
-  { id: "audio", label: "Audio", desc: "Music, voice & sound effects", Icon: IconMusic, color: "#00E5FF", group: "create", badge: "7" },
-  { id: "music", label: "Music", desc: "Suno music & ElevenLabs TTS", Icon: IconMusic, color: "#00E5FF", group: "create", badge: "New" },
-  { id: "lipsync", label: "Lip Sync", desc: "Sync audio to portrait or video", Icon: IconMic, color: "#7C3AED", group: "create", badge: "9" },
-  { id: "body-swap", label: "Recast", desc: "Recast faces into any scene", Icon: IconUsers, color: "#00E5FF", group: "create", badge: null },
-  { id: "influencer", label: "Influencer", desc: "Build AI personas", Icon: IconCrown, color: "#FF6B35", group: "create", badge: null },
-  { id: "avatar", label: "AI Avatar", desc: "Kling AI avatar animation", Icon: IconUsers, color: "#FF6B35", group: "create", badge: "New" },
-  { id: "canvas", label: "Canvas", desc: "Visual composition editor & mask tools", Icon: IconImage, color: "#FF6B35", group: "create", badge: "New" },
-  { id: "cinema", label: "Cinema", desc: "Cinematic camera controls", Icon: IconCamera, color: "#FF6B35", group: "create", badge: null },
-  { id: "vibe-motion", label: "Motion", desc: "Motion graphics & remix", Icon: IconFilm, color: "#FFD166", group: "create", badge: null },
-  { id: "video-edit", label: "Video Edit", desc: "Runway, Veo extend, Wan V2V", Icon: IconVideo, color: "#7C3AED", group: "create", badge: "New" },
-  { id: "clipping", label: "Clipping", desc: "AI highlight extraction", Icon: IconCut, color: "#00E68A", group: "create", badge: null },
-  { id: "marketing", label: "Marketing", desc: "UGC video ads & product shots", Icon: IconMegaphone, color: "#FF1B6B", group: "create", badge: "New" },
-  { id: "workflows", label: "Workflows", desc: "Multi-step AI pipelines", Icon: IconBolt, color: "#7C3AED", group: "build", badge: null },
-  { id: "brands", label: "Brand Kits", desc: "Manage brand identities", Icon: IconImage, color: "#7C3AED", group: "build", badge: null },
-  { id: "memory", label: "Projects", desc: "Save & reuse characters, styles, assets", Icon: IconStar, color: "#FFD166", group: "build", badge: null },
-  { id: "assets", label: "Assets", desc: "Media library & asset management", Icon: IconDownload, color: "#00E68A", group: "build", badge: null },
-];
+  ["orchestrator", "Agent", "Plan and execute creative productions", IconSparkle, "create"], ["image", "Image", "Generate and transform images", IconImage, "create"], ["video", "Video", "Generate and transform video", IconVideo, "create"], ["director", "Director", "Plan and execute multi-shot films", IconPlay, "create"], ["audio", "Audio", "Generate voice and sound", IconMusic, "create"], ["music", "Music", "Compose music and speech", IconMusic, "create"], ["lipsync", "Lip Sync", "Synchronize speech and performance", IconMic, "create"], ["body-swap", "Recast", "Transfer identity into a scene", IconUsers, "create"], ["influencer", "Influencer", "Build consistent AI personas", IconCrown, "create"], ["avatar", "AI Avatar", "Animate a speaking portrait", IconUsers, "create"], ["canvas", "Canvas", "Compose, mask, and refine visually", IconImage, "create"], ["cinema", "Cinema", "Direct cameras, lenses, and light", IconCamera, "create"], ["vibe-motion", "Motion", "Animate visual source material", IconFilm, "create"], ["video-edit", "Video Edit", "Extend and transform footage", IconVideo, "create"], ["clipping", "Clipping", "Find and produce editorial highlights", IconCut, "create"], ["marketing", "Marketing", "Produce campaign deliverables", IconMegaphone, "create"], ["workflows", "Workflows", "Connect repeatable creative pipelines", IconBolt, "build"], ["brands", "Brand Kits", "Control identity and visual guardrails", IconImage, "build"], ["memory", "Projects", "Reuse characters, styles, and memory", IconStar, "build"], ["assets", "Assets", "Manage production media", IconDownload, "build"],
+].map(([id, label, desc, Icon, group]) => ({ id, label, desc, Icon, group }));
+const QUICK = ["orchestrator", "image", "video", "director", "canvas", "assets", "workflows", "brands"];
 
-const TOOL_GROUPS = [
-  { id: "create", label: "Create" },
-  { id: "build", label: "Build" },
-];
+function Tool({ id, initialModel }) {
+  const map = { orchestrator: <SpecializedWorkspace tool="agent"><ChatStudio tool="orchestrator" initialModel={initialModel} /></SpecializedWorkspace>, workflows: <SpecializedWorkspace tool="workflows"><WorkflowBuilder /></SpecializedWorkspace>, memory: <SpecializedWorkspace tool="projects"><ProjectMemory /></SpecializedWorkspace>, brands: <SpecializedWorkspace tool="brands"><BrandKitsView /></SpecializedWorkspace>, canvas: <SpecializedWorkspace tool="canvas"><CanvasWorkspace /></SpecializedWorkspace>, director: <SpecializedWorkspace tool="director"><DirectorWorkspace /></SpecializedWorkspace>, assets: <SpecializedWorkspace tool="assets"><AssetLibrary /></SpecializedWorkspace>, music: <MusicStudio />, "video-edit": <VideoEditStudio />, avatar: <AvatarStudio />, image: <ImageStudioV2 initialModel={initialModel} />, video: <VideoStudioV2 initialModel={initialModel} />, audio: <AudioStudioV2 />, cinema: <CinemaStudioV2 />, lipsync: <LipSyncStudioV2 />, "body-swap": <RecastStudioV2 />, influencer: <InfluencerStudioV2 />, marketing: <MarketingStudioV2 />, "vibe-motion": <MotionStudioV2 />, clipping: <ClippingStudioV2 /> };
+  return map[id] || map.orchestrator;
+}
 
-// Link groups: destinations that are routes, not in-shell tools.
-const LINK_GROUPS = [
-  {
-    id: "library",
-    label: "Library",
-    items: [
-      { id: "generations", label: "Generations", desc: "Your generated media", href: "/gallery", Icon: IconImage },
-    ],
-  },
-  {
-    id: "account",
-    label: "Account",
-    items: [
-      { id: "settings", label: "Settings", desc: "Account, credits & API keys", href: "/settings", Icon: IconSettings },
-      { id: "billing", label: "Billing", desc: "Plans & subscriptions", href: "/pricing", Icon: IconBolt },
-    ],
-  },
-];
-
-const ADMIN_GROUP = {
-  id: "admin",
-  label: "Admin",
-  items: [
-    { id: "admin", label: "Dashboard", desc: "Admin overview", href: "/admin", Icon: IconShield },
-  ],
-};
-
-// Bottom nav on mobile: quick-switch tools + drawer trigger.
-const MOBILE_PRIMARY = ["orchestrator", "image", "video", "assets"];
-const UNIVERSE_QUICK = ["orchestrator", "image", "video", "director", "canvas", "assets", "workflows", "brands"];
-
-export default function StudioPage({ initialTool, initialModel }) {
-  const [activeTab, setActiveTab] = useState(initialTool || "orchestrator");
-  const [collapsed, setCollapsed] = useState(false);
-  const [openGroups, setOpenGroups] = useState({ create: true, build: true });
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [cmdOpen, setCmdOpen] = useState(false);
-  const [universeMenuOpen, setUniverseMenuOpen] = useState(false);
-  const [recentAssets, setRecentAssets] = useState([]);
-  const [pendingCount, setPendingCount] = useState(0);
+export default function StudioClient({ initialTool = "orchestrator", initialModel }) {
+  const router = useRouter();
+  const [active, setActive] = useState(initialTool);
+  const [indexOpen, setIndexOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const [assets, setAssets] = useState([]);
   const [credits, setCredits] = useState(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [admin, setAdmin] = useState(false);
+  const quickTools = useMemo(() => QUICK.map((id) => TOOLS.find((tool) => tool.id === id)), []);
+  const destinations = useMemo(() => [{ label: "Generations", desc: "Generation history and active jobs", href: "/gallery", Icon: IconImage }, { label: "Settings", desc: "Account and generation defaults", href: "/settings", Icon: IconSettings }, { label: "Billing", desc: "Credits and subscription", href: "/settings?tab=billing", Icon: IconBolt }, ...(admin ? [{ label: "Admin", desc: "Operations control", href: "/admin", Icon: IconShield }] : [])], [admin]);
 
-  // Restore sidebar collapse preference after mount (avoids hydration mismatch).
+  const select = (id) => { setActive(id); setIndexOpen(false); router.push(`/studio/${id}`, { scroll: false }); };
+  useEffect(() => { setActive(initialTool); }, [initialTool]);
   useEffect(() => {
-    try {
-      if (window.localStorage.getItem(SIDEBAR_KEY) === "1") setCollapsed(true);
-    } catch {}
+    Promise.allSettled([apiFetch("/api/assets?limit=5").then((r) => r.ok ? r.json() : {}), apiFetch("/api/credits").then((r) => r.ok ? r.json() : {}), apiFetch("/api/auth/session").then((r) => r.ok ? r.json() : {})]).then(([a, c, s]) => { if (a.status === "fulfilled") setAssets((a.value.assets || []).filter((item) => item.url || item.outputUrl)); if (c.status === "fulfilled") setCredits(c.value.credits); if (s.status === "fulfilled") setAdmin(s.value?.user?.role === "admin"); });
   }, []);
-
   useEffect(() => {
-    apiFetch("/api/assets?limit=5")
-      .then((response) => response.ok ? response.json() : null)
-      .then((data) => setRecentAssets((data?.assets || []).filter((asset) => asset.url || asset.outputUrl).slice(0, 5)))
-      .catch(() => {});
+    let timer; let stopped = false;
+    const poll = async () => { try { const response = await apiFetch("/api/generations/status?limit=50"); const data = await response.json(); if (!stopped) setPendingCount((data.generations || []).filter((job) => ["pending", "processing"].includes(job.status)).length); } catch {} if (!stopped) timer = window.setTimeout(poll, 10000); };
+    poll(); return () => { stopped = true; window.clearTimeout(timer); };
   }, []);
+  useEffect(() => { const handler = (event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); setCommandOpen((value) => !value); } }; window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler); }, []);
 
-  const toggleCollapsed = () => {
-    setCollapsed((c) => {
-      try {
-        window.localStorage.setItem(SIDEBAR_KEY, c ? "0" : "1");
-      } catch {}
-      return !c;
-    });
-  };
-
-  // Session (admin detection, same pattern as Navbar.js).
-  useEffect(() => {
-    fetch("/api/auth/session")
-      .then((r) => r.json())
-      .then((s) => setIsAdmin(s?.user?.role === "admin"))
-      .catch(() => {});
-  }, []);
-
-  // Credits balance for the top-bar chip.
-  useEffect(() => {
-    fetch("/api/credits")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d && typeof d.credits === "number") setCredits(d.credits);
-      })
-      .catch(() => {});
-  }, []);
-
-  // ⌘K / Ctrl+K toggles the command palette.
-  useEffect(() => {
-    const handler = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-        e.preventDefault();
-        setCmdOpen((o) => !o);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  // Pending-generations polling (unchanged): 10s base, 1.5x backoff to 60s,
-  // pauses while the tab is hidden.
-  useEffect(() => {
-    let interval;
-    let cancelled = false;
-    let backoff = 10000;
-
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const res = await apiFetch("/api/generations/status?limit=50");
-        const data = await res.json();
-        if (data.generations) {
-          setPendingCount(data.generations.filter((g) => g.status === "pending").length);
-        }
-        backoff = 10000;
-      } catch {
-        backoff = Math.min(backoff * 1.5, 60000);
-      }
-      if (!cancelled) {
-        clearInterval(interval);
-        interval = setInterval(poll, backoff);
-      }
-    };
-    poll();
-    interval = setInterval(poll, backoff);
-
-    const onVisibility = () => {
-      if (document.hidden) {
-        clearInterval(interval);
-      } else if (!cancelled) {
-        poll();
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, []);
-
-  const activeTool = TOOLS.find((t) => t.id === activeTab) || TOOLS[0];
-  const ActiveIcon = activeTool.Icon;
-
-  const selectTool = (id) => {
-    setActiveTab(id);
-    setMobileNavOpen(false);
-    setUniverseMenuOpen(false);
-  };
-
-  const toggleGroup = (id) => setOpenGroups((prev) => ({ ...prev, [id]: !prev[id] }));
-
-  const renderToolItem = (t) => {
-    const ToolIcon = t.Icon;
-    const isActive = activeTab === t.id;
-    return (
-      <button
-        key={t.id}
-        onClick={() => selectTool(t.id)}
-        className={`studio__side-item ${isActive ? "studio__side-item--active" : ""}`}
-        style={{ "--tool-color": t.color }}
-        title={collapsed ? t.label : undefined}
-        aria-current={isActive ? "page" : undefined}
-      >
-        <span className="studio__side-item-icon">
-          <ToolIcon />
-        </span>
-        <span className="studio__side-item-label">{t.label}</span>
-        {t.badge && (
-          <span className={`studio__side-item-badge ${t.badge === "New" ? "studio__side-item-badge--new" : ""}`}>
-            {t.badge}
-          </span>
-        )}
-      </button>
-    );
-  };
-
-  const renderLinkItem = (item) => {
-    const ItemIcon = item.Icon;
-    return (
-      <Link
-        key={item.id}
-        href={item.href}
-        className="studio__side-item"
-        title={collapsed ? item.label : undefined}
-        onClick={() => setMobileNavOpen(false)}
-      >
-        <span className="studio__side-item-icon">
-          <ItemIcon />
-        </span>
-        <span className="studio__side-item-label">{item.label}</span>
-      </Link>
-    );
-  };
-
-  const renderGroup = (group, items, renderItems) => {
-    const isOpen = openGroups[group.id] !== false;
-    return (
-      <div className="studio__side-group" key={group.id}>
-        <button
-          className="studio__side-group-head"
-          onClick={() => toggleGroup(group.id)}
-          aria-expanded={isOpen}
-        >
-          <span className="studio__side-group-label">{group.label}</span>
-          <span className="studio__side-group-count">{items.length}</span>
-          <IconChevron />
-        </button>
-        <div className={`studio__side-group-items ${isOpen ? "" : "studio__side-group-items--closed"}`}>
-          <div className="studio__side-group-inner">{renderItems()}</div>
-        </div>
-      </div>
-    );
-  };
-
-  const linkGroups = isAdmin ? [...LINK_GROUPS, ADMIN_GROUP] : LINK_GROUPS;
-
-  return (
-    <MotionConfig reducedMotion="user">
-      <div className="grain" aria-hidden="true" />
-
-      <div className="studio studio--universe">
-        <div className="studio__universe-orbits" aria-hidden="true">
-          <span /><span /><span />
-        </div>
-        {/* Mobile backdrop */}
-        <AnimatePresence>
-          {mobileNavOpen && (
-            <motion.div
-              className="studio__backdrop md:hidden"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3, ease: EASE }}
-              onClick={() => setMobileNavOpen(false)}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Sidebar — grouped, collapsible; slide-over drawer on mobile */}
-        <aside
-          className={`studio__side ${collapsed ? "studio__side--collapsed" : ""} ${mobileNavOpen ? "studio__side--open" : ""}`}
-        >
-          <div className="studio__side-head">
-            <Link href="/" className="studio__side-logo" aria-label="Helmies Studio home">
-              <img src="/ico.svg" alt="" />
-              <span className="studio__side-wordmark">Studio</span>
-            </Link>
-            <button
-              className="studio__side-close md:hidden"
-              onClick={() => setMobileNavOpen(false)}
-              aria-label="Close navigation"
-            >
-              <IconClose />
-            </button>
-            <button
-              className="studio__side-collapse"
-              onClick={toggleCollapsed}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              <IconChevron />
-            </button>
-          </div>
-
-              <nav className="studio__side-nav" aria-label="Studio tools">
-                <div className="studio__side-group-inner">
-                  {UNIVERSE_QUICK.map((id) => TOOLS.find((tool) => tool.id === id)).filter(Boolean).map(renderToolItem)}
-                  <button className="studio__side-item studio__universe-all" onClick={() => setUniverseMenuOpen(true)} aria-label="Open every Studio tool">
-                    <span className="studio__side-item-icon"><IconMenu /></span>
-                    <span className="studio__side-item-label">All tools</span>
-                  </button>
-                </div>
-              </nav>
-            </aside>
-
-            <AnimatePresence>
-              {universeMenuOpen && (
-                <motion.div className="studio__universe-menu" initial={{ opacity: 0, scale: .97, y: 12 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .98, y: 8 }} transition={{ duration: .24, ease: EASE }}>
-                  <div className="studio__universe-menu-head">
-                    <div><span>Instrument index</span><h2>Every creative system</h2></div>
-                    <button onClick={() => setUniverseMenuOpen(false)} aria-label="Close instrument index"><IconClose /></button>
-                  </div>
-                  <div className="studio__universe-menu-grid">
-                    {TOOL_GROUPS.map((group) => (
-                      <section key={group.id}>
-                        <h3>{group.label}</h3>
-                        {TOOLS.filter((tool) => tool.group === group.id).map((tool) => {
-                          const MenuIcon = tool.Icon;
-                          return <button key={tool.id} onClick={() => selectTool(tool.id)}><MenuIcon /><span><strong>{tool.label}</strong><small>{tool.desc}</small></span></button>;
-                        })}
-                      </section>
-                    ))}
-                    {linkGroups.map((group) => (
-                      <section key={group.id}>
-                        <h3>{group.label}</h3>
-                        {group.items.map((item) => { const MenuIcon = item.Icon; return <Link key={item.id} href={item.href}><MenuIcon /><span><strong>{item.label}</strong><small>{item.desc}</small></span></Link>; })}
-                      </section>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-        {/* Workspace column */}
-        <div className="studio__content">
-          {/* Top bar */}
-          <header className="studio__topbar">
-            <button
-              className="studio__topbar-menu md:hidden"
-              onClick={() => setMobileNavOpen(true)}
-              aria-label="Open navigation"
-            >
-              <IconMenu />
-            </button>
-
-            <div className="studio__topbar-title">
-              <span className="studio__topbar-icon" style={{ "--tool-color": activeTool.color }}>
-                <ActiveIcon />
-              </span>
-              <div className="studio__topbar-text">
-                <span className="studio__topbar-label">{activeTool.label}</span>
-                <span className="studio__topbar-desc">{activeTool.desc}</span>
-              </div>
-            </div>
-
-            {recentAssets.length > 0 && (
-              <div className="studio__universe-recents" aria-label="Recent work constellation">
-                <span>recent orbit</span>
-                {recentAssets.map((asset) => (
-                  <button key={asset.id} onClick={() => selectTool("assets")} title={asset.name || "Recent generation"} style={{ backgroundImage: `url(${asset.thumbnailUrl || asset.url || asset.outputUrl})` }} />
-                ))}
-              </div>
-            )}
-
-            <div className="studio__topbar-actions">
-              <div className="studio__universe-status" aria-label="Studio system online">
-                <span /> live system
-              </div>
-              <button
-                className="studio__topbar-cmdk"
-                onClick={() => setCmdOpen(true)}
-                aria-label="Search tools (Command K)"
-              >
-                <IconSearch />
-                <span className="studio__topbar-cmdk-text">Search tools</span>
-                <kbd className="studio__topbar-kbd">⌘K</kbd>
-              </button>
-
-              {pendingCount > 0 && (
-                <Link
-                  href="/gallery"
-                  className="studio__topbar-jobs"
-                  title={`${pendingCount} generation${pendingCount > 1 ? "s" : ""} in progress`}
-                >
-                  <span className="studio__pending-dot" />
-                  <span className="studio__pending-count">{pendingCount}</span>
-                  <span className="studio__topbar-jobs-label">running</span>
-                </Link>
-              )}
-
-              <Link href="/settings" className="studio__topbar-credits" aria-label="Credits and settings">
-                <IconBolt />
-                <span className="studio__topbar-credits-count">{credits === null ? "···" : credits}</span>
-              </Link>
-            </div>
-          </header>
-
-          {/* Workspace */}
-          <main className="studio__main">
-            <div className="studio__body">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeTab}
-                  layoutId="studio-content"
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -12 }}
-                  transition={{ duration: 0.5, ease: EASE }}
-                  style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}
-                >
-                  {activeTab === "orchestrator" && <ChatStudio tool="orchestrator" initialModel={initialModel} />}
-                  {activeTab === "workflows" && <WorkflowBuilder />}
-                  {activeTab === "memory" && <ProjectMemory />}
-                  {activeTab === "brands" && <BrandKitsView />}
-                  {activeTab === "canvas" && <CanvasWorkspace />}
-                  {activeTab === "director" && <DirectorWorkspace />}
-                  {activeTab === "assets" && <AssetLibrary />}
-                  {activeTab === "music" && <MusicStudio />}
-                  {activeTab === "video-edit" && <VideoEditStudio />}
-                  {activeTab === "avatar" && <AvatarStudio />}
-                  {activeTab === "image" && <ImageStudioV2 initialModel={initialModel} />}
-                  {activeTab === "video" && <VideoStudioV2 initialModel={initialModel} />}
-                  {activeTab === "audio" && <AudioStudioV2 />}
-                  {activeTab === "cinema" && <CinemaStudioV2 />}
-                  {activeTab === "lipsync" && <LipSyncStudioV2 />}
-                  {(activeTab === "body-swap" || activeTab === "recast") && <RecastStudioV2 />}
-                  {activeTab === "influencer" && <InfluencerStudioV2 />}
-                  {activeTab === "marketing" && <MarketingStudioV2 />}
-                  {(activeTab === "vibe-motion" || activeTab === "motion") && <MotionStudioV2 />}
-                  {activeTab === "clipping" && <ClippingStudioV2 />}
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          </main>
-        </div>
-
-        {/* Mobile bottom nav */}
-        <nav className="studio__bottomnav" aria-label="Primary tools">
-          {MOBILE_PRIMARY.map((id) => {
-            const t = TOOLS.find((x) => x.id === id);
-            const NavIcon = t.Icon;
-            const isActive = activeTab === t.id;
-            return (
-              <button
-                key={t.id}
-                className={`studio__bottomnav-item ${isActive ? "studio__bottomnav-item--active" : ""}`}
-                onClick={() => selectTool(t.id)}
-                aria-current={isActive ? "page" : undefined}
-              >
-                <NavIcon />
-                <span>{t.label}</span>
-              </button>
-            );
-          })}
-          <button className="studio__bottomnav-item" onClick={() => setMobileNavOpen(true)} aria-label="Open all tools">
-            <IconMenu />
-            <span>Menu</span>
-          </button>
-        </nav>
-      </div>
-
-      <AnimatePresence>
-        {cmdOpen && (
-          <CommandPalette
-            onSelect={(id) => {
-              setActiveTab(id);
-              setCmdOpen(false);
-            }}
-            onClose={() => setCmdOpen(false)}
-          />
-        )}
-      </AnimatePresence>
-    </MotionConfig>
-  );
+  return <MotionConfig reducedMotion="user"><UniverseShell credits={credits} pendingCount={pendingCount} onCommand={() => setCommandOpen(true)} orbit={<InstrumentOrbit tools={quickTools} active={active} onSelect={select} onOpenIndex={() => setIndexOpen(true)} />} index={<InstrumentIndex open={indexOpen} tools={TOOLS} destinations={destinations} onSelect={select} onClose={() => setIndexOpen(false)} />} recents={<RecentConstellation assets={assets} onOpen={() => select("assets")} />}><AnimatePresence mode="wait"><motion.div key={active} className="universe-tool" initial={{ opacity: 0, y: 12, scale: .995 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: .32 }}><Tool id={active} initialModel={initialModel} /></motion.div></AnimatePresence></UniverseShell><CommandSurface open={commandOpen} onClose={() => setCommandOpen(false)} onSelect={select} /></MotionConfig>;
 }
