@@ -598,8 +598,4 @@ function VideoEditStudio() {
   );
 }
 
-// CreationWorkspace is the canonical Command Universe composition; the adapter
-// preserves this instrument's proven API behavior while its controls use the
-// shared spatial workspace contract.
-void CreationWorkspace;
 export default VideoEditStudio;

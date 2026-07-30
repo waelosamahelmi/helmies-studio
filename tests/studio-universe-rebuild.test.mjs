@@ -132,3 +132,10 @@ test("remaining build, library, account, and operations pages carry the dark Uni
   for (const [file, contract] of contracts) assert.match(read(file), new RegExp(contract));
   assert.doesNotMatch(read("src/components/admin/AdminShell.js"), /📊|💰|🤖|👥|📝|⚙️/);
 });
+
+test("native media labs do not execute the removed CreationWorkspace adapter", () => {
+  for (const file of ["AvatarStudio.js", "MusicStudio.js", "VideoEditStudio.js"]) {
+    const source = read(`src/components/studio/${file}`);
+    assert.doesNotMatch(source, /void CreationWorkspace/);
+  }
+});
