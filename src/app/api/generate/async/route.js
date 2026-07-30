@@ -6,12 +6,25 @@ import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expa
 import { applyMemoryToPrompt } from "@/lib/memory";
 import { estimateCredits } from "@/lib/pricing-engine";
 import { quoteCatalogModel } from "@/lib/model-catalog";
+import {
+  IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS,
+  LIPSYNC_MODELS, AUDIO_MODELS, RECAST_MODELS,
+} from "@/lib/models";
 
 const ENDPOINT_MAP = {
   image: "image", i2i: "i2i", video: "video", i2v: "i2v", v2v: "v2v",
   lipsync: "lipsync", audio: "audio", recast: "recast", clipping: "clipping",
   motion: "motion", marketing: "marketing", cinema: "cinema", influencer: "influencer",
 };
+
+// Build a flat lookup from all static model arrays: id → { endpoint, providerModelId }
+const ALL_MODELS = [
+  ...IMAGE_MODELS, ...I2I_MODELS, ...VIDEO_MODELS, ...I2V_MODELS, ...V2V_MODELS,
+  ...LIPSYNC_MODELS, ...AUDIO_MODELS, ...RECAST_MODELS,
+];
+const MODEL_REGISTRY = Object.fromEntries(
+  ALL_MODELS.map((m) => [m.id, { endpoint: m.endpoint, providerModelId: m.endpoint || m.id }]),
+);
 
 export async function POST(req) {
   try {
@@ -52,9 +65,11 @@ export async function POST(req) {
     }
 
     const webhookUrl = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
-    const endpoint = dbPricing?.endpoint || params.endpoint || model;
+    const staticModel = MODEL_REGISTRY[model];
+    const endpoint = dbPricing?.endpoint || params.endpoint || staticModel?.endpoint || model;
     const { endpoint: _ep, ...cleanParams } = params;
-    const payload = { ...cleanParams, model: dbPricing?.providerModelId || model, prompt: finalPrompt, endpoint, callBackUrl: webhookUrl };
+    const providerModelId = dbPricing?.providerModelId || staticModel?.providerModelId || model;
+    const payload = { ...cleanParams, model: providerModelId, prompt: finalPrompt, endpoint, callBackUrl: webhookUrl };
     if (!body.negative_prompt) {
       const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
       payload.negative_prompt = getNegativePrompt(promptType);

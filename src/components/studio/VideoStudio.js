@@ -206,6 +206,7 @@ export default function VideoStudio() {
       resolution,
       aspect_ratio: aspectRatio,
       camera_motion: cameraMotion === "static" ? undefined : cameraMotion,
+      endpoint: currentModel?.endpoint || selectedModelId,
     };
 
     if (mode === "i2v" && referenceImage?.url && !referenceImage.uploading) {
