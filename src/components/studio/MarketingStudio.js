@@ -9,6 +9,7 @@ import { MARKETING_AVATARS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 
 /* ── Platform definitions ── */
 const PLATFORMS = [
@@ -46,11 +47,14 @@ export default function MarketingStudio() {
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
   const [genStage, setGenStage] = useState("");
 
+  const { models: marketingModels } = useModelCatalog({ modelType: "video" });
+  const marketingModelId = marketingModels[0]?.id || "";
+
   /* ── Derived aspect ── */
   const aspect = PLATFORMS.find((p) => p.id === platform)?.aspect || "9:16";
 
   /* ── Credit cost estimate ── */
-  const { cost, affordable, shortfall } = useCreditCost("marketing", "default", {
+  const { cost, affordable, shortfall } = useCreditCost("marketing", marketingModelId, {
     duration,
     resolution,
   });
@@ -86,7 +90,7 @@ export default function MarketingStudio() {
   const handleGenerate = useCallback(() => {
     if (!prompt.trim()) return;
     setGenStage("preparing");
-    submit("marketing", "default", {
+    submit("marketing", marketingModelId, {
       prompt,
       aspect_ratio: aspect,
       duration,

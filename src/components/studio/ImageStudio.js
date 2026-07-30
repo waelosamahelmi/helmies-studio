@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StudioLayout, ModelSelector, PromptDock, StageArea } from "@/components/studio/v6";
-import { IMAGE_MODELS, I2I_MODELS } from "@/lib/models";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
@@ -64,7 +64,7 @@ function getModelDisplayName(model) {
 export default function ImageStudio() {
   /* ── State ── */
   const [mode, setMode] = useState("tti"); // "tti" | "iti"
-  const [selectedModelId, setSelectedModelId] = useState(IMAGE_MODELS[0]?.id || "");
+  const [selectedModelId, setSelectedModelId] = useState(null);
   const [prompt, setPrompt] = useState("");
   const [negativePrompt, setNegativePrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState("16:9");
@@ -78,9 +78,23 @@ export default function ImageStudio() {
   /* ── Hooks ── */
   const { loading: generating, result, error: genError, elapsed, submit } = useAsyncGeneration();
 
+  /* ── Model catalog ── */
+  const { models: allModels, loading } = useModelCatalog({ modelType: "image" });
+
   /* ── Model selection ── */
-  const activeModels = mode === "tti" ? IMAGE_MODELS : I2I_MODELS;
+  const activeModels = useMemo(() => {
+    if (!allModels?.length) return [];
+    if (mode === "tti") return allModels.filter(m => m.capability === "text-to-image");
+    return allModels.filter(m => m.capability === "image-to-image");
+  }, [allModels, mode]);
   const currentModel = activeModels.find((m) => m.id === selectedModelId) || activeModels[0];
+
+  /* ── Default selected model from catalog ── */
+  useEffect(() => {
+    if (activeModels?.length && !selectedModelId) {
+      setSelectedModelId(activeModels[0]?.id);
+    }
+  }, [activeModels, selectedModelId]);
 
   /* ── Credit cost ── */
   const { cost: estCredits, affordable, balance, shortfall, topUpPacks } = useCreditCost(
@@ -319,10 +333,7 @@ export default function ImageStudio() {
   const inspector = (
     <div className="v6-control-stack">
       <ModelSelector
-        models={activeModels.map((m) => ({
-          ...m,
-          displayName: m.displayName || m.name,
-        }))}
+        models={activeModels}
         selectedModelId={selectedModelId}
         onSelect={handleModelSelect}
         label="Choose model"

@@ -1,23 +1,19 @@
-// Helmies Studio — Model Registry
-// All models are served via KIE.ai unified API
-// Pricing is stored in the DB (ModelPricing table) and synced manually
-// 
-// Each model has:
-//   id         — our internal ID (used by frontend + DB lookup)
-//   name       — display name
-//   endpoint   — KIE model ID (sent as "model" in KIE API request)
-//   provider   — brand name for UI
-//   aspectRatios — supported ratios (null = model doesn't use AR)
-//   durations  — supported durations in seconds (video models only)
-//   resolutions — supported resolution tiers (null = not applicable)
-//   hasDimensions — model accepts custom width/height
-//   maxImages  — max reference images for edit models
-//   hasMode    — model has std/pro/4K mode selector
-//   hasMultiShot — Kling 3.0 multi-shot support
-//   hasStartEndFrame — supports start + end frame images
-//   hasSound   — supports sound effects toggle
-//   hasLora   — supports LoRA
-//   isExtend  — video extension model
+// ══════════════════════════════════════════════════════════════════════
+// Helmies Studio — LEGACY Model Registry (DEPRECATED)
+// ══════════════════════════════════════════════════════════════════════
+// Hardcoded model arrays are stale and may not match KIE's current model
+// IDs or capabilities. The authoritative source is now the live catalog
+// served by useModelCatalog() → /api/models/catalog → ModelPricing DB.
+//
+// All V6 studio components use useModelCatalog(). The arrays below are
+// kept as fallbacks for V2 components and backward-compatible code paths.
+//
+// DO NOT add new models here. Run the KIE sync instead:
+//   POST /api/admin/sync/kie  or  POST /api/cron/sync-kie
+//
+// Non-model constants (INFLUENCER_TABS, MARKETING_AVATARS, CINEMA_*)
+// remain authoritative as they are not provider-dependent.
+// ══════════════════════════════════════════════════════════════════════
 //   speedTier  — "fast" / "premium" / undefined
 //   hasCustomMode — Suno custom mode
 //   hasVoice  — TTS voice selector

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { StudioLayout, ModelSelector, StageArea } from "./v6";
-import { LIPSYNC_MODELS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
 
 /* ── Inline SVGs (v6 style: 24x24, stroke currentColor, strokeWidth 1.7) ── */
@@ -52,18 +52,24 @@ const IconRefresh = () => (
   </svg>
 );
 
-/* ── Derived model list (adapt to v6 ModelSelector shape) ── */
-const MODELS = LIPSYNC_MODELS.map((m) => ({
-  id: m.id,
-  displayName: m.name,
-  provider: m.provider,
-  speedTier: m.mode === "video" ? "premium" : undefined,
-  mode: m.mode,
-  endpoint: m.endpoint,
-}));
-
 export default function LipSyncStudio() {
-  const [model, setModel] = useState(MODELS[0].id);
+  /* ── Live model catalog ── */
+  const { models: rawModels, loading: catalogLoading } = useModelCatalog({ modelType: "lipsync" });
+  const MODELS = useMemo(() => rawModels.map((m) => ({
+    id: m.id,
+    displayName: m.displayName || m.name,
+    provider: m.provider,
+    speedTier: (m.mode === "video") ? "premium" : undefined,
+    mode: m.mode || (m.id?.includes("video") ? "video" : "image"),
+    endpoint: m.endpoint,
+  })), [rawModels]);
+
+  const [model, setModel] = useState("");
+  useEffect(() => {
+    if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) {
+      setModel(MODELS[0].id);
+    }
+  }, [MODELS, model]);
   const [imageUrl, setImageUrl] = useState(null);
   const [videoUrl, setVideoUrl] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
@@ -72,7 +78,7 @@ export default function LipSyncStudio() {
 
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
 
-  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0];
+  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
   const needsVideo = currentModel.mode === "video";
   const sourceReady = needsVideo ? !!videoUrl : !!imageUrl;
   const { cost, affordable, shortfall, balance } = useCreditCost("lipsync", model, {

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { StudioLayout, ModelSelector, StageArea } from "./v6";
-import { RECAST_MODELS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
 
 /* ── Inline SVGs ── */
@@ -39,19 +39,25 @@ const IconUpload = () => (
   </svg>
 );
 
-/* ── Derived model list ── */
-const MODELS = RECAST_MODELS.map((m) => ({
-  id: m.id,
-  displayName: m.name,
-  provider: m.provider,
-  speedTier: m.id.includes("pro") ? "premium" : undefined,
-  aspectRatios: m.aspectRatios,
-  hasOrientation: m.hasOrientation,
-  endpoint: m.endpoint,
-}));
-
 export default function RecastStudio() {
-  const [model, setModel] = useState(MODELS[0].id);
+  /* ── Live model catalog ── */
+  const { models: rawModels, loading: catalogLoading } = useModelCatalog({ modelType: "video", capability: "video-to-video" });
+  const MODELS = useMemo(() => rawModels.map((m) => ({
+    id: m.id,
+    displayName: m.displayName || m.name,
+    provider: m.provider,
+    speedTier: m.id?.includes("pro") ? "premium" : undefined,
+    aspectRatios: m.aspectRatios,
+    hasOrientation: m.hasOrientation,
+    endpoint: m.endpoint,
+  })), [rawModels]);
+
+  const [model, setModel] = useState("");
+  useEffect(() => {
+    if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) {
+      setModel(MODELS[0].id);
+    }
+  }, [MODELS, model]);
   const [videoUrl, setVideoUrl] = useState(null);
   const [imageUrl, setImageUrl] = useState(null);
   const [orientation, setOrientation] = useState("left");
@@ -59,7 +65,7 @@ export default function RecastStudio() {
 
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
 
-  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0];
+  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
   const ready = !!videoUrl && !!imageUrl;
   const { cost, affordable, shortfall, balance } = useCreditCost("recast", model, {
     image_url: imageUrl,

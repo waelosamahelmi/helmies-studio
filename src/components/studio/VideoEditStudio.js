@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { StudioLayout, ModelSelector, PromptDock, StageArea } from "./v6";
-import { VIDEO_MODELS, V2V_MODELS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
 
 /* ── Inline SVGs ── */
@@ -37,40 +37,42 @@ const VIDEO_EDIT_IDS = [
   "grok-imagine-extend",
 ];
 
-function buildModels() {
-  const byId = new Map();
-  for (const m of V2V_MODELS) byId.set(m.id, m);
-  for (const m of VIDEO_MODELS) if (!byId.has(m.id)) byId.set(m.id, m);
-  return VIDEO_EDIT_IDS
-    .map((id) => {
-      const m = byId.get(id);
-      if (!m) return null;
-      const tier =
-        m.speedTier ||
-        (m.id.includes("flash")
-          ? "fast"
-          : m.id.includes("pro") || m.id.includes("veo3") || m.id.includes("aleph")
-            ? "premium"
-            : "standard");
-      return {
-        id: m.id,
-        displayName: m.name,
-        provider: m.provider,
-        speedTier: tier,
-        aspectRatios: m.aspectRatios,
-        durations: m.durations,
-        isExtend: m.isExtend,
-        endpoint: m.endpoint,
-      };
-    })
-    .filter(Boolean);
-}
-
-const MODELS = buildModels();
-
 export default function VideoEditStudio() {
-  const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState(MODELS[0].id);
+  /* ── Live model catalog ── */
+  const { models: rawModels, loading: catalogLoading } = useModelCatalog({ modelType: "video" });
+  const MODELS = useMemo(() => {
+    const byId = new Map();
+    for (const m of rawModels) byId.set(m.id, m);
+    return VIDEO_EDIT_IDS
+      .map((id) => {
+        const m = byId.get(id);
+        if (!m) return null;
+        const tier = m.speedTier ||
+          (m.id?.includes("flash")
+            ? "fast"
+            : m.id?.includes("pro") || m.id?.includes("veo3") || m.id?.includes("aleph")
+              ? "premium"
+              : "standard");
+        return {
+          id: m.id,
+          displayName: m.displayName || m.name,
+          provider: m.provider,
+          speedTier: tier,
+          aspectRatios: m.aspectRatios,
+          durations: m.durations,
+          isExtend: m.isExtend,
+          endpoint: m.endpoint,
+        };
+      })
+      .filter(Boolean);
+  }, [rawModels]);
+
+  const [model, setModel] = useState("");
+  useEffect(() => {
+    if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) {
+      setModel(MODELS[0].id);
+    }
+  }, [MODELS, model]);
   const [duration, setDuration] = useState(5);
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [videoUrl, setVideoUrl] = useState(null);
@@ -79,7 +81,7 @@ export default function VideoEditStudio() {
   const fileRef = useRef(null);
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
 
-  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0];
+  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
   const supportsDuration = Array.isArray(currentModel.durations) && currentModel.durations.length > 0;
   const ASPECTS = currentModel.aspectRatios || ["16:9", "9:16", "1:1"];
   const DURATIONS = supportsDuration ? currentModel.durations : [];

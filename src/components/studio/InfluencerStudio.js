@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import StudioLayout from "./v6/StudioLayout";
 import ModelSelector from "./v6/ModelSelector";
 import PromptDock from "./v6/PromptDock";
 import StageArea from "./v6/StageArea";
 import { IconCrown, IconBolt } from "@/components/Icons";
-import { IMAGE_MODELS, INFLUENCER_TABS } from "@/lib/models";
+import { INFLUENCER_TABS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useModelCatalog } from "./useModelCatalog";
 
 /* ── Aspect ratios ── */
 const ASPECTS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
@@ -37,11 +38,16 @@ export default function InfluencerStudio() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [aspectRatio, setAspectRatio] = useState("3:4");
   const [selectedModelId, setSelectedModelId] = useState("flux-dev");
-  const { loading, result, error, elapsed, submit } = useAsyncGeneration();
   const [genStage, setGenStage] = useState("");
 
+  /* ── Live model catalog ── */
+  const { models: imageModels, loading: catalogLoading } = useModelCatalog({ modelType: "image", capability: "text-to-image" });
+
+  /* ── Hooks ── */
+  const { loading, result, error, elapsed, submit } = useAsyncGeneration();
+
   /* ── Current model ── */
-  const currentModel = IMAGE_MODELS.find((m) => m.id === selectedModelId) || IMAGE_MODELS[0];
+  const currentModel = imageModels.find((m) => m.id === selectedModelId) || imageModels[0] || {};
 
   /* ── Credit cost estimate ── */
   const { cost, affordable, shortfall } = useCreditCost("image", selectedModelId, {
@@ -211,9 +217,9 @@ export default function InfluencerStudio() {
   /* ── Inspector sidebar ── */
   const inspector = (
     <>
-      {/* Model selector (first 12 IMAGE_MODELS) */}
+      {/* Model selector (first 12 catalog models) */}
       <ModelSelector
-        models={IMAGE_MODELS.slice(0, 12)}
+        models={imageModels.slice(0, 12)}
         selectedModelId={selectedModelId}
         onSelect={setSelectedModelId}
         label="Image Model"

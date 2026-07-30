@@ -5,6 +5,7 @@ import { StudioLayout, StageArea } from "./v6";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 
 /* ── Inline SVGs ── */
 const IconCut = () => (
@@ -42,7 +43,11 @@ export default function ClippingStudio() {
   const [uploading, setUploading] = useState(false);
 
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
-  const { cost, affordable, shortfall, balance } = useCreditCost("clipping", "default", {
+
+  const { models: clipModels } = useModelCatalog({ modelType: "video" });
+  const clipModelId = clipModels[0]?.id || "";
+
+  const { cost, affordable, shortfall, balance } = useCreditCost("clipping", clipModelId, {
     num_highlights: numHighlights,
   });
 
@@ -63,7 +68,7 @@ export default function ClippingStudio() {
   /* ── Generate ── */
   const handleGenerate = useCallback(() => {
     if (!videoUrl || loading) return;
-    submit("clipping", "default", {
+    submit("clipping", clipModelId, {
       video_url: videoUrl,
       num_highlights: numHighlights,
       aspect_ratio: aspect,

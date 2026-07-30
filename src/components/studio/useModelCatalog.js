@@ -22,7 +22,7 @@ function optionsFromSchema(model) {
   };
 }
 
-export function useModelCatalog({ modelType, fallback = [] }) {
+export function useModelCatalog({ modelType, capability, fallback = [] }) {
   const [remote, setRemote] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -30,7 +30,9 @@ export function useModelCatalog({ modelType, fallback = [] }) {
   useEffect(() => {
     let active = true;
     setLoading(true);
-    apiFetch(`/api/models/catalog?type=${encodeURIComponent(modelType)}`)
+    const qs = new URLSearchParams({ type: modelType });
+    if (capability) qs.set("capability", capability);
+    apiFetch(`/api/models/catalog?${qs}`)
       .then(async (response) => {
         if (!response.ok) throw new Error("Catalog unavailable");
         return response.json();

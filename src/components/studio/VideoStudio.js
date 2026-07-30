@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import StudioLayout from "./v6/StudioLayout";
 import ModelSelector from "./v6/ModelSelector";
 import PromptDock from "./v6/PromptDock";
 import StageArea from "./v6/StageArea";
-import { VIDEO_MODELS, I2V_MODELS, V2V_MODELS } from "@/lib/models";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
@@ -75,26 +75,25 @@ const IconTrash = () => (
   </svg>
 );
 
-/* ── Helpers ── */
-function getModelsForMode(mode) {
-  switch (mode) {
-    case "ttv":
-      return VIDEO_MODELS.filter((m) => !m.isExtend);
-    case "i2v":
-      return I2V_MODELS.map((m) => ({ ...m, maxImages: m.maxImages ?? 1 }));
-    case "v2v":
-      return V2V_MODELS.map((m) => ({ ...m, maxImages: m.maxImages ?? 1 }));
-    default:
-      return [];
-  }
-}
+/* ── Capability filter map ── */
+const MODE_CAPABILITY = {
+  ttv: "text-to-video",
+  i2v: "image-to-video",
+  v2v: "video-to-video",
+};
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function VideoStudio() {
-  /* ── Mode & model ── */
+  /* ── Mode & model catalog ── */
   const [mode, setMode] = useState("ttv");
-  const filteredModels = getModelsForMode(mode);
-  const [selectedModelId, setSelectedModelId] = useState(filteredModels[0]?.id || "");
+  const { models: allModels, loading } = useModelCatalog({ modelType: "video" });
+  const filteredModels = useMemo(() => {
+    if (!allModels?.length) return [];
+    const cap = MODE_CAPABILITY[mode];
+    if (!cap) return allModels;
+    return allModels.filter((m) => m.capability === cap);
+  }, [allModels, mode]);
+  const [selectedModelId, setSelectedModelId] = useState("");
 
   /* ── Params ── */
   const [prompt, setPrompt] = useState("");
@@ -135,7 +134,7 @@ export default function VideoStudio() {
     if (filteredModels.length && !filteredModels.some((m) => m.id === selectedModelId)) {
       setSelectedModelId(filteredModels[0].id);
     }
-  }, [mode]);
+  }, [filteredModels]);
 
   useEffect(() => {
     if (durations.length && !durations.map(Number).includes(Number(duration))) {

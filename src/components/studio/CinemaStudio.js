@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { StudioLayout, ModelSelector, PromptDock, StageArea } from "@/components/studio/v6";
-import { IMAGE_MODELS, CINEMA_CAMERAS, CINEMA_LENS, CINEMA_FOCAL, CINEMA_APERTURE } from "@/lib/models";
+import { CINEMA_CAMERAS, CINEMA_LENS, CINEMA_FOCAL, CINEMA_APERTURE } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useModelCatalog } from "./useModelCatalog";
 
 /* ── Inline SVGs ── */
 const IconCamera = () => (
@@ -51,8 +52,11 @@ const CINEMA_SUGGESTIONS = [
 
 /* ══════════════════════════════════════════════════════════════ */
 export default function CinemaStudio() {
+  /* ── Hooks ── */
+  const { models: imageModels, loading: catalogLoading } = useModelCatalog({ modelType: "image", capability: "text-to-image" });
+
   /* ── State ── */
-  const [selectedModelId, setSelectedModelId] = useState(IMAGE_MODELS[0]?.id || "");
+  const [selectedModelId, setSelectedModelId] = useState("");
   const [camera, setCamera] = useState(CINEMA_CAMERAS[0].id);
   const [lens, setLens] = useState(CINEMA_LENS[0].id);
   const [focal, setFocal] = useState(CINEMA_FOCAL[3].id); // 35mm default
@@ -61,15 +65,14 @@ export default function CinemaStudio() {
   const [resolution, setResolution] = useState("1k");
   const [prompt, setPrompt] = useState("");
 
-  /* ── Hooks ── */
   const { loading: generating, result, error, elapsed, submit } = useAsyncGeneration();
 
   /* ── Model filtering ── */
   const cinemaModels = useMemo(
-    () => IMAGE_MODELS.filter((m) => m.hasDimensions || (m.aspectRatios && m.aspectRatios.includes(aspect))),
-    [aspect]
+    () => imageModels.filter((m) => m.hasDimensions || (m.aspectRatios && m.aspectRatios.includes(aspect))),
+    [imageModels, aspect]
   );
-  const currentModel = cinemaModels.find((m) => m.id === selectedModelId) || cinemaModels[0] || IMAGE_MODELS[0];
+  const currentModel = cinemaModels.find((m) => m.id === selectedModelId) || cinemaModels[0] || {};
 
   /* ── Credit cost ── */
   const { cost, affordable, balance, shortfall } = useCreditCost(

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { StudioLayout, ModelSelector, PromptDock, StageArea } from "./v6";
-import { V2V_MODELS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
 
 /* ── Inline SVGs ── */
@@ -33,27 +33,35 @@ const IconUpload = () => (
   </svg>
 );
 
-/* ── Avatar model IDs ── */
-const AVATAR_IDS = new Set(["kling-ai-avatar-standard", "kling-ai-avatar-pro"]);
-
-const MODELS = V2V_MODELS
-  .filter((m) => AVATAR_IDS.has(m.id))
-  .map((m) => ({
-    id: m.id,
-    displayName: m.name,
-    provider: m.provider,
-    speedTier: m.id.includes("pro") ? "premium" : "standard",
-    aspectRatios: m.aspectRatios,
-    durations: m.durations,
-    endpoint: m.endpoint,
-  }));
-
 const DURATIONS = [5, 10];
 const ASPECTS = ["16:9", "9:16", "1:1"];
 
 export default function AvatarStudio() {
-  const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState(MODELS[0].id);
+  /* ── Live model catalog: filter to avatar models ── */
+  const { models: rawModels, loading: catalogLoading } = useModelCatalog({ modelType: "video", capability: "video-to-video" });
+  const AVATAR_IDS = new Set(["kling-ai-avatar-standard", "kling-ai-avatar-pro"]);
+  const MODELS = useMemo(() => rawModels
+    .filter((m) => {
+      const name = (m.displayName || m.id || "").toLowerCase();
+      const id = (m.id || "").toLowerCase();
+      return AVATAR_IDS.has(m.id) || name.includes("avatar") || id.includes("avatar");
+    })
+    .map((m) => ({
+      id: m.id,
+      displayName: m.displayName || m.name,
+      provider: m.provider,
+      speedTier: m.id?.includes("pro") ? "premium" : "standard",
+      aspectRatios: m.aspectRatios,
+      durations: m.durations,
+      endpoint: m.endpoint,
+    })), [rawModels]);
+
+  const [model, setModel] = useState("");
+  useEffect(() => {
+    if (MODELS.length > 0 && (!model || !MODELS.find((m) => m.id === model))) {
+      setModel(MODELS[0].id);
+    }
+  }, [MODELS, model]);
   const [duration, setDuration] = useState(5);
   const [aspectRatio, setAspectRatio] = useState("16:9");
   const [imageUrl, setImageUrl] = useState(null);
@@ -62,7 +70,7 @@ export default function AvatarStudio() {
   const fileRef = useRef(null);
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
 
-  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0];
+  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
   const { cost, affordable, shortfall, balance } = useCreditCost("v2v", model, {
     duration,
     aspect_ratio: aspectRatio,

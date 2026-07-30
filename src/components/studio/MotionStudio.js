@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import StudioLayout from "./v6/StudioLayout";
 import PromptDock from "./v6/PromptDock";
 import StageArea from "./v6/StageArea";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 
 /* ── Inline SVGs ── */
 const IconFilm = () => (
@@ -68,10 +69,20 @@ export default function MotionStudio() {
   const [genStage, setGenStage] = useState("");
   const { loading: generating, result, error, elapsed, submit } = useAsyncGeneration();
 
+  /* ── Model catalog ── */
+  const { models: motionModels } = useModelCatalog({ modelType: "video" });
+
+  const motionModelId = useMemo(() => {
+    const found = motionModels.find(
+      (m) => m.displayName?.toLowerCase().includes("motion")
+    ) || motionModels[0];
+    return found?.id || "";
+  }, [motionModels]);
+
   /* ── Credit cost ── */
   const { cost, affordable, balance, shortfall } = useCreditCost(
     "vibe-motion",
-    "default",
+    motionModelId,
     { duration_seconds: duration },
   );
 
@@ -80,7 +91,7 @@ export default function MotionStudio() {
     if (subMode === "edit") {
       if (!requestId || !editPrompt.trim()) return;
       setGenStage("preparing");
-      submit("motion", "default", {
+      submit("motion", motionModelId, {
         edit_prompt: editPrompt,
         request_id: requestId,
         aspect_ratio: aspectRatio,
@@ -88,7 +99,7 @@ export default function MotionStudio() {
     } else {
       if (!prompt.trim()) return;
       setGenStage("preparing");
-      submit("motion", "default", {
+      submit("motion", motionModelId, {
         prompt,
         aspect_ratio: aspectRatio,
         duration_seconds: duration,

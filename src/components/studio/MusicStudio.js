@@ -6,7 +6,7 @@ import StudioLayout from "./v6/StudioLayout";
 import ModelSelector from "./v6/ModelSelector";
 import PromptDock from "./v6/PromptDock";
 import StageArea from "./v6/StageArea";
-import { AUDIO_MODELS } from "@/lib/models";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 
@@ -377,20 +377,25 @@ export default function MusicStudio() {
   const [vocalGender, setVocalGender] = useState("female");
   const [genStage, setGenStage] = useState("");
 
-  /* ── Suno-only models ── */
+  /* ── Suno-only models (from live catalog) ── */
+  const { models: audioModels } = useModelCatalog({ modelType: "audio" });
   const sunoModels = useMemo(
-    () => AUDIO_MODELS.filter((m) => m.provider === "Suno"),
-    []
+    () => audioModels?.filter(m => m.provider?.toLowerCase() === "suno") || [],
+    [audioModels]
   );
 
-  const [selectedModelId, setSelectedModelId] = useState(
-    sunoModels.length ? sunoModels[0].id : AUDIO_MODELS[0].id
-  );
+  const [selectedModelId, setSelectedModelId] = useState(null);
+
+  useEffect(() => {
+    if (sunoModels.length) {
+      setSelectedModelId(sunoModels[0].id);
+    }
+  }, [sunoModels]);
 
   const currentModel =
     sunoModels.find((m) => m.id === selectedModelId) ||
     sunoModels[0] ||
-    AUDIO_MODELS[0];
+    {};
 
   /* ── Hooks ── */
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();

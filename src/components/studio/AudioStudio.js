@@ -6,7 +6,7 @@ import StudioLayout from "./v6/StudioLayout";
 import ModelSelector from "./v6/ModelSelector";
 import PromptDock from "./v6/PromptDock";
 import StageArea from "./v6/StageArea";
-import { AUDIO_MODELS } from "@/lib/models";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
@@ -344,19 +344,6 @@ const SUB_MODES = [
   { id: "tools", label: "Tools", icon: IconTool },
 ];
 
-const subModeFilter = (subMode) => {
-  switch (subMode) {
-    case "music":
-      return (m) => m.provider === "Suno";
-    case "tts":
-      return (m) => m.hasVoice || m.id.includes("tts");
-    case "tools":
-      return (m) => m.id === "audio-isolation";
-    default:
-      return () => true;
-  }
-};
-
 /* ───────────────────────────────────────────────────────────
    AudioStudio component
    ─────────────────────────────────────────────────────────── */
@@ -379,29 +366,37 @@ export default function AudioStudio() {
   const [genStage, setGenStage] = useState("");
 
   /* ── Hooks ── */
+  const { models: audioModels, loading: modelsLoading } = useModelCatalog({ modelType: "audio" });
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
 
   /* ── Derived ── */
-  const subModels = useMemo(
-    () => AUDIO_MODELS.filter(subModeFilter(subMode)),
-    [subMode]
-  );
+  const subModels = useMemo(() => {
+    switch (subMode) {
+      case "music":
+        return audioModels.filter(m => m.capability === "audio" && m.provider?.toLowerCase() === "suno");
+      case "tts":
+        return audioModels.filter(m => m.capability === "text-to-speech");
+      case "tools":
+        return audioModels.filter(m => m.capability === "audio" && m.provider?.toLowerCase() !== "suno");
+      default:
+        return audioModels;
+    }
+  }, [subMode, audioModels]);
 
-  const [selectedModelId, setSelectedModelId] = useState(
-    subModels.length ? subModels[0].id : AUDIO_MODELS[0].id
-  );
+  const [selectedModelId, setSelectedModelId] = useState(null);
 
-  // Reset model when sub-mode changes
+  // Default model selection from hook data
   useEffect(() => {
     if (subModels.length) {
       setSelectedModelId(subModels[0].id);
     }
-  }, [subMode]);
+  }, [subModels]);
 
   const currentModel =
     subModels.find((m) => m.id === selectedModelId) ||
     subModels[0] ||
-    AUDIO_MODELS[0];
+    audioModels[0] ||
+    {};
 
   const { cost, affordable, shortfall } = useCreditCost("audio", selectedModelId, {
     duration,

@@ -2,29 +2,11 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { apiFetch } from "@/lib/client-fetch";
-import { IMAGE_MODELS, I2I_MODELS } from "@/lib/models";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
-import ModelSelector from "./v6/ModelSelector";
 import PromptDock from "./v6/PromptDock";
 
 const EASE = [0.32, 0.72, 0, 1];
-
-/* ── Canvas-capable models (same derivation as CanvasWorkspace) ── */
-const CANVAS_MODELS = [
-  ...I2I_MODELS,
-  ...IMAGE_MODELS.filter((m) => m.hasDimensions || m.aspectRatios),
-]
-  .map((m) => ({
-    id: m.id,
-    name: m.name,
-    provider: m.provider,
-    endpoint: m.endpoint || m.id,
-    aspectRatios: m.aspectRatios,
-    resolutions: m.resolutions,
-    maxImages: m.maxImages,
-    speedTier: m.speedTier,
-  }))
-  .filter((m, i, arr) => arr.findIndex((x) => x.id === m.id) === i);
 
 const BLEND_MODES = ["normal", "multiply", "screen", "overlay", "darken", "lighten", "color-dodge", "color-burn"];
 
@@ -159,7 +141,7 @@ export default function CanvasStudio() {
   const [layers, setLayers] = useState([]);
   const [activeLayerId, setActiveLayerId] = useState(null);
   const [activeTool, setActiveTool] = useState("select");
-  const [selectedModelId, setSelectedModelId] = useState(CANVAS_MODELS[0]?.id || "");
+  const [selectedModelId, setSelectedModelId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -168,9 +150,18 @@ export default function CanvasStudio() {
   const [docName, setDocName] = useState("Untitled");
   const uploadRef = useRef(null);
 
+  const { models: canvasModels } = useModelCatalog({ modelType: "image" });
+
+  /* ── Auto-select first model when catalog loads ── */
+  useEffect(() => {
+    if (canvasModels.length > 0 && !selectedModelId) {
+      setSelectedModelId(canvasModels[0].id);
+    }
+  }, [canvasModels, selectedModelId]);
+
   const { loading: generationLoading, result: genResult, error: genError, elapsed, submit } = useAsyncGeneration();
   const activeLayer = layers.find((l) => l.id === activeLayerId);
-  const currentModel = CANVAS_MODELS.find((m) => m.id === selectedModelId) || CANVAS_MODELS[0];
+  const currentModel = canvasModels.find((m) => m.id === selectedModelId) || canvasModels[0];
 
   /* ── Load saved documents on mount ── */
   useEffect(() => {
@@ -568,7 +559,7 @@ export default function CanvasStudio() {
               onChange={(e) => setSelectedModelId(e.target.value)}
               style={{ flex: 1, fontSize: 11, padding: "6px 8px" }}
             >
-              {CANVAS_MODELS.map((m) => (
+              {canvasModels.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name} — {m.provider}
                 </option>

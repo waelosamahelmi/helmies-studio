@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { apiFetch } from "@/lib/client-fetch";
-import { IMAGE_MODELS } from "@/lib/models";
-import ModelSelector from "./v6/ModelSelector";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 
 /* ── Inline SVG Icons (v6 style: 24×24, strokeWidth 1.7) ── */
 const IconPrompt = () => (
@@ -166,6 +165,8 @@ export default function WorkflowStudio() {
   const [runResult, setRunResult] = useState(null);
   const [runStatus, setRunStatus] = useState({}); // stepIndex → status
   const [workspaceName, setWorkspaceName] = useState("Untitled Workflow");
+
+  const { models: imageModels } = useModelCatalog({ modelType: "image" });
 
   /* ── Drag state ── */
   const [draggingNodeId, setDraggingNodeId] = useState(null);
@@ -836,7 +837,7 @@ export default function WorkflowStudio() {
                   style={{ fontSize: 11 }}
                 >
                   <option value="">Select model...</option>
-                  {IMAGE_MODELS.map((m) => (
+                  {imageModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name} — {m.provider}
                     </option>
