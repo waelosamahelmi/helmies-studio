@@ -94,6 +94,7 @@ export async function POST(req) {
       pollUrl: `/api/generations/status?id=${generation.id}`,
     });
   } catch (e) {
+    console.error("[generate/async] ERROR", { tool: body?.tool, model: body?.model, message: e.message, stack: e.stack?.split("\n").slice(0, 3).join(" | ") });
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

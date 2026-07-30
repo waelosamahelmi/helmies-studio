@@ -223,7 +223,7 @@ export default function VideoStudio() {
       }
     }
 
-    submit("video", currentModel.endpoint || selectedModelId, params);
+    submit("video", selectedModelId, params);
   }, [
     prompt, affordable, duration, resolution, aspectRatio, cameraMotion,
     mode, referenceImage, referenceVideo, startFrame, endFrame,
