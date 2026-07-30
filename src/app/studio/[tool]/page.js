@@ -1,4 +1,4 @@
-import StudioClient from "../StudioClient";
+import UniverseStudio from "@/components/studio/UniverseStudio";
 
 const TOOLS = {
   image: {
@@ -110,5 +110,5 @@ export default async function StudioToolPage({ params, searchParams }) {
   const initialTool = VALID_TOOLS.includes(tool) ? tool : "image";
   const sp = await searchParams;
   const initialModel = sp?.model || null;
-  return <StudioClient initialTool={initialTool} initialModel={initialModel} />;
+  return <UniverseStudio initialTool={initialTool} initialModel={initialModel} />;
 }

@@ -1,4 +1,5 @@
 /* Command Universe — production Studio shell */
+.studio-universe-frame { display:block; width:100%; height:calc(100dvh - 36px); border:0; background:#09070c; }
 .studio--universe {
   --universe-coral: #ff416f;
   --universe-bg: #08070a;
