@@ -175,9 +175,18 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       let result;
       let lastError;
       let successfulProvider = provider;
-      const providers = await resolveProviderWithFallback(model);
+      let providers = await resolveProviderWithFallback(model);
       console.error(`[handleGeneration] providers chain for model=${model}:`, providers.map((p) => p.name).join(", "));
       console.error(`[handleGeneration] paramsWithPrompt:`, { model: paramsWithPrompt.model, endpoint: paramsWithPrompt.endpoint, tool });
+
+      // If the provider chain is empty (e.g., all providers disabled in DB),
+      // fall back to a direct KIE + Alibaba chain so users can still generate.
+      if (providers.length === 0) {
+        console.error(`[handleGeneration] WARNING: empty provider chain. Falling back to [kie, alibaba].`);
+        const { PROVIDERS: _PROVIDERS, DEFAULT_PROVIDER } = await import("@/lib/providers");
+        const fallbackNames = [DEFAULT_PROVIDER, "alibaba"].filter((n) => _PROVIDERS[n]);
+        providers = fallbackNames.map((n) => ({ name: n, ..._PROVIDERS[n], apiKey: _PROVIDERS[n].getKey() }));
+      }
 
       for (const prov of providers) {
         try {
