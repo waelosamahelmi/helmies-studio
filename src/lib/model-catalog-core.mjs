@@ -132,7 +132,14 @@ export function inferKieModelFromUrl(url) {
     const family = rest[0];
     if (LLM_SEGMENTS.has(family) && !MEDIA_EXCEPTIONS.some((item) => path.includes(item))) return null;
     if (["quickstart", "common"].includes(family) || rest.length < 2) return null;
-    const modelId = rest.join("/");
+    let modelId = rest.join("/");
+    // KIE sitemap uses simplified slugs (e.g., flux2, qwen2) but the API
+    // expects hyphenated model IDs (e.g., flux-2, qwen-2). Normalize the
+    // first segment to match what KIE's createTask endpoint actually accepts.
+    const normalizedFirst = rest[0]?.replace(/^([a-z]+)(\d+)$/, "$1-$2") || rest[0];
+    if (normalizedFirst !== rest[0]) {
+      modelId = [normalizedFirst, ...rest.slice(1)].join("/");
+    }
     const capability = inferCapability(modelId);
     const [inputModalities, outputModalities] = modalitiesForCapability(capability);
     return { modelId, providerModelId: modelId, endpoint: modelId, displayName: titleFromSlug(modelId), capability, inputModalities, outputModalities, sourceUrl: url };
