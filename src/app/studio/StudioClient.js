@@ -9,6 +9,7 @@ import InstrumentOrbit from "@/components/studio/universe/InstrumentOrbit";
 import InstrumentIndex from "@/components/studio/universe/InstrumentIndex";
 import RecentConstellation from "@/components/studio/universe/RecentConstellation";
 import CommandSurface from "@/components/studio/universe/CommandSurface";
+import SpecializedWorkspace from "@/components/studio/universe/SpecializedWorkspace";
 import ChatStudio from "@/components/studio/ChatStudio";
 import WorkflowBuilder from "@/components/studio/WorkflowBuilder";
 import ProjectMemory from "@/components/studio/ProjectMemory";
@@ -36,9 +37,13 @@ const TOOLS = [
 ].map(([id, label, desc, Icon, group]) => ({ id, label, desc, Icon, group }));
 const QUICK = ["orchestrator", "image", "video", "director", "canvas", "assets", "workflows", "brands"];
 
+const SPECIALIZED = { orchestrator: "agent", workflows: "workflows", memory: "projects", brands: "brands", canvas: "canvas", director: "director", assets: "assets", music: "music", "video-edit": "video-edit", avatar: "avatar" };
+
 function Tool({ id, initialModel }) {
   const map = { orchestrator: <ChatStudio tool="orchestrator" initialModel={initialModel} />, workflows: <WorkflowBuilder />, memory: <ProjectMemory />, brands: <BrandKitsView />, canvas: <CanvasWorkspace />, director: <DirectorWorkspace />, assets: <AssetLibrary />, music: <MusicStudio />, "video-edit": <VideoEditStudio />, avatar: <AvatarStudio />, image: <ImageStudioV2 initialModel={initialModel} />, video: <VideoStudioV2 initialModel={initialModel} />, audio: <AudioStudioV2 />, cinema: <CinemaStudioV2 />, lipsync: <LipSyncStudioV2 />, "body-swap": <RecastStudioV2 />, influencer: <InfluencerStudioV2 />, marketing: <MarketingStudioV2 />, "vibe-motion": <MotionStudioV2 />, clipping: <ClippingStudioV2 /> };
-  return map[id] || map.orchestrator;
+  const content = map[id] || map.orchestrator;
+  const spec = SPECIALIZED[id];
+  return spec ? <SpecializedWorkspace tool={spec}>{content}</SpecializedWorkspace> : content;
 }
 
 export default function StudioClient({ initialTool = "orchestrator", initialModel }) {

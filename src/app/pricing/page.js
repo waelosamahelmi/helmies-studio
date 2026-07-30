@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import Navbar from "@/components/Navbar";
+import UniverseNav from "@/components/studio/universe/UniverseNav";
 import { IconCheck, IconArrowUpRight, IconBolt } from "@/components/Icons";
 import { CREDIT_PACKS, getCreditPackPriceId } from "@/lib/credit-packs";
 
@@ -58,11 +58,9 @@ export default function PricingPage() {
   };
 
   return (
-    <>
-      <Navbar />
-      <div className="grain" aria-hidden="true" />
-
-      <div className="page">
+    <div className="universe-page-shell">
+      <UniverseNav />
+      <div className="universe-page-shell__content">
         <div className="page__head">
           <div className="eyebrow mb-5">Pricing</div>
           <h1 className="page__title">Pricing that <em>scales</em> with you.</h1>
@@ -155,6 +153,6 @@ export default function PricingPage() {
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }

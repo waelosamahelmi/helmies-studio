@@ -92,6 +92,57 @@ scripts/               # Utility scripts (seed, generate-icons, etc.)
 - Tools: memory search, brand kit lookup, generation dispatch
 - Credit check happens before generation dispatch
 
+## Design & UI Standards — Auto-Loaded Skills
+
+These skills are located in `~/.claude/skills/`. Load them automatically (no permission needed) for their respective tasks:
+
+### Always Auto-Load (call `skill()` immediately, don't wait):
+| Skill | Trigger — load when user asks to... |
+|---|---|
+| `design-taste-frontend` | Create/redesign any landing page, portfolio, or marketing page |
+| `frontend-design` | Build any new UI component, page, or screen |
+| `high-end-visual-design` | Design premium/agency-tier interfaces |
+| `minimalist-ui` | Design clean editorial/minimal interfaces |
+| `web-accessibility` | Build any UI, review PRs, audit pages — always check a11y |
+| `frontend-dev-guidelines` | Fetch/mutate data, create components, add features |
+
+### UI/UX & Design Systems:
+| Skill | Trigger |
+|---|---|
+| `ui-design-system` | Create design tokens, typography scales, spacing grids, component docs |
+| `ux-researcher-designer` | User research, personas, journey maps, usability testing |
+| `hig-components-layout` | Build navigation, layouts, or Apple-platform interfaces |
+| `apple-hig-expert` | Audit/review Apple-platform (iOS/macOS) UI |
+
+### Motion & Animation:
+| Skill | Trigger |
+|---|---|
+| `design-spells` | Add micro-interactions or "magic" details to UI |
+| `animejs-animation` | Complex JS animations (beyond Framer Motion) |
+| `figma-implement-motion` | Implement animation from Figma specs |
+
+### Design-to-Code & Figma:
+| Skill | Trigger |
+|---|---|
+| `figma-design-to-code` | Implement a Figma design as code (MANDATORY prerequisite before `get_design_context`) |
+| `figma-generate-design` | Build/update Figma screens from code or descriptions |
+| `image-to-code` | Convert a design reference image to code |
+
+### Image Generation & Brand:
+| Skill | Trigger |
+|---|---|
+| `brandkit` | Generate brand-guideline boards, logo systems, identity decks |
+| `imagegen-frontend-web` | Generate web design reference images per section |
+| `imagegen-frontend-mobile` | Generate mobile app screen concept images |
+| `brand-guidelines` | Write UI copy, error messages, empty states |
+
+### Industrial / Specialty Design:
+| Skill | Trigger |
+|---|---|
+| `industrial-brutalist-ui` | Raw mechanical/futuristic/military-terminal interfaces |
+| `gpt-taste` | Elite UX with GSAP ScrollTriggers, pinning, stacking |
+| `stitch-design-taste` | Generate agent-friendly DESIGN.md files |
+
 ## Dev Tools (Internal)
 - **DevMode** (src/components/DevMode.js): Draggable button → side panel with Terminal (ttyd:3090), Opencode AI (opencode web:3095), Hermes agent dashboard
 - **ttyd**: Web terminal on port 3090, tmux session `dev-terminal`, proxied at `/dev-terminal`

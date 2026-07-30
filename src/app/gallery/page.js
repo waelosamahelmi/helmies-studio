@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import Navbar from "@/components/Navbar";
+import UniverseNav from "@/components/studio/universe/UniverseNav";
 import { IconSearch, IconArrowUpRight, IconImage, IconBolt } from "@/components/Icons";
 
 const EASE = [0.32, 0.72, 0, 1];
@@ -161,36 +161,45 @@ export default function GalleryPage() {
   const visible = filtered.slice(0, visibleCount);
 
   return (
-    <>
-      <Navbar />
-      <div className="grain" aria-hidden="true" />
-
-      <div className="universe-gallery page">
-        <div className="page__row">
+    <div className="universe-page-shell">
+      <UniverseNav />
+      <div className="universe-page-shell__content">
+        <div className="universe-section__header">
           <div>
-            <div className="eyebrow mb-4">Your Work</div>
-            <h1 className="page__title">Gallery</h1>
-            <p className="page__sub">{creations.length} creations.</p>
+            <div className="universe-section__label">History</div>
+            <h1>Gallery</h1>
+            <p>{creations.length} creations in your library.</p>
           </div>
-          <Link href="/studio" className="btn btn-primary">
-            New Generation<span className="btn__icon"><IconArrowUpRight /></span>
+          <Link href="/studio" className="universe-plan__cta" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            New creation
+            <IconArrowUpRight />
           </Link>
         </div>
 
-        <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
-          <div className="flex gap-2 flex-wrap">
-            {FILTERS.map((f) => (
-              <button key={f.id} onClick={() => setFilter(f.id)} className={`pill ${filter === f.id ? "pill--active" : ""}`}>
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <div className="field w-full sm:w-64">
-            <IconSearch className="field__icon" />
-            <input type="text" placeholder="Search creations..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        {/* Filters */}
+        <div className="universe-pills">
+          {FILTERS.map((f) => (
+            <button key={f.id} onClick={() => setFilter(f.id)} className={`universe-pill ${filter === f.id ? "is-active" : ""}`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="universe-key__add" style={{ marginBottom: 20 }}>
+          <div style={{ position: "relative", flex: 1 }}>
+            <IconSearch style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 14, color: "#aa91a0" }} />
+            <input
+              type="text"
+              placeholder="Search creations..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ paddingLeft: 34 }}
+            />
           </div>
         </div>
 
+        {/* Content */}
         {loading ? (
           <div className="masonry">
             {Array.from({ length: 8 }).map((_, i) => (
@@ -200,29 +209,28 @@ export default function GalleryPage() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="bezel" style={{ padding: "4rem 2rem", textAlign: "center" }}>
-            <div className="bezel__core" style={{ padding: "3rem 2rem" }}>
-              <div className="studio__empty-icon mx-auto mb-6" style={{ color: "#FF1B6B" }}>
-                <IconImage />
-              </div>
-              <h3 style={{ fontSize: "1.2rem", fontWeight: 700, marginBottom: "0.5rem" }}>No creations found</h3>
-              <p style={{ fontSize: "0.85rem", color: "rgba(242,242,247,0.5)" }}>Generate something in the studio to see it here.</p>
-              <Link href="/studio" className="btn btn-primary" style={{ marginTop: "1rem", display: "inline-flex" }}>
-                Go to Studio<span className="btn__icon"><IconArrowUpRight /></span>
-              </Link>
-            </div>
+          <div className="universe-section" style={{ textAlign: "center", padding: "4rem 2rem" }}>
+            <IconImage style={{ width: 40, height: 40, color: "#ff416f", margin: "0 auto 16px", display: "block" }} />
+            <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 8 }}>No creations found</h3>
+            <p style={{ color: "#aa91a0", fontSize: ".82rem", marginBottom: 16 }}>Generate something in the studio to see it here.</p>
+            <Link href="/studio" className="universe-plan__cta" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              Go to Studio
+              <IconArrowUpRight />
+            </Link>
           </div>
         ) : (
-          <div className="masonry">
-            {visible.map((c, i) => (
-              <GalleryCard key={c.id} item={c} index={i} isVisible={true} />
-            ))}
-            {visibleCount < filtered.length && (
-              <div ref={sentinelRef} style={{ height: 1, width: "100%" }} />
-            )}
-          </div>
+          <>
+            <div className="masonry">
+              {visible.map((c, i) => (
+                <GalleryCard key={c.id} item={c} index={i} isVisible={true} />
+              ))}
+              {visibleCount < filtered.length && (
+                <div ref={sentinelRef} style={{ height: 1, width: "100%" }} />
+              )}
+            </div>
+          </>
         )}
       </div>
-    </>
+    </div>
   );
 }

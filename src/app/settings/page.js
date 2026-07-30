@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import Navbar from "@/components/Navbar";
+import { useSession } from "next-auth/react";
+import UniverseNav from "@/components/studio/universe/UniverseNav";
 import CreditTickDown from "@/components/CreditTickDown";
 import { IconBolt, IconArrowUpRight } from "@/components/Icons";
 import { CREDIT_PACKS, getCreditPackPriceId } from "@/lib/credit-packs";
 
-const EASE = [0.32, 0.72, 0, 1];
-
 export default function SettingsPage() {
+  const { data: session } = useSession();
   const [keys, setKeys] = useState([]);
   const [newKeyName, setNewKeyName] = useState("");
   const [newKey, setNewKey] = useState(null);
@@ -66,114 +66,135 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.url) window.location.href = data.url;
     } catch (e) {
-      // silently fail — user will see Stripe error page
+      // silently fail
     }
   };
 
   return (
-    <>
-      <Navbar />
-      <div className="universe-settings page settings">
-        <div className="settings__header">
-          <h1>Settings</h1>
-          <p>Manage your account, credits, and API keys.</p>
+    <div className="universe-page-shell">
+      <UniverseNav />
+      <div className="universe-page-shell__content">
+        {/* Header */}
+        <div className="universe-section__header">
+          <div>
+            <div className="universe-section__label">Account</div>
+            <h1>Settings</h1>
+            <p>{session?.user?.email || "Manage your account, credits, and API keys."}</p>
+          </div>
         </div>
 
         {/* Credits */}
-        <div className="settings__section">
-          <h3>Credits</h3>
-          <div className="settings__credits">
-            <div className="settings__credits-card" style={{ minWidth: 200 }}>
-              <span className="settings__credits-value" style={{ fontSize: "2rem", display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="universe-section">
+          <h3>Credits & Plan</h3>
+          <div className="universe-stats">
+            <div className="universe-stat">
+              <span className="universe-stat__value">
                 <IconBolt />
                 {loading ? "..." : <CreditTickDown value={credits?.credits || 0} />}
               </span>
-              <span className="settings__credits-label">Available credits</span>
+              <span className="universe-stat__label">Available credits</span>
             </div>
-            <div className="settings__credits-card">
-              <span className="settings__credits-value">{credits?.plan || "free"}</span>
-              <span className="settings__credits-label">Current plan</span>
+            <div className="universe-stat">
+              <span className="universe-stat__value">{credits?.plan || "free"}</span>
+              <span className="universe-stat__label">Current plan</span>
             </div>
           </div>
 
-          <div style={{ marginTop: "1.5rem" }}>
-            <h4 style={{ fontSize: "0.9rem", marginBottom: "0.75rem", color: "rgba(242,242,247,0.7)" }}>Top up credits</h4>
-            <div className="packs" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "0.75rem" }}>
-              {CREDIT_PACKS.map((p) => (
-                <motion.div
-                  key={p.id}
-                  initial={{ opacity: 0, y: 16 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, ease: EASE }}
-                  className="bezel pack"
-                  style={{ padding: "1rem" }}
+          <h4>Top up</h4>
+          <div className="universe-stats" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
+            {CREDIT_PACKS.map((p) => (
+              <motion.div
+                key={p.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35 }}
+                className="universe-stat"
+              >
+                <span className="universe-stat__value" style={{ fontSize: "1.05rem" }}>
+                  {p.name}
+                </span>
+                <span style={{ fontSize: "1.6rem", fontWeight: 700, fontFamily: "var(--font-display)", display: "block", margin: "4px 0" }}>
+                  {p.price}
+                </span>
+                <button
+                  className="universe-plan__cta"
+                  style={{ marginTop: 8 }}
+                  onClick={() => handleTopup(p.id)}
                 >
-                  <div className="pack__row" style={{ justifyContent: "space-between" }}>
-                    <span className="pack__name">{p.name}</span>
-                    <span className="pack__price">{p.price}</span>
-                  </div>
-                  <button className="btn btn-secondary btn-sm" style={{ marginTop: "0.5rem", width: "100%" }} onClick={() => handleTopup(p.id)}>
-                    Buy
-                    <span className="btn__icon"><IconArrowUpRight /></span>
-                  </button>
-                </motion.div>
-              ))}
-            </div>
+                  Buy credits
+                  <IconArrowUpRight style={{ width: 10, marginLeft: 4, display: "inline" }} />
+                </button>
+              </motion.div>
+            ))}
           </div>
         </div>
 
         {/* Subscription */}
-        <div className="settings__section">
+        <div className="universe-section">
           <h3>Subscription</h3>
+          <p>Manage your subscription plan.</p>
           {subscription?.url ? (
-            <a href={subscription.url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">
+            <a href={subscription.url} target="_blank" rel="noopener noreferrer" className="universe-plan__cta" style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
               Manage subscription
-              <span className="btn__icon"><IconArrowUpRight /></span>
+              <IconArrowUpRight />
             </a>
           ) : (
-            <p style={{ fontSize: "0.85rem", color: "rgba(242,242,247,0.4)" }}>
-              You're on the free plan. <a href="/pricing" style={{ color: "#FF1B6B" }}>Upgrade to get more credits.</a>
+            <p style={{ fontSize: "0.85rem", color: "#aa91a0" }}>
+              You&apos;re on the free plan.{" "}
+              <a href="/pricing" style={{ color: "#ff416f" }}>Upgrade to get more credits.</a>
             </p>
           )}
         </div>
 
         {/* API Keys */}
-        <div className="settings__section">
+        <div className="universe-section">
           <h3>API Keys</h3>
-          <p className="settings__hint">Use these keys to access Helmies Studio programmatically via the REST API.</p>
+          <p>Use these keys to access Helmies Studio programmatically via the REST API.</p>
 
-          <div className="settings__add-key">
-            <input className="field-input" placeholder="Key name (e.g. My App)" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)} />
-            <button className="btn btn-primary btn-sm" onClick={createKey} disabled={!newKeyName.trim()}>Create Key</button>
+          <div className="universe-key__add">
+            <input
+              placeholder="Key name (e.g. My App)"
+              value={newKeyName}
+              onChange={(e) => setNewKeyName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && createKey()}
+            />
+            <button className="universe-plan__cta" style={{ width: "auto" }} onClick={createKey} disabled={!newKeyName.trim()}>
+              Create key
+            </button>
           </div>
 
           {newKey && (
-            <div className="settings__key-reveal">
+            <div className="universe-key__reveal">
               <p>Your API key (shown only once):</p>
               <code>{newKey}</code>
-              <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard.writeText(newKey)}>Copy</button>
+              <button className="universe-plan__cta" style={{ width: "auto", padding: "6px 14px", fontSize: ".75rem" }} onClick={() => navigator.clipboard.writeText(newKey)}>
+                Copy
+              </button>
             </div>
           )}
 
-          <div className="settings__keys-list">
-            {keys.map((k) => (
-              <div key={k.id} className="settings__key">
+          {keys.length === 0 ? (
+            <div className="universe-empty">No API keys created yet.</div>
+          ) : (
+            keys.map((k) => (
+              <div key={k.id} className="universe-key__item">
                 <div>
                   <strong>{k.name}</strong>
-                  <span className="settings__key-prefix">{k.keyPrefix}</span>
+                  <span>{k.keyPrefix}</span>
                 </div>
-                <div className="settings__key-meta">
+                <div className="universe-key__meta">
                   <span>Created {new Date(k.createdAt).toLocaleDateString()}</span>
-                  {k.lastUsedAt && <span>Last used {new Date(k.lastUsedAt).toLocaleDateString()}</span>}
-                  <span className={`admin__badge ${k.isActive ? "enabled" : "disabled"}`}>{k.isActive ? "Active" : "Revoked"}</span>
+                  {k.lastUsedAt && <span>· Last used {new Date(k.lastUsedAt).toLocaleDateString()}</span>}
+                  <span style={{ color: k.isActive ? "#65dca6" : "#ff6b6b" }}>{k.isActive ? "Active" : "Revoked"}</span>
                 </div>
-                <button className="btn-ghost" onClick={() => deleteKey(k.id)}>Revoke</button>
+                <button className="universe-pill" style={{ color: "#ff6b6b", borderColor: "rgba(255,107,107,.22)" }} onClick={() => deleteKey(k.id)}>
+                  Revoke
+                </button>
               </div>
-            ))}
-            {keys.length === 0 && <p className="admin__empty">No API keys yet.</p>}
-          </div>
+            ))
+          )}
         </div>
       </div>
-    </>
+    </div>
   );
 }

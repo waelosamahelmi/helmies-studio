@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import Navbar from "@/components/Navbar";
+import UniverseNav from "@/components/studio/universe/UniverseNav";
 import {
   IconChevron, IconBolt, IconSparkle, IconSearch
 } from "@/components/Icons";
@@ -69,8 +69,9 @@ export default function AdminShell() {
   const currentTopTab = TOP_LEVEL_TABS.find((t) => t.id === topTab);
 
   return (
-    <>
-      <Navbar />
+    <div className="universe-page-shell">
+      <UniverseNav />
+      <div className="universe-page-shell__content">
       <div className="admin-universe admin">
         <div className="admin__header">
           <h1>Admin Panel</h1>
@@ -136,7 +137,8 @@ export default function AdminShell() {
           <AdminContent topTab={topTab} subTab={subTab} />
         </motion.div>
       </div>
-    </>
+      </div>
+    </div>
   );
 }
 

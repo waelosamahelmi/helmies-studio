@@ -3,24 +3,17 @@
 import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import Navbar from "@/components/Navbar";
+import UniverseNav from "@/components/studio/universe/UniverseNav";
 import { IconSearch, IconArrowUpRight } from "@/components/Icons";
 import { IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS, LIPSYNC_MODELS, RECAST_MODELS, AUDIO_MODELS } from "@/lib/models";
 
-const EASE = [0.32, 0.72, 0, 1];
-
 const TYPE_TO_TOOL = {
-  image: "image",
-  i2i: "image",
-  video: "video",
-  i2v: "video",
-  v2v: "video",
-  lipsync: "lipsync",
-  recast: "body-swap",
-  audio: "audio",
+  image: "image", i2i: "image", video: "video", i2v: "video",
+  v2v: "video", lipsync: "lipsync", recast: "body-swap", audio: "audio",
 };
 
-const ALL_MODELS = [...IMAGE_MODELS.map((m) => ({ ...m, type: "image", category: "Text → Image" })),
+const ALL_MODELS = [
+  ...IMAGE_MODELS.map((m) => ({ ...m, type: "image", category: "Text → Image" })),
   ...I2I_MODELS.map((m) => ({ ...m, type: "i2i", category: "Image → Image" })),
   ...VIDEO_MODELS.map((m) => ({ ...m, type: "video", category: "Text → Video" })),
   ...I2V_MODELS.map((m) => ({ ...m, type: "i2v", category: "Image → Video" })),
@@ -44,11 +37,7 @@ export default function ModelsPage() {
         const map = {};
         (d.models || []).forEach((m) => {
           if (m.background) {
-            map[m.id] = {
-              url: m.background,
-              overlay: m.backgroundOverlay ?? 0.05,
-              textColor: m.textColor || "light",
-            };
+            map[m.id] = { url: m.background, overlay: m.backgroundOverlay ?? 0.05, textColor: m.textColor || "light" };
           }
         });
         setBackgrounds(map);
@@ -73,47 +62,46 @@ export default function ModelsPage() {
   }, {});
 
   return (
-    <>
-      <Navbar />
-      <div className="grain" aria-hidden="true" />
-
-      <div className="page">
-        <div className="page__row">
+    <div className="universe-page-shell">
+      <UniverseNav />
+      <div className="universe-page-shell__content">
+        <div className="universe-section__header">
           <div>
-            <div className="eyebrow mb-4">Catalog</div>
-            <h1 className="page__title">{ALL_MODELS.length} AI Models</h1>
-            <p className="page__sub">Every model in the Helmies Studio catalog, across all studios.</p>
+            <div className="universe-section__label">Catalog</div>
+            <h1>{ALL_MODELS.length} AI Models</h1>
+            <p>Every model in the Helmies Studio catalog, across all studios.</p>
           </div>
-          <Link href="/studio" className="btn btn-primary">
+          <Link href="/studio" className="universe-plan__cta" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
             Start Creating
-            <span className="btn__icon"><IconArrowUpRight /></span>
+            <IconArrowUpRight />
           </Link>
         </div>
 
-        <div className="flex items-center justify-between mb-8 flex-wrap gap-3">
-          <div className="flex gap-2 flex-wrap">
-            {CATEGORIES.map((c) => (
-              <button
-                key={c}
-                onClick={() => setCategory(c)}
-                className={`pill ${category === c ? "pill--active" : ""}`}
-              >
-                {c}
-                {c !== "All" && <span className="pill__count">{counts[c]}</span>}
-              </button>
-            ))}
-          </div>
-          <div className="field w-full sm:w-64">
-            <IconSearch className="field__icon" />
+        {/* Category pills */}
+        <div className="universe-pills">
+          {CATEGORIES.map((c) => (
+            <button key={c} onClick={() => setCategory(c)} className={`universe-pill ${category === c ? "is-active" : ""}`}>
+              {c}
+              {c !== "All" && <span className="universe-pill__count">{counts[c]}</span>}
+            </button>
+          ))}
+        </div>
+
+        {/* Search */}
+        <div className="universe-key__add" style={{ marginBottom: 20 }}>
+          <div style={{ position: "relative", flex: 1 }}>
+            <IconSearch style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", width: 14, color: "#aa91a0" }} />
             <input
               type="text"
               placeholder="Search models..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              style={{ paddingLeft: 34 }}
             />
           </div>
         </div>
 
+        {/* Model grid */}
         <div className="models-grid">
           {filtered.map((m, i) => {
             const tool = TYPE_TO_TOOL[m.type] || "image";
@@ -121,31 +109,28 @@ export default function ModelsPage() {
             const bgUrl = bg ? bg.url : null;
             const bgOverlay = bg ? bg.overlay : 0.05;
             const isDark = bg ? bg.textColor === "dark" : false;
-            const textBase = isDark ? "#111" : "inherit";
-            const textMuted = isDark ? "rgba(0,0,0,0.5)" : "rgba(255,255,255,0.6)";
-            const textFaint = isDark ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.5)";
-            const badgeBg = isDark ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)";
+            const textBase = isDark ? "#111" : "#fff8fc";
+            const textMuted = isDark ? "rgba(0,0,0,0.5)" : "#aa91a0";
+            const textFaint = isDark ? "rgba(0,0,0,0.35)" : "rgba(255,248,252,0.45)";
+            const badgeBg = isDark ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
             return (
               <Link key={m.id} href={`/studio/${tool}?model=${m.id}`} style={{ textDecoration: "none", color: "inherit", display: "block" }}>
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true, margin: "-30px" }}
-                  transition={{ duration: 0.5, ease: EASE, delay: (i % 6) * 0.04 }}
+                  transition={{ duration: 0.5, delay: (i % 6) * 0.04 }}
                   className="model-card bezel"
-                  style={{ position: "relative", overflow: "hidden", cursor: "pointer" }}
+                  style={{ position: "relative", overflow: "hidden", cursor: "pointer", borderColor: "rgba(255,190,214,.16)" }}
                 >
                   {bgUrl && (
                     <div
                       style={{
                         position: "absolute", inset: 0,
                         backgroundImage: `url(${bgUrl})`,
-                        backgroundSize: "cover",
-                        backgroundPosition: "center",
+                        backgroundSize: "cover", backgroundPosition: "center",
                         opacity: bgOverlay === 0 ? 1 : bgOverlay,
-                        transition: "opacity 0.3s",
-                        pointerEvents: "none",
-                        zIndex: 0,
+                        transition: "opacity 0.3s", pointerEvents: "none", zIndex: 0,
                       }}
                       className="model-card__bg"
                     />
@@ -153,7 +138,7 @@ export default function ModelsPage() {
                   <div className="bezel__core" style={{ padding: "1.25rem", position: "relative", zIndex: 1, color: textBase }}>
                     <div className="flex items-center justify-between mb-3">
                       <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: textMuted }}>{m.category}</span>
-                      <span className="pill pill--active" style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem" }}>{m.type}</span>
+                      <span className="universe-pill is-active" style={{ fontSize: ".65rem", padding: "2px 7px", border: "1px solid rgba(255,65,111,.3)" }}>{m.type}</span>
                     </div>
                     <h3 className="text-base font-bold mb-1">{m.name}</h3>
                     <p className="text-xs mb-3" style={{ color: textMuted }}>{m.id}</p>
@@ -187,14 +172,12 @@ export default function ModelsPage() {
         </div>
 
         {filtered.length === 0 && (
-          <div className="bezel" style={{ padding: "4rem 2rem", textAlign: "center" }}>
-            <div className="bezel__core" style={{ padding: "3rem 2rem" }}>
-              <h3 className="text-xl font-bold mb-2">No models found</h3>
-              <p className="text-sm text-white/50">Try a different search or category.</p>
-            </div>
+          <div className="universe-section" style={{ textAlign: "center", padding: "4rem 2rem" }}>
+            <h3 style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 8 }}>No models found</h3>
+            <p style={{ color: "#aa91a0", fontSize: ".82rem" }}>Try a different search or category.</p>
           </div>
         )}
       </div>
-    </>
+    </div>
   );
 }

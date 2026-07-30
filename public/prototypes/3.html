@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Helmies Studio — AI Media Generation</title>
+<meta name="description" content="Premium AI media generation platform — create images, videos, audio, and more.">
+<style>
+/* ═══════════════════════════════════════════════════════════
+   HELMIES STUDIO — PROTOTYPE 3 (REFINED)
+   Aesthetic: Hacker-Studio Luxury
+   Linear.app × A24 × Three.js × Design Spells
+   DFII: 15/15
+   ═══════════════════════════════════════════════════════════ */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --bg: #08080D;
+  --surface: #0E0E16;
+  --surface-raised: #14141F;
+  --surface-overlay: rgba(10,10,18,0.94);
+  --glass: rgba(14,14,22,0.8);
+  --border: rgba(255,255,255,0.06);
+  --border-active: rgba(255,255,255,0.12);
+
+  --brand: #FF1B6B;
+  --brand-dim: rgba(255,27,107,0.12);
+  --brand-glow: rgba(255,27,107,0.3);
+  --accent: #7C3AED;
+  --accent-dim: rgba(124,58,237,0.12);
+
+  --text: #F2F2F7;
+  --text-secondary: #9898A3;
+  --text-faint: #4A4A55;
+
+  --success: #4ADE80;
+  --warning: #F59E0B;
+  --error: #EF4444;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 48px;
+
+  --font-display: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.5);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.6);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,0.7);
+  --shadow-glow: 0 0 30px var(--brand-glow);
+  --shadow-glow-purple: 0 0 30px rgba(124,58,237,0.3);
+
+  --ease-out: cubic-bezier(0.16,1,0.3,1);
+  --ease-in-out: cubic-bezier(0.65,0,0.35,1);
+  --spring: cubic-bezier(0.34,1.56,0.64,1);
+  --dur-fast: 120ms;
+  --dur-normal: 200ms;
+  --dur-slow: 400ms;
+
+  --sidebar-w: 240px;
+  --sidebar-collapsed: 60px;
+
+  --model-bg-1: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+  --model-bg-2: linear-gradient(135deg, #1a1a2e, #2d1b69, #7c3aed);
+  --model-bg-3: linear-gradient(135deg, #1a1a2e, #4a0e4e, #be185d);
+  --model-bg-4: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+  --model-bg-5: linear-gradient(135deg, #1a1a2e, #3b1f2e, #ff1b6b);
+  --model-bg-6: linear-gradient(135deg, #0a0a0f, #1a0a2e, #6b21a8);
+}
+
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  overflow: hidden;
+  height: 100dvh;
+  width: 100vw;
+}
+
+/* ── Skip Link ──────────────────────────────── */
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
+.skip-link { position:fixed; top:-100%; left:12px; z-index:9999; padding:8px 16px; background:var(--brand); color:#fff; border-radius:var(--radius-sm); font-size:13px; font-weight:600; text-decoration:none; }
+.skip-link:focus { top:12px; }
+
+/* ════════════════════════════════════════════
+   SHELL
+   ════════════════════════════════════════════ */
+.app { display:flex; height:100dvh; width:100vw; }
+
+/* ── Sidebar ──────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display:flex; flex-direction:column;
+  flex-shrink:0;
+  z-index: 100;
+  transition: width var(--dur-slow) var(--ease-out);
+  position: relative;
+}
+.sidebar.collapsed { width: var(--sidebar-collapsed); }
+
+.sidebar-logo {
+  display:flex; align-items:center; gap: var(--space-md);
+  padding: var(--space-lg) var(--space-lg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-logo-icon {
+  width: 28px; height: 28px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink: 0;
+  font-weight: 800; font-size: 14px; color: #fff;
+  font-family: var(--font-display);
+  box-shadow: 0 0 16px var(--brand-glow);
+}
+.sidebar-logo-text { font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: -0.02em; white-space:nowrap; }
+.sidebar-logo-text span { color: var(--brand); }
+.sidebar.collapsed .sidebar-logo-text { display:none; }
+.sidebar.collapsed .sidebar-logo { justify-content:center; padding: var(--space-lg) 0; }
+
+.sidebar-toggle {
+  position: absolute; right: -14px; top: var(--space-3xl);
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-faint);
+  cursor: pointer;
+  display:flex; align-items:center; justify-content:center;
+  font-size: 12px;
+  transition: all var(--dur-fast);
+  z-index: 10;
+}
+.sidebar-toggle:hover { color: var(--text); border-color: var(--border-active); background: var(--surface-overlay); }
+.sidebar-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+
+.sidebar-nav { flex:1; overflow-y:auto; padding: var(--space-sm) 0; }
+.sidebar-section { margin-bottom: var(--space-xs); }
+.sidebar-section-title {
+  padding: var(--space-sm) var(--space-lg) var(--space-xs);
+  font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--text-faint);
+  font-family: var(--font-body);
+  white-space: nowrap; overflow: hidden;
+}
+.sidebar.collapsed .sidebar-section-title {
+  text-align: center; padding: var(--space-sm) 0 var(--space-xs); font-size: 8px;
+}
+
+.sidebar-item {
+  display:flex; align-items:center; gap: var(--space-md);
+  width: 100%; padding: 8px var(--space-lg);
+  border: none; background: transparent;
+  color: var(--text-secondary); font-size: 13px;
+  font-family: var(--font-body);
+  cursor: pointer; text-align: left; white-space:nowrap;
+  position: relative;
+  transition: all var(--dur-fast);
+  min-height: 40px;
+}
+.sidebar-item:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.sidebar-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; border-radius: var(--radius-sm); }
+.sidebar-item.active { color: var(--text); background: linear-gradient(90deg, var(--brand-dim), transparent); }
+.sidebar-item.active::before {
+  content: ''; position:absolute; left:0; top:25%; bottom:25%;
+  width: 3px; background: var(--brand);
+  border-radius: 0 3px 3px 0;
+}
+.sidebar-item-icon {
+  display:flex; align-items:center; justify-content:center;
+  width: 26px; height: 26px; flex-shrink:0;
+  border-radius: var(--radius-sm);
+  font-size: 16px;
+  transition: transform var(--dur-fast);
+}
+.sidebar-item:hover .sidebar-item-icon { transform: scale(1.1); }
+.sidebar-item.active .sidebar-item-icon { background: var(--brand-dim); color: var(--brand); }
+.sidebar-item-text { display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+.sidebar.collapsed .sidebar-item-text { display:none; }
+.sidebar-item-label { font-size: 13px; font-weight: 500; line-height:1.2; overflow:hidden; text-overflow:ellipsis; }
+.sidebar-item-desc { font-size: 10px; color: var(--text-faint); line-height:1.3; overflow:hidden; text-overflow:ellipsis; }
+.sidebar-item-shortcut { margin-left:auto; font-family:var(--font-mono); font-size:10px; color: var(--text-faint); padding:1px 5px; background:rgba(255,255,255,0.05); border-radius:3px; flex-shrink:0; }
+.sidebar.collapsed .sidebar-item-shortcut { display:none; }
+
+.sidebar-footer {
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--border);
+  display:flex; align-items:center; gap: var(--space-sm);
+  flex-shrink:0;
+}
+.sidebar.collapsed .sidebar-footer { justify-content:center; padding: var(--space-md) var(--space-xs); }
+.sidebar-footer-avatar {
+  width: 28px; height: 28px; border-radius:50%;
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  display:flex; align-items:center; justify-content:center;
+  font-size: 11px; font-weight:700; color:#fff; flex-shrink:0;
+}
+.sidebar-footer-info { display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+.sidebar.collapsed .sidebar-footer-info { display:none; }
+.sidebar-footer-name { font-size:12px; font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; }
+.sidebar-footer-credits { font-size:11px; color:var(--text-faint); font-family:var(--font-mono); }
+
+/* ── Collapsed tooltip ────────────────────── */
+.sidebar.collapsed .sidebar-item { justify-content:center; padding:8px 0; }
+.sidebar.collapsed .sidebar-item:hover::after {
+  content: attr(data-tooltip);
+  position: absolute; left: calc(100% + 8px); top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 10px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 12px; color: var(--text); white-space:nowrap;
+  z-index: 200; pointer-events:none;
+  box-shadow: var(--shadow-md);
+}
+
+/* ════════════════════════════════════════════
+   MAIN CONTENT
+   ════════════════════════════════════════════ */
+.main { flex:1; display:flex; flex-direction:column; min-width:0; position:relative; overflow: hidden; }
+
+/* ── Topbar ───────────────────────────────── */
+.topbar {
+  display:flex; align-items:center;
+  height: 48px; padding: 0 var(--space-lg);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  gap: var(--space-md);
+  flex-shrink:0;
+  z-index: 90;
+}
+.topbar-search {
+  display:flex; align-items:center; gap: var(--space-sm);
+  padding: 6px 14px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  color: var(--text-faint);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--dur-fast);
+  flex: 1; max-width: 360px;
+}
+.topbar-search:hover { border-color: var(--border-active); }
+.topbar-search:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-dim); }
+.topbar-search kbd {
+  margin-left: auto; padding: 2px 6px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 4px; font-family: var(--font-mono); font-size: 10px; color: var(--text-faint);
+}
+.topbar-right { display:flex; align-items:center; gap: var(--space-md); margin-left:auto; flex-shrink:0; }
+.topbar-credits {
+  display:flex; align-items:center; gap: 6px; padding: 5px 12px;
+  background: var(--brand-dim); border: 1px solid rgba(255,27,107,0.2);
+  border-radius: var(--radius-full); font-size: 12px; font-weight: 600;
+  color: var(--brand); font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  transition: transform var(--dur-fast);
+  cursor: default; text-decoration: none;
+}
+.topbar-credits:hover { transform: scale(1.03); }
+.topbar-badge {
+  display:flex; align-items:center; gap: 4px;
+  padding: 5px 10px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  font-size: 12px; color: var(--text-secondary); cursor: pointer;
+  transition: all var(--dur-fast);
+}
+.topbar-badge:hover { color: var(--text); border-color: var(--border-active); }
+.topbar-badge-dot { width: 6px; height: 6px; border-radius:50%; background: var(--success); }
+
+/* ════════════════════════════════════════════
+   CONTENT AREA
+   ════════════════════════════════════════════ */
+.content { flex:1; overflow-y:auto; overflow-x:hidden; scroll-behavior: smooth; }
+.page { display:none; padding: var(--space-2xl); max-width: 1100px; margin:0 auto; width:100%; }
+.page.active { display:block; animation: fadeUp 0.35s var(--ease-out) both; }
+
+@keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+@keyframes fadeScale { from { opacity:0; transform:scale(0.96); } to { opacity:1; transform:scale(1); } }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+@keyframes shimmer { 0% { transform:translateX(-100%); } 100% { transform:translateX(400%); } }
+@keyframes float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-6px); } }
+
+/* ── Page Header ──────────────────────────── */
+.page-header { margin-bottom: var(--space-2xl); }
+.page-title { font-family: var(--font-display); font-size: 28px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: var(--space-sm); }
+.page-title span { color: var(--brand); }
+.page-subtitle { font-size: 14px; color: var(--text-secondary); line-height: 1.5; max-width: 520px; }
+
+/* ════════════════════════════════════════════
+   MODEL GRID — Bento-style visual cards
+   ════════════════════════════════════════════ */
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-lg);
+  margin-bottom: var(--space-2xl);
+}
+
+.model-card {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all var(--dur-normal) var(--ease-out);
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+}
+.model-card:hover {
+  border-color: var(--brand-dim);
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg), 0 0 30px var(--brand-dim);
+}
+.model-card:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+}
+.model-card.selected {
+  border-color: var(--brand);
+  box-shadow: 0 0 20px var(--brand-glow);
+}
+
+.model-card-bg {
+  position: absolute; inset: 0;
+  background-size: cover;
+  background-position: center;
+  transition: transform 0.6s var(--ease-out), filter 0.3s;
+  filter: brightness(0.3) saturate(0.5);
+}
+.model-card:hover .model-card-bg {
+  transform: scale(1.05);
+  filter: brightness(0.45) saturate(0.7);
+}
+.model-card.selected .model-card-bg {
+  filter: brightness(0.5) saturate(0.8);
+}
+
+.model-card-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(8,8,13,0.3) 0%, var(--surface) 100%);
+}
+
+.model-card-content {
+  position: relative; z-index: 1;
+  padding: var(--space-lg);
+  flex: 1;
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+
+.model-card-provider {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-faint);
+  margin-bottom: var(--space-xs);
+}
+
+.model-card-name {
+  font-family: var(--font-display);
+  font-size: 18px; font-weight: 700;
+  color: var(--text);
+  margin-bottom: var(--space-xs);
+  letter-spacing: -0.01em;
+}
+
+.model-card-desc {
+  font-size: 12px; color: var(--text-secondary);
+  line-height: 1.4; margin-bottom: var(--space-md);
+}
+
+.model-card-meta {
+  display: flex; align-items: center; gap: var(--space-md);
+}
+
+.model-card-tier {
+  display: flex; gap: 2px;
+}
+.model-card-tier-dot {
+  width: 4px; height: 12px; border-radius: 2px;
+  background: var(--text-faint);
+  transition: all var(--dur-fast);
+}
+.model-card-tier-dot.on { background: var(--brand); box-shadow: 0 0 4px var(--brand-glow); }
+
+.model-card-cost {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  padding: 3px 10px;
+  background: rgba(255,255,255,0.05);
+  border-radius: var(--radius-full);
+}
+.model-card.selected .model-card-cost {
+  color: var(--brand);
+  background: var(--brand-dim);
+}
+
+.model-card-badge {
+  position: absolute; top: var(--space-md); right: var(--space-md);
+  z-index: 2;
+  padding: 3px 8px; background: var(--brand); color: #fff;
+  border-radius: var(--radius-full); font-size: 10px; font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+/* ════════════════════════════════════════════
+   3D GENERATION CANVAS
+   ════════════════════════════════════════════ */
+.gen-overlay {
+  position: fixed; inset: 0;
+  background: rgba(8,8,13,0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 500;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  animation: fadeUp 0.3s var(--ease-out) both;
+}
+.gen-overlay.hidden { display: none; }
+
+#gen-canvas {
+  width: 320px; height: 320px;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  border: 1px solid var(--brand-dim);
+  box-shadow: 0 0 60px var(--brand-glow), 0 0 120px var(--accent-dim);
+  margin-bottom: var(--space-2xl);
+  background: var(--surface);
+}
+
+.gen-progress { max-width: 360px; text-align: center; }
+.gen-progress-stages {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0; margin-bottom: var(--space-xl);
+}
+.gen-stage {
+  display: flex; flex-direction: column; align-items: center;
+}
+.gen-stage-dot {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface); border: 2px solid var(--text-faint);
+  color: var(--text-faint); font-size: 13px; font-weight: 600;
+  transition: all var(--dur-normal);
+}
+.gen-stage.active .gen-stage-dot {
+  border-color: var(--brand); color: var(--brand);
+  background: var(--brand-dim);
+  box-shadow: 0 0 16px var(--brand-glow);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+.gen-stage.done .gen-stage-dot {
+  border-color: var(--success); color: var(--success);
+  background: rgba(74,222,128,0.1);
+}
+.gen-stage-label {
+  font-size: 10px; color: var(--text-faint);
+  margin-top: var(--space-xs);
+  transition: color var(--dur-normal);
+}
+.gen-stage.active .gen-stage-label { color: var(--brand); }
+.gen-stage.done .gen-stage-label { color: var(--success); }
+.gen-stage-line {
+  width: 48px; height: 2px; background: var(--text-faint);
+  margin: 0 var(--space-xs); align-self: center;
+  transition: background var(--dur-normal);
+}
+.gen-stage.done .gen-stage-line { background: var(--success); }
+.gen-stage.active .gen-stage-line { background: var(--brand); }
+
+.gen-progress-bar {
+  height: 4px; background: var(--surface-raised);
+  border-radius: 2px; overflow: hidden; margin-bottom: var(--space-md);
+}
+.gen-progress-fill {
+  height: 100%; background: linear-gradient(90deg, var(--brand), var(--accent));
+  border-radius: 2px; transition: width 0.3s var(--ease-out);
+  position: relative;
+  width: 0%;
+}
+.gen-progress-fill::after {
+  content: ''; position: absolute; right: 0; top: 0; bottom: 0;
+  width: 20px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.gen-meta { display: flex; align-items: center; justify-content: center; gap: var(--space-lg); margin-bottom: var(--space-sm); }
+.gen-meta-label { font-size: 14px; font-weight: 600; color: var(--text); }
+.gen-meta-timer {
+  font-size: 12px; color: var(--text-secondary);
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; gap: 6px;
+}
+.gen-meta-timer-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); animation: pulse 1s ease-in-out infinite; }
+.gen-msg { font-size: 12px; color: var(--text-faint); font-style: italic; }
+
+.gen-cancel {
+  margin-top: var(--space-xl);
+  padding: 8px 20px; background: transparent;
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  color: var(--text-secondary); font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all var(--dur-fast);
+  font-family: var(--font-body);
+}
+.gen-cancel:hover { color: var(--text); border-color: var(--border-active); }
+.gen-cancel:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Generation complete state */
+.gen-complete {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-lg);
+  animation: fadeScale 0.5s var(--spring) both;
+}
+.gen-complete.visible { display: flex; }
+
+.gen-result-img {
+  width: 320px; height: 320px; object-fit: cover;
+  border-radius: var(--radius-xl); border: 1px solid var(--brand-dim);
+  box-shadow: 0 0 40px var(--brand-glow);
+}
+
+.gen-complete-actions { display: flex; gap: var(--space-sm); flex-wrap: wrap; justify-content: center; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: var(--space-sm);
+  padding: 8px 18px; border-radius: var(--radius-full);
+  font-size: 13px; font-weight: 600; font-family: var(--font-body);
+  cursor: pointer; border: 1px solid transparent;
+  transition: all var(--dur-fast); min-height: 40px;
+}
+.btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.btn-primary {
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  color: #fff; border: none;
+}
+.btn-primary:hover { filter: brightness(1.1); box-shadow: var(--shadow-glow); transform: translateY(-2px); }
+.btn-primary:active { transform: scale(0.97); }
+.btn-ghost {
+  background: transparent; color: var(--text-secondary);
+  border-color: var(--border);
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--border-active); background: rgba(255,255,255,0.03); }
+
+/* ════════════════════════════════════════════
+   PROMPT DOCK — unified bottom bar
+   ════════════════════════════════════════════ */
+.prompt-dock {
+  position: sticky; bottom: 0;
+  background: var(--surface); border-top: 1px solid var(--border);
+  padding: var(--space-lg) var(--space-2xl);
+  margin: 0 calc(var(--space-2xl) * -1);
+  z-index: 50;
+}
+.prompt-dock-inner {
+  max-width: 760px; margin: 0 auto;
+}
+
+.prompt-dock-tabs {
+  display: flex; gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+.prompt-tab {
+  padding: 5px 14px; border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  font-size: 12px; font-weight: 500; color: var(--text-faint);
+  cursor: pointer; background: transparent;
+  transition: all var(--dur-fast);
+  font-family: var(--font-body);
+}
+.prompt-tab:hover { color: var(--text-secondary); }
+.prompt-tab.active {
+  background: var(--brand-dim); color: var(--brand);
+  border-color: rgba(255,27,107,0.2);
+}
+.prompt-tab:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.prompt-tab-content { display: none; animation: fadeUp 0.2s var(--ease-out) both; }
+.prompt-tab-content.active { display: block; }
+
+.prompt-box {
+  display: flex; align-items: flex-end; gap: var(--space-md);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-sm) var(--space-md);
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+.prompt-box:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-dim);
+}
+
+.prompt-textarea {
+  flex: 1; border: none; background: transparent;
+  color: var(--text); font-size: 14px; font-family: var(--font-body);
+  line-height: 1.5; resize: none; outline: none;
+  min-height: 24px; max-height: 120px; padding: 4px 0;
+}
+.prompt-textarea::placeholder { color: var(--text-faint); }
+
+.generate-btn {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 10px 22px;
+  background: linear-gradient(135deg, var(--brand), var(--accent));
+  border: none; border-radius: var(--radius-full);
+  color: #fff; font-size: 13px; font-weight: 700;
+  font-family: var(--font-body); cursor: pointer;
+  position: relative; overflow: hidden;
+  transition: transform var(--dur-fast) var(--spring), box-shadow var(--dur-fast);
+  white-space: nowrap; min-height: 44px; min-width: 44px;
+}
+.generate-btn::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transform: translateX(-100%); transition: transform 0.6s;
+}
+.generate-btn:hover::after { transform: translateX(100%); }
+.generate-btn:hover { transform: scale(1.03); box-shadow: var(--shadow-glow); }
+.generate-btn:active { transform: scale(0.97); }
+.generate-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.generate-btn:disabled::after { display: none; }
+.generate-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+
+.generate-btn-cost {
+  font-size: 11px; opacity: 0.8; padding-left: var(--space-sm);
+  border-left: 1px solid rgba(255,255,255,0.2);
+  display: flex; align-items: center; gap: 3px;
+}
+
+.prompt-pills { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-top: var(--space-sm); }
+.prompt-pill {
+  padding: 4px 12px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  font-size: 11px; color: var(--text-secondary); cursor: pointer;
+  transition: all var(--dur-fast); font-family: var(--font-body);
+}
+.prompt-pill:hover { color: var(--text); border-color: var(--border-active); }
+.prompt-pill:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Settings/refs/negativity tabs */
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-sm); }
+.settings-chip {
+  padding: 6px 14px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  font-size: 12px; color: var(--text-secondary); cursor: pointer;
+  transition: all var(--dur-fast); text-align: center;
+  font-family: var(--font-body);
+}
+.settings-chip:hover { color: var(--text); border-color: var(--border-active); }
+.settings-chip.selected {
+  background: var(--brand-dim); border-color: var(--brand); color: var(--brand);
+}
+.settings-chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.ref-upload {
+  display: flex; gap: var(--space-sm); flex-wrap: wrap;
+}
+.ref-thumb {
+  width: 64px; height: 64px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); overflow: hidden;
+  cursor: pointer; transition: all var(--dur-fast);
+  background: var(--surface-raised);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-faint); font-size: 20px;
+  position: relative;
+}
+.ref-thumb:hover { border-color: var(--brand); transform: scale(1.05); }
+.ref-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ref-thumb-remove {
+  position: absolute; top: 2px; right: 2px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: rgba(0,0,0,0.8); color: #fff; border: none;
+  cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity var(--dur-fast);
+}
+.ref-thumb:hover .ref-thumb-remove { opacity: 1; }
+
+.neg-input {
+  width: 100%; padding: 8px 12px;
+  background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font-size: 13px; font-family: var(--font-body); outline: none;
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+.neg-input:focus { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-dim); }
+.neg-input::placeholder { color: var(--text-faint); }
+
+/* ════════════════════════════════════════════
+   GALLERY PAGE
+   ════════════════════════════════════════════ */
+.gallery-filters { display: flex; gap: var(--space-sm); flex-wrap: wrap; margin-bottom: var(--space-xl); }
+.filter-chip {
+  padding: 5px 14px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-full);
+  font-size: 12px; color: var(--text-secondary); cursor: pointer;
+  transition: all var(--dur-fast); font-family: var(--font-body);
+}
+.filter-chip:hover { color: var(--text); border-color: var(--border-active); }
+.filter-chip.active { background: var(--brand-dim); border-color: var(--brand); color: var(--brand); }
+.filter-chip:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.gallery-grid { columns: 4 240px; gap: var(--space-lg); }
+.gallery-item {
+  break-inside: avoid; margin-bottom: var(--space-lg);
+  border-radius: var(--radius-lg); overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border);
+  cursor: pointer; transition: all var(--dur-normal) var(--ease-out);
+  position: relative;
+}
+.gallery-item:hover { border-color: var(--brand-dim); transform: translateY(-4px); box-shadow: var(--shadow-lg); }
+.gallery-item:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+.gallery-item img { width: 100%; display: block; }
+.gallery-item-overlay {
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, transparent 40%, rgba(8,8,13,0.9));
+  opacity: 0; transition: opacity var(--dur-normal);
+  display: flex; flex-direction: column; justify-content: flex-end;
+  padding: var(--space-lg);
+}
+.gallery-item:hover .gallery-item-overlay { opacity: 1; }
+.gallery-item-prompt { font-size: 13px; color: var(--text); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.gallery-item-meta { font-size: 11px; color: var(--text-secondary); margin-top: var(--space-sm); display: flex; gap: var(--space-md); }
+.gallery-empty {
+  text-align: center; padding: var(--space-3xl);
+  color: var(--text-faint); font-size: 14px;
+}
+
+/* ════════════════════════════════════════════
+   SETTINGS PAGE
+   ════════════════════════════════════════════ */
+.settings-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: var(--space-xl);
+  margin-bottom: var(--space-lg);
+}
+.settings-card-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: var(--space-lg); }
+.settings-row { display: flex; align-items: center; justify-content: space-between; padding: var(--space-md) 0; border-bottom: 1px solid var(--border); }
+.settings-row:last-child { border-bottom: none; }
+.settings-row-label { font-size: 13px; color: var(--text); }
+.settings-row-desc { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+.settings-input {
+  padding: 8px 12px; background: var(--surface-raised);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-size: 13px; font-family: var(--font-mono);
+  width: 320px; outline: none;
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+.settings-input:focus { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-dim); }
+.settings-toggle {
+  width: 48px; height: 28px; border-radius: 14px;
+  background: var(--surface-raised); border: 1px solid var(--border);
+  cursor: pointer; position: relative; transition: all var(--dur-fast);
+  padding: 0;
+}
+.settings-toggle.on { background: var(--brand); border-color: var(--brand); }
+.settings-toggle::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #fff; transition: transform var(--dur-fast) var(--ease-out);
+}
+.settings-toggle.on::after { transform: translateX(20px); }
+.settings-toggle:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* ════════════════════════════════════════════
+   COMMAND PALETTE
+   ════════════════════════════════════════════ */
+.cmd-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.65); backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 600;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 15vh;
+  animation: fadeUp 0.15s var(--ease-out) both;
+}
+.cmd-overlay.hidden { display: none; }
+
+.cmd-palette {
+  width: 520px; max-height: 420px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg), 0 0 60px var(--brand-dim);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  animation: fadeScale 0.2s var(--ease-out) both;
+}
+
+.cmd-input-wrap {
+  display: flex; align-items: center; gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border);
+}
+.cmd-input {
+  flex: 1; border: none; background: transparent;
+  color: var(--text); font-size: 15px; font-family: var(--font-body); outline: none;
+}
+.cmd-input::placeholder { color: var(--text-faint); }
+.cmd-kbd {
+  padding: 2px 6px; background: rgba(255,255,255,0.06);
+  border-radius: 4px; font-family: var(--font-mono);
+  font-size: 10px; color: var(--text-faint);
+}
+
+.cmd-list { flex: 1; overflow-y: auto; padding: var(--space-sm); }
+.cmd-item {
+  display: flex; align-items: center; gap: var(--space-md);
+  width: 100%; padding: 8px 12px; border: none;
+  background: transparent; border-radius: var(--radius-sm);
+  cursor: pointer; text-align: left; font-family: var(--font-body);
+  color: var(--text-secondary); transition: all var(--dur-fast);
+}
+.cmd-item.active { background: var(--brand-dim); color: var(--text); }
+.cmd-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.cmd-item-icon { width: 20px; height: 20px; opacity: 0.6; flex-shrink: 0; font-size: 14px; }
+.cmd-item-text { flex: 1; min-width: 0; }
+.cmd-item-label { font-size: 13px; font-weight: 500; }
+.cmd-item-desc { font-size: 11px; color: var(--text-faint); }
+
+/* ════════════════════════════════════════════
+   RESPONSIVE
+   ════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .sidebar { display: none; }
+  .page { padding: var(--space-lg); }
+  .model-grid { grid-template-columns: 1fr; }
+  .gallery-grid { columns: 2 160px; }
+  .prompt-dock { margin: 0 calc(var(--space-lg) * -1); padding: var(--space-md) var(--space-lg); }
+  .topbar-search { max-width: 200px; }
+  .settings-input { width: 100%; max-width: 200px; }
+}
+
+@media (max-width: 480px) {
+  .gallery-grid { columns: 1; }
+  .prompt-dock-tabs { flex-wrap: wrap; }
+}
+
+/* ════════════════════════════════════════════
+   REDUCED MOTION
+   ════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  #gen-canvas { display: none; }
+}
+</style>
+</head>
+<body>
+
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
+<div class="app" role="application" aria-label="Helmies Studio">
+
+<!-- ════════════════════════════════════════════
+     SIDEBAR
+     ════════════════════════════════════════════ -->
+<nav class="sidebar" id="sidebar" role="navigation" aria-label="Main navigation">
+  <div class="sidebar-logo">
+    <div class="sidebar-logo-icon">H</div>
+    <span class="sidebar-logo-text"><span>Helmies</span> Studio</span>
+  </div>
+  <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar" title="Toggle sidebar (⌘B)">
+    ◀
+  </button>
+
+  <div class="sidebar-nav">
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Create</div>
+      <button class="sidebar-item active" data-page="generate" data-tooltip="Generate" aria-current="page">
+        <span class="sidebar-item-icon">✦</span>
+        <span class="sidebar-item-text"><span class="sidebar-item-label">Generate</span><span class="sidebar-item-desc">Create AI media</span></span>
+        <span class="sidebar-item-shortcut">⌘1</span>
+      </button>
+      <button class="sidebar-item" data-page="gallery" data-tooltip="Gallery">
+        <span class="sidebar-item-icon">🖼</span>
+        <span class="sidebar-item-text"><span class="sidebar-item-label">Gallery</span><span class="sidebar-item-desc">Browse generations</span></span>
+        <span class="sidebar-item-shortcut">⌘2</span>
+      </button>
+      <button class="sidebar-item" data-page="settings" data-tooltip="Settings">
+        <span class="sidebar-item-icon">⚙</span>
+        <span class="sidebar-item-text"><span class="sidebar-item-label">Settings</span><span class="sidebar-item-desc">Preferences & API keys</span></span>
+        <span class="sidebar-item-shortcut">⌘3</span>
+      </button>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Tools</div>
+      <button class="sidebar-item" data-tooltip="Image Studio">
+        <span class="sidebar-item-icon">🎨</span>
+        <span class="sidebar-item-text"><span class="sidebar-item-label">Image</span><span class="sidebar-item-desc">Text-to-image</span></span>
+        <span class="sidebar-item-shortcut">⌘I</span>
+      </button>
+      <button class="sidebar-item" data-tooltip="Video Studio">
+        <span class="sidebar-item-icon">🎬</span>
+        <span class="sidebar-item-text"><span class="sidebar-item-label">Video</span><span class="sidebar-item-desc">Text-to-video</span></span>
+        <span class="sidebar-item-shortcut">⌘V</span>
+      </button>
+      <button class="sidebar-item" data-tooltip="Audio Studio">
+        <span class="sidebar-item-icon">🎵</span>
+        <span class="sidebar-item-text"><span class="sidebar-item-label">Audio</span><span class="sidebar-item-desc">Music & voice</span></span>
+        <span class="sidebar-item-shortcut">⌘A</span>
+      </button>
+      <button class="sidebar-item" data-tooltip="Canvas">
+        <span class="sidebar-item-icon">🖌</span>
+        <span class="sidebar-item-text"><span class="sidebar-item-label">Canvas</span><span class="sidebar-item-desc">Visual composition</span></span>
+      </button>
+      <button class="sidebar-item" data-tooltip="Director">
+        <span class="sidebar-item-icon">🎥</span>
+        <span class="sidebar-item-text"><span class="sidebar-item-label">Director</span><span class="sidebar-item-desc">Multi-shot video</span></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-footer-avatar" aria-hidden="true">W</div>
+    <div class="sidebar-footer-info">
+      <span class="sidebar-footer-name">Wael Helmi</span>
+      <span class="sidebar-footer-credits">2,340 credits</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ════════════════════════════════════════════
+     MAIN CONTENT
+     ════════════════════════════════════════════ -->
+<main class="main" id="main-content">
+
+  <!-- Topbar -->
+  <header class="topbar" role="banner">
+    <button class="topbar-search" id="topbarSearch" aria-label="Search tools and actions (⌘K)">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.5"><circle cx="6" cy="6" r="5"/><line x1="9.5" y1="9.5" x2="13" y2="13"/></svg>
+      <span style="flex:1; text-align:left;">Search tools, models, actions...</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <div class="topbar-right">
+      <a href="#" class="topbar-credits" aria-label="2,340 credits available">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><path d="M7 1L9 5.5L14 6L10.5 9.5L11.5 14L7 11.5L2.5 14L3.5 9.5L0 6L5 5.5L7 1Z"/></svg>
+        2,340
+      </a>
+      <button class="topbar-badge" aria-label="3 pending jobs">
+        <span class="topbar-badge-dot" aria-hidden></span>
+        3 jobs
+      </button>
+    </div>
+  </header>
+
+  <!-- Content area -->
+  <div class="content">
+
+    <!-- ══════════ GENERATE PAGE ══════════ -->
+    <section class="page active" id="page-generate" role="tabpanel" aria-label="Generate">
+      <div class="page-header">
+        <h1 class="page-title">Create <span>AI Media</span></h1>
+        <p class="page-subtitle">Choose a model, write your prompt, and generate stunning images, videos, and audio — all in one place.</p>
+      </div>
+
+      <!-- Model grid -->
+      <div class="model-grid" role="radiogroup" aria-label="AI Models" id="modelGrid">
+        <!-- Cards injected by JS -->
+      </div>
+    </section>
+
+    <!-- ══════════ GALLERY PAGE ══════════ -->
+    <section class="page" id="page-gallery" role="tabpanel" aria-label="Gallery">
+      <div class="page-header">
+        <h1 class="page-title">Your <span>Gallery</span></h1>
+        <p class="page-subtitle">Browse, download, and reuse all your past generations.</p>
+      </div>
+      <div class="gallery-filters" role="tablist" aria-label="Filter by type">
+        <button class="filter-chip active" data-filter="all" role="tab" aria-selected="true">All</button>
+        <button class="filter-chip" data-filter="image" role="tab" aria-selected="false">Images</button>
+        <button class="filter-chip" data-filter="video" role="tab" aria-selected="false">Videos</button>
+        <button class="filter-chip" data-filter="audio" role="tab" aria-selected="false">Audio</button>
+      </div>
+      <div class="gallery-grid" id="galleryGrid" role="list" aria-label="Generated media">
+        <!-- Injected by JS -->
+      </div>
+    </section>
+
+    <!-- ══════════ SETTINGS PAGE ══════════ -->
+    <section class="page" id="page-settings" role="tabpanel" aria-label="Settings">
+      <div class="page-header">
+        <h1 class="page-title"><span>Settings</span></h1>
+        <p class="page-subtitle">Manage your API keys, preferences, and account details.</p>
+      </div>
+      <div class="settings-card">
+        <h2 class="settings-card-title">API Keys</h2>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">KIE API Key</div>
+            <div class="settings-row-desc">Primary generation provider</div>
+          </div>
+          <input type="password" class="settings-input" value="••••••••••••••••" aria-label="KIE API Key" readonly>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">OpenRouter Key</div>
+            <div class="settings-row-desc">LLM provider for prompt expansion</div>
+          </div>
+          <input type="password" class="settings-input" value="••••••••••••••••" aria-label="OpenRouter Key" readonly>
+        </div>
+      </div>
+      <div class="settings-card">
+        <h2 class="settings-card-title">Preferences</h2>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Auto-enhance prompts</div>
+            <div class="settings-row-desc">Automatically expand prompts for better results</div>
+          </div>
+          <button class="settings-toggle on" role="switch" aria-checked="true" aria-label="Auto-enhance prompts" onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on'))"></button>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">Save generation history</div>
+            <div class="settings-row-desc">Keep all generated media in your gallery</div>
+          </div>
+          <button class="settings-toggle on" role="switch" aria-checked="true" aria-label="Save history" onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on'))"></button>
+        </div>
+        <div class="settings-row">
+          <div>
+            <div class="settings-row-label">High-quality previews</div>
+            <div class="settings-row-desc">Load full-resolution images (slower)</div>
+          </div>
+          <button class="settings-toggle" role="switch" aria-checked="false" aria-label="High quality previews" onclick="this.classList.toggle('on'); this.setAttribute('aria-checked', this.classList.contains('on'))"></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ PROMPT DOCK ══════════ -->
+    <div class="prompt-dock" id="promptDock">
+      <div class="prompt-dock-inner">
+        <div class="prompt-dock-tabs" role="tablist" aria-label="Prompt options">
+          <button class="prompt-tab active" data-tab="prompt" role="tab" aria-selected="true">Prompt</button>
+          <button class="prompt-tab" data-tab="settings" role="tab" aria-selected="false">Settings</button>
+          <button class="prompt-tab" data-tab="refs" role="tab" aria-selected="false">References</button>
+          <button class="prompt-tab" data-tab="neg" role="tab" aria-selected="false">Negative</button>
+        </div>
+
+        <!-- Prompt tab -->
+        <div class="prompt-tab-content active" id="tab-prompt" role="tabpanel">
+          <div class="prompt-box">
+            <textarea class="prompt-textarea" id="promptInput" rows="1" placeholder="Describe what you want to create..." aria-label="Prompt"></textarea>
+            <button class="generate-btn" id="generateBtn" aria-label="Generate">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1L9.5 6H14L10.5 9L11.5 14L8 11L4.5 14L5.5 9L2 6H6.5L8 1Z" fill="currentColor"/></svg>
+              <span>Generate</span>
+              <span class="generate-btn-cost">24 cr</span>
+            </button>
+          </div>
+          <div class="prompt-pills">
+            <button class="prompt-pill" onclick="document.getElementById('promptInput').value='Cinematic portrait of a warrior in golden armor, dramatic lighting, 8K'">Cinematic warrior portrait</button>
+            <button class="prompt-pill" onclick="document.getElementById('promptInput').value='Futuristic cityscape at dusk, neon reflections on wet pavement, cyberpunk aesthetic'">Cyberpunk cityscape</button>
+            <button class="prompt-pill" onclick="document.getElementById('promptInput').value='A serene Japanese garden with cherry blossoms, morning mist, photorealistic'">Japanese garden</button>
+          </div>
+        </div>
+
+        <!-- Settings tab -->
+        <div class="prompt-tab-content" id="tab-settings" role="tabpanel">
+          <div class="settings-grid">
+            <button class="settings-chip selected" onclick="toggleChip(this)" aria-pressed="true">1:1 Square</button>
+            <button class="settings-chip" onclick="toggleChip(this)" aria-pressed="false">16:9 Widescreen</button>
+            <button class="settings-chip" onclick="toggleChip(this)" aria-pressed="false">9:16 Portrait</button>
+            <button class="settings-chip" onclick="toggleChip(this)" aria-pressed="false">3:2 Photo</button>
+            <button class="settings-chip selected" onclick="toggleChip(this)" aria-pressed="true">1K Resolution</button>
+            <button class="settings-chip" onclick="toggleChip(this)" aria-pressed="false">2K Resolution</button>
+            <button class="settings-chip" onclick="toggleChip(this)" aria-pressed="false">4K Resolution</button>
+          </div>
+        </div>
+
+        <!-- References tab -->
+        <div class="prompt-tab-content" id="tab-refs" role="tabpanel">
+          <div class="ref-upload">
+            <button class="ref-thumb" onclick="alert('Upload dialog (placeholder)')" aria-label="Add reference image">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <div class="ref-thumb" style="background-image:url('/assets/photo-1551434678-e076c223a692-10.webp'); background-size:cover;" role="img" aria-label="Reference 1">
+              <button class="ref-thumb-remove" onclick="this.parentElement.remove()" aria-label="Remove reference">×</button>
+            </div>
+            <div class="ref-thumb" style="background-image:url('/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.webp'); background-size:cover;" role="img" aria-label="Reference 2">
+              <button class="ref-thumb-remove" onclick="this.parentElement.remove()" aria-label="Remove reference">×</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Negative tab -->
+        <div class="prompt-tab-content" id="tab-neg" role="tabpanel">
+          <input type="text" class="neg-input" placeholder="What to avoid: text, watermarks, blur, low quality..." aria-label="Negative prompt">
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- ════════════════════════════════════════════
+     GENERATION OVERLAY (3D + Progress)
+     ════════════════════════════════════════════ -->
+<div class="gen-overlay hidden" id="genOverlay" role="dialog" aria-label="Generating media" aria-live="polite">
+  <div id="gen-canvas" role="img" aria-label="3D generation visualization"></div>
+
+  <div class="gen-progress" id="genProgress">
+    <div class="gen-progress-stages">
+      <div class="gen-stage active" id="stage-prepare">
+        <div class="gen-stage-dot">1</div>
+        <span class="gen-stage-label">Preparing</span>
+        <span class="gen-stage-line"></span>
+      </div>
+      <div class="gen-stage" id="stage-generate">
+        <div class="gen-stage-dot">2</div>
+        <span class="gen-stage-label">Generating</span>
+        <span class="gen-stage-line"></span>
+      </div>
+      <div class="gen-stage" id="stage-finalize">
+        <div class="gen-stage-dot">3</div>
+        <span class="gen-stage-label">Finalizing</span>
+      </div>
+    </div>
+    <div class="gen-progress-bar" aria-hidden="true">
+      <div class="gen-progress-fill" id="genProgressFill"></div>
+    </div>
+    <div class="gen-meta">
+      <span class="gen-meta-label" id="genMetaLabel">Preparing...</span>
+      <span class="gen-meta-timer">
+        <span class="gen-meta-timer-dot"></span>
+        <span id="genTimer">0:00</span>
+      </span>
+    </div>
+    <p class="gen-msg" id="genMsg">Optimizing prompt and loading model...</p>
+  </div>
+
+  <div class="gen-complete" id="genComplete">
+    <img class="gen-result-img" src="/assets/photo-1551434678-e076c223a692-10.webp" alt="Generated result" id="genResultImg">
+    <div class="gen-complete-actions">
+      <button class="btn btn-primary" onclick="closeGenOverlay()">Done</button>
+      <button class="btn btn-ghost" onclick="closeGenOverlay()">Download</button>
+      <button class="btn btn-ghost" onclick="closeGenOverlay()">Regenerate</button>
+      <button class="btn btn-ghost" onclick="closeGenOverlay()">Add to Canvas</button>
+    </div>
+  </div>
+
+  <button class="gen-cancel" id="genCancelBtn" onclick="cancelGeneration()">Cancel</button>
+</div>
+
+<!-- ════════════════════════════════════════════
+     COMMAND PALETTE
+     ════════════════════════════════════════════ -->
+<div class="cmd-overlay hidden" id="cmdOverlay" role="dialog" aria-label="Command palette" aria-modal="true">
+  <div class="cmd-palette">
+    <div class="cmd-input-wrap">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.4"><circle cx="6.5" cy="6.5" r="5"/><line x1="10" y1="10" x2="14.5" y2="14.5"/></svg>
+      <input class="cmd-input" id="cmdInput" placeholder="Search tools, models, actions..." aria-label="Search">
+      <span class="cmd-kbd">ESC</span>
+    </div>
+    <div class="cmd-list" id="cmdList" role="listbox">
+      <!-- Injected by JS -->
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- ════════════════════════════════════════════
+     THREE.JS
+     ════════════════════════════════════════════ -->
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ── 3D Generation Scene ───────────────── */
+let scene, camera, renderer, torus, particles, clock;
+let genAnimActive = false;
+let genAnimId;
+
+function initThreeJS() {
+  const container = document.getElementById('gen-canvas');
+  if (!container) return;
+
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(45, w/h, 0.1, 100);
+  camera.position.z = 6;
+
+  renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  container.appendChild(renderer.domElement);
+
+  // Ambient + point lights
+  const ambient = new THREE.AmbientLight(0x331122, 1.5);
+  scene.add(ambient);
+  const light1 = new THREE.PointLight(0xFF1B6B, 30, 15);
+  light1.position.set(3, 2, 4);
+  scene.add(light1);
+  const light2 = new THREE.PointLight(0x7C3AED, 25, 12);
+  light2.position.set(-3, -2, 2);
+  scene.add(light2);
+
+  // Torus knot — the main 3D object
+  const geom = new THREE.TorusKnotGeometry(1, 0.3, 128, 32);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: 0xFF1B6B,
+    metalness: 0.1,
+    roughness: 0.2,
+    clearcoat: 0.3,
+    clearcoatRoughness: 0.25,
+    emissive: 0x330011,
+    emissiveIntensity: 0.4,
+  });
+  torus = new THREE.Mesh(geom, mat);
+  scene.add(torus);
+
+  // Inner wireframe
+  const wireGeom = new THREE.TorusKnotGeometry(1.05, 0.08, 64, 16);
+  const wireMat = new THREE.MeshBasicMaterial({
+    color: 0x7C3AED,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.3,
+  });
+  const wireframe = new THREE.Mesh(wireGeom, wireMat);
+  torus.add(wireframe);
+
+  // Particles
+  const pGeom = new THREE.BufferGeometry();
+  const pCount = 400;
+  const positions = new Float32Array(pCount * 3);
+  for (let i = 0; i < pCount; i++) {
+    positions[i*3] = (Math.random() - 0.5) * 8;
+    positions[i*3+1] = (Math.random() - 0.5) * 8;
+    positions[i*3+2] = (Math.random() - 0.5) * 4;
+  }
+  pGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const pMat = new THREE.PointsMaterial({
+    color: 0xFF1B6B,
+    size: 0.02,
+    transparent: true,
+    opacity: 0.7,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  particles = new THREE.Points(pGeom, pMat);
+  scene.add(particles);
+
+  clock = new THREE.Clock();
+}
+
+function animate3D() {
+  if (!genAnimActive) return;
+  genAnimId = requestAnimationFrame(animate3D);
+
+  const t = clock.getElapsedTime();
+
+  torus.rotation.x = t * 0.4;
+  torus.rotation.y = t * 0.6;
+  torus.rotation.z = t * 0.2;
+  torus.scale.setScalar(1 + Math.sin(t * 2) * 0.05);
+
+  particles.rotation.y = t * 0.1;
+  particles.rotation.x = t * 0.05;
+
+  renderer.render(scene, camera);
+}
+
+function start3D() {
+  if (!renderer) initThreeJS();
+  const container = document.getElementById('gen-canvas');
+  if (container && renderer) {
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+  }
+  genAnimActive = true;
+  clock = new THREE.Clock();
+  animate3D();
+}
+
+function stop3D() {
+  genAnimActive = false;
+  if (genAnimId) cancelAnimationFrame(genAnimId);
+}
+
+window.start3D = start3D;
+window.stop3D = stop3D;
+</script>
+
+<!-- ════════════════════════════════════════════
+     APPLICATION LOGIC
+     ════════════════════════════════════════════ -->
+<script>
+/* ── Model Data ────────────────────────── */
+const MODELS = [
+  {
+    id: 'flux-dev', name: 'Flux Dev', provider: 'Black Forest Labs',
+    desc: 'Photorealistic image generation with precise prompt adherence. Best for product shots and portraits.',
+    tier: 3, cost: 24,
+    bg: "linear-gradient(135deg, #1a1a2e, #16213e, #0f3460)",
+    img: '/assets/photo-1551434678-e076c223a692-10.webp',
+    badge: 'Recommended'
+  },
+  {
+    id: 'midjourney-v6', name: 'Midjourney V6', provider: 'Midjourney',
+    desc: 'Artistic image generation with stunning aesthetics. Ideal for creative and editorial work.',
+    tier: 3, cost: 32,
+    bg: "linear-gradient(135deg, #1a1a2e, #2d1b69, #7c3aed)",
+    img: '/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.webp',
+    badge: null
+  },
+  {
+    id: 'sdxl-turbo', name: 'SDXL Turbo', provider: 'Stability AI',
+    desc: 'Real-time image generation. Fastest model available — sub-second inference.',
+    tier: 1, cost: 8,
+    bg: "linear-gradient(135deg, #0f2027, #203a43, #2c5364)",
+    img: '/assets/warrior_girl_e29532086b-40.webp',
+    badge: 'Fast'
+  },
+  {
+    id: 'kling-v3', name: 'Kling v3', provider: 'Kuaishou',
+    desc: 'State-of-the-art text-to-video with cinematic motion and temporal consistency.',
+    tier: 3, cost: 120,
+    bg: "linear-gradient(135deg, #1a1a2e, #3b1f2e, #ff1b6b)",
+    img: '/assets/d7f593c3-3bff-421a-88e7-8ff612fa314b-B4E9QSSceGpBz3t8BFFNDQ-output_ff-16.webp',
+    badge: null
+  },
+  {
+    id: 'suno-v4', name: 'Suno v4.5', provider: 'Suno',
+    desc: 'Full music generation from text prompts. Vocals, instruments, full arrangements.',
+    tier: 3, cost: 45,
+    bg: "linear-gradient(135deg, #1a1a2e, #4a0e4e, #be185d)",
+    img: '/assets/images-12.webp',
+    badge: null
+  },
+  {
+    id: 'elevenlabs', name: 'ElevenLabs TTS', provider: 'ElevenLabs',
+    desc: 'Ultra-realistic text-to-speech with voice cloning. 29 languages, emotion control.',
+    tier: 2, cost: 15,
+    bg: "linear-gradient(135deg, #0a0a0f, #1a0a2e, #6b21a8)",
+    img: '/assets/images-14.webp',
+    badge: null
+  }
+];
+
+/* ── Gallery Items ─────────────────────── */
+const GALLERY_ITEMS = [
+  { type: 'image', src: '/assets/photo-1551434678-e076c223a692-10.webp', prompt: 'Cinematic portrait of a warrior in golden armor, dramatic side lighting, 8K photorealistic', model: 'Flux Dev', date: '2 hours ago' },
+  { type: 'image', src: '/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.webp', prompt: 'Abstract recursive geometric patterns in neon colors, cyberpunk aesthetic', model: 'Midjourney V6', date: '5 hours ago' },
+  { type: 'image', src: '/assets/warrior_girl_e29532086b-40.webp', prompt: 'Fantasy warrior girl with glowing sword, anime art style, dynamic pose', model: 'SDXL Turbo', date: '1 day ago' },
+  { type: 'image', src: '/assets/d7f593c3-3bff-421a-88e7-8ff612fa314b-B4E9QSSceGpBz3t8BFFNDQ-output_ff-16.webp', prompt: 'Futuristic cityscape at dusk, neon reflections on wet pavement, original cyberpunk', model: 'Kling v3', date: '1 day ago' },
+  { type: 'image', src: '/assets/images-12.webp', prompt: 'Minimalist architectural photography, brutalist concrete forms, dramatic shadows', model: 'Flux Dev', date: '2 days ago' },
+  { type: 'image', src: '/assets/images-14.webp', prompt: 'Surrealist dreamscape, floating islands, pastel clouds, ethereal atmosphere', model: 'Midjourney V6', date: '2 days ago' },
+  { type: 'image', src: '/assets/photo-1506905925346-21bda4d32df4-6.webp', prompt: 'Serene mountain landscape at golden hour, misty valleys, photorealistic', model: 'SDXL Turbo', date: '3 days ago' },
+];
+
+/* ── Render Model Grid ─────────────────── */
+function renderModelGrid() {
+  const grid = document.getElementById('modelGrid');
+  if (!grid) return;
+  grid.innerHTML = MODELS.map(m => `
+    <div class="model-card" role="radio" aria-checked="false" tabindex="0"
+         data-model="${m.id}"
+         onclick="selectModel(this, '${m.id}')"
+         onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); selectModel(this,'${m.id}'); }">
+      <div class="model-card-bg" style="background-image:url('${m.img}')"></div>
+      <div class="model-card-overlay"></div>
+      ${m.badge ? `<span class="model-card-badge">${m.badge}</span>` : ''}
+      <div class="model-card-content">
+        <div class="model-card-provider">${m.provider}</div>
+        <div class="model-card-name">${m.name}</div>
+        <div class="model-card-desc">${m.desc}</div>
+        <div class="model-card-meta">
+          <div class="model-card-tier">
+            ${[0,1,2].map(i => `<span class="model-card-tier-dot ${i < m.tier ? 'on' : ''}"></span>`).join('')}
+          </div>
+          <span class="model-card-cost">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><path d="M5 0L6.5 3.5H10L7.5 6L8.5 9L5 7.5L1.5 9L2.5 6L0 3.5H3.5L5 0Z"/></svg>
+            ${m.cost} cr
+          </span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function selectModel(el, modelId) {
+  document.querySelectorAll('.model-card').forEach(c => {
+    c.classList.remove('selected');
+    c.setAttribute('aria-checked', 'false');
+  });
+  el.classList.add('selected');
+  el.setAttribute('aria-checked', 'true');
+  // Update generate button cost
+  const model = MODELS.find(m => m.id === modelId);
+  if (model) {
+    const costEl = document.querySelector('.generate-btn-cost');
+    if (costEl) costEl.textContent = `${model.cost} cr`;
+  }
+}
+
+/* ── Render Gallery ────────────────────── */
+function renderGallery(filter = 'all') {
+  const grid = document.getElementById('galleryGrid');
+  if (!grid) return;
+  const items = filter === 'all' ? GALLERY_ITEMS : GALLERY_ITEMS.filter(i => i.type === filter);
+
+  if (items.length === 0) {
+    grid.innerHTML = '<div class="gallery-empty">No items found. Generate some media first!</div>';
+    return;
+  }
+
+  grid.innerHTML = items.map(item => `
+    <div class="gallery-item" role="listitem" tabindex="0" 
+         onkeydown="if(event.key==='Enter') this.click()">
+      <img src="${item.src}" alt="${item.prompt}" loading="lazy">
+      <div class="gallery-item-overlay">
+        <p class="gallery-item-prompt">${item.prompt}</p>
+        <div class="gallery-item-meta">
+          <span>${item.model}</span>
+          <span>${item.date}</span>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+/* ── Page Navigation ───────────────────── */
+function navigateTo(page) {
+  // Update pages
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const target = document.getElementById(`page-${page}`);
+  if (target) target.classList.add('active');
+
+  // Update sidebar
+  document.querySelectorAll('.sidebar-item[data-page]').forEach(item => {
+    item.classList.toggle('active', item.dataset.page === page);
+    item.setAttribute('aria-current', item.dataset.page === page ? 'page' : 'false');
+  });
+
+  // Show/hide prompt dock
+  const dock = document.getElementById('promptDock');
+  if (dock) dock.style.display = page === 'generate' ? '' : 'none';
+
+  if (page === 'gallery') renderGallery();
+}
+
+/* ── Generation Flow ───────────────────── */
+let genTimerInterval;
+
+function startGeneration() {
+  const overlay = document.getElementById('genOverlay');
+  const progress = document.getElementById('genProgress');
+  const complete = document.getElementById('genComplete');
+  const cancelBtn = document.getElementById('genCancelBtn');
+  const promptInput = document.getElementById('promptInput');
+
+  if (!promptInput.value.trim()) {
+    promptInput.focus();
+    return;
+  }
+
+  overlay.classList.remove('hidden');
+  progress.style.display = '';
+  complete.classList.remove('visible');
+  cancelBtn.style.display = '';
+
+  // Start 3D animation
+  if (window.start3D) window.start3D();
+
+  // Reset stages
+  document.querySelectorAll('.gen-stage').forEach(s => s.classList.remove('active', 'done'));
+  document.getElementById('stage-prepare').classList.add('active');
+  document.getElementById('genMetaLabel').textContent = 'Preparing...';
+  document.getElementById('genMsg').textContent = 'Optimizing prompt and loading model...';
+  document.getElementById('genProgressFill').style.width = '0%';
+
+  // Timer
+  let elapsed = 0;
+  document.getElementById('genTimer').textContent = '0:00';
+  clearInterval(genTimerInterval);
+  genTimerInterval = setInterval(() => {
+    elapsed++;
+    const m = Math.floor(elapsed/60);
+    const s = elapsed % 60;
+    document.getElementById('genTimer').textContent = `${m}:${s.toString().padStart(2,'0')}`;
+  }, 1000);
+
+  // Simulate stages
+  const timeline = [
+    { at: 2000, stage: 'generate', label: 'Generating...', msg: 'AI model processing your prompt...', progress: 30 },
+    { at: 4000, stage: null, label: 'Generating...', msg: 'Refining details and textures...', progress: 60 },
+    { at: 6000, stage: 'finalize', label: 'Finalizing...', msg: 'Applying post-processing filters...', progress: 85 },
+    { at: 8000, stage: null, label: 'Finalizing...', msg: 'Almost done...', progress: 95 },
+  ];
+
+  timeline.forEach(t => {
+    setTimeout(() => {
+      if (t.stage) {
+        const current = document.querySelector('.gen-stage.active');
+        if (current) current.classList.replace('active', 'done');
+        const next = document.getElementById(`stage-${t.stage}`);
+        if (next) next.classList.add('active');
+      }
+      document.getElementById('genMetaLabel').textContent = t.label;
+      document.getElementById('genMsg').textContent = t.msg;
+      document.getElementById('genProgressFill').style.width = `${t.progress}%`;
+    }, t.at);
+  });
+
+  // Complete at 10s
+  const genTimeout = setTimeout(() => {
+    clearInterval(genTimerInterval);
+    document.getElementById('genProgressFill').style.width = '100%';
+
+    // Mark all stages done
+    document.querySelectorAll('.gen-stage').forEach(el => {
+      el.classList.remove('active');
+      el.classList.add('done');
+    });
+
+    // Show complete
+    setTimeout(() => {
+      progress.style.display = 'none';
+      complete.classList.add('visible');
+      cancelBtn.style.display = 'none';
+    }, 500);
+
+    if (window.stop3D) window.stop3D();
+
+    // Use a random gallery image as result
+    const img = GALLERY_ITEMS[Math.floor(Math.random() * GALLERY_ITEMS.length)];
+    document.getElementById('genResultImg').src = img.src;
+  }, 10000);
+
+  document.getElementById('genOverlay')._genTimeout = genTimeout;
+}
+
+function cancelGeneration() {
+  clearTimeout(document.getElementById('genOverlay')._genTimeout);
+  clearInterval(genTimerInterval);
+  if (window.stop3D) window.stop3D();
+  document.getElementById('genOverlay').classList.add('hidden');
+}
+
+function closeGenOverlay() {
+  if (window.stop3D) window.stop3D();
+  document.getElementById('genOverlay').classList.add('hidden');
+}
+
+/* ── Command Palette ───────────────────── */
+const cmdItems = [
+  { label: 'Generate', desc: 'Create new AI media', icon: '✦', page: 'generate', shortcut: '⌘1' },
+  { label: 'Gallery', desc: 'Browse past generations', icon: '🖼', page: 'gallery', shortcut: '⌘2' },
+  { label: 'Settings', desc: 'API keys & preferences', icon: '⚙', page: 'settings', shortcut: '⌘3' },
+  { label: 'Image Studio', desc: 'Text-to-image generation', icon: '🎨', shortcut: '⌘I' },
+  { label: 'Video Studio', desc: 'Text-to-video generation', icon: '🎬', shortcut: '⌘V' },
+  { label: 'Audio Studio', desc: 'Music & voice generation', icon: '🎵', shortcut: '⌘A' },
+  { label: 'Canvas Editor', desc: 'Visual composition & masking', icon: '🖌' },
+  { label: 'Director', desc: 'Multi-shot video production', icon: '🎥' },
+  { label: 'Workflows', desc: 'Multi-step AI pipelines', icon: '🔗' },
+];
+
+let cmdSelected = 0;
+
+function renderCmdList(filter = '') {
+  const list = document.getElementById('cmdList');
+  const filtered = filter ? cmdItems.filter(i => i.label.toLowerCase().includes(filter.toLowerCase()) || i.desc.toLowerCase().includes(filter.toLowerCase())) : cmdItems;
+  cmdSelected = Math.min(cmdSelected, filtered.length - 1);
+  if (cmdSelected < 0) cmdSelected = 0;
+  list.innerHTML = filtered.map((item, i) => `
+    <button class="cmd-item ${i === cmdSelected ? 'active' : ''}" data-index="${i}" onclick="selectCmdItem(${i})">
+      <span class="cmd-item-icon">${item.icon}</span>
+      <span class="cmd-item-text">
+        <span class="cmd-item-label">${item.label}</span>
+        <span class="cmd-item-desc">${item.desc}</span>
+      </span>
+      ${item.shortcut ? `<span class="cmd-kbd">${item.shortcut}</span>` : ''}
+    </button>
+  `).join('');
+}
+
+function selectCmdItem(i) {
+  const filtered = document.querySelectorAll('.cmd-item');
+  if (filtered[i]) {
+    const page = cmdItems.find(it => it.label === filtered[i].querySelector('.cmd-item-label').textContent)?.page;
+    if (page) navigateTo(page);
+  }
+  document.getElementById('cmdOverlay').classList.add('hidden');
+}
+
+/* ── Prompt Dock Tabs ──────────────────── */
+function switchPromptTab(tab) {
+  document.querySelectorAll('.prompt-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === tab);
+    t.setAttribute('aria-selected', t.dataset.tab === tab);
+  });
+  document.querySelectorAll('.prompt-tab-content').forEach(c => {
+    c.classList.toggle('active', c.id === `tab-${tab}`);
+  });
+}
+
+/* ── Toggle chip ───────────────────────── */
+function toggleChip(el) {
+  el.classList.toggle('selected');
+  el.setAttribute('aria-pressed', el.classList.contains('selected'));
+}
+
+/* ── Init ──────────────────────────────── */
+function init() {
+  renderModelGrid();
+  renderGallery();
+
+  // Pre-select first model
+  const firstCard = document.querySelector('.model-card');
+  if (firstCard) selectModel(firstCard, MODELS[0].id);
+
+  // Sidebar item clicks
+  document.querySelectorAll('.sidebar-item[data-page]').forEach(item => {
+    item.addEventListener('click', () => navigateTo(item.dataset.page));
+  });
+
+  // Sidebar toggle
+  document.getElementById('sidebarToggle').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('collapsed');
+    const btn = document.getElementById('sidebarToggle');
+    btn.textContent = document.getElementById('sidebar').classList.contains('collapsed') ? '▶' : '◀';
+  });
+
+  // Topbar search
+  document.getElementById('topbarSearch').addEventListener('click', () => {
+    document.getElementById('cmdOverlay').classList.remove('hidden');
+    renderCmdList();
+    document.getElementById('cmdInput').focus();
+    cmdSelected = 0;
+  });
+
+  // Generate button
+  document.getElementById('generateBtn').addEventListener('click', startGeneration);
+
+  // Cancel generation
+  document.getElementById('genCancelBtn').addEventListener('click', cancelGeneration);
+
+  // Command palette input
+  const cmdInput = document.getElementById('cmdInput');
+  cmdInput.addEventListener('input', () => {
+    renderCmdList(cmdInput.value);
+    cmdSelected = 0;
+  });
+  cmdInput.addEventListener('keydown', (e) => {
+    const items = document.querySelectorAll('.cmd-item');
+    if (e.key === 'ArrowDown') { e.preventDefault(); cmdSelected = Math.min(cmdSelected + 1, items.length - 1); renderCmdList(cmdInput.value); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); cmdSelected = Math.max(cmdSelected - 1, 0); renderCmdList(cmdInput.value); }
+    if (e.key === 'Enter') { e.preventDefault(); selectCmdItem(cmdSelected); }
+    if (e.key === 'Escape') { document.getElementById('cmdOverlay').classList.add('hidden'); }
+  });
+
+  // Close cmd on overlay click
+  document.getElementById('cmdOverlay').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('cmdOverlay')) document.getElementById('cmdOverlay').classList.add('hidden');
+  });
+
+  // Prompt tab switches
+  document.querySelectorAll('.prompt-tab').forEach(tab => {
+    tab.addEventListener('click', () => switchPromptTab(tab.dataset.tab));
+  });
+
+  // Gallery filters
+  document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.filter-chip').forEach(c => {
+        c.classList.remove('active');
+        c.setAttribute('aria-selected', 'false');
+      });
+      chip.classList.add('active');
+      chip.setAttribute('aria-selected', 'true');
+      renderGallery(chip.dataset.filter);
+    });
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      document.getElementById('cmdOverlay').classList.remove('hidden');
+      renderCmdList();
+      document.getElementById('cmdInput').focus();
+      cmdSelected = 0;
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+      e.preventDefault();
+      document.getElementById('sidebar').classList.toggle('collapsed');
+      const btn = document.getElementById('sidebarToggle');
+      btn.textContent = document.getElementById('sidebar').classList.contains('collapsed') ? '▶' : '◀';
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === '1') { e.preventDefault(); navigateTo('generate'); }
+    if ((e.metaKey || e.ctrlKey) && e.key === '2') { e.preventDefault(); navigateTo('gallery'); }
+    if ((e.metaKey || e.ctrlKey) && e.key === '3') { e.preventDefault(); navigateTo('settings'); }
+  });
+
+  // Close gen overlay on Escape
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !document.getElementById('genOverlay').classList.contains('hidden')) {
+      cancelGeneration();
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+</body>
+</html>
