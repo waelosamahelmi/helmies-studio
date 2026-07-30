@@ -88,3 +88,10 @@ test("Image Studio composes the canonical workspace directly", () => {
   assert.doesNotMatch(source, /withUniverseCreation|studio__pane--left|StagedProgress/);
   for (const behavior of ["handleAddRefs", "handleUpload", "handleGenerate", "useCreditCost", "useAsyncGeneration"]) assert.match(source, new RegExp(behavior));
 });
+
+test("Video Studio composes the canonical workspace directly", () => {
+  const source = read("src/components/studio/VideoStudioV2.js");
+  assert.match(source, /return\s*\(\s*<CreationWorkspace/);
+  assert.doesNotMatch(source, /withUniverseCreation|studio__pane--left|StagedProgress/);
+  for (const behavior of ["handleGenerate", "duration", "resolution", "aspectRatio", "useCreditCost", "useAsyncGeneration"]) assert.match(source, new RegExp(behavior));
+});
