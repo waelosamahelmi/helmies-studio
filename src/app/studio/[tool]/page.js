@@ -1,6 +1,11 @@
 import StudioClient from "../StudioClient";
 
 const TOOLS = {
+  orchestrator: {
+    title: "Helmies Creative Agent",
+    description: "Plan and execute connected creative productions with specialized AI models, project context, and inspectable budgets.",
+    keywords: ["AI creative agent", "AI production planner", "multi-model orchestration"],
+  },
   image: {
     title: "AI Image Generator",
     description: "Generate stunning images with Flux, Midjourney & 20+ AI models. Text-to-image, image-to-image, no content filters.",
@@ -65,6 +70,24 @@ const TOOLS = {
     title: "AI Asset Library",
     description: "Manage all your AI-generated images, videos, and audio in one place. Track lineage, organize, and reuse assets.",
     keywords: ["AI asset library", "AI media management", "AI content library", "asset tracking"],
+  },
+  music: {
+    title: "AI Music Studio", description: "Compose music, speech, and sound effects with controllable AI audio models.", keywords: ["AI music", "AI speech", "sound effects"],
+  },
+  avatar: {
+    title: "AI Avatar Studio", description: "Create speaking avatar videos from portraits and driving audio.", keywords: ["AI avatar", "talking portrait", "avatar video"],
+  },
+  "video-edit": {
+    title: "AI Video Editor", description: "Transform, extend, and restyle footage with AI video editing models.", keywords: ["AI video editor", "video transformation", "video extension"],
+  },
+  workflows: {
+    title: "Creative Workflows", description: "Build and run repeatable multi-step creative generation workflows.", keywords: ["AI workflow", "creative automation", "generation pipeline"],
+  },
+  brands: {
+    title: "Brand Kits", description: "Manage visual identity, voice, references, and creative guardrails.", keywords: ["AI brand kit", "brand identity", "creative guardrails"],
+  },
+  memory: {
+    title: "Creative Projects", description: "Organize reusable characters, styles, assets, and project memory.", keywords: ["creative projects", "AI memory", "character consistency"],
   },
 };
 
