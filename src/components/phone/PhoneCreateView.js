@@ -62,17 +62,26 @@ export default function PhoneCreateView({ activeTool, tools, onToolChange }) {
   /* ── Generation ── */
   const { loading: generating, result, error, elapsed, submit } = useAsyncGeneration();
   const [genError, setGenError] = useState("");
+  const [toast, setToast] = useState("");
+
+  useEffect(() => { if (toast) { const t = setTimeout(() => setToast(""), 2500); return () => clearTimeout(t); } }, [toast]);
 
   const handleGenerate = useCallback(() => {
     if (!prompt.trim()) return;
     setGenError("");
-    submit("image", currentModel?.id || selectedModelId, {
+    // Map tool id → generation endpoint. Tools without a direct pipeline
+    // (canvas, director, influencer, workflows, brands) show a toast.
+    if (!["image", "video", "audio"].includes(activeTool)) {
+      setToast(`${tools.find(t => t.id === activeTool)?.label || activeTool} — coming soon`);
+      return;
+    }
+    submit(activeTool, currentModel?.id || selectedModelId, {
       endpoint: currentModel?.endpoint || currentModel?.id || selectedModelId,
       prompt,
       aspect_ratio: aspectRatio,
       resolution,
     });
-  }, [prompt, currentModel, selectedModelId, aspectRatio, resolution, submit]);
+  }, [prompt, currentModel, selectedModelId, aspectRatio, resolution, submit, activeTool, tools]);
 
   // Sync error
   useEffect(() => { if (error) setGenError(error); }, [error]);
@@ -131,6 +140,7 @@ export default function PhoneCreateView({ activeTool, tools, onToolChange }) {
           <PhoneStage
             result={result}
             error={genError}
+            onRetry={handleGenerate}
             emptyLabel={tools.find(t => t.id === activeTool)?.label || "Create"}
             emptyDesc="Describe your vision with precision and watch it emerge."
             onResultTap={() => setResultViewId(result?.url)}
@@ -180,6 +190,9 @@ export default function PhoneCreateView({ activeTool, tools, onToolChange }) {
           onClose={() => setResultViewId(null)}
         />
       )}
+
+      {/* Toast */}
+      {toast && <div className="ph-toast">{toast}</div>}
     </div>
   );
 }

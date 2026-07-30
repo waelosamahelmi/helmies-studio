@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useIsMobile } from "@/lib/use-media-query";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { MobilePanel, PanelToggles } from "@/components/studio/mobile";
 
 /* ══════════════════════════════════════════════════════════════
@@ -16,11 +16,12 @@ export default function StudioLayout({
   inspector,
   inspectorVisible = true,
 }) {
-  const isMobile = useIsMobile();
+  // Use 759px to match CSS breakpoint where controls get display:none in studio-v6.css
+  const isCompact = useMediaQuery("(max-width: 759px)");
   const [activePanel, setActivePanel] = useState(null); // null | "controls" | "inspector"
 
-  /* ── Mobile layout ── */
-  if (isMobile) {
+  /* ── Compact layout ── */
+  if (isCompact) {
     return (
       <div className="v6-workspace">
         {/* Full-width stage (always visible) */}

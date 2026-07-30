@@ -12,6 +12,7 @@ export default function PhoneStage({
   emptyLabel = "Create",
   emptyDesc = "Describe your vision with precision and watch it emerge.",
   onResultTap,
+  onRetry,
 }) {
   /* ── Error state ── */
   if (error) {
@@ -24,6 +25,24 @@ export default function PhoneStage({
           </svg>
           <h3>Generation failed</h3>
           <p>{error}</p>
+          {onRetry && (
+            <button
+              onClick={onRetry}
+              style={{
+                marginTop: 12,
+                padding: "8px 24px",
+                borderRadius: 10,
+                border: "none",
+                background: "var(--ph-accent, #ff416f)",
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Try again
+            </button>
+          )}
         </div>
       </div>
     );

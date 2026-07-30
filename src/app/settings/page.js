@@ -7,45 +7,20 @@ import Navbar from "@/components/Navbar";
 import CreditTickDown from "@/components/CreditTickDown";
 import { IconBolt, IconArrowUpRight } from "@/components/Icons";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
+import { SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
 import toast from "react-hot-toast";
 import { useIsMobile } from "@/lib/use-media-query";
 import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
+// Single source of truth: credits.js SUBSCRIPTION_CREDITS
+const fmt = (n) => n >= 1000 ? `${(n / 1000).toFixed(0)},${String(n % 1000).padStart(3, "0")}` : String(n);
 const PLANS = [
-  {
-    id: "free",
-    name: "Free",
-    price: "€0",
-    period: "/month",
-    credits: "50 credits/mo",
-    features: ["Community models", "Standard resolution", "Single generation"],
-  },
-  {
-    id: "starter",
-    name: "Starter",
-    price: "€12",
-    period: "/month",
-    credits: "300 credits/mo",
-    features: ["All image models", "4K resolution", "Priority queue", "API access"],
-  },
-  {
-    id: "studio",
-    name: "Studio",
-    price: "€29",
-    period: "/month",
-    credits: "900 credits/mo",
-    features: ["All models + video", "8K resolution", "Fast queue", "Full API", "Brand kits"],
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: "€79",
-    period: "/month",
-    credits: "3,000 credits/mo",
-    features: ["Everything unlimited", "Custom models", "Dedicated GPU", "White-label API", "Priority support"],
-  },
+  { id: "free",    name: "Free",    price: "€0",  period: "/month", credits: `${SUBSCRIPTION_CREDITS.free} credits/mo`,    features: ["Community models", "Standard resolution", "Single generation"] },
+  { id: "starter", name: "Starter", price: "€12", period: "/month", credits: `${fmt(SUBSCRIPTION_CREDITS.starter)} credits/mo`, features: ["All image models", "4K resolution", "Priority queue", "API access"] },
+  { id: "studio",  name: "Studio",  price: "€29", period: "/month", credits: `${fmt(SUBSCRIPTION_CREDITS.studio)} credits/mo`,  features: ["All models + video", "8K resolution", "Fast queue", "Full API", "Brand kits"] },
+  { id: "pro",     name: "Pro",     price: "€79", period: "/month", credits: `${fmt(SUBSCRIPTION_CREDITS.pro)} credits/mo`,     features: ["Everything unlimited", "Custom models", "Dedicated GPU", "White-label API", "Priority support"] },
 ];
 
 const TABS = [
