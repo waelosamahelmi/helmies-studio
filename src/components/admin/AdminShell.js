@@ -10,6 +10,8 @@ import PlanEditor from "./PlanEditor";
 import PromoManager from "./PromoManager";
 import CmsEditor from "./CmsEditor";
 import toast from "react-hot-toast";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -23,6 +25,7 @@ const TOP_LEVEL_TABS = [
 ];
 
 export default function AdminShell() {
+  const isMobile = useIsMobile();
   const [topTab, setTopTab] = useState("overview");
   const [subTab, setSubTab] = useState(null);
 
@@ -50,6 +53,15 @@ export default function AdminShell() {
         </div>
 
         {/* Top-level tab bar */}
+        {isMobile ? (
+          <div style={{ marginBottom: 8 }}>
+            <MobileChipScroller
+              items={TOP_LEVEL_TABS.map((t) => ({ label: t.label, value: t.id }))}
+              selectedValue={topTab}
+              onSelect={selectTopTab}
+            />
+          </div>
+        ) : (
         <div className="v6-segmented" style={{ marginBottom: 8, maxWidth: 700 }}>
           {TOP_LEVEL_TABS.map((t) => {
             const isActive = topTab === t.id;
@@ -73,10 +85,20 @@ export default function AdminShell() {
             );
           })}
         </div>
+        )}
 
         {/* Sub-tab bar */}
         <AnimatePresence mode="wait">
           {currentTopTab?.subs?.length > 0 && (
+            isMobile ? (
+              <div style={{ marginBottom: 16, marginTop: 8 }}>
+                <MobileChipScroller
+                  items={currentTopTab.subs.map((s) => ({ label: s, value: s }))}
+                  selectedValue={subTab}
+                  onSelect={selectSubTab}
+                />
+              </div>
+            ) : (
             <motion.div
               key={`subs-${topTab}`}
               initial={{ height: 0, opacity: 0 }}
@@ -103,6 +125,7 @@ export default function AdminShell() {
                 );
               })}
             </motion.div>
+            )
           )}
         </AnimatePresence>
 
@@ -205,6 +228,7 @@ function PlaceholderTab({ title, subtitle, message }) {
 
 // ── Users Tab ──
 function UsersTab() {
+  const isMobile = useIsMobile();
   const [users, setUsers] = useState([]);
   const [editingUser, setEditingUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -234,10 +258,10 @@ function UsersTab() {
 
   return (
     <div>
-      <div style={{ overflow: "auto" }}>
+      <div style={{ overflowX: isMobile ? "auto" : undefined, WebkitOverflowScrolling: isMobile ? "touch" : undefined }}>
         <table className="v6-data-table">
           <thead>
-            <tr><th>User</th><th>Email</th><th>Credits</th><th>Role</th><th>Generations</th><th>Joined</th><th></th></tr>
+            <tr><th>User</th><th>Email</th><th>Credits</th>{!isMobile && <th>Role</th>}{!isMobile && <th>Generations</th>}{!isMobile && <th>Joined</th>}<th></th></tr>
           </thead>
           <tbody>
             {users.map((u) => (
@@ -248,9 +272,9 @@ function UsersTab() {
                 <td><strong>{u.name || "—"}</strong></td>
                 <td>{u.email}</td>
                 <td><IconBolt style={{ display: "inline", width: 12, height: 12, verticalAlign: "middle", marginRight: 2 }} /> {u.credits}</td>
-                <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 7px", background: u.role === "admin" ? "var(--v6-accent)" : "var(--v6-surface2)", color: u.role === "admin" ? "#fff" : "var(--v6-muted)", borderColor: u.role === "admin" ? "var(--v6-accent)" : "var(--v6-line)" }}>{u.role}</span></td>
-                <td>{u._count?.generations || 0}</td>
-                <td className="v6-mono v6-tiny">{new Date(u.createdAt).toLocaleDateString()}</td>
+                {!isMobile && <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 7px", background: u.role === "admin" ? "var(--v6-accent)" : "var(--v6-surface2)", color: u.role === "admin" ? "#fff" : "var(--v6-muted)", borderColor: u.role === "admin" ? "var(--v6-accent)" : "var(--v6-line)" }}>{u.role}</span></td>}
+                {!isMobile && <td>{u._count?.generations || 0}</td>}
+                {!isMobile && <td className="v6-mono v6-tiny">{new Date(u.createdAt).toLocaleDateString()}</td>}
                 <td><button className="v6-btn v6-sm" onClick={() => setEditingUser({ ...u })}>Edit</button></td>
               </tr>
             ))}
@@ -289,6 +313,7 @@ function UsersTab() {
 
 // ── Pricing Tab ──
 function LegacyPricingTab() {
+  const isMobile = useIsMobile();
   const [pricing, setPricing] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newPricing, setNewPricing] = useState({ modelId: "", modelType: "image", providerName: "KIE", providerCost: 0, creditsCost: 1 });
@@ -331,11 +356,11 @@ function LegacyPricingTab() {
 
       {loading ? <p className="v6-muted">Loading pricing…</p> : (
         <div className="v6-settings-block">
-          <div style={{ overflow: "auto" }}>
+          <div style={{ overflowX: isMobile ? "auto" : undefined, WebkitOverflowScrolling: isMobile ? "touch" : undefined }}>
             <table className="v6-data-table">
-              <thead><tr><th>Model</th><th>Type</th><th>Provider</th><th>Cost</th><th>Credits</th><th>Status</th></tr></thead>
+              <thead><tr><th>Model</th><th>Type</th><th>Provider</th><th>Cost</th><th>Credits</th>{!isMobile && <th>Status</th>}</tr></thead>
               <tbody>
-                {pricing.length === 0 && <tr><td colSpan="6" style={{ textAlign: "center", color: "var(--v6-muted)" }}>No custom pricing set. Using defaults.</td></tr>}
+                {pricing.length === 0 && <tr><td colSpan={isMobile ? 5 : 6} style={{ textAlign: "center", color: "var(--v6-muted)" }}>No custom pricing set. Using defaults.</td></tr>}
                 {pricing.map((p) => (
                   <tr key={p.id}>
                     <td><strong>{p.modelId}</strong></td>
@@ -343,7 +368,7 @@ function LegacyPricingTab() {
                     <td>{p.providerName}</td>
                     <td className="v6-mono">€{p.providerCost?.toFixed(4)}</td>
                     <td><IconBolt style={{ display: "inline", width: 12, height: 12, verticalAlign: "middle" }} /> {p.creditsCost}</td>
-                    <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px", background: p.isActive ? "var(--v6-good)" : undefined, color: p.isActive ? "var(--v6-bg)" : undefined }}>{p.isActive ? "Active" : "Off"}</span></td>
+                    {!isMobile && <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px", background: p.isActive ? "var(--v6-good)" : undefined, color: p.isActive ? "var(--v6-bg)" : undefined }}>{p.isActive ? "Active" : "Off"}</span></td>}
                   </tr>
                 ))}
               </tbody>
@@ -480,6 +505,7 @@ function LegacyFlagsTab() {
 
 // ── Audit Logs Tab ──
 function AuditLogsTab() {
+  const isMobile = useIsMobile();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -492,19 +518,19 @@ function AuditLogsTab() {
   if (loading) return <p className="v6-muted" style={{ padding: 20 }}>Loading audit logs…</p>;
 
   return (
-    <div style={{ overflow: "auto" }}>
+    <div style={{ overflowX: isMobile ? "auto" : undefined, WebkitOverflowScrolling: isMobile ? "touch" : undefined }}>
       <table className="v6-data-table">
-        <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Resource</th><th>Details</th></tr></thead>
+        <thead><tr><th>Time</th><th>User</th><th>Action</th>{!isMobile && <th>Resource</th>}{!isMobile && <th>Details</th>}</tr></thead>
         <tbody>
           {logs.map((log) => (
             <tr key={log.id}>
               <td className="v6-mono v6-tiny">{new Date(log.createdAt).toLocaleString()}</td>
               <td>{log.user?.email || "—"}</td>
               <td><span className="v6-chip" style={{ fontSize: 9, padding: "2px 6px" }}>{log.action}</span></td>
-              <td>{log.resource || "—"}</td>
-              <td className="v6-mono v6-tiny v6-muted" style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {!isMobile && <td>{log.resource || "—"}</td>}
+              {!isMobile && <td className="v6-mono v6-tiny v6-muted" style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {log.metadata ? JSON.stringify(log.metadata).slice(0, 80) : "—"}
-              </td>
+              </td>}
             </tr>
           ))}
         </tbody>

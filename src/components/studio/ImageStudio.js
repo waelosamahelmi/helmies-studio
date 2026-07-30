@@ -6,6 +6,8 @@ import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconImage = () => (
@@ -105,6 +107,7 @@ export default function ImageStudio() {
   const compareRef = useRef(null);
 
   /* ── Hooks ── */
+  const isMobile = useIsMobile();
   const { loading: generating, result, error: genError, elapsed, submit } = useAsyncGeneration();
   const { models: allModels, loading } = useModelCatalog({ modelType: "image" });
 
@@ -288,34 +291,42 @@ export default function ImageStudio() {
             <span className="v6-mono v6-tiny">{aspectRatio}</span>
           </span>
         </div>
-        <div className="v6-chip-row">
-          {allAspectRatios.map((ar) => (
-            <button
-              key={ar}
-              className={`v6-chip${aspectRatio === ar ? " v6-active" : ""}`}
-              onClick={() => setAspectRatio(ar)}
-            >
-              {ar}
-            </button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={allAspectRatios.map(ar => ({ label: ar, value: ar }))} selectedValue={aspectRatio} onSelect={setAspectRatio} />
+        ) : (
+          <div className="v6-chip-row">
+            {allAspectRatios.map((ar) => (
+              <button
+                key={ar}
+                className={`v6-chip${aspectRatio === ar ? " v6-active" : ""}`}
+                onClick={() => setAspectRatio(ar)}
+              >
+                {ar}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Resolution */}
       {!currentModel?.hasDimensions && (
         <div className="v6-field">
           <div className="v6-field-label">Resolution</div>
-          <div className="v6-segmented">
-            {resolutions.map((r) => (
-              <button
-                key={r}
-                className={String(resolution).toLowerCase() === String(r).toLowerCase() ? "v6-active" : ""}
-                onClick={() => setResolution(r)}
-              >
-                {r.toUpperCase()}
-              </button>
-            ))}
-          </div>
+          {isMobile ? (
+            <MobileChipScroller items={resolutions.map(r => ({ label: String(r).toUpperCase(), value: String(r).toLowerCase() }))} selectedValue={String(resolution).toLowerCase()} onSelect={setResolution} />
+          ) : (
+            <div className="v6-segmented">
+              {resolutions.map((r) => (
+                <button
+                  key={r}
+                  className={String(resolution).toLowerCase() === String(r).toLowerCase() ? "v6-active" : ""}
+                  onClick={() => setResolution(r)}
+                >
+                  {r.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -491,13 +502,17 @@ export default function ImageStudio() {
   /* ── Inspector ── */
   const inspector = (
     <div className="v6-control-stack">
-      <ModelSelector
-        models={activeModels}
-        selectedModelId={selectedModelId}
-        onSelect={handleModelSelect}
-        label="Choose model"
-        filterMode={mode}
-      />
+      {isMobile ? (
+        <MobileModelCarousel models={activeModels} selectedModelId={selectedModelId} onSelect={handleModelSelect} />
+      ) : (
+        <ModelSelector
+          models={activeModels}
+          selectedModelId={selectedModelId}
+          onSelect={handleModelSelect}
+          label="Choose model"
+          filterMode={mode}
+        />
+      )}
       <div className="v6-section-rule" />
       <div className="v6-quote">
         <div className="v6-quote-row">

@@ -2,9 +2,21 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform, animate } from "framer-motion";
 import { IconSearch, IconSettings } from "@/components/Icons";
+import { useIsMobile } from "@/lib/use-media-query";
 import "@/styles/studio-v6.css";
+import "@/styles/studio-mobile.css";
+
+/* ── Inline: ChevronLeft (not in Icons.js) ── */
+function IconChevronLeft() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
 
 /* ── Enhanced page transition: blur + scale + opacity ── */
 const pageTransition = {
@@ -119,9 +131,24 @@ export default function UniverseShell({
   onCommand,
   credits,
   pendingCount,
+  backTo,
 }) {
+  const router = useRouter();
+  const isMobile = useIsMobile();
   const [searchExpanded, setSearchExpanded] = useState(false);
   const [orbitSpeed, setOrbitSpeed] = useState(1);
+
+  /* Toggle mobile class on body */
+  useEffect(() => {
+    if (isMobile) {
+      document.body.classList.add("v6-mobile");
+    } else {
+      document.body.classList.remove("v6-mobile");
+    }
+    return () => {
+      document.body.classList.remove("v6-mobile");
+    };
+  }, [isMobile]);
 
   /* Cycle orbit speed when generating / idle (visual flair) */
   const cycleOrbitSpeed = useCallback(() => {
@@ -140,6 +167,88 @@ export default function UniverseShell({
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  /* ── Mobile render ── */
+  if (isMobile) {
+    return (
+      <div className="v6-app">
+        <div className="v6-universe-shell">
+
+          {/* ── Mobile Topbar ── */}
+          <header className="v6-universe-topbar v6-universe-topbar--mobile">
+            {/* Back button (when navigating from a tool) */}
+            {backTo ? (
+              <button
+                className="v6-mobile-topbar-back"
+                onClick={() => router.push(`/studio/${backTo}`)}
+                aria-label="Go back"
+              >
+                <IconChevronLeft />
+              </button>
+            ) : (
+              <div className="v6-mobile-topbar-back" aria-hidden="true" />
+            )}
+
+            {/* Brand icon only */}
+            <Link href="/" className="v6-universe-brand-mobile" title="Helmies Studio">
+              <img src="/ico.svg" alt="Helmies Studio" />
+            </Link>
+
+            {/* Credits compact */}
+            <Link
+              href="/settings?tab=billing"
+              className="v6-universe-credit--mobile"
+            >
+              <i />
+              <span>{credits ?? 0}</span>
+            </Link>
+
+            {/* Pending dot indicator */}
+            {pendingCount > 0 && (
+              <Link
+                href="/gallery"
+                className="v6-universe-live--mobile"
+                title={`${pendingCount} generation${pendingCount !== 1 ? "s" : ""} in progress`}
+              >
+                <i />
+              </Link>
+            )}
+
+            {/* Search icon button */}
+            <button
+              className="v6-universe-search-mobile"
+              onClick={() => {
+                setSearchExpanded(true);
+                onCommand?.();
+                setTimeout(() => setSearchExpanded(false), 3000);
+              }}
+              aria-label="Open command palette"
+            >
+              <IconSearch />
+            </button>
+          </header>
+
+          {/* ── Main Page Area (mobile) ── */}
+          <main className="v6-universe-page v6-universe-page--mobile">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={typeof window !== "undefined" ? window.location.pathname : "page"}
+                variants={pageTransition}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                transition={{ duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+                style={{ height: "100%" }}
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── Desktop render (unchanged) ── */
   return (
     <div className="v6-app">
       <div className={`v6-universe-shell v6-orbit-speed-${orbitSpeed}`}>

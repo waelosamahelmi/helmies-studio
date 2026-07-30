@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import UniverseNav from "@/components/studio/universe/UniverseNav";
 import ApplyTemplateButton from "@/components/templates/ApplyTemplateButton";
+import { useIsMobile } from "@/lib/use-media-query";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -169,6 +170,7 @@ function LibraryCard({ item, index }) {
 }
 
 export default function TemplatesLibraryPage() {
+  const isMobile = useIsMobile();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

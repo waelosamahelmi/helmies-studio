@@ -2,10 +2,12 @@
 
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
+import { useIsMobile } from "@/lib/use-media-query";
 
 const EASE = [0.32, 0.72, 0, 1];
 
 export default function TermsPage() {
+  const isMobile = useIsMobile();
   return (
     <>
       <Navbar />
@@ -16,6 +18,7 @@ export default function TermsPage() {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.7, ease: EASE }}
+        style={isMobile ? { paddingBottom: "env(safe-area-inset-bottom, 20px)" } : {}}
       >
         <div className="page__head">
           <div className="eyebrow mb-5">Legal</div>

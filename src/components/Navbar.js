@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -8,6 +8,7 @@ import {
   IconImage, IconVideo, IconMusic, IconCamera, IconFilm, IconCut,
   IconMegaphone, IconMic, IconUsers, IconCrown, IconArrowUpRight, IconMenu, IconClose, IconBolt, IconPlay, IconDownload,
 } from "@/components/Icons";
+import { useIsMobile } from "@/lib/use-media-query";
 
 const TOOLS = [
   { id: "image", label: "Image", desc: "Text-to-image & image-to-image", Icon: IconImage, color: "#FF1B6B" },
@@ -36,12 +37,15 @@ const NAV_LINKS = [
 const EASE = [0.32, 0.72, 0, 1];
 
 export default function Navbar() {
+  const isMobile = useIsMobile();
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [megaOpen, setMegaOpen] = useState(false);
   const [session, setSession] = useState(null);
   const megaRef = useRef(null);
+  const touchStartY = useRef(0);
+  const sheetRef = useRef(null);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 24);
@@ -72,6 +76,24 @@ export default function Navbar() {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [mobileOpen]);
+
+  // Swipe-to-dismiss touch handlers for mobile sheet
+  const handleSheetTouchStart = useCallback((e) => {
+    touchStartY.current = e.touches[0].clientY;
+  }, []);
+
+  const handleSheetTouchMove = useCallback((e) => {
+    if (touchStartY.current === 0) return;
+    const deltaY = e.touches[0].clientY - touchStartY.current;
+    if (deltaY > 80) {
+      setMobileOpen(false);
+      touchStartY.current = 0;
+    }
+  }, []);
+
+  const handleSheetTouchEnd = useCallback(() => {
+    touchStartY.current = 0;
+  }, []);
 
   return (
     <>
@@ -174,6 +196,7 @@ export default function Navbar() {
               className="nav__burger md:hidden"
               onClick={() => setMobileOpen(true)}
               aria-label="Open menu"
+              aria-expanded={mobileOpen}
             >
               <IconMenu />
             </button>
@@ -195,14 +218,22 @@ export default function Navbar() {
             />
             <motion.div
               className="nav__sheet md:hidden"
+              ref={sheetRef}
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ duration: 0.45, ease: EASE }}
               onClick={(e) => e.stopPropagation()}
+              onTouchStart={handleSheetTouchStart}
+              onTouchMove={handleSheetTouchMove}
+              onTouchEnd={handleSheetTouchEnd}
             >
               <div className="nav__sheet-handle" />
-              <div className="nav__sheet-close" onClick={() => setMobileOpen(false)}>
+              <div
+                className="nav__sheet-close"
+                onClick={() => setMobileOpen(false)}
+                style={isMobile ? { width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center" } : {}}
+              >
                 <IconClose />
               </div>
               <div className="nav__sheet-content">
@@ -213,7 +244,9 @@ export default function Navbar() {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.4, ease: EASE, delay: 0.05 * i + 0.15 }}
                   >
-                    <Link href={l.href} className="nav__sheet-link" onClick={() => setMobileOpen(false)}>
+                    <Link href={l.href} className="nav__sheet-link" onClick={() => setMobileOpen(false)}
+                      style={isMobile ? { minHeight: 44, display: "flex", alignItems: "center" } : {}}
+                    >
                       {l.name}
                       <IconArrowUpRight />
                     </Link>

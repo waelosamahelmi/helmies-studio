@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVG Icons (v6 style: 24x24, stroke currentColor, strokeWidth 1.7) ── */
 
@@ -133,6 +135,7 @@ const BRIEF_IDEAS = [
 /* ══════════════════════════════════════════════════════════════ */
 export default function DirectorStudio() {
   /* ── State ── */
+  const isMobile = useIsMobile();
   const [brief, setBrief] = useState({
     concept: "", title: "", type: "short_form", platform: "youtube",
     style: "", mood: "", duration: 30,
@@ -329,19 +332,27 @@ export default function DirectorStudio() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <div className="v6-field">
           <label className="v6-field-label">Type</label>
-          <div className="v6-select-wrap">
-            <select className="v6-select" value={brief.type} onChange={(e) => updateBrief("type", e.target.value)}>
-              {PRODUCTION_TYPES.map((t) => (<option key={t.id} value={t.id}>{t.label}</option>))}
-            </select>
-          </div>
+          {isMobile ? (
+            <MobileChipScroller items={PRODUCTION_TYPES.map(t => ({ label: t.label, value: t.id }))} selectedValue={brief.type} onSelect={(v) => updateBrief("type", v)} />
+          ) : (
+            <div className="v6-select-wrap">
+              <select className="v6-select" value={brief.type} onChange={(e) => updateBrief("type", e.target.value)}>
+                {PRODUCTION_TYPES.map((t) => (<option key={t.id} value={t.id}>{t.label}</option>))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="v6-field">
           <label className="v6-field-label">Platform</label>
-          <div className="v6-select-wrap">
-            <select className="v6-select" value={brief.platform} onChange={(e) => updateBrief("platform", e.target.value)}>
-              {PLATFORMS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
-            </select>
-          </div>
+          {isMobile ? (
+            <MobileChipScroller items={PLATFORMS.map(p => ({ label: p.label, value: p.id }))} selectedValue={brief.platform} onSelect={(v) => updateBrief("platform", v)} />
+          ) : (
+            <div className="v6-select-wrap">
+              <select className="v6-select" value={brief.platform} onChange={(e) => updateBrief("platform", e.target.value)}>
+                {PLATFORMS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -349,7 +360,11 @@ export default function DirectorStudio() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <div className="v6-field">
           <label className="v6-field-label">Duration (sec)</label>
-          <input className="v6-input" type="number" value={brief.duration} onChange={(e) => updateBrief("duration", parseInt(e.target.value) || 30)} min={5} max={600} />
+          {isMobile ? (
+            <MobileChipScroller items={[{ label: "15s", value: 15 }, { label: "30s", value: 30 }, { label: "60s", value: 60 }, { label: "90s", value: 90 }, { label: "120s", value: 120 }, { label: "180s", value: 180 }, { label: "300s", value: 300 }]} selectedValue={brief.duration} onSelect={(v) => updateBrief("duration", v)} />
+          ) : (
+            <input className="v6-input" type="number" value={brief.duration} onChange={(e) => updateBrief("duration", parseInt(e.target.value) || 30)} min={5} max={600} />
+          )}
         </div>
         <div className="v6-field">
           <label className="v6-field-label">Aspect</label>

@@ -9,6 +9,8 @@ import StageArea from "./v6/StageArea";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconMusic = () => (
@@ -73,6 +75,7 @@ export default function MusicStudio() {
   const { models: audioModels } = useModelCatalog({ modelType: "audio" });
   const sunoModels = useMemo(() => audioModels?.filter(m => m.provider?.toLowerCase() === "suno") || [], [audioModels]);
   const [selectedModelId, setSelectedModelId] = useState(null);
+  const isMobile = useIsMobile();
 
   useEffect(() => { if (sunoModels.length) setSelectedModelId(sunoModels[0].id); }, [sunoModels]);
   const currentModel = sunoModels.find((m) => m.id === selectedModelId) || sunoModels[0] || {};
@@ -120,17 +123,21 @@ export default function MusicStudio() {
       {/* Style tags */}
       <div className="v6-field">
         <label className="v6-field-label">Style &amp; Mood</label>
-        <div className="v6-style-chip-grid" style={{ marginTop: 6 }}>
-          {MUSIC_STYLES.map((s) => {
-            const active = style.toLowerCase().includes(s.label.toLowerCase());
-            return (
-              <button key={s.label} className={`v6-style-chip${active ? " v6-active" : ""}`}
-                onClick={() => setStyle((prev) => { const parts = prev.split(",").map(p => p.trim()).filter(Boolean); const idx = parts.findIndex(p => p.toLowerCase() === s.label.toLowerCase()); if (idx >= 0) parts.splice(idx, 1); else parts.push(s.label); return parts.join(", "); })}>
-                <span className="v6-style-dot" style={{ background: s.color }} />{s.label}
-              </button>
-            );
-          })}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={MUSIC_STYLES.map(s => ({ label: s.label, value: s.label }))} selectedValue={style} onSelect={setStyle} />
+        ) : (
+          <div className="v6-style-chip-grid" style={{ marginTop: 6 }}>
+            {MUSIC_STYLES.map((s) => {
+              const active = style.toLowerCase().includes(s.label.toLowerCase());
+              return (
+                <button key={s.label} className={`v6-style-chip${active ? " v6-active" : ""}`}
+                  onClick={() => setStyle((prev) => { const parts = prev.split(",").map(p => p.trim()).filter(Boolean); const idx = parts.findIndex(p => p.toLowerCase() === s.label.toLowerCase()); if (idx >= 0) parts.splice(idx, 1); else parts.push(s.label); return parts.join(", "); })}>
+                  <span className="v6-style-dot" style={{ background: s.color }} />{s.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Track title with auto-suggest */}
@@ -188,11 +195,15 @@ export default function MusicStudio() {
       {/* Duration chips */}
       <div style={{ marginTop: 12 }}>
         <div className="v6-field-label" style={{ marginBottom: 6 }}>Duration</div>
-        <div className="v6-chip-row">
-          {DURATION_PRESETS.map((preset) => (
-            <button key={preset.value} className={`v6-chip${duration === preset.value ? " v6-active" : ""}`} onClick={() => setDuration(preset.value)}>{preset.label}</button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={DURATION_PRESETS.map(p => ({ label: p.label, value: p.value }))} selectedValue={duration} onSelect={setDuration} />
+        ) : (
+          <div className="v6-chip-row">
+            {DURATION_PRESETS.map((preset) => (
+              <button key={preset.value} className={`v6-chip${duration === preset.value ? " v6-active" : ""}`} onClick={() => setDuration(preset.value)}>{preset.label}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Duration timeline */}
@@ -255,7 +266,11 @@ export default function MusicStudio() {
   /* ── Inspector ── */
   const inspector = (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      <ModelSelector models={sunoModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} label="Suno models" />
+      {isMobile ? (
+        <MobileModelCarousel models={sunoModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} />
+      ) : (
+        <ModelSelector models={sunoModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} label="Suno models" />
+      )}
       {selectedModelId && (
         <div className="v6-quote" style={{ marginTop: 14 }}>
           <div className="v6-quote-row"><span className="v6-muted">Model</span><strong>{currentModel.name}</strong></div>

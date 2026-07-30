@@ -7,6 +7,8 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconCut = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="6" cy="6" r="3" /><path d="M8.12 8.12L12 12" /><circle cx="18" cy="6" r="3" /><path d="M12 12l3.88 3.88" /><circle cx="6" cy="18" r="3" /><path d="M18 18l-6-6" /></svg>);
@@ -19,6 +21,7 @@ const IconScissors = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="n
 const ASPECTS = ["16:9", "9:16", "1:1", "4:3", "3:4"];
 
 export default function ClippingStudio() {
+  const isMobile = useIsMobile();
   const [videoUrl, setVideoUrl] = useState(null);
   const [videoFile, setVideoFile] = useState(null);
   const [numHighlights, setNumHighlights] = useState(3);
@@ -71,6 +74,9 @@ export default function ClippingStudio() {
           <label className="v6-field-label" style={{ marginBottom: 0 }}>Highlights</label>
           <span className="v6-highlights-badge">{numHighlights} {numHighlights === 1 ? "highlight" : "highlights"}</span>
         </div>
+        {isMobile && (
+          <MobileChipScroller items={[{ label: "2", value: 2 }, { label: "3", value: 3 }, { label: "5", value: 5 }, { label: "8", value: 8 }]} selectedValue={numHighlights} onSelect={setNumHighlights} />
+        )}
         <div className="v6-timeline-bar">
           <div className="v6-timeline-track">
             <div className="v6-timeline-fill" style={{ width: `${(numHighlights / 10) * 100}%` }} />
@@ -85,17 +91,28 @@ export default function ClippingStudio() {
       {/* Aspect ratio */}
       <div className="v6-field">
         <label className="v6-field-label">Output Aspect</label>
-        <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspect === a ? " v6-active" : ""}`} onClick={() => setAspect(a)}>{a}</button>))}</div>
+        {isMobile ? (
+          <MobileChipScroller items={ASPECTS.map((a) => ({ label: a, value: a }))} selectedValue={aspect} onSelect={setAspect} />
+        ) : (
+          <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspect === a ? " v6-active" : ""}`} onClick={() => setAspect(a)}>{a}</button>))}</div>
+        )}
       </div>
 
       {/* Coordinates only toggle */}
-      <button className="v6-toggle" onClick={() => setCoordsOnly(!coordsOnly)} style={{ marginBottom: 4 }}>
+      {isMobile ? (
+        <div className="v6-field" style={{ marginBottom: 4 }}>
+          <label className="v6-field-label" style={{ marginBottom: 4 }}>Output Mode</label>
+          <MobileChipScroller items={[{ label: "Full", value: false }, { label: "Coords only", value: true }]} selectedValue={coordsOnly} onSelect={setCoordsOnly} />
+        </div>
+      ) : (
+        <button className="v6-toggle" onClick={() => setCoordsOnly(!coordsOnly)} style={{ marginBottom: 4 }}>
         <div className={`v6-toggle-track${coordsOnly ? " v6-on" : ""}`}><div className="v6-toggle-thumb" /></div>
         <span className="v6-toggle-label">Coordinates only</span>
         <span className="v6-tooltip v6-tiny" style={{ cursor: "help", color: "var(--v6-muted)" }} data-tooltip="Returns timestamp coordinates instead of rendering clips" onClick={(e) => { e.stopPropagation(); setShowCoordInfo(!showCoordInfo); }}>
           <IconInfo style={{ width: 12, height: 12 }} />
         </span>
       </button>
+      )}
       {showCoordInfo && (
         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
           style={{ fontSize: 10, color: "var(--v6-muted)", lineHeight: 1.5, padding: "6px 10px", border: "1px solid var(--v6-line)", borderRadius: 8, background: "var(--v6-surface2)" }}>

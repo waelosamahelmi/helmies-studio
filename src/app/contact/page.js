@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import { IconArrowUpRight, IconMail, IconCheck, IconChevron } from "@/components/Icons";
+import { useIsMobile } from "@/lib/use-media-query";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -20,6 +21,7 @@ function validateEmail(email) {
 }
 
 export default function ContactPage() {
+  const isMobile = useIsMobile();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [subject, setSubject] = useState("");
@@ -139,7 +141,7 @@ export default function ContactPage() {
         <div className="v6-contact">
           <form className="v6-contact-form" onSubmit={handleSubmit} noValidate>
             {/* Name */}
-            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: "0.875rem 1rem" }}>
+            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: isMobile ? "14px 16px" : "0.875rem 1rem" }}>
               <label
                 htmlFor="contact-name"
                 style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(242,242,247,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}
@@ -153,12 +155,13 @@ export default function ContactPage() {
                 value={name}
                 onChange={(e) => { setName(e.target.value); setErrors((p) => ({ ...p, name: "" })); }}
                 autoComplete="name"
+                style={isMobile ? { fontSize: 16, minHeight: 44 } : {}}
               />
               {errors.name && <p className="v6-contact-error">{errors.name}</p>}
             </div>
 
             {/* Email */}
-            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: "0.875rem 1rem" }}>
+            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: isMobile ? "14px 16px" : "0.875rem 1rem" }}>
               <label
                 htmlFor="contact-email"
                 style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(242,242,247,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}
@@ -172,12 +175,13 @@ export default function ContactPage() {
                 value={email}
                 onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: "" })); }}
                 autoComplete="email"
+                style={isMobile ? { fontSize: 16, minHeight: 44 } : {}}
               />
               {errors.email && <p className="v6-contact-error">{errors.email}</p>}
             </div>
 
             {/* Subject */}
-            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: "0.875rem 1rem" }}>
+            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: isMobile ? "14px 16px" : "0.875rem 1rem" }}>
               <label
                 htmlFor="contact-subject"
                 style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(242,242,247,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}
@@ -189,6 +193,7 @@ export default function ContactPage() {
                   id="contact-subject"
                   value={subject}
                   onChange={(e) => { setSubject(e.target.value); setErrors((p) => ({ ...p, subject: "" })); }}
+                  style={isMobile ? { minHeight: 44, fontSize: 16 } : {}}
                 >
                   <option value="" disabled>
                     Select a topic...
@@ -224,7 +229,7 @@ export default function ContactPage() {
             </div>
 
             {/* Message */}
-            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: "0.875rem 1rem" }}>
+            <div className="field" style={{ flexDirection: "column", alignItems: "stretch", gap: "0.5rem", padding: isMobile ? "14px 16px" : "0.875rem 1rem" }}>
               <label
                 htmlFor="contact-message"
                 style={{ fontSize: "0.75rem", fontWeight: 600, color: "rgba(242,242,247,0.4)", textTransform: "uppercase", letterSpacing: "0.05em" }}
@@ -237,6 +242,7 @@ export default function ContactPage() {
                 rows={5}
                 value={message}
                 onChange={(e) => { setMessage(e.target.value); setErrors((p) => ({ ...p, message: "" })); }}
+                style={isMobile ? { fontSize: 16 } : {}}
               />
               {errors.message && <p className="v6-contact-error">{errors.message}</p>}
             </div>

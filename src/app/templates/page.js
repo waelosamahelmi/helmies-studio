@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import UniverseNav from "@/components/studio/universe/UniverseNav";
 import { IconSearch, IconSparkle, IconArrowUpRight, IconImage, IconVideo, IconMusic, IconMegaphone, IconCamera, IconFilm, IconCrown, IconUsers, IconClose } from "@/components/Icons";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -184,6 +186,7 @@ function TemplateCard({ template, index, featured }) {
 
 // ── Main Marketplace Page ──
 export default function TemplatesPage() {
+  const isMobile = useIsMobile();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(null);
@@ -341,6 +344,15 @@ export default function TemplatesPage() {
           </div>
 
           {/* Category pills */}
+          {isMobile ? (
+            <div style={{ marginBottom: 8 }}>
+              <MobileChipScroller
+                items={CATEGORIES.map((cat) => ({ label: cat.label, value: cat.id }))}
+                selectedValue={category}
+                onSelect={setCategory}
+              />
+            </div>
+          ) : (
           <div className="universe-pills">
             {CATEGORIES.map((cat) => (
               <button
@@ -353,8 +365,18 @@ export default function TemplatesPage() {
               </button>
             ))}
           </div>
+          )}
 
           {/* Tool type pills */}
+          {isMobile ? (
+            <div style={{ marginBottom: 8 }}>
+              <MobileChipScroller
+                items={TOOL_TYPES.map((tool) => ({ label: tool.label, value: tool.id }))}
+                selectedValue={toolType}
+                onSelect={setToolType}
+              />
+            </div>
+          ) : (
           <div className="universe-pills">
             {TOOL_TYPES.map((tool) => (
               <button
@@ -367,6 +389,7 @@ export default function TemplatesPage() {
               </button>
             ))}
           </div>
+          )}
         </motion.div>
 
         {/* ── Results Info ── */}

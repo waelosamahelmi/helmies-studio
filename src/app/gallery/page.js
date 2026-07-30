@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import Navbar from "@/components/Navbar";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -60,7 +62,7 @@ const FILTERS = [
 ];
 
 /* ── Gallery Card (media grid mode) ── */
-function GalleryCard({ item, index }) {
+function GalleryCard({ item, index, isMobile }) {
   const [hovered, setHovered] = useState(false);
   const videoRef = useRef(null);
   const containerRef = useRef(null);
@@ -110,12 +112,13 @@ function GalleryCard({ item, index }) {
           loop
           playsInline
           preload="metadata"
+          style={isMobile ? { maxHeight: 160, objectFit: "cover" } : {}}
         />
       ) : isAudio ? (
         <div
           style={{
             width: "100%",
-            aspectRatio: "4/3",
+            aspectRatio: isMobile ? "1/1" : "4/3",
             background: `linear-gradient(135deg, ${meta.color}22, ${meta.color}08)`,
             display: "grid",
             placeItems: "center",
@@ -124,20 +127,25 @@ function GalleryCard({ item, index }) {
           <audio src={item.outputUrl} controls style={{ width: "90%" }} />
         </div>
       ) : (
-        <img src={item.outputUrl} alt={item.model || ""} loading="lazy" />
+        <img src={item.outputUrl} alt={item.model || ""} loading="lazy" style={isMobile ? { maxHeight: 160, objectFit: "cover" } : {}} />
       )}
       <div className="v6-media-card-body">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <h3 style={{ margin: 0, fontSize: 11 }}>{item.model || "Untitled"}</h3>
+          <h3 style={{ margin: 0, fontSize: isMobile ? 10 : 11 }}>{item.model || "Untitled"}</h3>
           <span className="v6-status" style={{ color: meta.color }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: meta.color, display: "inline-block" }} />
-            {meta.label}
+            {!isMobile && meta.label}
           </span>
         </div>
-        {item.prompt && (
+        {!isMobile && item.prompt && (
           <p style={{ fontSize: 9, color: "var(--v6-muted)", lineHeight: 1.4, margin: "4px 0" }}>
             {item.prompt.slice(0, 70)}{item.prompt.length > 70 ? "..." : ""}
           </p>
+        )}
+        {isMobile && item.tool && (
+          <span className="v6-chip" style={{ fontSize: 8, padding: "2px 6px", borderColor: meta.color, color: meta.color, marginTop: 2 }}>
+            {meta.label || item.tool}
+          </span>
         )}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 6 }}>
           <span className="v6-tiny v6-muted">{getTimeAgo(item.createdAt)}</span>
@@ -239,6 +247,7 @@ function GalleryRow({ item }) {
 }
 
 export default function GalleryPage() {
+  const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [creations, setCreations] = useState([]);
@@ -311,31 +320,39 @@ export default function GalleryPage() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {/* View toggle */}
-            <div style={{ display: "flex", borderRadius: 8, border: "1px solid var(--v6-line)", overflow: "hidden" }}>
-              <button
-                onClick={() => setViewMode("grid")}
-                className="v6-btn v6-icon-only v6-sm"
-                style={{
-                  borderRadius: 0,
-                  border: 0,
-                  ...(viewMode === "grid" ? { background: "var(--v6-accent)", color: "#fff" } : {}),
-                }}
-              >
-                <SvgIcon d={iconPaths.grid} size={14} />
-              </button>
-              <button
-                onClick={() => setViewMode("table")}
-                className="v6-btn v6-icon-only v6-sm"
-                style={{
-                  borderRadius: 0,
-                  border: 0,
-                  borderLeft: "1px solid var(--v6-line)",
-                  ...(viewMode === "table" ? { background: "var(--v6-accent)", color: "#fff" } : {}),
-                }}
-              >
-                <SvgIcon d={iconPaths.list} size={14} />
-              </button>
-            </div>
+            {isMobile ? (
+              <MobileChipScroller
+                items={[{ label: "Grid", value: "grid" }, { label: "Table", value: "table" }]}
+                selectedValue={viewMode}
+                onSelect={setViewMode}
+              />
+            ) : (
+              <div style={{ display: "flex", borderRadius: 8, border: "1px solid var(--v6-line)", overflow: "hidden" }}>
+                <button
+                  onClick={() => setViewMode("grid")}
+                  className="v6-btn v6-icon-only v6-sm"
+                  style={{
+                    borderRadius: 0,
+                    border: 0,
+                    ...(viewMode === "grid" ? { background: "var(--v6-accent)", color: "#fff" } : {}),
+                  }}
+                >
+                  <SvgIcon d={iconPaths.grid} size={14} />
+                </button>
+                <button
+                  onClick={() => setViewMode("table")}
+                  className="v6-btn v6-icon-only v6-sm"
+                  style={{
+                    borderRadius: 0,
+                    border: 0,
+                    borderLeft: "1px solid var(--v6-line)",
+                    ...(viewMode === "table" ? { background: "var(--v6-accent)", color: "#fff" } : {}),
+                  }}
+                >
+                  <SvgIcon d={iconPaths.list} size={14} />
+                </button>
+              </div>
+            )}
             <Link href="/studio" className="v6-btn v6-primary">
               New Generation
               <SvgIcon d={iconPaths.arrowUpRight} size={14} />
@@ -344,27 +361,82 @@ export default function GalleryPage() {
         </div>
 
         {/* Filter Bar */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 12,
-            marginBottom: 22,
-            flexWrap: "wrap",
-          }}
-        >
-          <div className="v6-chip-row">
-            {FILTERS.map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setFilter(f.id)}
-                className={`v6-chip ${filter === f.id ? "v6-active" : ""}`}
-              >
-                {f.label}
-              </button>
-            ))}
+        {isMobile ? (
+          <div style={{ marginBottom: 10 }}>
+            <MobileChipScroller
+              items={FILTERS.map((f) => ({ label: f.label, value: f.id }))}
+              selectedValue={filter}
+              onSelect={setFilter}
+            />
           </div>
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 22,
+              flexWrap: "wrap",
+            }}
+          >
+            <div className="v6-chip-row">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setFilter(f.id)}
+                  className={`v6-chip ${filter === f.id ? "v6-active" : ""}`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                border: "1px solid var(--v6-line)",
+                borderRadius: 99,
+                padding: "7px 12px",
+                background: "var(--v6-surface2)",
+                maxWidth: 260,
+                flex: 1,
+              }}
+            >
+              <SvgIcon d={iconPaths.search} size={14} />
+              <input
+                type="text"
+                placeholder="Search creations..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "var(--v6-text)",
+                  fontSize: 11,
+                  width: "100%",
+                  outline: "none",
+                }}
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  style={{
+                    border: 0,
+                    background: "transparent",
+                    padding: 0,
+                    cursor: "pointer",
+                    color: "var(--v6-muted)",
+                  }}
+                >
+                  <SvgIcon d={iconPaths.close} size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {isMobile && (
           <div
             style={{
               display: "flex",
@@ -372,13 +444,13 @@ export default function GalleryPage() {
               gap: 8,
               border: "1px solid var(--v6-line)",
               borderRadius: 99,
-              padding: "7px 12px",
+              padding: "10px 14px",
               background: "var(--v6-surface2)",
-              maxWidth: 260,
-              flex: 1,
+              width: "100%",
+              marginBottom: 10,
             }}
           >
-            <SvgIcon d={iconPaths.search} size={14} />
+            <SvgIcon d={iconPaths.search} size={16} />
             <input
               type="text"
               placeholder="Search creations..."
@@ -388,7 +460,7 @@ export default function GalleryPage() {
                 border: 0,
                 background: "transparent",
                 color: "var(--v6-text)",
-                fontSize: 11,
+                fontSize: 13,
                 width: "100%",
                 outline: "none",
               }}
@@ -402,13 +474,15 @@ export default function GalleryPage() {
                   padding: 0,
                   cursor: "pointer",
                   color: "var(--v6-muted)",
+                  display: "flex",
+                  alignItems: "center",
                 }}
               >
-                <SvgIcon d={iconPaths.close} size={12} />
+                <SvgIcon d={iconPaths.close} size={16} />
               </button>
             )}
           </div>
-        </div>
+        )}
 
         {/* Content */}
         {loading ? (
@@ -477,7 +551,7 @@ export default function GalleryPage() {
             </div>
             <div className="v6-media-grid">
             {visible.map((c, i) => (
-              <GalleryCard key={c.id} item={c} index={i} />
+              <GalleryCard key={c.id} item={c} index={i} isMobile={isMobile} />
             ))}
             {visibleCount < filtered.length && (
               <div ref={sentinelRef} style={{ height: 1, width: "100%" }} />

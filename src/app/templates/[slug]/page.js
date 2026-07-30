@@ -8,6 +8,7 @@ import UniverseNav from "@/components/studio/universe/UniverseNav";
 import TemplatePurchaseButton from "@/components/templates/TemplatePurchaseButton";
 import ApplyTemplateButton from "@/components/templates/ApplyTemplateButton";
 import { IconSparkle, IconArrowUpRight, IconCheck, IconClose } from "@/components/Icons";
+import { useIsMobile } from "@/lib/use-media-query";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -64,6 +65,7 @@ function SkeletonDetail() {
 }
 
 export default function TemplateDetailPage() {
+  const isMobile = useIsMobile();
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -201,11 +203,11 @@ export default function TemplateDetailPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.45, ease: EASE }}
         >
-          <div className="template-detail-hero__media">
+          <div className="template-detail-hero__media" style={isMobile ? { minHeight: 180, width: "100%" } : {}}>
             {template.thumbnailUrl ? (
-              <img src={template.thumbnailUrl} alt={template.name} />
+              <img src={template.thumbnailUrl} alt={template.name} style={isMobile ? { objectFit: "cover", width: "100%", height: "100%" } : {}} />
             ) : (
-              <div className="template-detail-hero__placeholder">
+              <div className="template-detail-hero__placeholder" style={isMobile ? { minHeight: 180 } : {}}>
                 <SvgIcon d={toolMeta.d} size={48} color="rgba(255,255,255,0.3)" />
               </div>
             )}

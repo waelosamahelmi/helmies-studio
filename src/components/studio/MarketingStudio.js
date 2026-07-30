@@ -11,6 +11,8 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Platform definitions with brand colors ── */
 const PLATFORMS = [
@@ -37,6 +39,7 @@ const SUGGESTIONS = [
 ];
 
 export default function MarketingStudio() {
+  const isMobile = useIsMobile();
   const [platform, setPlatform] = useState("instagram");
   const [duration, setDuration] = useState(15);
   const [resolution, setResolution] = useState("1080p");
@@ -78,50 +81,66 @@ export default function MarketingStudio() {
       {/* Platform cards */}
       <div className="v6-field">
         <span className="v6-field-label">Platform</span>
-        <div className="v6-platform-grid">
-          {PLATFORMS.map((p) => {
-            const active = platform === p.id;
-            return (
-              <button key={p.id} className={`v6-platform-card${active ? " v6-active" : ""}`} onClick={() => setPlatform(p.id)}>
-                {p.gradient ? (
-                  <span className="v6-platform-dot" style={{ background: p.gradient }} />
-                ) : (
-                  <span className="v6-platform-dot" style={{ background: p.color }} />
-                )}
-                {p.label}
-                <span className="v6-tiny" style={{ color: "var(--v6-muted)", marginLeft: "auto" }}>{p.aspect}</span>
-              </button>
-            );
-          })}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={PLATFORMS.map((p) => ({ label: p.label, value: p.id }))} selectedValue={platform} onSelect={setPlatform} />
+        ) : (
+          <div className="v6-platform-grid">
+            {PLATFORMS.map((p) => {
+              const active = platform === p.id;
+              return (
+                <button key={p.id} className={`v6-platform-card${active ? " v6-active" : ""}`} onClick={() => setPlatform(p.id)}>
+                  {p.gradient ? (
+                    <span className="v6-platform-dot" style={{ background: p.gradient }} />
+                  ) : (
+                    <span className="v6-platform-dot" style={{ background: p.color }} />
+                  )}
+                  {p.label}
+                  <span className="v6-tiny" style={{ color: "var(--v6-muted)", marginLeft: "auto" }}>{p.aspect}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Duration + Resolution */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <div className="v6-field">
           <span className="v6-field-label">Duration</span>
-          <div className="v6-segmented">{DURATIONS.map((d) => (<button key={d} className={duration === d ? "v6-active" : ""} onClick={() => setDuration(d)}>{d}s</button>))}</div>
+          {isMobile ? (
+            <MobileChipScroller items={DURATIONS.map((d) => ({ label: `${d}s`, value: d }))} selectedValue={duration} onSelect={setDuration} />
+          ) : (
+            <div className="v6-segmented">{DURATIONS.map((d) => (<button key={d} className={duration === d ? "v6-active" : ""} onClick={() => setDuration(d)}>{d}s</button>))}</div>
+          )}
         </div>
         <div className="v6-field">
           <span className="v6-field-label">Resolution</span>
-          <div className="v6-segmented">{RESOLUTIONS.map((r) => (<button key={r} className={resolution === r ? "v6-active" : ""} onClick={() => setResolution(r)}>{r}</button>))}</div>
+          {isMobile ? (
+            <MobileChipScroller items={RESOLUTIONS.map((r) => ({ label: r, value: r }))} selectedValue={resolution} onSelect={setResolution} />
+          ) : (
+            <div className="v6-segmented">{RESOLUTIONS.map((r) => (<button key={r} className={resolution === r ? "v6-active" : ""} onClick={() => setResolution(r)}>{r}</button>))}</div>
+          )}
         </div>
       </div>
 
       {/* Avatar grid */}
       <div className="v6-field">
         <span className="v6-field-label">Avatar {selectedAvatar ? `\u00b7 ${selectedAvatar.name}` : ""}</span>
-        <div className="v6-avatar-grid">
-          {MARKETING_AVATARS.map((a) => {
-            const sel = selectedAvatar?.id === a.id;
-            return (
-              <button key={a.id} className={`v6-avatar-card${sel ? " v6-active" : ""}`} onClick={() => handleAvatarSelect(a)}>
-                <img src={a.url} alt={a.name} />
-                <span className="v6-avatar-name">{a.name}</span>
-              </button>
-            );
-          })}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={MARKETING_AVATARS.map((a) => ({ label: a.name, value: a.name }))} selectedValue={selectedAvatar?.name || null} onSelect={(val) => { const found = MARKETING_AVATARS.find((a) => a.name === val); if (found) handleAvatarSelect(found); }} />
+        ) : (
+          <div className="v6-avatar-grid">
+            {MARKETING_AVATARS.map((a) => {
+              const sel = selectedAvatar?.id === a.id;
+              return (
+                <button key={a.id} className={`v6-avatar-card${sel ? " v6-active" : ""}`} onClick={() => handleAvatarSelect(a)}>
+                  <img src={a.url} alt={a.name} />
+                  <span className="v6-avatar-name">{a.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Product upload */}
@@ -165,17 +184,21 @@ export default function MarketingStudio() {
       {/* Campaign format */}
       <div className="v6-field">
         <span className="v6-field-label">Campaign Format</span>
-        <div className="v6-format-grid">
-          {CAMPAIGN_FORMATS.map((cf) => (
-            <div key={cf.id} className={`v6-format-card${campaignFormat === cf.id ? " v6-active" : ""}`} onClick={() => setCampaignFormat(cf.id)}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <path d={cf.icon} />
-              </svg>
-              <span className="v6-format-name">{cf.label}</span>
-              <span className="v6-tiny" style={{ color: "var(--v6-muted)" }}>{cf.desc}</span>
-            </div>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={CAMPAIGN_FORMATS.map((cf) => ({ label: cf.label, value: cf.id }))} selectedValue={campaignFormat} onSelect={setCampaignFormat} />
+        ) : (
+          <div className="v6-format-grid">
+            {CAMPAIGN_FORMATS.map((cf) => (
+              <div key={cf.id} className={`v6-format-card${campaignFormat === cf.id ? " v6-active" : ""}`} onClick={() => setCampaignFormat(cf.id)}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={cf.icon} />
+                </svg>
+                <span className="v6-format-name">{cf.label}</span>
+                <span className="v6-tiny" style={{ color: "var(--v6-muted)" }}>{cf.desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="v6-section-rule" style={{ margin: "14px 0" }} />

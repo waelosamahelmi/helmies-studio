@@ -4,6 +4,8 @@ import { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "@/components/Navbar";
 import { IconSearch, IconChevron } from "@/components/Icons";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -120,6 +122,7 @@ const FAQS = [
 ];
 
 export default function FAQPage() {
+  const isMobile = useIsMobile();
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
   const [openItems, setOpenItems] = useState(new Set());
@@ -181,7 +184,7 @@ export default function FAQPage() {
 
         {/* Search */}
         <div className="v6-faq-search">
-          <div className="field" style={{ maxWidth: 560, margin: "0 auto" }}>
+          <div className="field" style={{ maxWidth: isMobile ? "100%" : 560, margin: "0 auto" }}>
             <span className="field__icon">
               <IconSearch />
             </span>
@@ -190,11 +193,21 @@ export default function FAQPage() {
               placeholder="Search FAQ..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              style={isMobile ? { height: 44, fontSize: 14 } : {}}
             />
           </div>
         </div>
 
         {/* Category pills */}
+        {isMobile ? (
+          <div style={{ marginBottom: 16 }}>
+            <MobileChipScroller
+              items={CATEGORIES.map((cat) => ({ label: `${cat}${cat !== "All" ? ` (${counts[cat] || 0})` : ""}`, value: cat }))}
+              selectedValue={activeCategory}
+              onSelect={setActiveCategory}
+            />
+          </div>
+        ) : (
         <div className="v6-faq-categories" style={{ justifyContent: "center" }}>
           {CATEGORIES.map((cat) => (
             <button
@@ -209,6 +222,7 @@ export default function FAQPage() {
             </button>
           ))}
         </div>
+        )}
 
         {/* FAQ items */}
         <div className="v6-faq">

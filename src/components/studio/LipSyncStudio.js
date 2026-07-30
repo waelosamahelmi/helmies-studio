@@ -7,6 +7,8 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconMic = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" /><path d="M19 10v2a7 7 0 01-14 0v-2" /><line x1="12" y1="19" x2="12" y2="23" /><line x1="8" y1="23" x2="16" y2="23" /></svg>);
@@ -32,6 +34,8 @@ export default function LipSyncStudio() {
   const [seed, setSeed] = useState(-1);
   const [uploading, setUploading] = useState("");
 
+  const isMobile = useIsMobile();
+
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
   const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
   const needsVideo = currentModel.mode === "video";
@@ -56,20 +60,34 @@ export default function LipSyncStudio() {
   /* ── Controls ── */
   const controls = (
     <div className="v6-control-stack">
-      <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Lip Sync Models" />
+      {isMobile ? (
+        <MobileModelCarousel models={MODELS} selectedModelId={model} onSelect={setModel} />
+      ) : (
+        <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Lip Sync Models" />
+      )}
 
       {/* Mode selector */}
       <div className="v6-field">
         <label className="v6-field-label">Input Mode</label>
-        <div className="v6-mode-grid">
-          {[{ mode: "image", icon: IconImage, label: "Image", desc: "Single portrait photo" }, { mode: "video", icon: IconVideo, label: "Video", desc: "Video with a face" }].map((m) => (
+        {isMobile ? (
+          <MobileChipScroller
+            items={[{ label: "Image", value: "image" }, { label: "Video", value: "video" }]}
+            selectedValue={needsVideo ? "video" : "image"}
+            onSelect={(val) => {
+              const vid = MODELS.find(x => x.mode === "video");
+              const img = MODELS.find(x => x.mode !== "video");
+              setModel(val === "video" ? vid?.id : img?.id);
+            }}
+          />
+        ) : (
+          [{ mode: "image", icon: IconImage, label: "Image", desc: "Single portrait photo" }, { mode: "video", icon: IconVideo, label: "Video", desc: "Video with a face" }].map((m) => (
             <div key={m.mode} className={`v6-mode-card${(!needsVideo && m.mode === "image") || (needsVideo && m.mode === "video") ? " v6-active" : ""}`} onClick={() => { const vid = MODELS.find(x => x.mode === "video"); const img = MODELS.find(x => x.mode !== "video"); setModel(m.mode === "video" ? vid?.id : img?.id); }}>
               <div className="v6-mode-icon"><m.icon /></div>
               <span className="v6-mode-name">{m.label}</span>
               <span className="v6-mode-desc">{m.desc}</span>
             </div>
-          ))}
-        </div>
+          ))
+        )}
       </div>
 
       {/* Source upload */}

@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
 import toast from "react-hot-toast";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -49,6 +51,7 @@ const icons = {
 };
 
 export default function BrandKitStudio() {
+  const isMobile = useIsMobile();
   const [brands, setBrands] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -181,6 +184,7 @@ export default function BrandKitStudio() {
   return (
     <div className="v6-builder-grid" style={{ minHeight: "100%" }}>
       {/* ── LEFT: Brand List ── */}
+      {!isMobile && (
       <div className="v6-builder-panel">
         <div className="v6-panel-title">
           <h3>Brands</h3>
@@ -255,9 +259,21 @@ export default function BrandKitStudio() {
           )}
         </div>
       </div>
+      )}
 
       {/* ── CENTER: Brand Detail ── */}
       <div className="v6-builder-panel">
+        {/* Mobile brand selector chips */}
+        {isMobile && brands.length > 0 && (
+          <MobileChipScroller
+            items={brands.map((b) => ({ label: b.name, value: b.id }))}
+            selectedValue={selected?.id}
+            onSelect={(id) => { const found = brands.find((b) => b.id === id); if (found) setSelected(found); }}
+          />
+        )}
+        {isMobile && !selected && brands.length > 0 && (
+          <p className="v6-muted v6-tiny" style={{ marginTop: 8, textAlign: "center" }}>Select a brand above</p>
+        )}
         {selected ? (
           <motion.div
             key={selected.id}
@@ -444,6 +460,18 @@ export default function BrandKitStudio() {
               {/* Tone of Voice — with example chips */}
               <div className="v6-field" style={{ marginBottom: 14 }}>
                 <label className="v6-field-label">Tone of Voice</label>
+                {isMobile ? (
+                  <MobileChipScroller
+                    items={TONE_CHIPS.map((tone) => ({ label: tone, value: tone.toLowerCase() }))}
+                    selectedValue={TONE_CHIPS.find((t) => toneOfVoice.toLowerCase().includes(t.toLowerCase()))?.toLowerCase() || null}
+                    onSelect={(val) => {
+                      const current = toneOfVoice;
+                      const newTone = current ? `${current}, ${val}` : val;
+                      setSelected({ ...selected, toneOfVoice: newTone });
+                      updateBrand(selected.id, { toneOfVoice: newTone });
+                    }}
+                  />
+                ) : (
                 <div className="v6-chip-row" style={{ marginBottom: 8 }}>
                   {TONE_CHIPS.map((tone) => {
                     const isSelected = toneOfVoice.toLowerCase().includes(tone.toLowerCase());
@@ -464,6 +492,7 @@ export default function BrandKitStudio() {
                     );
                   })}
                 </div>
+                )}
                 <textarea
                   className="v6-textarea"
                   value={toneOfVoice}
@@ -624,6 +653,9 @@ export default function BrandKitStudio() {
             {/* Compliance Mode — segmented control with descriptions */}
             <div className="v6-field">
               <label className="v6-field-label">Compliance Mode</label>
+              {isMobile ? (
+                <MobileChipScroller items={ENFORCEMENT_MODES.map((m) => ({ label: m.label, value: m.id }))} selectedValue={selected.enforcement || "off"} onSelect={updateEnforcement} />
+              ) : (
               <div style={{ display: "grid", gap: 6 }}>
                 {ENFORCEMENT_MODES.map((m) => {
                   const isActive = (selected.enforcement || "off") === m.id;
@@ -678,6 +710,7 @@ export default function BrandKitStudio() {
                   );
                 })}
               </div>
+              )}
             </div>
 
             <div className="v6-section-rule" />

@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import toast from "react-hot-toast";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -37,6 +39,7 @@ function SvgIcon({ d, size = 18, color }) {
 }
 
 export default function MemoryStudio() {
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState("character");
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -199,6 +202,9 @@ export default function MemoryStudio() {
       </div>
 
       {/* Tabs — segmented control with icons */}
+      {isMobile ? (
+        <MobileChipScroller items={TABS.map((t) => ({ label: t.label, value: t.id }))} selectedValue={activeTab} onSelect={setActiveTab} />
+      ) : (
       <div className="v6-segmented" style={{ marginBottom: 18, maxWidth: 560 }}>
         {TABS.map((t) => {
           const isActive = activeTab === t.id;
@@ -224,6 +230,7 @@ export default function MemoryStudio() {
           );
         })}
       </div>
+      )}
 
       {/* Add form — styled with sections */}
       <AnimatePresence>

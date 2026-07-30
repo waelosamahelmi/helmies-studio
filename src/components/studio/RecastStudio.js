@@ -7,6 +7,8 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconUsers = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>);
@@ -29,6 +31,8 @@ export default function RecastStudio() {
   const [orientation, setOrientation] = useState("left");
   const [uploading, setUploading] = useState("");
   const [compareMode, setCompareMode] = useState(false);
+
+  const isMobile = useIsMobile();
 
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
   const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
@@ -53,7 +57,11 @@ export default function RecastStudio() {
   /* ── Controls ── */
   const controls = (
     <div className="v6-control-stack">
-      <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Recast Models" />
+      {isMobile ? (
+        <MobileModelCarousel models={MODELS} selectedModelId={model} onSelect={setModel} />
+      ) : (
+        <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Recast Models" />
+      )}
 
       {/* Uploads side by side */}
       <div className="v6-field">
@@ -74,17 +82,25 @@ export default function RecastStudio() {
       {currentModel.hasOrientation && (
         <div className="v6-field">
           <label className="v6-field-label">Face Orientation</label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[
-              { id: "left", icon: IconArrowLeft, label: "Left profile" },
-              { id: "right", icon: IconArrowRight, label: "Right profile" },
-            ].map((o) => (
-              <div key={o.id} className={`v6-mode-card${orientation === o.id ? " v6-active" : ""}`} onClick={() => setOrientation(o.id)} style={{ padding: 12 }}>
-                <div className="v6-mode-icon"><o.icon /></div>
-                <span className="v6-mode-name">{o.label}</span>
-              </div>
-            ))}
-          </div>
+          {isMobile ? (
+            <MobileChipScroller
+              items={[{ label: "Left", value: "left" }, { label: "Right", value: "right" }]}
+              selectedValue={orientation}
+              onSelect={setOrientation}
+            />
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {[
+                { id: "left", icon: IconArrowLeft, label: "Left profile" },
+                { id: "right", icon: IconArrowRight, label: "Right profile" },
+              ].map((o) => (
+                <div key={o.id} className={`v6-mode-card${orientation === o.id ? " v6-active" : ""}`} onClick={() => setOrientation(o.id)} style={{ padding: 12 }}>
+                  <div className="v6-mode-icon"><o.icon /></div>
+                  <span className="v6-mode-name">{o.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

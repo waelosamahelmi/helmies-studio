@@ -7,6 +7,8 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconUsers = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>);
@@ -38,6 +40,8 @@ export default function AvatarStudio() {
   const [imageUrl, setImageUrl] = useState(null);
   const [uploading, setUploading] = useState(false);
 
+  const isMobile = useIsMobile();
+
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
   const currentModel = MODELS.find((m) => m.id === model) || MODELS[0] || {};
   const { cost, affordable, shortfall, balance } = useCreditCost("v2v", model, { duration, aspect_ratio: aspectRatio, image_url: imageUrl });
@@ -62,7 +66,11 @@ export default function AvatarStudio() {
   /* ── Controls ── */
   const controls = (
     <div className="v6-control-stack">
-      <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Avatar Models" />
+      {isMobile ? (
+        <MobileModelCarousel models={MODELS} selectedModelId={model} onSelect={setModel} />
+      ) : (
+        <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Avatar Models" />
+      )}
 
       {/* Portrait upload */}
       <div className="v6-field">
@@ -104,19 +112,35 @@ export default function AvatarStudio() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
         <div className="v6-field">
           <label className="v6-field-label">Duration</label>
-          <div className="v6-segmented">
-            {DURATIONS.map((d) => (
-              <button key={d} className={duration === d ? "v6-active" : ""} onClick={() => setDuration(d)}>
-                <IconClock style={{ width: 10, height: 10 }} /> {d}s
-              </button>
-            ))}
-          </div>
+          {isMobile ? (
+            <MobileChipScroller
+              items={DURATIONS.map(d => ({ label: `${d}s`, value: d }))}
+              selectedValue={duration}
+              onSelect={setDuration}
+            />
+          ) : (
+            <div className="v6-segmented">
+              {DURATIONS.map((d) => (
+                <button key={d} className={duration === d ? "v6-active" : ""} onClick={() => setDuration(d)}>
+                  <IconClock style={{ width: 10, height: 10 }} /> {d}s
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="v6-field">
           <label className="v6-field-label">Aspect</label>
-          <div className="v6-chip-row">
-            {ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}
-          </div>
+          {isMobile ? (
+            <MobileChipScroller
+              items={ASPECTS.map(a => ({ label: a, value: a }))}
+              selectedValue={aspectRatio}
+              onSelect={setAspectRatio}
+            />
+          ) : (
+            <div className="v6-chip-row">
+              {ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}
+            </div>
+          )}
         </div>
       </div>
     </div>

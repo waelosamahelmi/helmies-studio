@@ -12,6 +12,7 @@ import LogoTicker from "@/components/landing/LogoTicker";
 import {
   IconArrowUpRight, IconArrowRight, IconCheck, IconMail,
 } from "@/components/Icons";
+import { useIsMobile } from "@/lib/use-media-query";
 
 const HEADSHOTS = [
   "/assets/warrior_girl_e29532086b-40.webp",
@@ -140,19 +141,24 @@ function useInView(ref, margin = "-100px") {
 
 /* ── HERO ── */
 function HeroSection() {
+  const isMobile = useIsMobile();
   const [playing, setPlaying] = useState(false);
   return (
     <section className="hero">
       <div className="hero__bg">
-        <img src="/assets/hero-video-poster.webp" alt="" className="hero__bg-poster" style={{ opacity: playing ? 0 : 1 }} />
-        <video
-          src="/assets/12709382_1920_1080_30fps-39.mp4"
-          muted loop playsInline autoPlay
-          preload="auto"
-          onPlaying={() => setPlaying(true)}
-          onPause={() => setPlaying(false)}
-          style={{ opacity: playing ? 1 : 0 }}
-        />
+        <img src={isMobile ? "/assets/hero-video-poster.webp" : "/assets/hero-video-poster.webp"} alt="" className="hero__bg-poster" style={{ opacity: playing ? 0 : 1 }} />
+        {!isMobile ? (
+          <video
+            src="/assets/12709382_1920_1080_30fps-39.mp4"
+            muted loop playsInline autoPlay
+            preload="auto"
+            onPlaying={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            style={{ opacity: playing ? 1 : 0 }}
+          />
+        ) : (
+          <img src="/assets/hero-video-poster.webp" alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        )}
       </div>
 
       <div className="hero__content">
@@ -169,12 +175,12 @@ function HeroSection() {
           Flux, Midjourney, Sora 2, Kling, Veo 3. One subscription, zero filters.
         </p>
 
-        <div className="hero__cta">
-          <Link href="/login" className="btn btn-primary btn-lg">
+        <div className="hero__cta" style={isMobile ? { flexDirection: "column", width: "100%" } : {}}>
+          <Link href="/login" className="btn btn-primary btn-lg" style={isMobile ? { width: "100%", justifyContent: "center" } : {}}>
             Start free
             <span className="btn__icon"><IconArrowUpRight /></span>
           </Link>
-          <Link href="/pricing" className="btn btn-secondary btn-lg">
+          <Link href="/pricing" className="btn btn-secondary btn-lg" style={isMobile ? { width: "100%", justifyContent: "center" } : {}}>
             View pricing
             <span className="btn__icon"><IconArrowRight /></span>
           </Link>
@@ -186,6 +192,7 @@ function HeroSection() {
 
 /* ── FULL-SCREEN SERVICE SECTION ── */
 function ServiceSection({ section, index }) {
+  const isMobile = useIsMobile();
   const ref = useRef(null);
   const cardsRef = useRef(null);
   const visible = useInView(ref, "-80px");
@@ -276,15 +283,17 @@ function ServiceSection({ section, index }) {
       <div className={`svc-section__bg ${section.bgClass || ""}`}>
         {section.bgVideo ? (
           <>
-            <img src="/assets/pricing-video-poster.webp" alt="" className="svc-section__bg-poster" style={{ opacity: vidPlaying ? 0 : 1 }} />
-            <video
-              src={section.bgVideo.replace(/\.webm$/, ".mp4")}
-              muted loop playsInline autoPlay
-              preload="auto"
-              onPlaying={() => setVidPlaying(true)}
-              onPause={() => setVidPlaying(false)}
-              style={{ opacity: vidPlaying ? 1 : 0 }}
-            />
+            <img src="/assets/pricing-video-poster.webp" alt="" className="svc-section__bg-poster" style={{ opacity: isMobile ? 1 : vidPlaying ? 0 : 1 }} />
+            {!isMobile && (
+              <video
+                src={section.bgVideo.replace(/\.webm$/, ".mp4")}
+                muted loop playsInline autoPlay
+                preload="auto"
+                onPlaying={() => setVidPlaying(true)}
+                onPause={() => setVidPlaying(false)}
+                style={{ opacity: vidPlaying ? 1 : 0 }}
+              />
+            )}
           </>
         ) : (
           <img src={section.bg} alt="" />
@@ -339,9 +348,9 @@ function ServiceSection({ section, index }) {
                       <IconArrowRight style={{ transform: "scaleX(-1)" }} />
                     </button>
                   )}
-                  <div className="pricing-cards" ref={cardsRef}>
+                  <div className="pricing-cards" ref={cardsRef} style={isMobile ? { scrollSnapType: "x mandatory" } : {}}>
                     {pricing.map((plan) => (
-                    <div key={plan.name} className={`pricing-card ${plan.popular ? "pricing-card--popular" : ""}`}>
+                    <div key={plan.name} className={`pricing-card ${plan.popular ? "pricing-card--popular" : ""}`} style={isMobile ? { scrollSnapAlign: "start" } : {}}>
                       {plan.popular && <div className="pricing-card__badge">Most popular</div>}
                       <div className="pricing-card__name">{plan.name}</div>
                       <div className="pricing-card__price">{plan.price}<span className="pricing-card__period">{plan.period}</span></div>
@@ -377,7 +386,7 @@ function ServiceSection({ section, index }) {
                 {section.hasReels && (
                   <div className="svc-reels">
                     <ReelSlider
-                      columns={makeColumns(section.useVideos ? VIDEOS : HEADSHOTS)}
+                      columns={makeColumns(section.useVideos ? VIDEOS : HEADSHOTS).slice(0, isMobile ? 2 : 3)}
                       speed={0.3}
                     />
                   </div>

@@ -4,11 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MotionConfig, AnimatePresence } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
 
 // ── Universe Shell (v6) ──
 import UniverseShell from "@/components/studio/universe/UniverseShell";
 import InstrumentOrbit from "@/components/studio/universe/InstrumentOrbit";
 import RecentConstellation from "@/components/studio/universe/RecentConstellation";
+
+// ── Mobile Components ──
+import { MobileBottomNav, MobileToolDrawer } from "@/components/studio/mobile";
 
 // ── v6 Studio Components ──
 import OrchestratorStudio from "@/components/studio/OrchestratorStudio";
@@ -107,11 +111,13 @@ function Tool({ id, initialModel, templateConfig }) {
 export default function StudioClient({ initialTool = "orchestrator", initialModel }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const isMobile = useIsMobile();
 
   // ── state ──
   const [active, setActive] = useState(initialTool);
   const [indexOpen, setIndexOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const [assets, setAssets] = useState([]);
   const [credits, setCredits] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -203,12 +209,16 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
     const handler = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setCommandOpen((v) => !v);
+        if (isMobile) {
+          setDrawerOpen((v) => !v);
+        } else {
+          setCommandOpen((v) => !v);
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [isMobile]);
 
   // ═══════════════════════════════════════════════════════════════════
   // Render
@@ -221,12 +231,14 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
         pendingCount={pendingCount}
         onCommand={() => setCommandOpen(true)}
         orbit={
-          <InstrumentOrbit
-            tools={quickTools}
-            active={active}
-            onSelect={select}
-            onOpenIndex={() => setIndexOpen(true)}
-          />
+          isMobile ? null : (
+            <InstrumentOrbit
+              tools={quickTools}
+              active={active}
+              onSelect={select}
+              onOpenIndex={() => setIndexOpen(true)}
+            />
+          )
         }
         recents={
           <RecentConstellation assets={assets} onOpen={() => select("assets")} />
@@ -235,6 +247,25 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
         <AnimatePresence mode="wait">
           <Tool key={active} id={active} initialModel={initialModel} templateConfig={templateConfig} />
         </AnimatePresence>
+
+        {/* ── Mobile navigation ── */}
+        {isMobile && (
+          <>
+            <MobileBottomNav
+              activeTool={active}
+              onSelect={(id) => { select(id); }}
+              onOpenDrawer={() => setDrawerOpen(true)}
+              isDrawerOpen={drawerOpen}
+            />
+            <MobileToolDrawer
+              isOpen={drawerOpen}
+              onClose={() => setDrawerOpen(false)}
+              activeTool={active}
+              onSelect={(id) => { select(id); }}
+              tools={TOOLS}
+            />
+          </>
+        )}
       </UniverseShell>
     </MotionConfig>
   );

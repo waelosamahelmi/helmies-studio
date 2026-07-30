@@ -10,6 +10,8 @@ import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconFilm = () => (
@@ -115,6 +117,7 @@ const RES_MAX = { "480p": 0.25, "720p": 0.5, "1080p": 0.75, "2K": 0.85, "4K": 1 
 export default function VideoStudio() {
   /* ── Mode & model catalog ── */
   const [mode, setMode] = useState("ttv");
+  const isMobile = useIsMobile();
   const { models: allModels, loading } = useModelCatalog({ modelType: "video" });
   const filteredModels = useMemo(() => {
     if (!allModels?.length) return [];
@@ -354,17 +357,21 @@ export default function VideoStudio() {
         <span className="v6-field-label">
           Duration <span className="v6-muted">{duration}s</span>
         </span>
-        <div className="v6-chip-row">
-          {durations.map((d) => (
-            <button
-              key={d}
-              className={`v6-chip ${Number(duration) === Number(d) ? "v6-active" : ""}`}
-              onClick={() => setDuration(Number(d))}
-            >
-              {d}s
-            </button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={durations.map(d => ({ label: `${d}s`, value: Number(d) }))} selectedValue={Number(duration)} onSelect={(v) => setDuration(v)} />
+        ) : (
+          <div className="v6-chip-row">
+            {durations.map((d) => (
+              <button
+                key={d}
+                className={`v6-chip ${Number(duration) === Number(d) ? "v6-active" : ""}`}
+                onClick={() => setDuration(Number(d))}
+              >
+                {d}s
+              </button>
+            ))}
+          </div>
+        )}
         {/* Duration timeline visual */}
         <div className="v6-timeline-bar" style={{ marginTop: 6 }}>
           <span className="v6-timeline-label">0s</span>
@@ -387,33 +394,41 @@ export default function VideoStudio() {
         <span className="v6-field-label">
           Aspect Ratio <span className="v6-muted">{aspectRatio}</span>
         </span>
-        <div className="v6-chip-row">
-          {aspects.map((a) => (
-            <button
-              key={a}
-              className={`v6-chip ${aspectRatio === a ? "v6-active" : ""}`}
-              onClick={() => setAspectRatio(a)}
-            >
-              {a}
-            </button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={aspects.map(a => ({ label: a, value: a }))} selectedValue={aspectRatio} onSelect={setAspectRatio} />
+        ) : (
+          <div className="v6-chip-row">
+            {aspects.map((a) => (
+              <button
+                key={a}
+                className={`v6-chip ${aspectRatio === a ? "v6-active" : ""}`}
+                onClick={() => setAspectRatio(a)}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Resolution with visual bar ── */}
       <div className="v6-field">
         <span className="v6-field-label">Resolution</span>
-        <div className="v6-chip-row">
-          {resolutions.map((r) => (
-            <button
-              key={r}
-              className={`v6-chip ${String(resolution).toLowerCase() === String(r).toLowerCase() ? "v6-active" : ""}`}
-              onClick={() => setResolution(r)}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={resolutions.map(r => ({ label: r, value: String(r).toLowerCase() }))} selectedValue={String(resolution).toLowerCase()} onSelect={setResolution} />
+        ) : (
+          <div className="v6-chip-row">
+            {resolutions.map((r) => (
+              <button
+                key={r}
+                className={`v6-chip ${String(resolution).toLowerCase() === String(r).toLowerCase() ? "v6-active" : ""}`}
+                onClick={() => setResolution(r)}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="v6-resolution-bar" style={{ marginTop: 6 }}>
           <span className="v6-tiny v6-muted">SD</span>
           <div className="v6-timeline-track" style={{ flex: 1 }}>
@@ -426,23 +441,27 @@ export default function VideoStudio() {
       {/* ── Camera motion with animated preview ── */}
       <div className="v6-field">
         <span className="v6-field-label">Camera Motion</span>
-        <div className="v6-camera-motion-grid">
-          {CAMERA_MOTIONS.map((cm) => (
-            <button
-              key={cm.key}
-              className={`v6-camera-motion-chip${cameraMotion === cm.key ? " v6-active" : ""}`}
-              onClick={() => setCameraMotion(cm.key)}
-            >
-              <div className={`v6-camera-motion-icon v6-camera-${cm.key}`}>
-                <div className="v6-camera-inner" />
-              </div>
-              <div>
-                <span className="v6-motion-label">{cm.label}</span>
-                <span className="v6-motion-desc">{cm.desc}</span>
-              </div>
-            </button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={CAMERA_MOTIONS.map(cm => ({ label: cm.label, value: cm.key }))} selectedValue={cameraMotion} onSelect={setCameraMotion} />
+        ) : (
+          <div className="v6-camera-motion-grid">
+            {CAMERA_MOTIONS.map((cm) => (
+              <button
+                key={cm.key}
+                className={`v6-camera-motion-chip${cameraMotion === cm.key ? " v6-active" : ""}`}
+                onClick={() => setCameraMotion(cm.key)}
+              >
+                <div className={`v6-camera-motion-icon v6-camera-${cm.key}`}>
+                  <div className="v6-camera-inner" />
+                </div>
+                <div>
+                  <span className="v6-motion-label">{cm.label}</span>
+                  <span className="v6-motion-desc">{cm.desc}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Reference uploads ── */}
@@ -684,13 +703,17 @@ export default function VideoStudio() {
   /* ── Inspector sidebar ── */
   const inspector = (
     <>
-      <ModelSelector
-        models={filteredModels}
-        selectedModelId={selectedModelId}
-        onSelect={setSelectedModelId}
-        label="Video Model"
-        filterMode={mode}
-      />
+      {isMobile ? (
+        <MobileModelCarousel models={filteredModels} selectedModelId={selectedModelId} onSelect={setSelectedModelId} />
+      ) : (
+        <ModelSelector
+          models={filteredModels}
+          selectedModelId={selectedModelId}
+          onSelect={setSelectedModelId}
+          label="Video Model"
+          filterMode={mode}
+        />
+      )}
 
       <div className="v6-section-rule" style={{ margin: "14px 0" }} />
 

@@ -7,6 +7,8 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "./useModelCatalog";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconVideo = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>);
@@ -25,6 +27,7 @@ const EDIT_SUGGESTIONS = [
 ];
 
 export default function VideoEditStudio() {
+  const isMobile = useIsMobile();
   const { models: rawModels } = useModelCatalog({ modelType: "video" });
   const MODELS = useMemo(() => {
     const byId = new Map(); for (const m of rawModels) byId.set(m.id, m);
@@ -66,7 +69,11 @@ export default function VideoEditStudio() {
   /* ── Controls ── */
   const controls = (
     <div className="v6-control-stack">
-      <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Video Edit Models" />
+      {isMobile ? (
+        <MobileModelCarousel models={MODELS} selectedModelId={model} onSelect={setModel} />
+      ) : (
+        <ModelSelector models={MODELS} selectedModelId={model} onSelect={setModel} label="Video Edit Models" />
+      )}
 
       {/* Video upload */}
       <div className="v6-field">
@@ -91,14 +98,22 @@ export default function VideoEditStudio() {
       {supportsDuration && DURATIONS.length > 0 && (
         <div className="v6-field">
           <label className="v6-field-label">Duration</label>
-          <div className="v6-segmented">{DURATIONS.map((d) => (<button key={d} className={duration === d ? "v6-active" : ""} onClick={() => setDuration(d)}>{d}s</button>))}</div>
+          {isMobile ? (
+            <MobileChipScroller items={DURATIONS.map((d) => ({ label: `${d}s`, value: d }))} selectedValue={duration} onSelect={setDuration} />
+          ) : (
+            <div className="v6-segmented">{DURATIONS.map((d) => (<button key={d} className={duration === d ? "v6-active" : ""} onClick={() => setDuration(d)}>{d}s</button>))}</div>
+          )}
         </div>
       )}
 
       {/* Aspect ratio */}
       <div className="v6-field">
         <label className="v6-field-label">Aspect Ratio</label>
-        <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}</div>
+        {isMobile ? (
+          <MobileChipScroller items={ASPECTS.map((a) => ({ label: a, value: a }))} selectedValue={aspectRatio} onSelect={setAspectRatio} />
+        ) : (
+          <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}</div>
+        )}
       </div>
 
       {/* Edit suggestions */}

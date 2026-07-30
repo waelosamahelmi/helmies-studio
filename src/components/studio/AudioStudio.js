@@ -10,6 +10,8 @@ import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconMusic = () => (
@@ -118,6 +120,7 @@ export default function AudioStudio() {
 
   const { models: audioModels, loading: modelsLoading } = useModelCatalog({ modelType: "audio" });
   const { loading, result, error, elapsed, submit } = useAsyncGeneration();
+  const isMobile = useIsMobile();
 
   const subModels = useMemo(() => {
     switch (subMode) {
@@ -174,18 +177,22 @@ export default function AudioStudio() {
   const controls = (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
       {/* Sub-mode tabs */}
-      <div className="v6-segmented" style={{ marginBottom: 16 }}>
-        {SUB_MODES.map((sm) => {
-          const Icon = sm.icon; const active = subMode === sm.id;
-          return (
-            <button key={sm.id} className={`v6-segmented-tab${active ? " v6-active" : ""}`}
-              style={{ flex: 1, border: 0, background: active ? "var(--v6-surface)" : "transparent", padding: "9px 6px", borderRadius: 8, fontSize: 11, color: active ? "var(--v6-text)" : "var(--v6-muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}
-              onClick={() => setSubMode(sm.id)}>
-              <Icon /> {sm.label}
-            </button>
-          );
-        })}
-      </div>
+      {isMobile ? (
+        <MobileChipScroller items={SUB_MODES.map(sm => ({ label: sm.label, value: sm.id }))} selectedValue={subMode} onSelect={setSubMode} />
+      ) : (
+        <div className="v6-segmented" style={{ marginBottom: 16 }}>
+          {SUB_MODES.map((sm) => {
+            const Icon = sm.icon; const active = subMode === sm.id;
+            return (
+              <button key={sm.id} className={`v6-segmented-tab${active ? " v6-active" : ""}`}
+                style={{ flex: 1, border: 0, background: active ? "var(--v6-surface)" : "transparent", padding: "9px 6px", borderRadius: 8, fontSize: 11, color: active ? "var(--v6-text)" : "var(--v6-muted)", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}
+                onClick={() => setSubMode(sm.id)}>
+                <Icon /> {sm.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Music mode */}
       {subMode === "music" && (
@@ -198,18 +205,22 @@ export default function AudioStudio() {
                 <input className="v6-input" style={{ paddingLeft: 26 }} value={styleSearch} onChange={(e) => setStyleSearch(e.target.value)} placeholder="Filter styles..." />
               </div>
             </div>
-            <div className="v6-style-chip-grid">
-              {filteredStyles.map((s) => {
-                const active = style.toLowerCase().includes(s.toLowerCase());
-                const styleColors = { cinematic: "#c084fc", synthwave: "#f472b6", electronic: "#60a5fa", orchestral: "#fbbf24", ambient: "#65dca6", lofi: "#fb923c", "hip-hop": "#facc15", rock: "#ef4444", jazz: "#a78bfa", pop: "#f472b6", classical: "#94a3b8", trap: "#f87171", EDM: "#38bdf8" };
-                const dotColor = styleColors[s] || "var(--v6-accent)";
-                return (
-                  <button key={s} className={`v6-style-chip${active ? " v6-active" : ""}`} onClick={() => setStyle((prev) => { const parts = prev.split(",").map(p => p.trim()).filter(Boolean); const idx = parts.findIndex(p => p.toLowerCase() === s.toLowerCase()); if (idx >= 0) parts.splice(idx, 1); else parts.push(s); return parts.join(", "); })}>
-                    <span className="v6-style-dot" style={{ background: dotColor }} /> {s}
-                  </button>
-                );
-              })}
-            </div>
+            {isMobile ? (
+              <MobileChipScroller items={filteredStyles.map(s => ({ label: s, value: s }))} selectedValue={style} onSelect={setStyle} />
+            ) : (
+              <div className="v6-style-chip-grid">
+                {filteredStyles.map((s) => {
+                  const active = style.toLowerCase().includes(s.toLowerCase());
+                  const styleColors = { cinematic: "#c084fc", synthwave: "#f472b6", electronic: "#60a5fa", orchestral: "#fbbf24", ambient: "#65dca6", lofi: "#fb923c", "hip-hop": "#facc15", rock: "#ef4444", jazz: "#a78bfa", pop: "#f472b6", classical: "#94a3b8", trap: "#f87171", EDM: "#38bdf8" };
+                  const dotColor = styleColors[s] || "var(--v6-accent)";
+                  return (
+                    <button key={s} className={`v6-style-chip${active ? " v6-active" : ""}`} onClick={() => setStyle((prev) => { const parts = prev.split(",").map(p => p.trim()).filter(Boolean); const idx = parts.findIndex(p => p.toLowerCase() === s.toLowerCase()); if (idx >= 0) parts.splice(idx, 1); else parts.push(s); return parts.join(", "); })}>
+                      <span className="v6-style-dot" style={{ background: dotColor }} /> {s}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="v6-field"><label className="v6-field-label">Title</label><input className="v6-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Give your track a name" /></div>
@@ -242,20 +253,24 @@ export default function AudioStudio() {
           {currentModel.hasVoice && (
             <div className="v6-field">
               <label className="v6-field-label">Voice</label>
-              <div className="v6-voice-grid" style={{ marginTop: 6 }}>
-                {VOICES.map((v) => {
-                  const active = voice === v.id;
-                  return (
-                    <div key={v.id} className={`v6-voice-card${active ? " v6-active" : ""}`} onClick={() => setVoice(v.id)}>
-                      <button className="v6-voice-play" onClick={(e) => { e.stopPropagation(); }}><IconPlay /></button>
-                      <div>
-                        <div className="v6-voice-name">{v.name}</div>
-                        <div className="v6-voice-desc">{v.desc}</div>
+              {isMobile ? (
+                <MobileChipScroller items={VOICES.map(v => ({ label: `${v.name} \u2014 ${v.desc}`, value: v.id }))} selectedValue={voice} onSelect={setVoice} />
+              ) : (
+                <div className="v6-voice-grid" style={{ marginTop: 6 }}>
+                  {VOICES.map((v) => {
+                    const active = voice === v.id;
+                    return (
+                      <div key={v.id} className={`v6-voice-card${active ? " v6-active" : ""}`} onClick={() => setVoice(v.id)}>
+                        <button className="v6-voice-play" onClick={(e) => { e.stopPropagation(); }}><IconPlay /></button>
+                        <div>
+                          <div className="v6-voice-name">{v.name}</div>
+                          <div className="v6-voice-desc">{v.desc}</div>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -294,6 +309,17 @@ export default function AudioStudio() {
       {/* Duration slider */}
       {subMode !== "tools" && (
         <div className="v6-field">
+          {isMobile && (
+            <MobileChipScroller
+              items={[
+                { label: "15s", value: 15 }, { label: "30s", value: 30 }, { label: "45s", value: 45 },
+                { label: "60s", value: 60 }, { label: "90s", value: 90 }, { label: "120s", value: 120 },
+                { label: "180s", value: 180 }, { label: "300s", value: 300 },
+              ]}
+              selectedValue={duration}
+              onSelect={(v) => setDuration(v)}
+            />
+          )}
           <div className="v6-range-row">
             <span className="v6-muted" style={{ fontSize: 11 }}>Duration</span>
             <span className="v6-mono" style={{ fontSize: 11, fontWeight: 600 }}>{duration}s</span>
@@ -360,7 +386,11 @@ export default function AudioStudio() {
   /* ── Inspector ── */
   const inspector = (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      <ModelSelector models={subModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} label="Audio models" />
+      {isMobile ? (
+        <MobileModelCarousel models={subModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} />
+      ) : (
+        <ModelSelector models={subModels.map((m) => ({ id: m.id, displayName: m.name, provider: m.provider, speedTier: m.speedTier, credits: 0 }))} selectedModelId={selectedModelId} onSelect={setSelectedModelId} label="Audio models" />
+      )}
       {selectedModelId && (
         <div className="v6-quote" style={{ marginTop: 14 }}>
           <div className="v6-quote-row"><span className="v6-muted">Model</span><strong>{currentModel.name}</strong></div>

@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/client-fetch";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVG Icons ── */
 const IconSpark = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.4 7.2h7.6l-6 4.8 2.4 7.2-6.4-4.8-6.4 4.8 2.4-7.2-6-4.8h7.6z" /></svg>);
@@ -60,6 +62,8 @@ export default function OrchestratorStudio() {
   const [userScrolledUp, setUserScrolledUp] = useState(false);
   const [expandedPlans, setExpandedPlans] = useState({});
   const [hoveredMsgId, setHoveredMsgId] = useState(null);
+
+  const isMobile = useIsMobile();
 
   const listRef = useRef(null);
   const inputRef = useRef(null);
@@ -243,9 +247,17 @@ export default function OrchestratorStudio() {
                   <p style={{ fontSize: 12, color: "var(--v6-muted)", maxWidth: 340, margin: "0 auto 14px", lineHeight: 1.5 }}>Chat with me to plan and execute creative productions. I can generate images, video, audio, and more.</p>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center", maxWidth: 400 }}>
-                  {QUICK_ACTIONS.map((qa, i) => (
-                    <button key={i} className="v6-chip" onClick={() => { setInput(qa.prompt); inputRef.current?.focus(); }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px" }}><qa.icon width={12} /> {qa.label}</button>
-                  ))}
+                  {isMobile ? (
+                    <MobileChipScroller
+                      items={QUICK_ACTIONS.map(qa => ({ label: qa.label, value: qa.prompt }))}
+                      selectedValue={null}
+                      onSelect={(prompt) => { setInput(prompt); inputRef.current?.focus(); }}
+                    />
+                  ) : (
+                    QUICK_ACTIONS.map((qa, i) => (
+                      <button key={i} className="v6-chip" onClick={() => { setInput(qa.prompt); inputRef.current?.focus(); }} style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px" }}><qa.icon width={12} /> {qa.label}</button>
+                    ))
+                  )}
                 </div>
               </div>
             )}
@@ -260,12 +272,37 @@ export default function OrchestratorStudio() {
             </div>
           )}
 
+          {/* Plan steps inline (mobile) */}
+          {isMobile && plan && (mode === "plan" || mode === "execute") && (
+            <div style={{ padding: "0 18px 8px", maxHeight: 180, overflowY: "auto", borderTop: "1px solid var(--v6-line)", background: "var(--v6-surface)" }}>
+              <div className="v6-eyebrow" style={{ padding: "8px 0 6px" }}>Plan Steps</div>
+              {plan.summary && <p style={{ fontSize: 10, color: "var(--v6-muted)", margin: "0 0 8px", lineHeight: 1.4 }}>{plan.summary}</p>}
+              {plan.steps?.map((step, i) => (
+                <div key={i} style={{ padding: "6px 8px", borderRadius: 6, marginBottom: 4, border: "1px solid var(--v6-line)", background: "var(--v6-surface2)", borderLeft: `3px solid ${AGENT_COLORS[step.agent] || "var(--v6-line)"}`, fontSize: 10 }}>
+                  <span style={{ fontWeight: 700, color: AGENT_COLORS[step.agent] || "var(--v6-text)" }}>{i + 1}. {step.agent?.replace(/_/g, " ")}</span>
+                  <span style={{ display: "block", fontSize: 9, color: "var(--v6-muted)" }}>{step.task}</span>
+                </div>
+              ))}
+              {(mode === "plan" || mode === "execute") && plan && (
+                <button className="v6-btn v6-primary" onClick={handleExecutePlan} disabled={streaming} style={{ width: "100%", marginTop: 6, fontSize: 10, padding: "6px 10px" }}><IconPlay width={12} /> Execute Plan</button>
+              )}
+            </div>
+          )}
+
           {/* Input */}
           <div className="v6-chat-input-wrap">
             <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
-              {[{ id: "chat", label: "Chat", icon: <IconMessage width={12} /> }, { id: "plan", label: "Plan", icon: <IconPlan width={12} /> }, { id: "execute", label: "Execute", icon: <IconPlay width={12} /> }].map(m => (
-                <button key={m.id} className={`v6-btn ${mode === m.id ? "v6-primary" : ""}`} style={{ fontSize: 10, padding: "4px 10px" }} onClick={() => setMode(m.id)}>{m.icon} {m.label}</button>
-              ))}
+              {isMobile ? (
+                <MobileChipScroller
+                  items={[{ label: "Chat", value: "chat" }, { label: "Plan", value: "plan" }, { label: "Execute", value: "execute" }]}
+                  selectedValue={mode}
+                  onSelect={setMode}
+                />
+              ) : (
+                [{ id: "chat", label: "Chat", icon: <IconMessage width={12} /> }, { id: "plan", label: "Plan", icon: <IconPlan width={12} /> }, { id: "execute", label: "Execute", icon: <IconPlay width={12} /> }].map(m => (
+                  <button key={m.id} className={`v6-btn ${mode === m.id ? "v6-primary" : ""}`} style={{ fontSize: 10, padding: "4px 10px" }} onClick={() => setMode(m.id)}>{m.icon} {m.label}</button>
+                ))
+              )}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
               <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder={mode === "chat" ? "Describe what you want to create\u2026" : mode === "plan" ? "Describe your production for planning\u2026" : "Ready to execute the production plan?"} rows={2} disabled={streaming} style={{ flex: 1 }} />
@@ -277,8 +314,8 @@ export default function OrchestratorStudio() {
           </div>
         </div>
 
-        {/* Plan side panel */}
-        {mode === "plan" && plan && (
+        {/* Plan side panel (desktop) */}
+        {!isMobile && mode === "plan" && plan && (
           <div style={{ width: 240, borderLeft: "1px solid var(--v6-line)", padding: 14, overflowY: "auto", background: "var(--v6-surface)", flexShrink: 0 }}>
             <div className="v6-eyebrow" style={{ marginBottom: 12 }}>Plan Details</div>
             {plan.summary && <p style={{ fontSize: 11, color: "var(--v6-muted)", margin: "0 0 12px", lineHeight: 1.5 }}>{plan.summary}</p>}

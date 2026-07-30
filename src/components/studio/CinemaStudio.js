@@ -7,6 +7,8 @@ import { CINEMA_CAMERAS, CINEMA_LENS, CINEMA_FOCAL, CINEMA_APERTURE } from "@/li
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "./useModelCatalog";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconCamera = () => (
@@ -60,6 +62,7 @@ const CAMERA_PREVIEWS = {
 /* ══════════════════════════════════════════════════════════════ */
 export default function CinemaStudio() {
   const { models: imageModels } = useModelCatalog({ modelType: "image", capability: "text-to-image" });
+  const isMobile = useIsMobile();
 
   const [selectedModelId, setSelectedModelId] = useState("");
   const [camera, setCamera] = useState(CINEMA_CAMERAS[0]?.id || "");
@@ -110,32 +113,40 @@ export default function CinemaStudio() {
       {/* Camera cards */}
       <div className="v6-field">
         <div className="v6-field-label">Camera</div>
-        <div className="v6-camera-grid">
-          {CINEMA_CAMERAS.map((c) => {
-            const active = camera === c.id;
-            return (
-              <div key={c.id} className={`v6-camera-card${active ? " v6-active" : ""}`} onClick={() => setCamera(c.id)}>
-                <div className="v6-camera-card-preview" style={{ background: CAMERA_PREVIEWS[c.id] || "var(--v6-surface2)" }}>
-                  <IconCamera style={{ width: 20, height: 20, color: "rgba(255,255,255,0.5)" }} />
+        {isMobile ? (
+          <MobileChipScroller items={CINEMA_CAMERAS.map(c => ({ label: c.name, value: c.id }))} selectedValue={camera} onSelect={setCamera} />
+        ) : (
+          <div className="v6-camera-grid">
+            {CINEMA_CAMERAS.map((c) => {
+              const active = camera === c.id;
+              return (
+                <div key={c.id} className={`v6-camera-card${active ? " v6-active" : ""}`} onClick={() => setCamera(c.id)}>
+                  <div className="v6-camera-card-preview" style={{ background: CAMERA_PREVIEWS[c.id] || "var(--v6-surface2)" }}>
+                    <IconCamera style={{ width: 20, height: 20, color: "rgba(255,255,255,0.5)" }} />
+                  </div>
+                  <div className="v6-camera-card-body">
+                    {c.name}
+                    <span>{c.sensor || "Digital Cinema"}</span>
+                  </div>
                 </div>
-                <div className="v6-camera-card-body">
-                  {c.name}
-                  <span>{c.sensor || "Digital Cinema"}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Lens with focal bar */}
       <div className="v6-field">
         <div className="v6-field-label">Lens</div>
-        <div className="v6-chip-row" style={{ marginBottom: 8 }}>
-          {CINEMA_LENS.map((l) => (
-            <button key={l.id} className={`v6-chip${lens === l.id ? " v6-active" : ""}`} onClick={() => setLens(l.id)}>{l.name}</button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={CINEMA_LENS.map(l => ({ label: l.name, value: l.id }))} selectedValue={lens} onSelect={setLens} />
+        ) : (
+          <div className="v6-chip-row" style={{ marginBottom: 8 }}>
+            {CINEMA_LENS.map((l) => (
+              <button key={l.id} className={`v6-chip${lens === l.id ? " v6-active" : ""}`} onClick={() => setLens(l.id)}>{l.name}</button>
+            ))}
+          </div>
+        )}
         <div className="v6-focal-bar-wrap">
           <span className="v6-tiny" style={{ color: "var(--v6-accent)" }}>wide</span>
           <div className="v6-focal-bar">
@@ -148,31 +159,43 @@ export default function CinemaStudio() {
       {/* Focal length */}
       <div className="v6-field">
         <div className="v6-field-label">Focal Length</div>
-        <div className="v6-chip-row">
-          {CINEMA_FOCAL.map((f, i) => (
-            <button key={f.id} className={`v6-chip${focal === f.id ? " v6-active" : ""}`} onClick={() => setFocal(f.id)}>{f.name}</button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={CINEMA_FOCAL.map(f => ({ label: f.name, value: f.id }))} selectedValue={focal} onSelect={setFocal} />
+        ) : (
+          <div className="v6-chip-row">
+            {CINEMA_FOCAL.map((f, i) => (
+              <button key={f.id} className={`v6-chip${focal === f.id ? " v6-active" : ""}`} onClick={() => setFocal(f.id)}>{f.name}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Aperture */}
       <div className="v6-field">
         <div className="v6-field-label">Aperture</div>
-        <div className="v6-chip-row">
-          {CINEMA_APERTURE.map((a) => (
-            <button key={a.id} className={`v6-chip${aperture === a.id ? " v6-active" : ""}`} onClick={() => setAperture(a.id)}>{a.name}</button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={CINEMA_APERTURE.map(a => ({ label: a.name, value: a.id }))} selectedValue={aperture} onSelect={setAperture} />
+        ) : (
+          <div className="v6-chip-row">
+            {CINEMA_APERTURE.map((a) => (
+              <button key={a.id} className={`v6-chip${aperture === a.id ? " v6-active" : ""}`} onClick={() => setAperture(a.id)}>{a.name}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Aspect ratio */}
       <div className="v6-field">
         <div className="v6-field-label">Aspect Ratio</div>
-        <div className="v6-chip-row">
-          {ASPECTS.map((ar) => (
-            <button key={ar} className={`v6-chip${aspect === ar ? " v6-active" : ""}`} onClick={() => setAspect(ar)}>{ar}</button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={ASPECTS.map(ar => ({ label: ar, value: ar }))} selectedValue={aspect} onSelect={setAspect} />
+        ) : (
+          <div className="v6-chip-row">
+            {ASPECTS.map((ar) => (
+              <button key={ar} className={`v6-chip${aspect === ar ? " v6-active" : ""}`} onClick={() => setAspect(ar)}>{ar}</button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -210,7 +233,11 @@ export default function CinemaStudio() {
   /* ── Inspector ── */
   const inspector = (
     <div className="v6-control-stack">
-      <ModelSelector models={cinemaModels.map((m) => ({ ...m, displayName: m.displayName || m.name }))} selectedModelId={selectedModelId} onSelect={(id) => setSelectedModelId(id)} label="Choose cinema model" />
+      {isMobile ? (
+        <MobileModelCarousel models={cinemaModels.map((m) => ({ ...m, displayName: m.displayName || m.name }))} selectedModelId={selectedModelId} onSelect={(id) => setSelectedModelId(id)} />
+      ) : (
+        <ModelSelector models={cinemaModels.map((m) => ({ ...m, displayName: m.displayName || m.name }))} selectedModelId={selectedModelId} onSelect={(id) => setSelectedModelId(id)} label="Choose cinema model" />
+      )}
       <div className="v6-section-rule" />
 
       {/* Cost quote */}

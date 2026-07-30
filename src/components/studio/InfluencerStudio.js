@@ -11,6 +11,8 @@ import { INFLUENCER_TABS } from "@/lib/models";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "./useModelCatalog";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 const ASPECTS = ["1:1", "3:4", "4:3", "9:16", "16:9"];
 const SCENE_SUGGESTIONS = [
@@ -39,6 +41,7 @@ const DEFAULT_SETTINGS = INFLUENCER_TABS.reduce((acc, tab) => {
 }, {});
 
 export default function InfluencerStudio() {
+  const isMobile = useIsMobile();
   const [activeTab, setActiveTab] = useState(INFLUENCER_TABS[0]?.id);
   const [personaName, setPersonaName] = useState("");
   const [scenePrompt, setScenePrompt] = useState("");
@@ -94,16 +97,20 @@ export default function InfluencerStudio() {
       {/* Persona tabs with icons */}
       <div className="v6-field">
         <span className="v6-field-label">Persona</span>
-        <div className="v6-segmented">
-          {INFLUENCER_TABS.map((t) => (
-            <button key={t.id} className={activeTab === t.id ? "v6-active" : ""} onClick={() => setActiveTab(t.id)}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-                <path d={TAB_ICONS[t.id] || "M12 2l3.09 6.26L22 9.27l-5 4.14 1.18 6.88L12 17.77l-6.18 3.42L7 14.14 2 9.27l6.91-1.01L12 2z"} />
-              </svg>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller items={INFLUENCER_TABS.map((t) => ({ label: t.label, value: t.id }))} selectedValue={activeTab} onSelect={setActiveTab} />
+        ) : (
+          <div className="v6-segmented">
+            {INFLUENCER_TABS.map((t) => (
+              <button key={t.id} className={activeTab === t.id ? "v6-active" : ""} onClick={() => setActiveTab(t.id)}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                  <path d={TAB_ICONS[t.id] || "M12 2l3.09 6.26L22 9.27l-5 4.14 1.18 6.88L12 17.77l-6.18 3.42L7 14.14 2 9.27l6.91-1.01L12 2z"} />
+                </svg>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Chip selectors per active tab with colored headers */}
@@ -115,13 +122,17 @@ export default function InfluencerStudio() {
               <span style={{ width: 4, height: 4, borderRadius: "50%", background: accentColor, flexShrink: 0 }} />
               <span className="v6-field-label" style={{ marginBottom: 0, color: accentColor }}>{cat.label}</span>
             </div>
-            <div className="v6-chip-row">
-              {cat.options.map((o) => (
-                <button key={o.id} className={`v6-chip${settings[`influencer_${cat.id}`] === o.id ? " v6-active" : ""}`} onClick={() => setSettings((s) => ({ ...s, [`influencer_${cat.id}`]: o.id }))} style={settings[`influencer_${cat.id}`] === o.id ? { borderColor: accentColor, color: accentColor, background: `${accentColor}15` } : {}}>
-                  {o.label}
-                </button>
-              ))}
-            </div>
+            {isMobile ? (
+              <MobileChipScroller items={cat.options.map((o) => ({ label: o.label, value: o.id }))} selectedValue={settings[`influencer_${cat.id}`]} onSelect={(val) => setSettings((s) => ({ ...s, [`influencer_${cat.id}`]: val }))} />
+            ) : (
+              <div className="v6-chip-row">
+                {cat.options.map((o) => (
+                  <button key={o.id} className={`v6-chip${settings[`influencer_${cat.id}`] === o.id ? " v6-active" : ""}`} onClick={() => setSettings((s) => ({ ...s, [`influencer_${cat.id}`]: o.id }))} style={settings[`influencer_${cat.id}`] === o.id ? { borderColor: accentColor, color: accentColor, background: `${accentColor}15` } : {}}>
+                    {o.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
@@ -129,7 +140,11 @@ export default function InfluencerStudio() {
       {/* Aspect ratio */}
       <div className="v6-field">
         <span className="v6-field-label">Aspect Ratio</span>
-        <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}</div>
+        {isMobile ? (
+          <MobileChipScroller items={ASPECTS.map((a) => ({ label: a, value: a }))} selectedValue={aspectRatio} onSelect={setAspectRatio} />
+        ) : (
+          <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}</div>
+        )}
       </div>
 
       {/* Scene prompt */}
@@ -152,7 +167,11 @@ export default function InfluencerStudio() {
   /* ── Inspector ── */
   const inspector = (
     <>
-      <ModelSelector models={imageModels.slice(0, 12)} selectedModelId={selectedModelId} onSelect={setSelectedModelId} label="Image Model" />
+      {isMobile ? (
+        <MobileModelCarousel models={imageModels.slice(0, 12)} selectedModelId={selectedModelId} onSelect={setSelectedModelId} />
+      ) : (
+        <ModelSelector models={imageModels.slice(0, 12)} selectedModelId={selectedModelId} onSelect={setSelectedModelId} label="Image Model" />
+      )}
       <div className="v6-section-rule" style={{ margin: "14px 0" }} />
       <div className="v6-eyebrow">Cost</div>
       <div className="v6-quote" style={{ marginTop: 8 }}>

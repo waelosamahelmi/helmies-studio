@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
 import toast from "react-hot-toast";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -39,6 +41,7 @@ const iconPaths = {
 };
 
 export default function AssetLibraryStudio() {
+  const isMobile = useIsMobile();
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState("all");
@@ -143,6 +146,9 @@ export default function AssetLibraryStudio() {
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {/* View toggle */}
+          {isMobile ? (
+            <MobileChipScroller items={[{ label: "Grid", value: "grid" }, { label: "List", value: "list" }]} selectedValue={viewMode} onSelect={setViewMode} />
+          ) : (
           <div style={{ display: "flex", borderRadius: 9, border: "1px solid var(--v6-line)", overflow: "hidden" }}>
             <button
               onClick={() => setViewMode("grid")}
@@ -165,6 +171,7 @@ export default function AssetLibraryStudio() {
               <SvgIcon d={iconPaths.list} size={14} />
             </button>
           </div>
+          )}
           <button
             className="v6-btn v6-primary"
             onClick={() => toast.success("Import dialog coming soon")}
@@ -177,6 +184,22 @@ export default function AssetLibraryStudio() {
 
       {/* Filter Chips + Search */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 18, flexWrap: "wrap" }}>
+        {isMobile ? (
+          <MobileChipScroller
+            items={[
+              { label: "All", value: "all" },
+              { label: "Images", value: "images" },
+              { label: "Video", value: "videos" },
+              { label: "Audio", value: "audio" },
+              { label: "Favorites", value: "favorites" },
+            ]}
+            selectedValue={favoriteFilter ? "favorites" : (typeFilter === "all" ? "all" : typeFilter === "image" ? "images" : typeFilter === "video" ? "videos" : typeFilter === "audio" ? "audio" : "all")}
+            onSelect={(val) => {
+              if (val === "favorites") { setFavoriteFilter(true); setTypeFilter("all"); }
+              else { setFavoriteFilter(false); setTypeFilter(val === "images" ? "image" : val === "videos" ? "video" : val === "audio" ? "audio" : "all"); }
+            }}
+          />
+        ) : (
         <div className="v6-chip-row">
           <button
             onClick={() => setTypeFilter("all")}
@@ -221,6 +244,7 @@ export default function AssetLibraryStudio() {
             <SvgIcon d={iconPaths.star} size={12} /> Favorites
           </button>
         </div>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--v6-line)", borderRadius: 99, padding: "7px 12px", background: "var(--v6-surface2)", maxWidth: 260, flex: 1 }}>
           <SvgIcon d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16z M21 21l-4.3-4.3" size={14} />
           <input

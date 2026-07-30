@@ -8,6 +8,8 @@ import StageArea from "./v6/StageArea";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVGs ── */
 const IconFilm = () => (<svg className="v6-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" /><path d="M7 2v20M17 2v20M2 12h20M2 7h5M2 17h5M17 17h5M17 7h5" /></svg>);
@@ -38,6 +40,8 @@ export default function MotionStudio() {
   const [genStage, setGenStage] = useState("");
   const [pasteDetected, setPasteDetected] = useState(false);
 
+  const isMobile = useIsMobile();
+
   const { loading: generating, result, error, elapsed, submit } = useAsyncGeneration();
   const { models: motionModels } = useModelCatalog({ modelType: "video" });
   const motionModelId = useMemo(() => { const found = motionModels.find((m) => m.displayName?.toLowerCase().includes("motion")) || motionModels[0]; return found?.id || ""; }, [motionModels]);
@@ -65,15 +69,23 @@ export default function MotionStudio() {
       {/* Mode toggle cards */}
       <div className="v6-field">
         <span className="v6-field-label">Mode</span>
-        <div className="v6-mode-grid">
-          {[{ key: "generate", icon: IconSpark, name: "Generate", desc: "Create new motion graphics from a prompt" }, { key: "edit", icon: IconEdit, name: "Edit", desc: "Refine a previous motion generation" }].map((m) => (
-            <div key={m.key} className={`v6-mode-card${subMode === m.key ? " v6-active" : ""}`} onClick={() => setSubMode(m.key)}>
-              <div className="v6-mode-icon"><m.icon /></div>
-              <span className="v6-mode-name">{m.name}</span>
-              <span className="v6-mode-desc">{m.desc}</span>
-            </div>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller
+            items={[{ label: "Generate", value: "generate" }, { label: "Edit", value: "edit" }]}
+            selectedValue={subMode}
+            onSelect={setSubMode}
+          />
+        ) : (
+          <div className="v6-mode-grid">
+            {[{ key: "generate", icon: IconSpark, name: "Generate", desc: "Create new motion graphics from a prompt" }, { key: "edit", icon: IconEdit, name: "Edit", desc: "Refine a previous motion generation" }].map((m) => (
+              <div key={m.key} className={`v6-mode-card${subMode === m.key ? " v6-active" : ""}`} onClick={() => setSubMode(m.key)}>
+                <div className="v6-mode-icon"><m.icon /></div>
+                <span className="v6-mode-name">{m.name}</span>
+                <span className="v6-mode-desc">{m.desc}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Duration timeline (generate only) */}
@@ -83,14 +95,30 @@ export default function MotionStudio() {
           <div className="v6-timeline-bar">
             <div className="v6-timeline-track"><div className="v6-timeline-fill" style={{ width: `${(duration / 15) * 100}%` }} /></div>
           </div>
-          <div className="v6-chip-row" style={{ marginTop: 8 }}>{DURATIONS.map((d) => (<button key={d} className={`v6-chip${duration === d ? " v6-active" : ""}`} onClick={() => setDuration(d)}>{d}s</button>))}</div>
+          {isMobile ? (
+            <MobileChipScroller
+              items={DURATIONS.map(d => ({ label: `${d}s`, value: d }))}
+              selectedValue={duration}
+              onSelect={setDuration}
+            />
+          ) : (
+            <div className="v6-chip-row" style={{ marginTop: 8 }}>{DURATIONS.map((d) => (<button key={d} className={`v6-chip${duration === d ? " v6-active" : ""}`} onClick={() => setDuration(d)}>{d}s</button>))}</div>
+          )}
         </div>
       )}
 
       {/* Aspect ratio */}
       <div className="v6-field">
         <span className="v6-field-label">Aspect Ratio <span className="v6-muted">{aspectRatio}</span></span>
-        <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}</div>
+        {isMobile ? (
+          <MobileChipScroller
+            items={ASPECTS.map(a => ({ label: a, value: a }))}
+            selectedValue={aspectRatio}
+            onSelect={setAspectRatio}
+          />
+        ) : (
+          <div className="v6-chip-row">{ASPECTS.map((a) => (<button key={a} className={`v6-chip${aspectRatio === a ? " v6-active" : ""}`} onClick={() => setAspectRatio(a)}>{a}</button>))}</div>
+        )}
       </div>
 
       {/* Request ID (edit only) */}

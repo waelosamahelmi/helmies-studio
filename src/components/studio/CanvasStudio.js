@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import PromptDock from "./v6/PromptDock";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileModelCarousel, MobileChipScroller } from "@/components/studio/mobile";
 
 /* ═══════════════════════════════════════════════════════════
    CONSTANTS
@@ -118,6 +120,7 @@ export default function CanvasStudio() {
   const [selectedModelId, setSelectedModelId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
+  const isMobile = useIsMobile();
   const { models: canvasModels } = useModelCatalog({ modelType: "image" });
   useEffect(() => { if (canvasModels.length > 0 && !selectedModelId) setSelectedModelId(canvasModels[0].id); }, [canvasModels, selectedModelId]);
   const { loading: generationLoading, result: genResult, error: genError, elapsed, submit } = useAsyncGeneration();
@@ -734,20 +737,28 @@ export default function CanvasStudio() {
     <div className="v6-canvas-board">
       {/* ═══ TOOLS PALETTE (left) ═══ */}
       <div className="v6-canvas-tools">
-        {TOOLS.map(tool => {
-          const Icon = toolIcons[tool.id];
-          return (
-            <button
-              key={tool.id}
-              className={`v6-tooltip ${activeTool === tool.id ? "v6-active" : ""}`}
-              onClick={() => setActiveTool(tool.id)}
-              data-tooltip={`${tool.label} (${tool.shortcut})`}
-              style={activeTool === tool.id ? { boxShadow: "0 0 16px var(--v6-accent)44" } : {}}
-            >
-              {Icon ? <Icon /> : null}
-            </button>
-          );
-        })}
+        {isMobile ? (
+          <MobileChipScroller
+            items={TOOLS.map(t => ({ label: t.label, value: t.id }))}
+            selectedValue={activeTool}
+            onSelect={setActiveTool}
+          />
+        ) : (
+          TOOLS.map(tool => {
+            const Icon = toolIcons[tool.id];
+            return (
+              <button
+                key={tool.id}
+                className={`v6-tooltip ${activeTool === tool.id ? "v6-active" : ""}`}
+                onClick={() => setActiveTool(tool.id)}
+                data-tooltip={`${tool.label} (${tool.shortcut})`}
+                style={activeTool === tool.id ? { boxShadow: "0 0 16px var(--v6-accent)44" } : {}}
+              >
+                {Icon ? <Icon /> : null}
+              </button>
+            );
+          })
+        )}
         <div className="v6-section-rule" style={{ width: "60%", margin: "4px auto" }} />
         <button className={`v6-tooltip ${!canUndo ? "v6-disabled" : ""}`} onClick={handleUndo} data-tooltip="Undo (Ctrl+Z)" disabled={!canUndo}><IconUndo /></button>
         <button className={`v6-tooltip ${!canRedo ? "v6-disabled" : ""}`} onClick={handleRedo} data-tooltip="Redo (Ctrl+Shift+Z)" disabled={!canRedo}><IconRedo /></button>
@@ -952,26 +963,39 @@ export default function CanvasStudio() {
         {/* Bottom bar — zoom + prompt */}
         <div style={{ padding: "6px 12px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
           {/* Zoom + Fit + Canvas size */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
-            <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.max(25, z - 25))} disabled={zoom <= 25}><IconZoomOut /></button>
-            <input type="range" min="25" max="400" step="5" value={zoom} onChange={e => setZoom(Number(e.target.value))} style={{ width: 100, accentColor: "var(--v6-accent)", height: 4, cursor: "pointer" }} />
-            <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.min(400, z + 25))} disabled={zoom >= 400}><IconZoomIn /></button>
-            <span className="v6-tiny v6-mono" style={{ minWidth: 36, textAlign: "center", color: "var(--v6-muted)" }}>{zoom}%</span>
-            <button className="v6-btn v6-icon-only v6-sm v6-tooltip" onClick={fitToScreen} data-tooltip="Fit to screen"><IconFit /></button>
-            <div style={{ width: 1, height: 16, background: "var(--v6-line)", margin: "0 4px" }} />
-            <input type="number" value={canvasWidth} onChange={e => { pushUndo(); setCanvasWidth(Number(e.target.value) || 1); }} min={1} max={8000} style={{ width: 52, fontSize: 10, padding: "4px 6px", border: "1px solid var(--v6-line)", borderRadius: 6, background: "var(--v6-surface2)", color: "var(--v6-text)", textAlign: "center", fontFamily: "var(--v6-mono)" }} />
-            <span className="v6-tiny v6-muted">&times;</span>
-            <input type="number" value={canvasHeight} onChange={e => { pushUndo(); setCanvasHeight(Number(e.target.value) || 1); }} min={1} max={8000} style={{ width: 52, fontSize: 10, padding: "4px 6px", border: "1px solid var(--v6-line)", borderRadius: 6, background: "var(--v6-surface2)", color: "var(--v6-text)", textAlign: "center", fontFamily: "var(--v6-mono)" }} />
-            <span className="v6-tiny v6-muted">px</span>
-          </div>
+          {isMobile ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
+              <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.max(25, z - 25))} disabled={zoom <= 25}><IconZoomOut /></button>
+              <span className="v6-tiny v6-mono" style={{ minWidth: 36, textAlign: "center", color: "var(--v6-muted)" }}>{zoom}%</span>
+              <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.min(400, z + 25))} disabled={zoom >= 400}><IconZoomIn /></button>
+              <button className="v6-btn v6-icon-only v6-sm v6-tooltip" onClick={fitToScreen} data-tooltip="Fit to screen"><IconFit /></button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}>
+              <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.max(25, z - 25))} disabled={zoom <= 25}><IconZoomOut /></button>
+              <input type="range" min="25" max="400" step="5" value={zoom} onChange={e => setZoom(Number(e.target.value))} style={{ width: 100, accentColor: "var(--v6-accent)", height: 4, cursor: "pointer" }} />
+              <button className="v6-btn v6-icon-only v6-sm" onClick={() => setZoom(z => Math.min(400, z + 25))} disabled={zoom >= 400}><IconZoomIn /></button>
+              <span className="v6-tiny v6-mono" style={{ minWidth: 36, textAlign: "center", color: "var(--v6-muted)" }}>{zoom}%</span>
+              <button className="v6-btn v6-icon-only v6-sm v6-tooltip" onClick={fitToScreen} data-tooltip="Fit to screen"><IconFit /></button>
+              <div style={{ width: 1, height: 16, background: "var(--v6-line)", margin: "0 4px" }} />
+              <input type="number" value={canvasWidth} onChange={e => { pushUndo(); setCanvasWidth(Number(e.target.value) || 1); }} min={1} max={8000} style={{ width: 52, fontSize: 10, padding: "4px 6px", border: "1px solid var(--v6-line)", borderRadius: 6, background: "var(--v6-surface2)", color: "var(--v6-text)", textAlign: "center", fontFamily: "var(--v6-mono)" }} />
+              <span className="v6-tiny v6-muted">&times;</span>
+              <input type="number" value={canvasHeight} onChange={e => { pushUndo(); setCanvasHeight(Number(e.target.value) || 1); }} min={1} max={8000} style={{ width: 52, fontSize: 10, padding: "4px 6px", border: "1px solid var(--v6-line)", borderRadius: 6, background: "var(--v6-surface2)", color: "var(--v6-text)", textAlign: "center", fontFamily: "var(--v6-mono)" }} />
+              <span className="v6-tiny v6-muted">px</span>
+            </div>
+          )}
 
           {/* Prompt dock for generation */}
           <div style={{ maxWidth: 640, margin: "0 auto", width: "100%" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <span className="v6-eyebrow" style={{ flexShrink: 0 }}>Model</span>
-              <select className="v6-input" value={selectedModelId} onChange={e => setSelectedModelId(e.target.value)} style={{ flex: 1, fontSize: 11, padding: "6px 8px" }}>
-                {canvasModels.map(m => <option key={m.id} value={m.id}>{m.name} &mdash; {m.provider}</option>)}
-              </select>
+              {isMobile ? (
+                <MobileModelCarousel models={canvasModels} selectedModelId={selectedModelId} onSelect={setSelectedModelId} />
+              ) : (
+                <select className="v6-input" value={selectedModelId} onChange={e => setSelectedModelId(e.target.value)} style={{ flex: 1, fontSize: 11, padding: "6px 8px" }}>
+                  {canvasModels.map(m => <option key={m.id} value={m.id}>{m.name} &mdash; {m.provider}</option>)}
+                </select>
+              )}
             </div>
             <PromptDock value={prompt} onChange={setPrompt} onSubmit={generating ? () => {} : handleGenerate} generating={generating} stage={generating ? "compositing" : null} cost={currentModel?.speedTier === "premium" ? "8c" : "4c"} />
             {genResult?.url && !generating && (

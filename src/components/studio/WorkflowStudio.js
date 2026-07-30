@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { apiFetch } from "@/lib/client-fetch";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 /* ── Inline SVG Icons (v6 style: 24×24, strokeWidth 1.7) ── */
 const IconPrompt = () => (
@@ -166,6 +168,7 @@ export default function WorkflowStudio() {
   const [connectingFrom, setConnectingFrom] = useState(null);
 
   const { models: imageModels } = useModelCatalog({ modelType: "image" });
+  const isMobile = useIsMobile();
   const [draggingNodeId, setDraggingNodeId] = useState(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const canvasRef = useRef(null);
@@ -288,17 +291,25 @@ export default function WorkflowStudio() {
       {/* ── Left: Step Palette + saved ── */}
       <div className="v6-builder-panel">
         <div className="v6-eyebrow" style={{ marginBottom: 8 }}>Step Palette</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          {STEP_TYPES.map((st) => (
-            <button key={st.id} className="v6-btn ghost" onClick={() => addStep(st.id)} style={{ justifyContent: "flex-start", gap: 9, width: "100%", borderColor: `${st.color}30`, padding: "8px 10px", textAlign: "left" }}>
-              <span style={{ color: st.color, display: "flex", flexShrink: 0 }}><st.icon /></span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 10, fontWeight: 700 }}>{st.label}</div>
-                <div style={{ fontSize: 8, color: "var(--v6-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{st.desc}</div>
-              </div>
-            </button>
-          ))}
-        </div>
+        {isMobile ? (
+          <MobileChipScroller
+            items={STEP_TYPES.map(st => ({ label: st.label, value: st.id }))}
+            selectedValue={null}
+            onSelect={(id) => addStep(id)}
+          />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {STEP_TYPES.map((st) => (
+              <button key={st.id} className="v6-btn ghost" onClick={() => addStep(st.id)} style={{ justifyContent: "flex-start", gap: 9, width: "100%", borderColor: `${st.color}30`, padding: "8px 10px", textAlign: "left" }}>
+                <span style={{ color: st.color, display: "flex", flexShrink: 0 }}><st.icon /></span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700 }}>{st.label}</div>
+                  <div style={{ fontSize: 8, color: "var(--v6-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{st.desc}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
         <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--v6-line)" }}>
           <div className="v6-eyebrow" style={{ marginBottom: 8 }}>Your Workflows</div>
           {workflows.map(wf => (
@@ -332,11 +343,11 @@ export default function WorkflowStudio() {
         {/* Toolbar */}
         <div className="v6-workflow-toolbar">
           <input className="v6-input" value={workspaceName} onChange={e => setWorkspaceName(e.target.value)} placeholder="Workflow name..." style={{ flex: 1, fontSize: 13, fontWeight: 600, background: "transparent", border: "1px solid var(--v6-line)", padding: "6px 10px", borderRadius: 7 }} />
-          <button onClick={executeWorkflow} disabled={executing || !currentWorkflow?.id}><IconRun /> {executing ? "Running..." : "Run"}</button>
-          <button onClick={saveWorkflow} disabled={!workspaceName || steps.length === 0}><IconSave /> Save</button>
-          <button onClick={handleExportJSON} title="Export JSON"><IconUpload /> Export</button>
-          <button onClick={handleImportJSON} title="Import JSON"><IconTemplate /> Import</button>
-          <button onClick={publishWorkflow} disabled={!currentWorkflow?.id}><IconPublish /> Publish</button>
+          <button onClick={executeWorkflow} disabled={executing || !currentWorkflow?.id}><IconRun /> {!isMobile && (executing ? "Running..." : "Run")}</button>
+          <button onClick={saveWorkflow} disabled={!workspaceName || steps.length === 0}><IconSave /> {!isMobile && "Save"}</button>
+          <button onClick={handleExportJSON} title="Export JSON"><IconUpload /> {!isMobile && "Export"}</button>
+          <button onClick={handleImportJSON} title="Import JSON"><IconTemplate /> {!isMobile && "Import"}</button>
+          <button onClick={publishWorkflow} disabled={!currentWorkflow?.id}><IconPublish /> {!isMobile && "Publish"}</button>
           <input ref={fileInputRef} type="file" accept=".json" hidden onChange={handleFileImport} />
         </div>
         {/* Node canvas */}

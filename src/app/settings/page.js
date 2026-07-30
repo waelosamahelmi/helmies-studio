@@ -8,6 +8,8 @@ import CreditTickDown from "@/components/CreditTickDown";
 import { IconBolt, IconArrowUpRight } from "@/components/Icons";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
 import toast from "react-hot-toast";
+import { useIsMobile } from "@/lib/use-media-query";
+import { MobileChipScroller } from "@/components/studio/mobile";
 
 const EASE = [0.32, 0.72, 0, 1];
 
@@ -56,6 +58,7 @@ const TABS = [
 ];
 
 export default function SettingsPage() {
+  const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const router = useRouter();
   const tabParam = searchParams.get("tab");
@@ -211,6 +214,15 @@ export default function SettingsPage() {
         {/* Settings Grid */}
         <div className="v6-settings-grid">
           {/* Nav */}
+          {isMobile ? (
+            <div style={{ marginBottom: 16 }}>
+              <MobileChipScroller
+                items={TABS.map((t) => ({ label: t.label, value: t.id }))}
+                selectedValue={activeTab}
+                onSelect={switchTab}
+              />
+            </div>
+          ) : (
           <nav className="v6-settings-nav" style={{ position: "relative" }}>
             {TABS.map((tab) => {
               const isActive = activeTab === tab.id;
@@ -231,6 +243,7 @@ export default function SettingsPage() {
               );
             })}
           </nav>
+          )}
 
           {/* Form Content */}
           <motion.div
@@ -380,14 +393,22 @@ export default function SettingsPage() {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                           <div>
                             <strong style={{ fontSize: 12 }}>{k.name}</strong>
-                            <div className="v6-mono v6-tiny v6-muted" style={{ marginTop: 2 }}>
-                              {k.keyPrefix || "••••••••"}****************
-                            </div>
+                            {!isMobile && (
+                              <div className="v6-mono v6-tiny v6-muted" style={{ marginTop: 2 }}>
+                                {k.keyPrefix || "••••••••"}****************
+                              </div>
+                            )}
                           </div>
                           <span className={`v6-chip ${k.isActive ? "" : "v6-disabled"}`} style={{ fontSize: 9, padding: "2px 7px", background: k.isActive ? "var(--v6-good)" : undefined, color: k.isActive ? "var(--v6-bg)" : undefined, borderColor: k.isActive ? "var(--v6-good)" : undefined }}>
                             {k.isActive ? "Active" : "Revoked"}
                           </span>
                         </div>
+                        {isMobile ? (
+                          <div style={{ display: "flex", justifyContent: "flex-start", gap: 6 }}>
+                            <button className="v6-btn v6-sm" onClick={() => { navigator.clipboard.writeText(k.keyPrefix || ""); toast.success("Prefix copied"); }} disabled={!k.keyPrefix}>Copy</button>
+                            <button className="v6-btn v6-sm" onClick={() => deleteKey(k.id)} style={{ color: "var(--v6-bad)", borderColor: "var(--v6-bad)" }}>Revoke</button>
+                          </div>
+                        ) : (
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                           <span className="v6-tiny v6-muted">
                             Created {new Date(k.createdAt).toLocaleDateString()}
@@ -398,6 +419,7 @@ export default function SettingsPage() {
                             <button className="v6-btn v6-sm" onClick={() => deleteKey(k.id)} style={{ color: "var(--v6-bad)", borderColor: "var(--v6-bad)" }}>Revoke</button>
                           </div>
                         </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -655,7 +677,7 @@ export default function SettingsPage() {
                         <tr>
                           <th>Date</th>
                           <th>Type</th>
-                          <th>Description</th>
+                          {!isMobile && <th>Description</th>}
                           <th>Amount</th>
                           <th>Balance</th>
                         </tr>
@@ -678,7 +700,7 @@ export default function SettingsPage() {
                                   {(entry.type || "transaction").slice(0, 12)}
                                 </span>
                               </td>
-                              <td>{entry.description || "—"}</td>
+                              {!isMobile && <td>{entry.description || "—"}</td>}
                               <td style={{ color: entry.amount > 0 ? "var(--v6-good)" : "var(--v6-bad)", fontWeight: 600 }}>
                                 {entry.amount > 0 ? "+" : ""}{entry.amount || 0}
                               </td>
@@ -688,7 +710,7 @@ export default function SettingsPage() {
                         })}
                         {(!credits?.ledger || credits.ledger.length === 0) && (
                           <tr>
-                            <td colSpan="5" style={{ textAlign: "center", color: "var(--v6-muted)", padding: 24 }}>
+                            <td colSpan={isMobile ? 4 : 5} style={{ textAlign: "center", color: "var(--v6-muted)", padding: 24 }}>
                               No activity yet. Generate or purchase credits to see your history.
                             </td>
                           </tr>
