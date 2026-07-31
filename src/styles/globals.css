@@ -1,4 +1,14 @@
-@import "tailwindcss";
+/* ══════════════════════════════════════════════════════════════════════════
+   LANDING PAGE STYLES (original)
+   ──────────────────────────────────────────────────────────────────────────
+   Kept as-is for the marketing landing page, which was already how it should
+   be. Imported from src/app/page.js rather than the root layout, so it loads
+   only on "/" and does not restyle the studio.
+
+   `@import "tailwindcss"` was removed — system.css (loaded by the root
+   layout) already pulls Tailwind in, and importing it twice duplicates the
+   whole utility sheet.
+   ══════════════════════════════════════════════════════════════════════════ */
 
 @theme {
   /* Premium fonts only — Inter/Roboto/Arial/Helvetica BANNED per skill §2 */

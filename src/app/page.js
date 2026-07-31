@@ -1,290 +1,458 @@
+"use client";
+
+// Landing-only styles. Loaded here (not in the root layout) so the original
+// marketing look applies to "/" without restyling the studio.
+import "@/styles/globals.css";
+
+import { useRef, useEffect, useState } from "react";
 import Link from "next/link";
+
 import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { getCatalogModels } from "@/lib/model-catalog";
-import { TOOLS } from "@/components/studio/kit/tools";
-import { IcBolt, IcCheck, IcChevronRight } from "@/components/studio/kit/Icons";
+import HeroTitle from "@/components/landing/HeroTitle";
+import StrokeTitle from "@/components/landing/StrokeTitle";
+import ReelSlider from "@/components/landing/ReelSlider";
+import YouTubeEmbed from "@/components/landing/YouTubeEmbed";
+import LogoTicker from "@/components/landing/LogoTicker";
+import {
+  IconArrowUpRight, IconArrowRight, IconCheck, IconMail,
+} from "@/components/Icons";
+import { useIsMobile } from "@/lib/use-media-query";
 
-export const revalidate = 900;
-
-export const metadata = {
-  title: "Helmies Studio — one desk for generated image, video and sound",
-  description:
-    "A production desk with 70+ generation models on one catalog and one credit balance. Image, video, lip-sync, music and multi-shot direction, with the cost of every render shown before you spend it.",
-  alternates: { canonical: "https://studio.helmies.fi" },
-};
-
-/* The catalog is the honest headline — real models at real prices. If the
-   database is unreachable the page still renders; the board just says so. */
-async function loadCatalog() {
-  try {
-    const models = await getCatalogModels({});
-    return (models || [])
-      .filter((m) => m.displayName && !m.isDeprecated)
-      .sort((a, b) => (b.credits ?? 0) - (a.credits ?? 0));
-  } catch {
-    return [];
-  }
-}
-
-const SHOWCASE = [
+const HEADSHOTS = [
   "/assets/warrior_girl_e29532086b-40.webp",
   "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.webp",
   "/assets/photo-1506905925346-21bda4d32df4-6.webp",
-  "/assets/J6-BrUzggQUXdbktr9GcH_ZYLM1F22-13.webp",
-  "/assets/photo-1620121692029-d088224ddc74-11.webp",
-  "/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.webp",
-  "/assets/photo-1551434678-e076c223a692-10.webp",
   "/assets/photo-1547036967-23d11aacaee0-7.webp",
+  "/assets/260118_RecursiveIdentities_bright_1024px-768x768-15.webp",
+  "/assets/J6-BrUzggQUXdbktr9GcH_ZYLM1F22-13.webp",
+  "/assets/d7f593c3-3bff-421a-88e7-8ff612fa314b-B4E9QSSceGpBz3t8BFFNDQ-output_ff-16.webp",
+  "/assets/photo-1551434678-e076c223a692-10.webp",
 ];
 
-const CREDIT_FACTS = [
+const PRICING_MONTHLY = [
+  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
+  { name: "Starter", price: "€24", period: "/mo", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
+  { name: "Studio", price: "€49", period: "/mo", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
+  { name: "Pro", price: "€99", period: "/mo", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
+];
+
+const PRICING_YEARLY = [
+  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
+  { name: "Starter", price: "€19", period: "/mo", billed: "Billed €228/yr", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
+  { name: "Studio", price: "€39", period: "/mo", billed: "Billed €468/yr", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
+  { name: "Pro", price: "€79", period: "/mo", billed: "Billed €948/yr", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
+];
+
+const VIDEOS = [
+  "/assets/2962-1080-36.webm",
+  "/assets/2948-1080-28.webm",
+  "/assets/12709382_1920_1080_30fps-39.webm",
+  "/assets/2963-1080-37.webm",
+  "/assets/44047-1080-38.webm",
+];
+
+function makeColumns(urls) {
+  const cols = [[], [], []];
+  urls.forEach((url, i) => { cols[i % 3].push(url); });
+  return cols;
+}
+
+const SECTIONS = [
   {
-    h: "One balance",
-    p: "Credits work across every instrument and every model. Moving from a cheap draft model to a premium one is a choice you make per render, not a plan you upgrade.",
+    id: "image",
+    kicker: "Image Studio",
+    title: (
+      <>
+        32 models.
+        <br />
+        <em>One prompt.</em>
+      </>
+    ),
+    desc: "Flux, Midjourney, GPT-4o, Seedream. From a single line of text, a portrait emerges. Photorealistic, artistic, editorial.",
+    pills: ["Flux", "Midjourney", "GPT-4o", "Seedream", "SDXL"],
+    accent: "#FF1B6B",
+    bg: "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.webp",
+    bgClass: "svc-section__bg--flip",
+    hasReels: true,
   },
   {
-    h: "Priced per render",
-    p: "Resolution, duration and reference count all move the number, and the meter moves with them. Nothing is quoted at one price and charged at another.",
+    id: "video",
+    kicker: "Video Studio",
+    title: (
+      <>
+        Cinema-grade
+        <br />
+        <em>motion.</em>
+      </>
+    ),
+    desc: "Sora 2, Kling v3, Veo 3, Runway. 17 video models. Text-to-video, image-to-video. 4K cinematic footage.",
+    pills: ["Sora 2", "Kling v3", "Veo 3", "Runway", "Wan 2.6"],
+    accent: "#FF1B6B",
+    bg: "/assets/warrior_girl_e29532086b-40.webp",
+    bgClass: "svc-section__bg--zoom-left",
+    reverse: false,
+    hasReels: false,
   },
   {
-    h: "Released on failure",
-    p: "Credits are reserved when a job starts and only settled when it finishes. If a provider fails, the reservation is released back to your balance.",
+    id: "lipsync",
+    kicker: "Lip Sync Studio",
+    title: (
+      <>
+        Any face.
+        <br />
+        <em>Any voice.</em>
+      </>
+    ),
+    desc: "9 lip-sync models. Upload a portrait, add audio. Talking videos in seconds.",
+    pills: ["Infinite Talk", "Wan 2.2", "LTX 2.3", "LatentSync"],
+    accent: "#FF1B6B",
+    bg: "/assets/photo-1620121692029-d088224ddc74-11.webp",
+    bgClass: "svc-section__bg--dark",
+    hasYouTube: true,
+    youtubeId: "_PJ78LYq-FA",
+  },
+  {
+    id: "pricing",
+    kicker: "Pricing",
+    title: (
+      <>
+        Create more. <em>Pay less.</em>
+      </>
+    ),
+    desc: "Monthly subscriptions or one-off credits. Start free, scale when you're ready.",
+    accent: "#FF1B6B",
+    bgVideo: "/assets/o1j748qoxsqdhvrksh5qw2twaoyr-25.webm",
+    reverse: false,
+    isPricing: true,
   },
 ];
 
-const INCLUDED = [
-  "Brand kits that constrain palette, tone and photography style",
-  "Project memory for characters, styles and reusable context",
-  "An asset library that keeps the lineage of every render",
-  "Multi-shot direction with continuity between takes",
-  "Reusable workflows you can run again on new inputs",
-  "API keys for your own integrations",
-];
+/* ── Intersection observer hook ── */
+function useInView(ref, margin = "-100px") {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) setVisible(true); },
+      { rootMargin: margin }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [ref, margin]);
+  return visible;
+}
 
-export default async function Home() {
-  const models = await loadCatalog();
+/* ── HERO ── */
+function HeroSection() {
+  const isMobile = useIsMobile();
+  const [playing, setPlaying] = useState(false);
+  return (
+    <section className="hero">
+      <div className="hero__bg">
+        <img src={isMobile ? "/assets/hero-video-poster.webp" : "/assets/hero-video-poster.webp"} alt="" className="hero__bg-poster" style={{ opacity: playing ? 0 : 1 }} />
+        {!isMobile ? (
+          <video
+            src="/assets/12709382_1920_1080_30fps-39.mp4"
+            muted loop playsInline autoPlay
+            preload="auto"
+            onPlaying={() => setPlaying(true)}
+            onPause={() => setPlaying(false)}
+            style={{ opacity: playing ? 1 : 0 }}
+          />
+        ) : (
+          <img src="/assets/hero-video-poster.webp" alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        )}
+      </div>
 
-  const providers = new Set(models.map((m) => m.provider).filter(Boolean));
-  const priced = models.map((m) => m.credits).filter((c) => Number.isFinite(c) && c > 0);
-  const floor = priced.length ? Math.min(...priced) : null;
-  const board = models.slice(0, 14);
+      <div className="hero__content">
+        <HeroTitle
+          image="/assets/warrior_girl_e29532086b-40.webp"
+          line1=" models."
+          line2="studio."
+          line1AccentImg="/assets/200.webp"
+          accent="One "
+        />
+
+        <p className="hero__sub">
+          Generate images, videos, audio, and lip sync with 70+ state-of-the-art models.
+          Flux, Midjourney, Sora 2, Kling, Veo 3. One subscription, zero filters.
+        </p>
+
+        <div className="hero__cta" style={isMobile ? { flexDirection: "column", width: "100%" } : {}}>
+          <Link href="/login" className="btn btn-primary btn-lg" style={isMobile ? { width: "100%", justifyContent: "center" } : {}}>
+            Start free
+            <span className="btn__icon"><IconArrowUpRight /></span>
+          </Link>
+          <Link href="/pricing" className="btn btn-secondary btn-lg" style={isMobile ? { width: "100%", justifyContent: "center" } : {}}>
+            View pricing
+            <span className="btn__icon"><IconArrowRight /></span>
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── FULL-SCREEN SERVICE SECTION ── */
+function ServiceSection({ section, index }) {
+  const isMobile = useIsMobile();
+  const ref = useRef(null);
+  const cardsRef = useRef(null);
+  const visible = useInView(ref, "-80px");
+  const [vidPlaying, setVidPlaying] = useState(false);
+  const layoutReverse = section.reverse ?? (index % 2 !== 0);
+  const [scrollState, setScrollState] = useState({ atStart: true, atEnd: false });
+  const [yearly, setYearly] = useState(false);
+  const pricing = yearly ? PRICING_YEARLY : PRICING_MONTHLY;
+
+  const checkScroll = () => {
+    const el = cardsRef.current;
+    if (!el) return;
+    const atStart = el.scrollLeft <= 10;
+    const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 10;
+    setScrollState({ atStart, atEnd });
+  };
+
+  const dragRef = useRef({ isDragging: false, startX: 0, scrollLeft: 0 });
+  const handlersRef = useRef({});
+
+  handlersRef.current.onDragStart = (e) => {
+    const el = cardsRef.current;
+    if (!el) return;
+    dragRef.current.isDragging = true;
+    dragRef.current.startX = (e.touches ? e.touches[0].clientX : e.clientX) - el.offsetLeft;
+    dragRef.current.scrollLeft = el.scrollLeft;
+    el.style.cursor = "grabbing";
+    el.style.userSelect = "none";
+  };
+
+  handlersRef.current.onDragMove = (e) => {
+    if (!dragRef.current.isDragging) return;
+    if (e.cancelable) e.preventDefault();
+    const el = cardsRef.current;
+    if (!el) return;
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - el.offsetLeft;
+    const walk = (x - dragRef.current.startX) * 1.5;
+    el.scrollLeft = dragRef.current.scrollLeft - walk;
+  };
+
+  handlersRef.current.onDragEnd = () => {
+    dragRef.current.isDragging = false;
+    const el = cardsRef.current;
+    if (el) {
+      el.style.cursor = "";
+      el.style.userSelect = "";
+    }
+  };
+
+  useEffect(() => {
+    const el = cardsRef.current;
+    if (!el) return;
+    checkScroll();
+    const timer = setTimeout(checkScroll, 100);
+
+    const dragStart = (e) => handlersRef.current.onDragStart(e);
+    const dragMove = (e) => handlersRef.current.onDragMove(e);
+    const dragEnd = () => handlersRef.current.onDragEnd();
+
+    el.addEventListener("scroll", checkScroll, { passive: true });
+    el.addEventListener("mousedown", dragStart);
+    el.addEventListener("touchstart", dragStart, { passive: true });
+    window.addEventListener("mousemove", dragMove);
+    window.addEventListener("touchmove", dragMove, { passive: false });
+    window.addEventListener("mouseup", dragEnd);
+    window.addEventListener("touchend", dragEnd);
+    window.addEventListener("resize", checkScroll);
+    return () => {
+      clearTimeout(timer);
+      el.removeEventListener("scroll", checkScroll);
+      el.removeEventListener("mousedown", dragStart);
+      el.removeEventListener("touchstart", dragStart);
+      window.removeEventListener("mousemove", dragMove);
+      window.removeEventListener("touchmove", dragMove);
+      window.removeEventListener("mouseup", dragEnd);
+      window.removeEventListener("touchend", dragEnd);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, []);
+
+  const scrollCards = (dir) => {
+    cardsRef.current?.scrollBy({ left: dir * 240, behavior: "smooth" });
+  };
 
   return (
-    <>
-      <Navbar />
+    <section ref={ref} className="svc-section">
+      {/* Background */}
+      <div className={`svc-section__bg ${section.bgClass || ""}`}>
+        {section.bgVideo ? (
+          <>
+            <img src="/assets/pricing-video-poster.webp" alt="" className="svc-section__bg-poster" style={{ opacity: isMobile ? 1 : vidPlaying ? 0 : 1 }} />
+            {!isMobile && (
+              <video
+                src={section.bgVideo.replace(/\.webm$/, ".mp4")}
+                muted loop playsInline autoPlay
+                preload="auto"
+                onPlaying={() => setVidPlaying(true)}
+                onPause={() => setVidPlaying(false)}
+                style={{ opacity: vidPlaying ? 1 : 0 }}
+              />
+            )}
+          </>
+        ) : (
+          <img src={section.bg} alt="" />
+        )}
+        <div className="svc-section__scrim" />
+      </div>
 
-      <main id="main">
-        {/* ══ Hero — the catalog is the argument ═══════════════════════ */}
-        <section className="pg-hero">
-          <div className="pg-hero__copy">
-            <span className="hs-eyebrow">Helmies Studio</span>
-
-            <h1>
-              Every model worth using.
-              <br />
-              <em>One desk. One balance.</em>
-            </h1>
-
-            <p className="pg-hero__lede">
-              Image, video, lip-sync, music and multi-shot direction — with the
-              cost of each render shown before you spend it. No per-tool
-              subscriptions, no surprise invoice.
-            </p>
-
-            <div className="pg-hero__cta">
-              <Link href="/login?new=1" className="hs-btn hs-btn--primary hs-btn--lg">
-                Start free
-                <IcBolt className="hs-icon-sm" />
-              </Link>
-              <Link href="/studio" className="hs-btn hs-btn--outline hs-btn--lg">
-                Open the studio
-                <IcChevronRight className="hs-icon-sm" />
-              </Link>
+      {/* Content */}
+      <div className={`svc-section__inner ${visible ? "svc-section__inner--visible" : ""}`}>
+          <div className={`svc-layout ${layoutReverse ? "svc-layout--reverse" : ""}`}>
+          {/* Text */}
+          <div className="svc-text">
+            <div className="svc-kicker" style={{ color: section.accent, display: section.isPricing ? "none" : undefined }}>
+              {section.kicker}
             </div>
-
-            <p className="pg-hero__note">
-              <span className="hs-dot hs-dot--signal" />
-              Free credits on signup — no card required
-            </p>
-          </div>
-
-          <div className="pg-board">
-            <div className="pg-board__head">
-              <span>Live catalog</span>
-              <span style={{ marginLeft: "auto" }}>Credits</span>
-            </div>
-
-            <div className="pg-board__list">
-              {board.length === 0 ? (
-                <p className="hs-hint" style={{ padding: "var(--s-8)", textAlign: "center" }}>
-                  The catalog is syncing. Open the studio to see the current
-                  model list.
-                </p>
-              ) : (
-                board.map((m) => (
-                  <div key={m.id} className="pg-board__row">
-                    <span className="pg-board__name">{m.displayName}</span>
-                    <span className="pg-board__who">{m.provider}</span>
-                    <span className="pg-board__cr">{m.credits ?? "—"}</span>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="pg-board__foot">
-              <span>{models.length ? `${models.length} models` : "Catalog syncing"}</span>
-              <Link
-                href="/models"
-                style={{ color: "var(--tx-dim)", textDecoration: "underline", textUnderlineOffset: 2 }}
-              >
-                See all
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* ══ Proof ════════════════════════════════════════════════════ */}
-        <dl className="pg-strip">
-          <div>
-            <dt>{models.length || "70+"}</dt>
-            <dd>Models</dd>
-          </div>
-          <div>
-            <dt>{providers.size || "12"}</dt>
-            <dd>Providers</dd>
-          </div>
-          <div>
-            <dt>{TOOLS.length}</dt>
-            <dd>Instruments</dd>
-          </div>
-          <div>
-            <dt>{floor ?? "1"}</dt>
-            <dd>Credits from</dd>
-          </div>
-        </dl>
-
-        {/* ══ Instruments ══════════════════════════════════════════════ */}
-        <section className="hs-wrap hs-section">
-          <div className="hs-head">
-            <span className="hs-eyebrow">The desk</span>
-            <h2>Twenty instruments, each built for its own job</h2>
-            <p>
-              A shot board for direction. A timeline for cutting. A layer stack
-              for composition. The tools don&rsquo;t share a layout, because the
-              work doesn&rsquo;t share a shape.
-            </p>
-          </div>
-
-          <div className="pg-tools">
-            {TOOLS.map(({ id, title, blurb, icon: Icon }) => (
-              <Link key={id} href={`/studio/${id}`} className="pg-tool">
-                <Icon />
-                <h3>{title}</h3>
-                <p>{blurb}</p>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        {/* ══ Work ═════════════════════════════════════════════════════ */}
-        <section className="hs-wrap hs-section--tight">
-          <div className="hs-head">
-            <span className="hs-eyebrow">Output</span>
-            <h2>Made on the desk</h2>
-          </div>
-          <div className="pg-showcase">
-            {SHOWCASE.map((src) => (
-              <figure key={src}>
-                <img src={src} alt="" loading="lazy" decoding="async" />
-              </figure>
-            ))}
-          </div>
-        </section>
-
-        {/* ══ Credits ══════════════════════════════════════════════════ */}
-        <section className="hs-wrap hs-section">
-          <div className="hs-head">
-            <span className="hs-eyebrow">Credits</span>
-            <h2>You see the cost before you spend it</h2>
-            <p>
-              Every model is priced in credits. The meter beside the render
-              button shows what this job costs and what your balance will be
-              afterwards — before you commit to it.
-            </p>
-          </div>
-
-          <div className="hs-grid hs-grid--3">
-            {CREDIT_FACTS.map(({ h, p }) => (
-              <div key={h} className="hs-card">
-                <h3 style={{ fontSize: "var(--t-base)", fontWeight: 600, marginBottom: "var(--s-2)" }}>{h}</h3>
-                <p style={{ fontSize: "var(--t-sm)", color: "var(--tx-dim)", lineHeight: 1.6 }}>{p}</p>
+            <StrokeTitle className="svc-title-wrap" bgImage={section.bg}>
+              <h2 className="svc-title">{section.title}</h2>
+            </StrokeTitle>
+            <p className="svc-desc">{section.desc}</p>
+            {section.pills && (
+              <div className="svc-pills">
+                {section.pills.map((p) => (
+                  <span key={p} className="svc-pill">{p}</span>
+                ))}
               </div>
-            ))}
+            )}
+            {!section.isPricing && (
+              <Link href={`/studio/${section.id}`} className="btn btn-primary mt-8 inline-flex">
+                Open {section.id} studio
+                <span className="btn__icon"><IconArrowUpRight /></span>
+              </Link>
+            )}
           </div>
 
-          <div style={{ marginTop: "var(--s-8)", display: "flex", gap: "var(--s-3)", flexWrap: "wrap" }}>
-            <Link href="/pricing" className="hs-btn hs-btn--primary">See pricing</Link>
-            <Link href="/models" className="hs-btn hs-btn--outline">Browse the catalog</Link>
+          {/* Media */}
+          <div className="svc-media">
+            {section.isPricing ? (
+              <div className={`pricing-wrap ${!scrollState.atEnd ? "pricing-wrap--has-more" : ""} ${!scrollState.atStart ? "pricing-wrap--scrolled" : ""} ${scrollState.atEnd ? "pricing-wrap--at-end" : ""}`}>
+                <div className="pricing-toggle">
+                  <span className={`pricing-toggle__label ${!yearly ? "pricing-toggle__label--active" : ""}`} onClick={() => setYearly(false)}>Monthly</span>
+                  <label className="pricing-toggle__switch-wrap">
+                    <input type="checkbox" checked={yearly} onChange={(e) => setYearly(e.target.checked)} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", margin: 0, cursor: "pointer" }} />
+                    <span className={`pricing-toggle__switch ${yearly ? "pricing-toggle__switch--on" : ""}`}>
+                      <span className="pricing-toggle__knob" />
+                    </span>
+                  </label>
+                  <span className={`pricing-toggle__label ${yearly ? "pricing-toggle__label--active" : ""}`} onClick={() => setYearly(true)}>Yearly <span className="pricing-toggle__badge">-20%</span></span>
+                </div>
+                <div className="pricing-scroll-track">
+                  {!scrollState.atStart && (
+                    <button className="pricing-scroll-btn pricing-scroll-btn--left" onClick={() => scrollCards(-1)}>
+                      <IconArrowRight style={{ transform: "scaleX(-1)" }} />
+                    </button>
+                  )}
+                  <div className="pricing-cards" ref={cardsRef} style={isMobile ? { scrollSnapType: "x mandatory" } : {}}>
+                    {pricing.map((plan) => (
+                    <div key={plan.name} className={`pricing-card ${plan.popular ? "pricing-card--popular" : ""}`} style={isMobile ? { scrollSnapAlign: "start" } : {}}>
+                      {plan.popular && <div className="pricing-card__badge">Most popular</div>}
+                      <div className="pricing-card__name">{plan.name}</div>
+                      <div className="pricing-card__price">{plan.price}<span className="pricing-card__period">{plan.period}</span></div>
+                      {plan.billed && <div className="pricing-card__billed">{plan.billed}</div>}
+                      <div className="pricing-card__credits">{plan.credits}</div>
+                      <div className="pricing-card__desc">{plan.desc}</div>
+                      <ul className="pricing-card__features">
+                        {plan.features.map((f) => (
+                          <li key={f}><IconCheck />{f}</li>
+                        ))}
+                      </ul>
+                      <Link href="/pricing" className={`btn ${plan.popular ? "btn-primary" : "btn-secondary"} btn-lg pricing-card__cta`}>
+                        {plan.cta}
+                        <span className="btn__icon"><IconArrowUpRight /></span>
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+                {!scrollState.atEnd && (
+                  <button className="pricing-scroll-btn pricing-scroll-btn--right" onClick={() => scrollCards(1)}>
+                    <IconArrowRight />
+                  </button>
+                )}
+                </div>
+              </div>
+            ) : (
+              <>
+                {section.hasYouTube && (
+                  <div className="svc-youtube">
+                    <YouTubeEmbed videoId={section.youtubeId} />
+                  </div>
+                )}
+                {section.hasReels && (
+                  <div className="svc-reels">
+                    <ReelSlider
+                      columns={makeColumns(section.useVideos ? VIDEOS : HEADSHOTS).slice(0, isMobile ? 2 : 3)}
+                      speed={0.3}
+                    />
+                  </div>
+                )}
+              </>
+            )}
           </div>
-        </section>
+        </div>
+      </div>
+    </section>
+  );
+}
 
-        {/* ══ Included ═════════════════════════════════════════════════ */}
-        <section className="hs-wrap hs-section">
-          <div className="hs-grid hs-grid--2" style={{ alignItems: "start", gap: "var(--s-10)" }}>
-            <div className="hs-head" style={{ marginBottom: 0 }}>
-              <span className="hs-eyebrow">Included</span>
-              <h2>Everything on one account</h2>
-              <p>
-                Brand kits, project memory and an asset library that keeps the
-                lineage of every render — so a character stays the same
-                character across a hundred shots.
-              </p>
-            </div>
+/* ── ANNOUNCEMENT BAR ── */
+function AnnouncementBar() {
+  return (
+    <div className="announcement-bar">
+      <div className="announcement-bar__inner">
+        <span className="announcement-bar__dot" />
+        <span>70+ models live — Sora 2, Kling v3</span>
+      </div>
+    </div>
+  );
+}
 
-            <ul style={{ display: "flex", flexDirection: "column", gap: "var(--s-3)", listStyle: "none" }}>
-              {INCLUDED.map((t) => (
-                <li
-                  key={t}
-                  style={{ display: "flex", gap: "var(--s-3)", alignItems: "flex-start", fontSize: "var(--t-sm)", color: "var(--tx-dim)", lineHeight: 1.6 }}
-                >
-                  <IcCheck className="hs-icon-sm" style={{ color: "var(--signal)", marginTop: 3, flex: "none" }} />
-                  {t}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </section>
+/* ── MAIN ── */
+/* ── Kickstart videos on first user interaction (iOS workaround) ── */
+function useKickstartVideos() {
+  useEffect(() => {
+    const playAll = () => {
+      document.querySelectorAll("video").forEach((v) => {
+        const p = v.play();
+        if (p && p.catch) p.catch(() => {});
+      });
+    };
+    playAll();
+    const kick = () => { playAll(); };
+    document.addEventListener("touchstart", kick, { once: true, passive: true });
+    document.addEventListener("click", kick, { once: true });
+    document.addEventListener("scroll", kick, { once: true, passive: true });
+    return () => {
+      document.removeEventListener("touchstart", kick);
+      document.removeEventListener("click", kick);
+      document.removeEventListener("scroll", kick);
+    };
+  }, []);
+}
 
-        {/* ══ Close ════════════════════════════════════════════════════ */}
-        <section className="hs-wrap hs-section--tight" style={{ paddingBottom: "var(--s-24)" }}>
-          <div
-            className="hs-card"
-            style={{
-              padding: "clamp(var(--s-8), 6vw, var(--s-16))",
-              textAlign: "center",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: "var(--s-4)",
-            }}
-          >
-            <h2 style={{ fontSize: "var(--t-2xl)", fontWeight: 600, maxWidth: "20ch" }}>
-              Open the desk and make something
-            </h2>
-            <p style={{ fontSize: "var(--t-sm)", color: "var(--tx-dim)", maxWidth: "46ch", lineHeight: 1.6 }}>
-              Free credits on signup. No card, no trial countdown, and no
-              per-tool upsell once you are inside.
-            </p>
-            <Link href="/login?new=1" className="hs-btn hs-btn--primary hs-btn--lg" style={{ marginTop: "var(--s-2)" }}>
-              Start free
-              <IcBolt className="hs-icon-sm" />
-            </Link>
-          </div>
-        </section>
-      </main>
-
-      <Footer />
+export default function LandingPage() {
+  useKickstartVideos();
+  return (
+    <>
+      <AnnouncementBar />
+      <Navbar />
+      <div className="grain" aria-hidden="true" />
+      <div className="snap-container">
+        <HeroSection />
+        {SECTIONS.map((s, i) => (
+          <ServiceSection key={s.id} section={s} index={i} />
+        ))}
+      </div>
+      <LogoTicker />
     </>
   );
 }

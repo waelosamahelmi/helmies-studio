@@ -7,26 +7,35 @@ export async function middleware(request) {
   const needsAuth = protectedPaths.some((p) => pathname.startsWith(p));
   if (!needsAuth) return NextResponse.next();
 
-  const internalUrl = process.env.NEXTAUTH_URL || "http://localhost:3010";
-  const sessionRes = await fetch(internalUrl + "/api/auth/session", {
-    headers: { cookie: request.headers.get("cookie") || "" },
-    redirect: "manual",
-  });
-
-  if (sessionRes.status !== 200) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+  // Resolve the session against this same deployment. Falling back to the
+  // incoming origin matters: NEXTAUTH_URL is wrong or absent in local and
+  // preview runs, and an unreachable URL used to throw straight out of the
+  // middleware — every protected route answered 500 instead of asking the
+  // visitor to sign in.
+  const internalUrl = process.env.NEXTAUTH_URL || request.nextUrl.origin;
+  const toLogin = () => {
+    const url = new URL("/login", request.url);
+    // `callbackUrl` is the param the login page and next-auth both read, so
+    // signing in returns the visitor to the page they actually asked for.
+    url.searchParams.set("callbackUrl", pathname + request.nextUrl.search);
+    return NextResponse.redirect(url);
+  };
 
   let session;
   try {
+    const sessionRes = await fetch(new URL("/api/auth/session", internalUrl), {
+      headers: { cookie: request.headers.get("cookie") || "" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (sessionRes.status !== 200) return toLogin();
     session = await sessionRes.json();
   } catch {
-    return NextResponse.redirect(new URL("/login", request.url));
+    // Network failure, timeout, or malformed body — treat as signed out.
+    return toLogin();
   }
 
-  if (!session?.user) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
+  if (!session?.user) return toLogin();
 
   if (pathname.startsWith("/admin") && session.user.role !== "admin") {
     return NextResponse.redirect(new URL("/studio", request.url));
