@@ -49,9 +49,42 @@ export async function isAdmin(userId) {
 }
 
 // ── Rate limiting ──
+// Anonymous callers can't be rows in RateLimit (userId is a User FK), so
+// signed-out traffic is limited in-process. Good enough for low-volume public
+// forms on a single PM2 instance; Phase 3 replaces this with a durable store.
+const anonBuckets = new Map();
+
+function checkAnonRateLimit(key, endpoint, limit) {
+  const now = Date.now();
+  if (anonBuckets.size > 10_000) {
+    for (const [k, b] of anonBuckets) {
+      if (now - b.windowStart >= limit.window) anonBuckets.delete(k);
+    }
+  }
+  const bucketKey = `${key}:${endpoint}`;
+  const bucket = anonBuckets.get(bucketKey);
+  if (!bucket || now - bucket.windowStart >= limit.window) {
+    anonBuckets.set(bucketKey, { windowStart: now, count: 1 });
+    return { allowed: true, remaining: limit.max - 1 };
+  }
+  if (bucket.count >= limit.max) {
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfter: Math.ceil((bucket.windowStart + limit.window - now) / 1000),
+    };
+  }
+  bucket.count += 1;
+  return { allowed: true, remaining: limit.max - bucket.count };
+}
+
 export async function checkRateLimit(userId, endpoint) {
   const limit = RATE_LIMITS[endpoint];
   if (!limit) return { allowed: true };
+
+  if (typeof userId === "string" && userId.startsWith("ip:")) {
+    return checkAnonRateLimit(userId, endpoint, limit);
+  }
 
   const windowStart = new Date(Date.now() - limit.window);
   const existing = await prisma.rateLimit.findUnique({
