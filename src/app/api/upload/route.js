@@ -7,6 +7,7 @@ import crypto from "crypto";
 import prisma from "@/lib/prisma";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
+import { sniffMatchesMime } from "@/lib/upload-sniff";
 
 // Strict MIME → extension allowlist. The stored extension is derived from the
 // declared MIME type only — never from the attacker-controlled filename — so a
@@ -61,6 +62,16 @@ export async function POST(req) {
 
     if (buffer.length > MAX_BYTES) {
       return NextResponse.json({ error: "File too large (max 100MB)" }, { status: 413 });
+    }
+
+    // Byte-level verification: the declared MIME must match the actual
+    // content, not just an attacker-supplied Content-Type. Sniffs the same
+    // buffer already read above — no extra I/O.
+    if (!sniffMatchesMime(buffer, mimeType)) {
+      return NextResponse.json(
+        { error: "File content does not match its declared type" },
+        { status: 400 },
+      );
     }
 
     const name = `${crypto.randomUUID()}${ext}`;
