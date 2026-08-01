@@ -1,7 +1,31 @@
 // Helmies Studio — Credit Wallet Service
 // Per AGENTS.md Phase 12: available+reserved balance, ledger, reservations
+//
+// Ledger semantics (invariant contract — do not violate):
+//   Every CreditLedger row EXCEPT type "generation" moves `available` by
+//   exactly `amount` (positive = credit in, negative = debit out). Rows of
+//   type "generation" are informational cost records written at reservation
+//   settlement — they document what a job actually cost but do NOT themselves
+//   move `available` (the settlement math already reconciled `available` via
+//   the reservation release delta).
+//   Invariants that must hold at all times:
+//     available == Σ amount WHERE type != 'generation'   (post-anchor, i.e.
+//       from the last balance-defining event such as migration_opening_balance)
+//     reserved  == Σ amount of active CreditReservation rows
+//
+// All mutating operations below accept a trailing `db` parameter: pass an
+// already-open transaction client to compose the wallet mutation into a
+// caller's own transaction, or omit it to let the function open its own.
+// Balance-affecting decrements always use a conditional `updateMany` guarded
+// by `available: { gte: … }` so concurrent spends can never drive the
+// balance negative, even without a surrounding transaction.
 
 import prisma from "./prisma";
+
+// Run `fn` inside the given client (already a transaction) or a fresh one.
+function withDb(db, fn) {
+  return db ? fn(db) : prisma.$transaction(fn);
+}
 
 // ── Wallet Operations ────────────────────────────────────────
 
@@ -22,7 +46,7 @@ export async function getWallet(userId) {
 
 // ── Ledger ───────────────────────────────────────────────────
 
-const LEDGER_TYPES = ["signup", "subscription_grant", "topup", "promo", "reservation", "reservation_release", "generation", "refund", "admin_adjustment", "migration_opening_balance"];
+const LEDGER_TYPES = ["signup", "subscription_grant", "topup", "promo", "reservation", "reservation_release", "generation", "debit", "refund", "admin_adjustment", "migration_opening_balance"];
 
 // Low-level ledger write. CreditLedger columns: walletId, amount, type,
 // description, referenceId, balanceAfter. Always goes through the provided
@@ -42,15 +66,17 @@ export async function addLedgerEntry(userId, delta, balanceAfter, reservedAfter,
 
 // ── Reservation ──────────────────────────────────────────────
 
-export async function reserveCredits(userId, amount, jobId, expiresInMinutes = 30) {
-  return prisma.$transaction(async (tx) => {
-    const wallet = await tx.creditWallet.findUnique({ where: { userId } });
-    if (!wallet || wallet.available < amount) throw new Error(`Insufficient credits: need ${amount}, have ${wallet?.available || 0}`);
-
-    const updated = await tx.creditWallet.update({
-      where: { userId },
+export async function reserveCredits(userId, amount, jobId, expiresInMinutes = 30, db = null) {
+  return withDb(db, async (tx) => {
+    const claimed = await tx.creditWallet.updateMany({
+      where: { userId, available: { gte: amount } },
       data: { available: { decrement: amount }, reserved: { increment: amount } },
     });
+    if (claimed.count === 0) {
+      const w = await tx.creditWallet.findUnique({ where: { userId } });
+      throw new Error(`Insufficient credits: need ${amount}, have ${w?.available ?? 0}`);
+    }
+    const wallet = await tx.creditWallet.findUnique({ where: { userId } });
 
     // CreditReservation columns: walletId, amount, generationId, status.
     // The job id is the Generation id and is stored in generationId.
@@ -58,9 +84,9 @@ export async function reserveCredits(userId, amount, jobId, expiresInMinutes = 3
       data: { walletId: wallet.id, generationId: jobId, amount, status: "active" },
     });
 
-    await writeLedger(tx, wallet.id, -amount, updated.available, "reservation", `Reserved for job ${jobId}`, jobId);
+    await writeLedger(tx, wallet.id, -amount, wallet.available, "reservation", `Reserved for job ${jobId}`, jobId);
 
-    return { wallet: updated, reservation };
+    return { wallet, reservation };
   });
 }
 
@@ -70,8 +96,8 @@ async function findActiveReservation(tx, userId, jobId) {
   });
 }
 
-export async function settleReservation(userId, jobId, actualCredits) {
-  return prisma.$transaction(async (tx) => {
+export async function settleReservation(userId, jobId, actualCredits, db = null) {
+  return withDb(db, async (tx) => {
     const reservation = await findActiveReservation(tx, userId, jobId);
     if (!reservation) throw new Error("No active reservation found");
 
@@ -96,8 +122,8 @@ export async function settleReservation(userId, jobId, actualCredits) {
   });
 }
 
-export async function releaseReservation(userId, jobId) {
-  return prisma.$transaction(async (tx) => {
+export async function releaseReservation(userId, jobId, db = null) {
+  return withDb(db, async (tx) => {
     const reservation = await findActiveReservation(tx, userId, jobId);
     if (!reservation) return null;
 
@@ -118,8 +144,8 @@ export async function releaseReservation(userId, jobId) {
 
 // ── Credit Operations ────────────────────────────────────────
 
-export async function grantCredits(userId, amount, type = "admin_adjustment", description = "Admin credit grant", referenceId = null) {
-  return prisma.$transaction(async (tx) => {
+export async function grantCredits(userId, amount, type = "admin_adjustment", description = "Admin credit grant", referenceId = null, db = null) {
+  return withDb(db, async (tx) => {
     const wallet = await tx.creditWallet.upsert({
       where: { userId },
       update: { available: { increment: amount }, lifetime: { increment: amount } },
@@ -130,8 +156,61 @@ export async function grantCredits(userId, amount, type = "admin_adjustment", de
   });
 }
 
-export async function refundCredits(userId, amount, jobId, reason = "Generation refund") {
-  return grantCredits(userId, amount, "refund", `${reason} — job ${jobId}`);
+export async function refundCredits(userId, amount, jobId, reason = "Generation refund", db = null) {
+  return grantCredits(userId, amount, "refund", `${reason} — job ${jobId}`, null, db);
+}
+
+// NEW: atomic direct spend (no reservation). Conditionally decrements
+// `available` and writes a "debit" ledger row. Use for immediate,
+// non-reserved charges (e.g. agent actions) where there's no preflight
+// reserve/settle cycle.
+export async function debitWallet(userId, amount, description, referenceId, db = null) {
+  return withDb(db, async (tx) => {
+    const claimed = await tx.creditWallet.updateMany({
+      where: { userId, available: { gte: amount } },
+      data: { available: { decrement: amount } },
+    });
+    if (claimed.count === 0) throw new Error("Insufficient credits");
+    const wallet = await tx.creditWallet.findUnique({ where: { userId } });
+    await writeLedger(tx, wallet.id, -amount, wallet.available, "debit", description, referenceId);
+    return wallet;
+  });
+}
+
+// NEW: sets `available` to an absolute target value via a delta
+// "admin_adjustment" ledger row, and mirrors the result onto the legacy
+// User.credits column. Negative deltas (clamping a balance down) go through
+// a conditional update and throw on a race-induced shortfall; positive
+// deltas (topping a balance up) are unconditional increments.
+export async function adjustWalletTo(userId, targetAvailable, description, adminId = null, db = null) {
+  return withDb(db, async (tx) => {
+    // Ensure the wallet row exists, then read the authoritative pre-mutation
+    // snapshot via a fresh findUnique (upsert's returned row is not a
+    // reliable source of the current balance on the update: {} no-op path).
+    await tx.creditWallet.upsert({
+      where: { userId }, update: {}, create: { userId, available: 0, reserved: 0, lifetime: 0 },
+    });
+    const before = await tx.creditWallet.findUnique({ where: { userId } });
+    const delta = targetAvailable - before.available;
+    if (delta === 0) return { wallet: before, delta: 0 };
+    if (delta < 0) {
+      const claimed = await tx.creditWallet.updateMany({
+        where: { userId, available: { gte: -delta } },
+        data: { available: { decrement: -delta } },
+      });
+      if (claimed.count === 0) throw new Error("Insufficient credits for adjustment");
+    } else {
+      await tx.creditWallet.update({
+        where: { userId },
+        data: { available: { increment: delta }, lifetime: { increment: delta } },
+      });
+    }
+    const wallet = await tx.creditWallet.findUnique({ where: { userId } });
+    await writeLedger(tx, wallet.id, delta, wallet.available,
+      "admin_adjustment", `${description}${adminId ? ` (by ${adminId})` : ""}`, null);
+    await tx.user.update({ where: { id: userId }, data: { credits: wallet.available } });
+    return { wallet, delta };
+  });
 }
 
 // ── Balance Check ────────────────────────────────────────────
