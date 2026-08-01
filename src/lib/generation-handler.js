@@ -15,10 +15,12 @@ import {
   LIPSYNC_MODELS, AUDIO_MODELS, RECAST_MODELS,
 } from "@/lib/models";
 
-// Server-defined model registry. Together with the ModelPricing table this is
-// the complete set of models a caller may name — anything else is rejected
-// before credits are touched, and the provider endpoint is always taken from
-// here or from the DB, never from the request body.
+// Server-defined model registry — endpoint metadata only, and only used as a
+// fallback for a priced ModelPricing row that lacks its own endpoint value.
+// It is NEVER a pricing source and NEVER a gate on whether a model may be
+// billed: billing requires a real, active, non-deprecated ModelPricing row
+// (see the dbPricing check below). The provider endpoint is always taken
+// from the DB or from here, never from the request body.
 const MODEL_REGISTRY = Object.fromEntries(
   [
     ...IMAGE_MODELS, ...I2I_MODELS, ...VIDEO_MODELS, ...I2V_MODELS, ...V2V_MODELS,
@@ -51,7 +53,10 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     }
 
     const body = await req.json();
-    const model = body.model || body.endpoint || tool;
+    const model = body.model;
+    if (!model) {
+      return NextResponse.json({ error: "Model required" }, { status: 400 });
+    }
     const rawPrompt = body.prompt || "";
 
     const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
@@ -136,23 +141,25 @@ export async function handleGeneration(req, tool, cost, apiFn) {
     const provider = await resolveProvider(model);
 
     const dbPricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
-    // A model that is in neither the ModelPricing table nor the static
-    // registry has no trustworthy price and no trustworthy endpoint — refuse
-    // before any credits are reserved, rather than charging the default cost
-    // for an arbitrary client-chosen endpoint.
-    const staticModel = MODEL_REGISTRY[model];
-    if (!dbPricing && !staticModel) {
-      return NextResponse.json({ error: "Unknown model" }, { status: 400 });
+    // Billing requires a real, active ModelPricing row — the caller-supplied
+    // `cost` parameter (the tool's flat per-route default) is never used as a
+    // price once we get here. MODEL_REGISTRY is endpoint metadata only; it is
+    // never consulted to decide whether a model may be billed, since that is
+    // exactly the hole that let a caller reach any registry model through a
+    // cheap tool route and pay the tool's flat default cost.
+    if (!dbPricing || dbPricing.isActive === false || dbPricing.isDeprecated) {
+      return NextResponse.json({ error: "Model not priced", model }, { status: 422 });
     }
-    let providerCost = dbPricing?.providerCost || 0;
-    if (dbPricing?.pricingRules) {
+    const staticModel = MODEL_REGISTRY[model];
+    let providerCost = dbPricing.providerCost || 0;
+    if (dbPricing.pricingRules) {
       const catalogQuote = await quoteCatalogModel(model, { ...body, prompt: rawPrompt });
       if (!catalogQuote.valid) {
         return NextResponse.json({ error: "Invalid model parameters", details: catalogQuote.errors }, { status: 422 });
       }
       cost = catalogQuote.credits;
       providerCost = catalogQuote.providerCost;
-    } else if (dbPricing?.creditsCost) {
+    } else {
       cost = dbPricing.creditsCost;
     }
 
