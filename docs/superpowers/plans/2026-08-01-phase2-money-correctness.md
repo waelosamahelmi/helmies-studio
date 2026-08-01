@@ -572,6 +572,30 @@ git add -A && git commit -m "fix: director pipelines debit and refund through th
 
 ---
 
+### Task 6b: Director state machine — stop charging for runs that always crash
+
+*(Added mid-execution: Task 6's review CONFIRMED a pre-existing bug — `executeProductionPipeline` never leaves `GENERATING_IMAGES`, so the mandatory transition to `ASSEMBLING` (`director-executor.js:391`) or `COMPLETED` (`:419`) is invalid per `VALID_TRANSITIONS[GENERATING_IMAGES] = [GENERATING_VIDEOS, FAILED, PAUSED]` (`:49`) and THROWS on every non-failing run — after `debitWallet` has charged, with no refund. Every successful director run today = charge + 500 + pipeline stuck.)*
+
+**Files:**
+- Modify: `src/lib/director-executor.js` (`VALID_TRANSITIONS`, post-debit crash safety net)
+- Test: extend `tests/unit/director-credits.test.mjs`
+
+**Interfaces:**
+- Consumes: `refundCredits(userId, amount, \`director:${pipelineId}\`, reason)` from Task 1.
+- Produces: happy-path pipelines reach `COMPLETED` (or `ASSEMBLING → COMPLETED`) without an invalid-transition throw; any unexpected throw AFTER the debit refunds un-consumed credits and transitions the pipeline to `FAILED` before propagating.
+
+- [ ] **Step 1: Failing tests** — extend `tests/unit/director-credits.test.mjs`: (a) happy path (all shots succeed) resolves without throwing and the last `transitionPipeline` target is `COMPLETED`; (b) a mid-run throw after the debit triggers `refundCredits` for the un-consumed remainder and a `FAILED` transition. (The two existing wallet-call-then-throw assertions from Task 6 flip to clean-success assertions — update them.)
+- [ ] **Step 2: Implement minimally:**
+  - Extend `VALID_TRANSITIONS[PIPELINE_STATES.GENERATING_IMAGES]` to also allow `ASSEMBLING` and `COMPLETED` (the executor genuinely performs image+video+audio per shot within the one generating state — the table, not the flow, is wrong).
+  - Wrap the post-debit body of `executeProductionPipeline` in try/catch: on catch, compute the same un-consumed remainder the stop-on-failure branch uses, `refundCredits(userId, remainder, \`director:${pipelineId}\`, "Pipeline crashed — unexecuted work refunded")` when > 0, best-effort `transitionPipeline(pipelineId, FAILED)`, then rethrow.
+- [ ] **Step 3: Gates** (`npm test`, lint, typecheck, build) **+ commit**
+
+```bash
+git add -A && git commit -m "fix: director pipelines complete instead of charging then crashing; refund on crash"
+```
+
+---
+
 ### Task 7: Retire session.js debit/credit; admin + automation adjustments; ledger-backed history
 
 **Files:**
