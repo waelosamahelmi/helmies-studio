@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireAdmin } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
 import prisma from "@/lib/prisma";
 import { hasTemplateAccess } from "@/lib/templates";
 
@@ -44,13 +45,10 @@ export async function PUT(req, { params }) {
 
     return NextResponse.json(template);
   } catch (e) {
-    if (e.message === "Forbidden: admin access required" || e.message === "Unauthorized") {
-      return NextResponse.json({ error: e.message }, { status: 403 });
-    }
     if (e?.code === "P2025") {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
     }
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }
 
@@ -67,12 +65,9 @@ export async function DELETE(req, { params }) {
 
     return NextResponse.json({ success: true });
   } catch (e) {
-    if (e.message === "Forbidden: admin access required" || e.message === "Unauthorized") {
-      return NextResponse.json({ error: e.message }, { status: 403 });
-    }
     if (e?.code === "P2025") {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
     }
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

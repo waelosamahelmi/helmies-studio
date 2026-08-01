@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
 import prisma from "@/lib/prisma";
 import { listTemplates } from "@/lib/templates";
 
@@ -37,9 +38,6 @@ export async function POST(req) {
 
     return NextResponse.json(template, { status: 201 });
   } catch (e) {
-    if (e.message === "Forbidden: admin access required" || e.message === "Unauthorized") {
-      return NextResponse.json({ error: e.message }, { status: 403 });
-    }
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }
