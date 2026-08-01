@@ -2,30 +2,22 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { provisionNewUser } from "@/lib/auth-events";
+import { checkAnonLimit, clientIp } from "@/lib/rate-limit";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Best-effort in-memory per-IP rate limit. The shared checkRateLimit helper in
-// lib/security.js is user-scoped (FK to User) so it cannot protect anonymous
-// registration; this caps sign-up attempts per IP per instance instead.
-const attempts = new Map();
+// Durable per-IP rate limit (Phase 3 Task 4). The shared checkRateLimit
+// helper in lib/security.js is user-scoped (FK to User) so it cannot protect
+// anonymous registration; this caps sign-up attempts per IP via the
+// AnonRateLimit table instead — same 10 attempts / 10 min as before, but
+// surviving restarts and shared across instances.
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 10;
 
-function rateLimited(ip) {
-  const now = Date.now();
-  const entry = attempts.get(ip);
-  if (!entry || now - entry.start > WINDOW_MS) {
-    attempts.set(ip, { start: now, count: 1 });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > MAX_ATTEMPTS;
-}
-
 export async function POST(req) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
-  if (rateLimited(ip)) {
+  const ip = clientIp(req);
+  const rl = await checkAnonLimit(ip, "/api/auth/register", { windowMs: WINDOW_MS, max: MAX_ATTEMPTS });
+  if (!rl.allowed) {
     return NextResponse.json({ ok: false, error: "Too many attempts. Try again later." }, { status: 429 });
   }
 

@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { requireAdminUser } from "@/lib/authz";
+import { checkAnonLimit } from "@/lib/rate-limit";
 
 // NOTE: checkRateLimit is a no-op for any endpoint missing from this map, so a
 // key must exist for every path passed to it. generation-handler.js builds
@@ -51,41 +52,16 @@ export async function isAdmin(userId) {
 }
 
 // ── Rate limiting ──
-// Anonymous callers can't be rows in RateLimit (userId is a User FK), so
-// signed-out traffic is limited in-process. Good enough for low-volume public
-// forms on a single PM2 instance; Phase 3 replaces this with a durable store.
-const anonBuckets = new Map();
-
-function checkAnonRateLimit(key, endpoint, limit) {
-  const now = Date.now();
-  if (anonBuckets.size > 10_000) {
-    for (const [k, b] of anonBuckets) {
-      if (now - b.windowStart >= limit.window) anonBuckets.delete(k);
-    }
-  }
-  const bucketKey = `${key}:${endpoint}`;
-  const bucket = anonBuckets.get(bucketKey);
-  if (!bucket || now - bucket.windowStart >= limit.window) {
-    anonBuckets.set(bucketKey, { windowStart: now, count: 1 });
-    return { allowed: true, remaining: limit.max - 1 };
-  }
-  if (bucket.count >= limit.max) {
-    return {
-      allowed: false,
-      remaining: 0,
-      retryAfter: Math.ceil((bucket.windowStart + limit.window - now) / 1000),
-    };
-  }
-  bucket.count += 1;
-  return { allowed: true, remaining: limit.max - bucket.count };
-}
-
+// Anonymous callers can't be rows in RateLimit (userId is a User FK). The
+// `ip:` path below delegates to the durable, hashed-IP store in
+// @/lib/rate-limit (Phase 3 Task 4) — no per-instance in-memory state.
 export async function checkRateLimit(userId, endpoint) {
   const limit = RATE_LIMITS[endpoint];
   if (!limit) return { allowed: true };
 
   if (typeof userId === "string" && userId.startsWith("ip:")) {
-    return checkAnonRateLimit(userId, endpoint, limit);
+    const ip = userId.slice(3);
+    return checkAnonLimit(ip, endpoint, { windowMs: limit.window, max: limit.max });
   }
 
   const windowStart = new Date(Date.now() - limit.window);

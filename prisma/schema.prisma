@@ -773,6 +773,19 @@ model StripeEvent {
   @@schema("public")
 }
 
+// ── Security: Anonymous rate limiting (Phase 3 Task 4) ──
+// Durable replacement for the in-process anonBuckets Map (src/lib/security.js)
+// and the register route's local `attempts` Map. Keyed by a salted hash of
+// (ip + endpoint) — raw client IPs are never persisted here (privacy per
+// contract §4.4). See src/lib/rate-limit.js for the atomic algorithm.
+model AnonRateLimit {
+  key         String   @id
+  count       Int      @default(1)
+  windowStart DateTime @default(now())
+
+  @@schema("public")
+}
+
 // ── Contact form submissions ──
 // There is no mail transport in this deployment, so messages are persisted
 // and read from the admin panel rather than forwarded. Storing them is the

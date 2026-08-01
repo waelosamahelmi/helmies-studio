@@ -28,3 +28,10 @@ changes — no data rewrite, instant on this dataset.
 
 Run the resolve command once on the server before deploying Phase 2, then all
 subsequent deploys apply new migrations via `npx prisma migrate deploy`.
+
+## Phase 3 Task 4 adoption
+`20260801130000_anon_rate_limit` adds one new table, `AnonRateLimit` (no FKs,
+no existing data affected) — the durable, hashed-IP backing store for
+`checkAnonLimit` in `src/lib/rate-limit.js`, replacing the old in-process
+`anonBuckets` Map and the register route's local `attempts` Map. Purely
+additive; applies via the normal `npx prisma migrate deploy` step.

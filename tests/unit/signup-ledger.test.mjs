@@ -37,6 +37,15 @@ vi.mock("@/lib/auth-events", () => ({
   SIGNUP_CREDITS: 100,
 }));
 
+// The register route's own rate limit now goes through the durable,
+// hashed-IP store (Phase 3 Task 4) instead of an in-memory Map. It's
+// exercised on its own in tests/unit/rate-limit.test.mjs; here it's just a
+// dependency that must not block the provisioning behavior under test.
+vi.mock("@/lib/rate-limit", () => ({
+  checkAnonLimit: vi.fn().mockResolvedValue({ allowed: true }),
+  clientIp: vi.fn(() => "203.0.113.5"),
+}));
+
 vi.mock("bcryptjs", () => ({
   default: { hash: vi.fn().mockResolvedValue("hashed-pw"), compare: vi.fn() },
 }));
