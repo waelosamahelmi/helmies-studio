@@ -178,6 +178,17 @@ export async function releaseReservation(userId, jobId, db = null) {
 // resolves that hold one way or another so `reserved` cannot leak.
 const RESERVATION_TERMINAL_STATUSES = ["failed", "cancelled"];
 
+// Reservations created before expiresAt existed (pre-Phase-3-Task-9) have it
+// NULL. A migration (20260801150000) backfills those to createdAt + 30
+// minutes, matching reserveCredits' own default expiresInMinutes — but the
+// sweep must not depend on every database having run that backfill: SQL
+// comparisons against NULL are UNKNOWN, so `expiresAt: { lt: now }` alone
+// silently excludes (not even counts) any row where expiresAt is still NULL,
+// stranding it forever. Matching NULL rows directly against the same 30
+// minute cutoff here means a legacy reservation can never be permanently
+// invisible to the sweep even on a database where the backfill was missed.
+const LEGACY_RESERVATION_TTL_MINUTES = 30;
+
 // Find reservations whose expiresAt has passed and are still "active", then
 // resolve each one against the state of its generation:
 //   - generation missing, failed, or cancelled -> release the hold
@@ -191,8 +202,15 @@ const RESERVATION_TERMINAL_STATUSES = ["failed", "cancelled"];
 // same defensive shape as autoSuspendAbusiveUsers above.
 export async function sweepExpiredReservations() {
   const now = new Date();
+  const legacyCutoff = new Date(now.getTime() - LEGACY_RESERVATION_TTL_MINUTES * 60000);
   const expired = await prisma.creditReservation.findMany({
-    where: { status: "active", expiresAt: { lt: now } },
+    where: {
+      status: "active",
+      OR: [
+        { expiresAt: { lt: now } },
+        { expiresAt: null, createdAt: { lt: legacyCutoff } },
+      ],
+    },
     include: { wallet: true },
   });
 
