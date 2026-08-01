@@ -7,7 +7,9 @@ import { syncAlibabaModels } from "@/lib/model-catalog";
 export async function POST(req) {
   try {
     // Fail CLOSED — mirrors /api/cron/automation. An unset CRON_SECRET must
-    // not make this endpoint public.
+    // not make this endpoint public. CRON_SECRET only — never falls back to
+    // or accepts WEBHOOK_SECRET (see src/app/api/webhooks/*); cron and
+    // webhook callers are distinct credentials as of Task 10.
     const secret = process.env.CRON_SECRET;
     if (!secret) {
       return NextResponse.json({ error: "Cron not configured" }, { status: 503 });
