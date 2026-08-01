@@ -465,7 +465,19 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
     console.error("[Director] Pipeline crashed after debit:", err.message);
     const remainder = (costEstimate.totalCredits || 0) - creditsUsed;
     if (remainder > 0) {
-      await refundCredits(userId, remainder, `director:${pipelineId}`, "Pipeline crashed — unexecuted work refunded");
+      try {
+        await refundCredits(userId, remainder, `director:${pipelineId}`, "Pipeline crashed — unexecuted work refunded");
+      } catch (refundErr) {
+        // The refund itself failed (e.g. a transient DB error) — the user is
+        // now owed credits with no automatic recovery. Must not let this
+        // mask the original crash error or skip the FAILED-transition
+        // attempt below, so log loudly with everything an operator needs to
+        // reconcile manually and fall through.
+        console.error(
+          `[Director] CRASH REFUND FAILED — user is owed ${remainder} credits. userId=${userId} pipelineId=${pipelineId} remainder=${remainder}:`,
+          refundErr.message
+        );
+      }
     }
     try {
       await transitionPipeline(pipelineId, PIPELINE_STATES.FAILED, { error: err.message });

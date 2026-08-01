@@ -236,4 +236,29 @@ describe("executeProductionPipeline — wallet ledger debit", () => {
 
     expect(pipelineState.status).toBe("failed");
   });
+
+  // Review finding on Task 6b: the refundCredits call in the crash catch
+  // block was unguarded, unlike the transitionPipeline call below it. If
+  // refundCredits itself throws (e.g. a transient DB error), that exception
+  // would unwind the catch immediately — skipping the FAILED-transition
+  // attempt and masking the original crash error with the refund error.
+  it("still attempts the FAILED transition and rethrows the ORIGINAL error when the crash refund itself fails", async () => {
+    Object.assign(
+      pipelineState,
+      makePipeline({
+        plan: {
+          shots: [{ id: "s1", index: 0, title: "Shot 1", imageStrategy: {}, videoStrategy: {}, durationSec: 5 }],
+        },
+        costEstimate: { totalCredits: 12, shotCosts: [{ total: 12 }] },
+      })
+    );
+
+    prisma.directorShot.upsert.mockRejectedValue(new Error("DB write failed"));
+    refundCredits.mockRejectedValue(new Error("wallet DB unreachable"));
+
+    await expect(executeProductionPipeline("p1", "u1", {})).rejects.toThrow("DB write failed");
+
+    expect(refundCredits).toHaveBeenCalledTimes(1);
+    expect(pipelineState.status).toBe("failed");
+  });
 });
