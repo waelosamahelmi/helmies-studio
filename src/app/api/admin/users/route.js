@@ -26,12 +26,14 @@ export async function PATCH(req) {
     if (role !== undefined && !["user", "admin"].includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
-    if (role !== undefined) {
-      await prisma.user.update({ where: { id: userId }, data: { role } });
-    }
-    if (credits !== undefined) {
-      await adjustWalletTo(userId, credits, "Admin credit adjustment", admin.id);
-    }
+    await prisma.$transaction(async (tx) => {
+      if (role !== undefined) {
+        await tx.user.update({ where: { id: userId }, data: { role } });
+      }
+      if (credits !== undefined) {
+        await adjustWalletTo(userId, credits, "Admin credit adjustment", admin.id, tx);
+      }
+    });
     await logAudit("admin_edit_user", "user", userId, { credits, role, adminId: admin.id }, req);
     return NextResponse.json({ success: true });
   } catch (e) {

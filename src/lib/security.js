@@ -158,8 +158,8 @@ export async function detectAbuse(userId) {
   if (generations > 100) return { flagged: true, reason: "Excessive generation volume" };
   if (failedGenerations > 50) return { flagged: true, reason: "High failure rate" };
 
-  const refunds = await prisma.creditTransaction.count({
-    where: { userId, type: "refund", createdAt: { gte: oneHourAgo } },
+  const refunds = await prisma.creditLedger.count({
+    where: { wallet: { userId }, type: "refund", createdAt: { gte: oneHourAgo } },
   });
   if (refunds > 20) return { flagged: true, reason: "Excessive refund requests" };
 
