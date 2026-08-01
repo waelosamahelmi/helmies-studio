@@ -10,6 +10,6 @@ export async function GET(req) {
     if (!documentId) return NextResponse.json({ error: "documentId required" }, { status: 400 });
     const doc = await prisma.canvasDocument.findFirst({ where: { id: documentId, userId: user.id } });
     if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    return NextResponse.json(await prisma.canvasVersion.findMany({ where: { documentId }, orderBy: { version: "desc" }, take: 50 }));
+    return NextResponse.json(await prisma.canvasVersion.findMany({ where: { documentId }, orderBy: { createdAt: "desc" }, take: 50 }));
   } catch (e) { return NextResponse.json({ error: e.message }, { status: 500 }); }
 }

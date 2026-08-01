@@ -15,8 +15,14 @@ export async function POST(req) {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     const body = await req.json();
-    const doc = await prisma.canvasDocument.create({ data: { userId: user.id, name: body.name || "Untitled", content: body.content || {} } });
-    await prisma.canvasVersion.create({ data: { documentId: doc.id, content: body.content || {}, version: 1 } });
+    const data = body.data ?? body.content ?? {};
+    const doc = await prisma.$transaction(async (tx) => {
+      const created = await tx.canvasDocument.create({
+        data: { userId: user.id, name: body.name || "Untitled", data },
+      });
+      await tx.canvasVersion.create({ data: { documentId: created.id, data } });
+      return created;
+    });
     return NextResponse.json(doc, { status: 201 });
   } catch (e) { return NextResponse.json({ error: e.message }, { status: 500 }); }
 }
@@ -28,9 +34,15 @@ export async function PATCH(req) {
     const body = await req.json();
     const doc = await prisma.canvasDocument.findFirst({ where: { id: body.id, userId: user.id } });
     if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
-    const prev = await prisma.canvasVersion.findFirst({ where: { documentId: doc.id }, orderBy: { version: "desc" } });
-    const updated = await prisma.canvasDocument.update({ where: { id: body.id }, data: { name: body.name, content: body.content } });
-    await prisma.canvasVersion.create({ data: { documentId: doc.id, content: body.content || {}, version: (prev?.version || 0) + 1 } });
+    const data = body.data ?? body.content ?? doc.data;
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.canvasDocument.update({
+        where: { id: body.id },
+        data: { name: body.name ?? doc.name, data },
+      });
+      await tx.canvasVersion.create({ data: { documentId: doc.id, data } });
+      return u;
+    });
     return NextResponse.json(updated);
   } catch (e) { return NextResponse.json({ error: e.message }, { status: 500 }); }
 }
