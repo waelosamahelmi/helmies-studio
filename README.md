@@ -22,7 +22,7 @@ Current-state functional reference (routes, auth levels, data model facts):
 
 ## Prerequisites
 
-- Node.js 22.x and npm 11.x (matches CI in `.github/workflows/ci.yml`)
+- Node.js 22.x (matches `node-version: 22` in `.github/workflows/ci.yml`; CI does not pin an npm version)
 - A PostgreSQL database (Supabase or local Postgres). Local dev commonly runs Postgres
   on a non-default port — check `DATABASE_URL` in your `.env` rather than assuming 5432.
 - Accounts/keys for the providers you intend to exercise locally: KIE, Alibaba Cloud,
@@ -62,9 +62,8 @@ Full list with inline comments lives in **[.env.example](./.env.example)**; copy
 | Automation | `CRON_SECRET`, `WEBHOOK_SECRET` (falls back to `CRON_SECRET` if unset) |
 | Site URL / outbound allowlist | `NEXT_PUBLIC_URL`, `APP_URL` |
 
-`scripts/check-env.mjs` verifies the required subset is present in your environment
-and documented in `.env.example` — run it with `node scripts/check-env.mjs` (it is not
-currently wired up as an `npm run` script).
+`npm run check:env` (`scripts/check-env.mjs`) verifies the required subset is present
+in your environment and documented in `.env.example`.
 
 ## Scripts
 
@@ -84,9 +83,10 @@ run `npm run <script>`.
 | `db:migrate:dev` | `prisma migrate dev` | Create/apply a migration against a dev database |
 | `db:migrate:deploy` | `prisma migrate deploy` | Apply pending migrations (used in deploys/CI) |
 | `check:dead-code` | `node scripts/dead-code.mjs` | Report unused exports/files |
+| `check:env` | `node scripts/check-env.mjs` | Verify required env vars are set and documented in `.env.example` |
 
-`scripts/` also has standalone utility scripts not wired into `package.json` (env
-checks, seeding, provider diagnostics, media cleanup, etc.) — run those directly with
+`scripts/` also has standalone utility scripts not wired into `package.json` (seeding,
+provider diagnostics, media cleanup, etc.) — run those directly with
 `node scripts/<name>.mjs`.
 
 ## Testing
