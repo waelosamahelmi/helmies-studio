@@ -18,10 +18,11 @@ import { matchesGroup } from "@/lib/capability-groups";
    Fixed in this rebuild:
    · `hasInstrumental`, `hasVocalGender`, `hasStyle`, `hasTitle` and
      `hasNegativeTags` gated every optional field in the submit body. The live
-     catalog never emits those flags — `serializeCatalogModel` returns id,
-     capability, credits, schema, constraints, pricing and nothing else — so
-     the style, title, vocal gender, instrumental switch and negative tags the
-     user set were silently dropped from every single request. They are now
+     catalog never emits those flags — `serializeCatalogModel`'s public shape
+     returns id, capability, credits, schema, constraints and nothing else
+     (provider cost basis is server-only) — so the style, title, vocal
+     gender, instrumental switch and negative tags the user set were silently
+     dropped from every single request. They are now
      gated on the model's own input schema (a field the catalog does emit),
      defaulting to "send it" when a model declares no schema.
    · `error` from useAsyncGeneration was never rendered; failures were silent.

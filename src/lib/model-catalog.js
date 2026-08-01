@@ -80,8 +80,8 @@ export async function syncAlibabaModels() {
   return { provider: "Alibaba", added, updated, deactivated: stale.length, total: ALIBABA_MEDIA_MODELS.length };
 }
 
-export function serializeCatalogModel(model) {
-  return {
+export function serializeCatalogModel(model, { includeCosts = false } = {}) {
+  const base = {
     id: model.modelId,
     modelId: model.modelId,
     providerModelId: model.providerModelId || model.modelId,
@@ -95,12 +95,10 @@ export function serializeCatalogModel(model) {
     outputModalities: model.outputModalities || [],
     schema: model.inputSchema || null,
     constraints: model.constraints || {},
-    pricing: model.pricingRules || null,
     billingUnit: model.billingUnit,
     currency: model.currency,
     regions: model.regions || [],
     credits: model.creditsCost,
-    providerCost: model.providerCost,
     background: model.background,
     backgroundOverlay: model.backgroundOverlay,
     textColor: model.textColor,
@@ -108,9 +106,14 @@ export function serializeCatalogModel(model) {
     catalogVersion: model.catalogVersion,
     isDeprecated: model.isDeprecated,
   };
+  if (includeCosts) {
+    base.providerCost = model.providerCost;
+    base.pricing = model.pricingRules || null;
+  }
+  return base;
 }
 
-export async function getCatalogModels({ capability, modelType, provider, includeInactive = false } = {}) {
+export async function getCatalogModels({ capability, modelType, provider, includeInactive = false, includeCosts = false } = {}) {
   const where = {
     ...(includeInactive ? {} : { isActive: true, isDeprecated: false }),
     ...(capability ? { capability } : {}),
@@ -118,12 +121,12 @@ export async function getCatalogModels({ capability, modelType, provider, includ
     ...(provider ? { providerName: { equals: provider, mode: "insensitive" } } : {}),
   };
   const rows = await prisma.modelPricing.findMany({ where, orderBy: [{ sortOrder: "asc" }, { displayName: "asc" }, { modelId: "asc" }] });
-  return rows.map(serializeCatalogModel);
+  return rows.map((row) => serializeCatalogModel(row, { includeCosts }));
 }
 
-export async function getCatalogModel(modelId) {
+export async function getCatalogModel(modelId, { includeCosts = false } = {}) {
   const row = await prisma.modelPricing.findUnique({ where: { modelId } });
-  return row ? serializeCatalogModel(row) : null;
+  return row ? serializeCatalogModel(row, { includeCosts }) : null;
 }
 
 export async function quoteCatalogModel(modelId, params = {}) {
