@@ -44,7 +44,7 @@ export async function POST(req) {
     checks.push({
       name: "Pricing row",
       ok: true,
-      detail: `${model.credits ?? "—"} credits · ${model.isActive ? "active" : "inactive"}`,
+      detail: `${model.creditsCost ?? "—"} credits · ${model.isActive ? "active" : "inactive"}`,
     });
 
     checks.push({
@@ -53,7 +53,7 @@ export async function POST(req) {
       detail: model.endpoint || "missing — generations will fall back to the model id",
     });
 
-    const providerKey = String(model.provider || "").toLowerCase();
+    const providerKey = String(model.providerName || "").toLowerCase();
     const provider =
       PROVIDERS?.[providerKey] ||
       Object.values(PROVIDERS || {}).find(
@@ -63,7 +63,7 @@ export async function POST(req) {
     checks.push({
       name: "Provider",
       ok: !!provider,
-      detail: provider ? `${model.provider} configured` : `${model.provider || "unknown"} is not in the provider registry`,
+      detail: provider ? `${model.providerName} configured` : `${model.providerName || "unknown"} is not in the provider registry`,
     });
 
     const keyEnv = provider?.keyEnv || (providerKey.includes("kie") ? "KIE_KEY" : null);
