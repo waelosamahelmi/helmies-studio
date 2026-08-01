@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
 import { adjustWalletTo } from "@/lib/wallet";
 import prisma from "@/lib/prisma";
 
@@ -22,7 +23,7 @@ export async function GET(req) {
       users.map(({ wallet, ...u }) => ({ ...u, credits: wallet?.available ?? u.credits }))
     );
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.message.includes("Forbidden") ? 403 : 401 });
+    return authzResponse(e);
   }
 }
 
@@ -47,6 +48,6 @@ export async function PATCH(req) {
     await logAudit("admin_edit_user", "user", userId, { credits, role, adminId: admin.id }, req);
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

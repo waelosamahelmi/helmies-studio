@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
 import prisma from "@/lib/prisma";
 
 export async function POST(req) {
@@ -33,6 +34,6 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, publishedAt: updated.updatedAt, id });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 401 });
+    return authzResponse(e);
   }
 }

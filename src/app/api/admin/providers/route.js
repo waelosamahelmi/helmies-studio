@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
 import prisma from "@/lib/prisma";
 
 export async function GET(req) {
@@ -14,7 +15,7 @@ export async function GET(req) {
       })),
     );
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 401 });
+    return authzResponse(e);
   }
 }
 
@@ -41,6 +42,6 @@ export async function POST(req) {
     await logAudit("admin_set_provider", "provider", name, { markup, isActive }, req);
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { requireAdmin } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
 import { PROVIDERS } from "@/lib/providers";
 
 /* The admin Model Manager has a "Test" action that posted here, but the route
@@ -12,11 +13,7 @@ export async function POST(req) {
   try {
     await requireAdmin(req);
   } catch (e) {
-    const forbidden = /admin/i.test(e?.message || "");
-    return NextResponse.json(
-      { error: e?.message || "Unauthorized" },
-      { status: forbidden ? 403 : 401 },
-    );
+    return authzResponse(e);
   }
 
   const started = Date.now();

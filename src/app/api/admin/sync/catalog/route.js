@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
 import { syncKieModels } from "@/lib/kie-sync";
 import { syncAlibabaModels } from "@/lib/model-catalog";
 
@@ -11,6 +12,6 @@ export async function POST(req) {
     await logAudit("admin_sync_provider_catalog", "model_pricing", "all", result, req);
     return NextResponse.json({ success: true, ...result, syncedAt: new Date().toISOString() });
   } catch (error) {
-    return NextResponse.json({ error: error.message || "Catalog sync failed" }, { status: 500 });
+    return authzResponse(error);
   }
 }

@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { requireAdminUser } from "@/lib/authz";
 
 // NOTE: checkRateLimit is a no-op for any endpoint missing from this map, so a
 // key must exist for every path passed to it. generation-handler.js builds
@@ -35,12 +36,13 @@ const RATE_LIMITS = {
 };
 
 // ── RBAC ──
+// Thin delegate onto the central authz module (src/lib/authz.js) so the 21
+// admin routes importing `requireAdmin` from here keep working unchanged.
+// It now throws AuthzError (401 unauthenticated / 403 non-admin) instead of
+// a plain Error — callers must catch with `authzResponse(e)`, not
+// `{ error: e.message }`.
 export async function requireAdmin(req) {
-  const user = await getCurrentUser(req);
-  if (!user) throw new Error("Unauthorized");
-  const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true } });
-  if (dbUser?.role !== "admin") throw new Error("Forbidden: admin access required");
-  return user;
+  return requireAdminUser(req);
 }
 
 export async function isAdmin(userId) {
