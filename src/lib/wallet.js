@@ -193,18 +193,21 @@ export async function adjustWalletTo(userId, targetAvailable, description, admin
     const before = await tx.creditWallet.findUnique({ where: { userId } });
     const delta = targetAvailable - before.available;
     if (delta === 0) return { wallet: before, delta: 0 };
-    if (delta < 0) {
-      const claimed = await tx.creditWallet.updateMany({
-        where: { userId, available: { gte: -delta } },
-        data: { available: { decrement: -delta } },
-      });
-      if (claimed.count === 0) throw new Error("Insufficient credits for adjustment");
-    } else {
-      await tx.creditWallet.update({
-        where: { userId },
-        data: { available: { increment: delta }, lifetime: { increment: delta } },
-      });
-    }
+
+    // Compare-and-set on the exact snapshot we just read: the WHERE clause
+    // pins `available` to `before.available`, not just a `gte` threshold, so
+    // a concurrent writer that changes the balance between our read and this
+    // write causes the update to match zero rows instead of silently
+    // landing the wallet on a stale target. Callers retry on the error.
+    const claimed = await tx.creditWallet.updateMany({
+      where: { userId, available: before.available },
+      data: {
+        available: targetAvailable,
+        ...(delta > 0 ? { lifetime: { increment: delta } } : {}),
+      },
+    });
+    if (claimed.count === 0) throw new Error("Wallet changed concurrently — retry the adjustment");
+
     const wallet = await tx.creditWallet.findUnique({ where: { userId } });
     await writeLedger(tx, wallet.id, delta, wallet.available,
       "admin_adjustment", `${description}${adminId ? ` (by ${adminId})` : ""}`, null);

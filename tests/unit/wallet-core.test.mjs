@@ -73,6 +73,9 @@ describe("adjustWalletTo", () => {
     const { delta } = await adjustWalletTo("u1", 200, "Abuse clamp", "admin1");
 
     expect(delta).toBe(-300);
+    const casArg = prisma.creditWallet.updateMany.mock.calls[0][0];
+    expect(casArg.where).toEqual({ userId: "u1", available: 500 });
+    expect(casArg.data).toMatchObject({ available: 200 });
     const ledger = prisma.creditLedger.create.mock.calls[0][0].data;
     expect(ledger).toMatchObject({ amount: -300, type: "admin_adjustment", balanceAfter: 200 });
     expect(ledger.description).toContain("Abuse clamp");
@@ -85,6 +88,19 @@ describe("adjustWalletTo", () => {
     const { delta } = await adjustWalletTo("u1", 200, "noop", "admin1");
     expect(delta).toBe(0);
     expect(prisma.creditLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("throws a concurrent-modification error and writes no ledger row when the CAS misses", async () => {
+    prisma.creditWallet.upsert.mockResolvedValue({ id: "w1", userId: "u1", available: 500, reserved: 0 });
+    prisma.creditWallet.findUnique.mockResolvedValue({ id: "w1", userId: "u1", available: 500, reserved: 0 });
+    prisma.creditWallet.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(adjustWalletTo("u1", 200, "Abuse clamp", "admin1")).rejects.toThrow(/Wallet changed concurrently/);
+
+    const casArg = prisma.creditWallet.updateMany.mock.calls[0][0];
+    expect(casArg.where).toEqual({ userId: "u1", available: 500 });
+    expect(prisma.creditLedger.create).not.toHaveBeenCalled();
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });
 
