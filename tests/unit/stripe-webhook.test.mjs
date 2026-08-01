@@ -11,6 +11,7 @@ vi.mock("@/lib/prisma", () => {
     stripeEvent: { create: vi.fn() },
     templatePurchase: { upsert: vi.fn() },
     subscription: { updateMany: vi.fn() },
+    subscriptionPlan: { findUnique: vi.fn(), findFirst: vi.fn() },
   };
   const prisma = {
     stripeEvent: { findUnique: vi.fn() },
@@ -170,10 +171,12 @@ describe("POST /api/stripe/webhook — checkout.session.completed subscription p
         },
       },
     });
+    txClient.subscriptionPlan.findUnique.mockResolvedValue({ slug: "starter", credits: 1000 });
     grantCredits.mockResolvedValue({});
 
     const res = await POST(webhookRequest());
     expect(res.status).toBe(200);
+    expect(txClient.subscriptionPlan.findUnique).toHaveBeenCalledWith({ where: { slug: "starter" } });
     expect(grantCredits).toHaveBeenCalledWith(
       "u3", 1000, "subscription_grant", "starter plan subscription: 1000 credits", "cs_3", txClient
     );
@@ -206,6 +209,7 @@ describe("POST /api/stripe/webhook — invoice.paid", () => {
         },
       },
     });
+    txClient.subscriptionPlan.findUnique.mockResolvedValue({ slug: "studio", credits: 3000 });
     grantCredits.mockResolvedValue({});
 
     const res = await POST(webhookRequest());
@@ -214,6 +218,7 @@ describe("POST /api/stripe/webhook — invoice.paid", () => {
     expect(callOrder).toEqual(["retrieve:sub_1", "transaction-start"]);
     expect(stripeInstance.subscriptions.retrieve).toHaveBeenCalledTimes(1);
 
+    expect(txClient.subscriptionPlan.findUnique).toHaveBeenCalledWith({ where: { slug: "studio" } });
     expect(grantCredits).toHaveBeenCalledWith(
       "u4", 3000, "subscription_grant", "studio plan renewal: 3000 credits", "in_1", txClient
     );

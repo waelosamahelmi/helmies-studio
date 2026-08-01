@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import prisma from "@/lib/prisma";
-import { SUBSCRIPTION_CREDITS, PLAN_IDS } from "@/lib/credits";
 import { grantCredits } from "@/lib/wallet";
 
 let stripe;
@@ -12,6 +11,26 @@ function getStripe() {
     stripe = new Stripe(key, { apiVersion: "2024-12-18.acacia" });
   }
   return stripe;
+}
+
+// The admin Plans editor writes SubscriptionPlan rows — those rows are the
+// sole source of truth for how many credits a subscription grant is worth.
+// Tries an exact slug match first (checkout metadata, or a subscription's
+// own metadata.plan), then falls back to matching the Stripe price id
+// against either billing period column. A mis-seeded/deleted plan resolves
+// to `null` here — callers must grant 0 credits, not throw, so a bad plan
+// row can never crash the webhook or lose the event claim.
+async function planBySlugOrPrice(tx, slug, priceId) {
+  if (slug) {
+    const bySlug = await tx.subscriptionPlan.findUnique({ where: { slug } });
+    if (bySlug) return bySlug;
+  }
+  if (priceId) {
+    return tx.subscriptionPlan.findFirst({
+      where: { OR: [{ stripePriceId: priceId }, { stripePriceIdYearly: priceId }] },
+    });
+  }
+  return null;
 }
 
 export async function POST(req) {
@@ -113,15 +132,21 @@ export async function POST(req) {
               });
             }
           } else {
-            const plan = session.metadata?.plan || PLAN_IDS[session.metadata?.priceId];
-            const credits = SUBSCRIPTION_CREDITS[plan] || 0;
+            const slug = session.metadata?.plan;
+            const planRow = await planBySlugOrPrice(tx, slug, null);
+            if (!planRow) {
+              console.error(
+                `[webhook] No SubscriptionPlan row found for slug "${slug}" — checkout session ${session.id} will grant 0 credits. Check the admin Plans configuration.`
+              );
+            }
+            const credits = planRow?.credits || 0;
 
             if (credits > 0) {
               await grantCredits(
                 userId,
                 credits,
                 "subscription_grant",
-                `${plan} plan subscription: ${credits} credits`,
+                `${slug} plan subscription: ${credits} credits`,
                 session.id,
                 tx
               );
@@ -136,8 +161,16 @@ export async function POST(req) {
           if (subscriptionId) {
             const subscription = prefetchedSubscription;
             const userId = subscription.metadata?.userId;
-            const plan = subscription.metadata?.plan || PLAN_IDS[subscription.items?.data?.[0]?.price?.id];
-            const credits = SUBSCRIPTION_CREDITS[plan] || 0;
+            const priceId = subscription.items?.data?.[0]?.price?.id;
+            const metaSlug = subscription.metadata?.plan;
+            const planRow = await planBySlugOrPrice(tx, metaSlug, priceId);
+            if (!planRow) {
+              console.error(
+                `[webhook] No SubscriptionPlan row found for slug "${metaSlug}" or price "${priceId}" — invoice ${invoice.id} will grant 0 credits. Check the admin Plans configuration.`
+              );
+            }
+            const credits = planRow?.credits || 0;
+            const plan = metaSlug || planRow?.slug || "free";
 
             if (userId && credits > 0 && invoice.billing_reason === "subscription_cycle") {
               await grantCredits(
@@ -155,9 +188,9 @@ export async function POST(req) {
                 where: { userId },
                 data: {
                   stripeSubscriptionId: subscriptionId,
-                  stripePriceId: subscription.items?.data?.[0]?.price?.id,
+                  stripePriceId: priceId,
                   stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
-                  plan: plan || "free",
+                  plan,
                   status: "active",
                 },
               });

@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getCurrentUserWithCredits } from "@/lib/session";
 import prisma from "@/lib/prisma";
-import { CREDIT_PACKS } from "@/lib/credit-packs";
 
 let stripe;
 function getStripe() {
@@ -14,18 +13,21 @@ function getStripe() {
   return stripe;
 }
 
-const PACKS_BY_ID = Object.fromEntries(CREDIT_PACKS.map((p) => {
-  const priceEur = parseFloat(p.price.replace("€", ""));
-  return [p.id, { credits: p.credits, priceEur }];
-}));
-
+// The admin Credit Packs editor writes CreditPack rows — those rows are now
+// the sole source of truth for what's purchasable and at what price.
+// `price` is stored in euro cents.
 export async function GET() {
+  const packs = await prisma.creditPack.findMany({
+    where: { isActive: true },
+    orderBy: { sortOrder: "asc" },
+  });
   return NextResponse.json({
-    packs: Object.entries(PACKS_BY_ID).map(([id, pack]) => ({
-      id,
-      credits: pack.credits,
-      priceEur: pack.priceEur,
-      perCredit: (pack.priceEur / pack.credits).toFixed(4),
+    packs: packs.map((p) => ({
+      id: p.id,
+      name: p.name,
+      credits: p.credits,
+      priceEur: p.price / 100,
+      perCredit: (p.price / 100 / p.credits).toFixed(4),
     })),
   });
 }
@@ -38,8 +40,8 @@ export async function POST(req) {
     }
 
     const { packId } = await req.json();
-    const pack = PACKS_BY_ID[packId];
-    if (!pack) {
+    const pack = packId ? await prisma.creditPack.findUnique({ where: { id: packId } }) : null;
+    if (!pack || !pack.isActive) {
       return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
     }
 
@@ -73,8 +75,8 @@ export async function POST(req) {
         {
           price_data: {
             currency: "eur",
-            product_data: { name: `${pack.credits} Credits`, description: `Helmies Studio credit pack` },
-            unit_amount: Math.round(pack.priceEur * 100),
+            product_data: { name: pack.name, description: `Helmies Studio credit pack` },
+            unit_amount: pack.price,
           },
           quantity: 1,
         },

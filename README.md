@@ -129,6 +129,18 @@ step, which predates the Prisma Migrate workflow adopted in
 for how schema changes should ship; treat `deploy.sh`'s db-push step as due for an
 update to `prisma migrate deploy`.
 
+### Seeding subscription plans and credit packs
+
+Checkout, top-up, and the Stripe webhook read pricing/credit amounts from the
+`SubscriptionPlan` and `CreditPack` tables — the admin Plans/Credit Packs editors
+write these rows and now genuinely drive billing (they used to be decorative).
+Run `node scripts/seed-plans.mjs` once at deploy to create/refresh the default
+rows, and again any time a `STRIPE_PRICE_*` env var changes (it reads
+`DATABASE_URL` and the `STRIPE_PRICE_*` vars from the environment, and upserts —
+safe to re-run, never duplicates rows). A missing or inactive plan/pack row makes
+checkout and top-up return 400; a missing `SubscriptionPlan` row for a webhook
+event grants 0 credits (logged loudly) rather than crashing the webhook.
+
 Full architecture and deploy context: **[AGENTS.md](./AGENTS.md)**.
 
 ## Current quality work
