@@ -66,3 +66,32 @@ describe("POST /api/director/rerun — rerunType validation", () => {
     expect(rerunShot).not.toHaveBeenCalled();
   });
 });
+
+// Final-review finding: the blanket authzResponse conversion in the route's
+// catch block swallowed the "Insufficient credits" business error thrown by
+// rerunShot into a generic 500 "Internal error". This route must special-case
+// that error into a 402 with the message visible, while any other thrown
+// error still falls through to authzResponse's generic 500.
+describe("POST /api/director/rerun — business errors reach the user", () => {
+  it("maps an insufficient-credits throw to 402 with the message visible", async () => {
+    rerunShot.mockRejectedValue(new Error("Insufficient credits"));
+
+    const res = await POST(jsonReq({ planId: "p1", shotId: "s1", rerunType: "full" }));
+
+    expect(res.status).toBe(402);
+    const body = await res.json();
+    expect(body.error).toMatch(/Insufficient credits/);
+  });
+
+  it("still returns a generic 500 'Internal error' for any other thrown error", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    rerunShot.mockRejectedValue(new Error("provider exploded"));
+
+    const res = await POST(jsonReq({ planId: "p1", shotId: "s1", rerunType: "full" }));
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Internal error" });
+    errSpy.mockRestore();
+  });
+});

@@ -352,4 +352,41 @@ describe("rerunShot — charges before regenerating", () => {
     await expect(rerunShot("p1", "u1", "s1", "full")).rejects.toThrow(/Insufficient credits/);
     expect(generateImage).not.toHaveBeenCalled();
   });
+
+  // Final-review finding: rerunShot charges via debitWallet above, then the
+  // execution switch could throw on provider failure with no refund path —
+  // unlike executeProductionPipeline, which refunds unexecuted work on both
+  // its stopOnFailure and crash paths. A user reruns a shot, the provider
+  // errors, and the user was left permanently billed for work that never
+  // happened.
+  describe("rerunShot — refunds on execution failure", () => {
+    it("refunds the debited cost and rethrows the ORIGINAL error when the provider fails mid-rerun", async () => {
+      const providerError = new Error("provider exploded");
+      generateImage.mockRejectedValue(providerError);
+
+      await expect(rerunShot("p1", "u1", "s1", "image")).rejects.toThrow("provider exploded");
+
+      expect(refundCredits).toHaveBeenCalledTimes(1);
+      const [userId, amount, referenceId, reason] = refundCredits.mock.calls[0];
+      expect(userId).toBe("u1");
+      expect(amount).toBe(2); // the debited image-only cost
+      expect(referenceId).toBe("director:p1:rerun");
+      expect(typeof reason).toBe("string");
+    });
+
+    it("still rethrows the ORIGINAL error when the refund itself also fails", async () => {
+      const providerError = new Error("provider exploded");
+      generateImage.mockRejectedValue(providerError);
+      refundCredits.mockRejectedValue(new Error("wallet DB unreachable"));
+
+      await expect(rerunShot("p1", "u1", "s1", "image")).rejects.toThrow("provider exploded");
+      expect(refundCredits).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not refund when the rerun succeeds", async () => {
+      await rerunShot("p1", "u1", "s1", "image");
+
+      expect(refundCredits).not.toHaveBeenCalled();
+    });
+  });
 });

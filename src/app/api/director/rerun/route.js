@@ -26,6 +26,13 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, result });
   } catch (e) {
+    // Business errors (e.g. insufficient credits) thrown from rerunShot must
+    // reach the UI as a clean 402, not be swallowed by authzResponse's
+    // blanket 500 "Internal error" — mirrors the shape /api/generate/async
+    // already returns for the same condition.
+    if (/Insufficient credits/.test(e.message)) {
+      return NextResponse.json({ error: e.message }, { status: 402 });
+    }
     return authzResponse(e);
   }
 }

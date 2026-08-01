@@ -544,39 +544,56 @@ export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") 
 
   let result;
 
-  switch (rerunType) {
-    case "image":
-      // Rerun image only
-      const imageResult = await executeShotImage(shot, pipeline, brief);
-      if (!imageResult.success) throw new Error(imageResult.error);
-      result = { shotId, imageUrl: imageResult.imageUrl, videoUrl: shotRecord.videoResult?.url, stage: "image" };
-      break;
+  try {
+    switch (rerunType) {
+      case "image":
+        // Rerun image only
+        const imageResult = await executeShotImage(shot, pipeline, brief);
+        if (!imageResult.success) throw new Error(imageResult.error);
+        result = { shotId, imageUrl: imageResult.imageUrl, videoUrl: shotRecord.videoResult?.url, stage: "image" };
+        break;
 
-    case "video":
-      // Rerun video only (using existing image if available)
-      const existingImage = shotRecord.imageResult?.url;
-      const videoResult = await executeShotVideo(shot, pipeline, brief, existingImage);
-      if (!videoResult.success) throw new Error(videoResult.error);
-      result = { shotId, imageUrl: existingImage, videoUrl: videoResult.videoUrl, stage: "video" };
-      break;
+      case "video":
+        // Rerun video only (using existing image if available)
+        const existingImage = shotRecord.imageResult?.url;
+        const videoResult = await executeShotVideo(shot, pipeline, brief, existingImage);
+        if (!videoResult.success) throw new Error(videoResult.error);
+        result = { shotId, imageUrl: existingImage, videoUrl: videoResult.videoUrl, stage: "video" };
+        break;
 
-    case "audio":
-      // Rerun audio only
-      const audioResult = await executeShotAudio(shot, pipeline, brief);
-      result = { shotId, audioUrl: audioResult.audioUrl, stage: "audio" };
-      break;
+      case "audio":
+        // Rerun audio only
+        const audioResult = await executeShotAudio(shot, pipeline, brief);
+        result = { shotId, audioUrl: audioResult.audioUrl, stage: "audio" };
+        break;
 
-    case "full":
-    default:
-      // Full rerun. `default` is unreachable other than via "full" now that
-      // rerunType is validated against VALID_RERUN_TYPES above — kept only
-      // as a defensive fallback, not as the "anything unrecognized" catch-all
-      // it used to be (that's what let a bogus rerunType diverge from the
-      // cost path above).
-      const fullResult = await executeFullShot(shot, pipeline, brief);
-      if (!fullResult.success) throw new Error(fullResult.error);
-      result = { shotId, ...fullResult, stage: "full" };
-      break;
+      case "full":
+      default:
+        // Full rerun. `default` is unreachable other than via "full" now that
+        // rerunType is validated against VALID_RERUN_TYPES above — kept only
+        // as a defensive fallback, not as the "anything unrecognized" catch-all
+        // it used to be (that's what let a bogus rerunType diverge from the
+        // cost path above).
+        const fullResult = await executeFullShot(shot, pipeline, brief);
+        if (!fullResult.success) throw new Error(fullResult.error);
+        result = { shotId, ...fullResult, stage: "full" };
+        break;
+    }
+  } catch (err) {
+    // The debit above has already charged the user for this rerun — mirror
+    // executeProductionPipeline's crash safety net (see the catch block of
+    // executeProductionPipeline) so a provider failure here doesn't leave
+    // the user permanently billed for work that never happened. Guard the
+    // refund itself so a refund failure can't mask the original error.
+    try {
+      await refundCredits(userId, cost, `director:${pipelineId}:rerun`, "Failed rerun refund");
+    } catch (refundErr) {
+      console.error(
+        `[Director] RERUN REFUND FAILED — user is owed ${cost} credits. userId=${userId} pipelineId=${pipelineId} shotId=${shotId} rerunType=${rerunType}:`,
+        refundErr.message
+      );
+    }
+    throw err;
   }
 
   // Update pipeline metadata
