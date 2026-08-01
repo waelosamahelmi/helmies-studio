@@ -10,11 +10,15 @@
                       aria-expanded, so it has to be a real button).
 
    Every figure on this page is derived, never typed twice. Plan credits come
-   from SUBSCRIPTION_CREDITS, packs from CREDIT_PACKS, and the per-credit rate
-   is computed from price ÷ credits so the two products stay comparable.
+   from SUBSCRIPTION_CREDITS (display copy only — checkout resolves the real
+   plan/price server-side from the SubscriptionPlan table). Packs are fetched
+   live from GET /api/stripe/topup, which reads the admin-editable CreditPack
+   table — CREDIT_PACKS is kept only as the pre-fetch/loading fallback so the
+   section never renders empty. The per-credit rate is computed from
+   price ÷ credits client-side so the two products stay comparable.
    ══════════════════════════════════════════════════════════════════════════ */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/client-fetch";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
@@ -71,14 +75,33 @@ export default function PricingPlans() {
   const [busy, setBusy] = useState(null);
   const [fault, setFault] = useState(null);
 
+  // Pre-fetch/loading fallback only — replaced by the live GET below as soon
+  // as it resolves, so the packs section never renders empty.
+  const [rawPacks, setRawPacks] = useState(() =>
+    CREDIT_PACKS.map((p) => ({ id: p.id, credits: p.credits, eur: parseFloat(String(p.price).replace("€", "")) }))
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/stripe/topup");
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.packs) && data.packs.length > 0) {
+          setRawPacks(data.packs.map((p) => ({ id: p.id, credits: p.credits, eur: p.priceEur })));
+        }
+      } catch {
+        // Fetch failed — keep the static fallback rather than an empty section.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   const packs = useMemo(() => {
-    const rows = CREDIT_PACKS.map((p) => {
-      const eur = parseFloat(String(p.price).replace("€", ""));
-      return { id: p.id, credits: p.credits, eur, perCredit: eur / p.credits };
-    });
+    const rows = rawPacks.map((p) => ({ ...p, perCredit: p.eur / p.credits }));
     const best = Math.min(...rows.map((r) => r.perCredit));
     return rows.map((r) => ({ ...r, best: r.perCredit === best }));
-  }, []);
+  }, [rawPacks]);
 
   async function post(url, body, key) {
     setFault(null);

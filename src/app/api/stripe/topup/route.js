@@ -40,7 +40,19 @@ export async function POST(req) {
     }
 
     const { packId } = await req.json();
-    const pack = packId ? await prisma.creditPack.findUnique({ where: { id: packId } }) : null;
+    let pack = packId ? await prisma.creditPack.findUnique({ where: { id: packId } }) : null;
+    if (!pack) {
+      // A tab left open across a deploy still sends the old static ids
+      // ("500"/"1000"/"2500"/"5000"), not a real CreditPack row id —
+      // findUnique(id) always misses those. They happen to equal the
+      // pack's credit count, so a purely-numeric miss falls back to
+      // resolving by credits (active only — this is a compatibility shim
+      // for a stale client, not a way to buy a deactivated pack).
+      const legacy = /^\d+$/.test(packId)
+        ? await prisma.creditPack.findFirst({ where: { credits: parseInt(packId, 10), isActive: true } })
+        : null;
+      pack = legacy;
+    }
     if (!pack || !pack.isActive) {
       return NextResponse.json({ error: "Invalid pack" }, { status: 400 });
     }

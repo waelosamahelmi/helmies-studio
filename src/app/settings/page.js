@@ -178,11 +178,37 @@ function BillingPanel({ data, loading, error, reload }) {
   const [yearly, setYearly] = useState(false);
   const [busy, setBusy] = useState(null);
   const [fault, setFault] = useState("");
+  // Pre-fetch/loading fallback only — replaced by the live GET below as soon
+  // as it resolves, so the packs section never renders empty.
+  const [packs, setPacks] = useState(() =>
+    CREDIT_PACKS.map((p) => ({ id: p.id, credits: p.credits, price: p.price, pricePerCredit: p.pricePerCredit }))
+  );
 
   const plan = data?.plan || "free";
   const credits = data?.credits ?? 0;
   const ledger = data?.recentTransactions || [];
   const period = data?.subscription?.stripeCurrentPeriodEnd;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/stripe/topup");
+        const json = await res.json();
+        if (!cancelled && Array.isArray(json?.packs) && json.packs.length > 0) {
+          setPacks(json.packs.map((p) => ({
+            id: p.id,
+            credits: p.credits,
+            price: `€${p.priceEur}`,
+            pricePerCredit: `€${p.perCredit}/credit`,
+          })));
+        }
+      } catch {
+        // Fetch failed — keep the static fallback rather than an empty section.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const post = useCallback(async (key, path, body) => {
     setBusy(key);
@@ -301,7 +327,7 @@ function BillingPanel({ data, loading, error, reload }) {
         </div>
         <div className="pg-panel__body">
           <div className="pg-packs">
-            {CREDIT_PACKS.map((p) => (
+            {packs.map((p) => (
               <div key={p.id} className="pg-pack">
                 <span className="pg-pack__cr">{num(p.credits)}</span>
                 <span className="pg-pack__eur">{p.price}</span>

@@ -18,7 +18,7 @@ vi.mock("@/lib/prisma", () => {
   };
   const prisma = {
     subscriptionPlan: { findUnique: vi.fn() },
-    creditPack: { findMany: vi.fn(), findUnique: vi.fn() },
+    creditPack: { findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
     subscription: { findFirst: vi.fn(), upsert: vi.fn(), create: vi.fn() },
     stripeEvent: { findUnique: vi.fn() },
     $transaction: vi.fn(async (fn) => fn(txClient)),
@@ -66,6 +66,7 @@ beforeEach(() => {
   stripeInstance.customers.create.mockResolvedValue({ id: "cus_1" });
   stripeInstance.checkout.sessions.create.mockResolvedValue({ url: "https://stripe.test/session" });
   prisma.stripeEvent.findUnique.mockResolvedValue(null);
+  prisma.creditPack.findFirst.mockResolvedValue(null);
 });
 
 function jsonRequest(url, body) {
@@ -199,6 +200,9 @@ describe("POST /api/stripe/topup — pack resolved from CreditPack", () => {
 
     expect(res.status).toBe(200);
     expect(prisma.creditPack.findUnique).toHaveBeenCalledWith({ where: { id: "pk_1" } });
+    // cuid path unchanged: a findUnique hit must never fall through to the
+    // legacy-id-by-credits lookup.
+    expect(prisma.creditPack.findFirst).not.toHaveBeenCalled();
     expect(stripeInstance.checkout.sessions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         line_items: [
@@ -232,6 +236,48 @@ describe("POST /api/stripe/topup — pack resolved from CreditPack", () => {
 
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toEqual({ error: "Invalid pack" });
+    expect(stripeInstance.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+
+  it("legacy numeric packId ('500') falls back to the matching active CreditPack row by credits", async () => {
+    // A tab left open across a deploy still sends the old static id, which
+    // happens to equal the pack's credit count — not a real CreditPack row
+    // id. findUnique(id) misses; the purely-numeric fallback must resolve
+    // it by credits instead of 400ing a legitimate stale-tab purchase.
+    prisma.creditPack.findUnique.mockResolvedValue(null);
+    prisma.creditPack.findFirst.mockResolvedValue({
+      id: "pk_legacy_500", name: "500 Credits", credits: 500, price: 900, isActive: true,
+    });
+
+    const { POST } = await import("@/app/api/stripe/topup/route.js");
+    const res = await POST(jsonRequest("http://test/api/stripe/topup", { packId: "500" }));
+
+    expect(res.status).toBe(200);
+    expect(prisma.creditPack.findUnique).toHaveBeenCalledWith({ where: { id: "500" } });
+    expect(prisma.creditPack.findFirst).toHaveBeenCalledWith({
+      where: { credits: 500, isActive: true },
+    });
+    expect(stripeInstance.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        line_items: [
+          expect.objectContaining({
+            price_data: expect.objectContaining({ unit_amount: 900 }),
+          }),
+        ],
+        metadata: expect.objectContaining({ credits: 500, type: "credit_topup" }),
+      })
+    );
+  });
+
+  it("non-numeric junk id still 400s — no legacy fallback attempted", async () => {
+    prisma.creditPack.findUnique.mockResolvedValue(null);
+
+    const { POST } = await import("@/app/api/stripe/topup/route.js");
+    const res = await POST(jsonRequest("http://test/api/stripe/topup", { packId: "not-a-real-id" }));
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "Invalid pack" });
+    expect(prisma.creditPack.findFirst).not.toHaveBeenCalled();
     expect(stripeInstance.checkout.sessions.create).not.toHaveBeenCalled();
   });
 });
