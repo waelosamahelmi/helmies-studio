@@ -491,7 +491,27 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
 // ──────────────────────────────────────────────
 // Rerun a specific shot (image only, video only, or full)
 // ──────────────────────────────────────────────
+
+// Canonical rerun types — the single source of truth for both the cost path
+// below and the execution switch, and re-exported so the route can validate
+// client input against the exact same set before ever calling in. Previously
+// the two disagreed on what counted as "unrecognized": the cost path only
+// special-cased `=== "full"` (anything else fell through to a per-shot
+// shotCosts[rerunType] lookup, `undefined` for a bogus type, then the
+// pipeline-wide average fallback below), while the execution switch's
+// `default` treated anything unrecognized as a full (image+video+audio)
+// rerun. A bogus rerunType therefore billed the cheap average while
+// performing the expensive full rerun — an under-charge. Validating against
+// this shared list, defensively, keeps the two paths from ever disagreeing
+// again — including for callers other than the HTTP route, since this
+// function is exported and callable directly.
+export const VALID_RERUN_TYPES = ["image", "video", "audio", "full"];
+
 export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") {
+  if (!VALID_RERUN_TYPES.includes(rerunType)) {
+    throw new Error(`Invalid rerunType: ${rerunType}`);
+  }
+
   const pipeline = await prisma.directorPipeline.findFirst({
     where: { id: pipelineId, userId }
   });
@@ -548,7 +568,11 @@ export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") 
 
     case "full":
     default:
-      // Full rerun
+      // Full rerun. `default` is unreachable other than via "full" now that
+      // rerunType is validated against VALID_RERUN_TYPES above — kept only
+      // as a defensive fallback, not as the "anything unrecognized" catch-all
+      // it used to be (that's what let a bogus rerunType diverge from the
+      // cost path above).
       const fullResult = await executeFullShot(shot, pipeline, brief);
       if (!fullResult.success) throw new Error(fullResult.error);
       result = { shotId, ...fullResult, stage: "full" };

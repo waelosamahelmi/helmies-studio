@@ -95,7 +95,7 @@ import { generateImage, generateI2V } from "@/lib/generation";
 import { resolveProvider } from "@/lib/providers";
 import { storeMedia } from "@/lib/media-storage";
 import { assembleVideos } from "@/lib/video-assembly";
-import { executeProductionPipeline, rerunShot } from "@/lib/director-executor";
+import { executeProductionPipeline, rerunShot, VALID_RERUN_TYPES } from "@/lib/director-executor";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -305,6 +305,36 @@ describe("rerunShot — charges before regenerating", () => {
     await rerunShot("p1", "u1", "s1", "image");
 
     expect(debitWallet).toHaveBeenCalledWith("u1", 2, expect.stringContaining("image"), "director:p1:rerun");
+  });
+
+  it("debits only the per-type cost for a single-stage (video) rerun", async () => {
+    await rerunShot("p1", "u1", "s1", "video");
+
+    expect(debitWallet).toHaveBeenCalledWith("u1", 10, expect.stringContaining("video"), "director:p1:rerun");
+  });
+
+  it("debits only the per-type cost for a single-stage (audio) rerun", async () => {
+    await rerunShot("p1", "u1", "s1", "audio");
+
+    expect(debitWallet).toHaveBeenCalledWith("u1", 3, expect.stringContaining("audio"), "director:p1:rerun");
+  });
+
+  // Task 8 review finding: the cost path only special-cased `=== "full"`
+  // while the execution switch's `default` treated anything unrecognized as
+  // a full rerun — so an unvalidated bogus rerunType billed the cheap
+  // fallback average while performing the expensive full rerun. rerunShot
+  // now validates against VALID_RERUN_TYPES defensively (it is exported and
+  // callable outside the HTTP route, which also validates) and throws before
+  // ever debiting.
+  it("throws on a bogus rerunType without debiting the wallet or regenerating anything", async () => {
+    await expect(rerunShot("p1", "u1", "s1", "bogus")).rejects.toThrow(/Invalid rerunType/);
+
+    expect(debitWallet).not.toHaveBeenCalled();
+    expect(generateImage).not.toHaveBeenCalled();
+  });
+
+  it("VALID_RERUN_TYPES is exactly the four types the cost path and execution switch both understand", () => {
+    expect(VALID_RERUN_TYPES).toEqual(["image", "video", "audio", "full"]);
   });
 
   it("falls back to an even per-shot split of totalCredits when no per-type cost is recorded", async () => {
