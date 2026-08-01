@@ -7,10 +7,20 @@ export async function GET(req) {
   try {
     await requireAdmin(req);
     const users = await prisma.user.findMany({
-      select: { id: true, name: true, email: true, credits: true, role: true, createdAt: true, _count: { select: { generations: true, transactions: true } } },
+      select: {
+        id: true, name: true, email: true, credits: true, role: true, createdAt: true,
+        wallet: { select: { available: true } },
+        _count: { select: { generations: true, transactions: true } },
+      },
       orderBy: { createdAt: "desc" },
     });
-    return NextResponse.json(users);
+    // Report the wallet's `available` balance — the authoritative source —
+    // not the legacy User.credits mirror, which can go stale between wallet
+    // mutations and the mirror's next opportunistic sync (see wallet.js).
+    // Only fall back to the mirror for a user who has no wallet row yet.
+    return NextResponse.json(
+      users.map(({ wallet, ...u }) => ({ ...u, credits: wallet?.available ?? u.credits }))
+    );
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: e.message.includes("Forbidden") ? 403 : 401 });
   }
