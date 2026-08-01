@@ -1,0 +1,65 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          NEXTAUTH_SECRET: ci-only-secret
+          NEXTAUTH_URL: http://localhost:3000
+
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: ci, POSTGRES_PASSWORD: ci, POSTGRES_DB: ci }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      # Documented acceptance (Task 12, 2026-08-01): `npm audit fix` already applied
+      # everything within our existing semver ranges — next-auth 5.0.0-beta.31→.32,
+      # prisma 7.8.0→7.9.1, next 16.2.10→16.2.12 — which cleared the critical
+      # (@auth/core) and moderate (@hono/node-server, valibot) findings.
+      # 3 high-severity findings remain, all nested exclusively inside next's own
+      # node_modules (next/node_modules/postcss <=8.5.17 — GHSA-qx2v-qp2m-jg93 and
+      # related; sharp <0.35.0 — GHSA-f88m-g3jw-g9cj, libvips CVEs), with no
+      # upstream fix on the next 16.x line: `npm view next dist-tags` shows
+      # latest=16.2.12 (what we already have), and the only newer builds are
+      # 16.3.0 canary/preview — not a stable release we can adopt. `npm audit fix
+      # --force` would downgrade next to 9.3.3, which is not a real fix. Level
+      # narrowed to critical until next ships a stable release with these bundled
+      # deps patched, or bundles a fixed sharp/postcss internally. Re-widen to
+      # `high` at that point. Recorded in
+      # .superpowers/sdd/2026-08-01-phase1-foundation-stabilization/progress.md.
+      - run: npm audit --omit=dev --audit-level=critical
