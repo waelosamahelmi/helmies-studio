@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { getCurrentUserWithCredits } from "@/lib/session";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 
 function getStripe() {
@@ -15,6 +17,7 @@ export async function POST(req) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    verifyOrigin(req);
 
     const { plan, yearly } = await req.json();
 
@@ -62,6 +65,6 @@ export async function POST(req) {
 
     return NextResponse.json({ url: session.url });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

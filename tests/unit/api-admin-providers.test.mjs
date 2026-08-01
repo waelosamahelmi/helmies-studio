@@ -18,6 +18,10 @@ vi.mock("@/lib/authz", () => ({
       { status: e?.status ?? 500 },
     ),
 }));
+// Origin verification (Task 3) is exercised on its own in
+// tests/unit/origin-check.test.mjs — stub it here so these tests keep
+// focusing on provider-config upsert behavior.
+vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 
 import prisma from "@/lib/prisma";
 import { GET, POST } from "@/app/api/admin/providers/route.js";

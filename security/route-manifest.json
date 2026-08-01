@@ -215,10 +215,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. POST accepts/stores third-party provider API keys (masked round-trip on GET)."
+    "notes": "Task 3 origin-check target. POST accepts/stores third-party provider API keys (masked round-trip on GET). Task 3: verifyOrigin wired on POST (GET read-only, unchecked)."
   },
   {
     "path": "/api/admin/refunds",
@@ -265,10 +265,10 @@
       "PATCH"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. PATCH can grant the admin role and directly adjust a user's wallet balance — the highest-privilege mutation in the app."
+    "notes": "Task 3 origin-check target. PATCH can grant the admin role and directly adjust a user's wallet balance — the highest-privilege mutation in the app. Task 3: verifyOrigin wired on PATCH (GET read-only, unchecked)."
   },
   {
     "path": "/api/agent/chat",
@@ -405,10 +405,10 @@
       "DELETE"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/canvas",
@@ -420,10 +420,10 @@
       "DELETE"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/canvas/versions",
@@ -576,10 +576,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "/api/generate/async",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Unlike the 13 synchronous /api/generate/* tool routes (which go through handleGeneration in src/lib/generation-handler.js and accept EITHER a session OR an API key via authenticateApiKey), this route calls getCurrentUserWithCredits() only — API-key callers cannot use the async submission path. Classified 'user', not 'mixed(user+apikey)'; flagged as an inconsistency worth a product decision (intentional scope-limit vs. a gap)."
+    "notes": "Task 3 origin-check target. Unlike the 13 synchronous /api/generate/* tool routes (which go through handleGeneration in src/lib/generation-handler.js and accept EITHER a session OR an API key via authenticateApiKey), this route calls getCurrentUserWithCredits() only — API-key callers cannot use the async submission path. Classified 'user', not 'mixed(user+apikey)'; flagged as an inconsistency worth a product decision (intentional scope-limit vs. a gap). Task 3: verifyOrigin wired unconditionally on POST — this route authenticates via session cookie only (getCurrentUserWithCredits, no authenticateApiKey branch), so unlike the mixed(user+apikey) generate/* tool routes there is no api-key path to exempt."
   },
   {
     "path": "/api/generate/audio",
@@ -795,10 +795,10 @@
       "DELETE"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/DELETE only, per the task-3 brief scope — PATCH (also a caller-scoped mutation) was NOT included; flagged as a scope gap worth a follow-up decision rather than silently added here."
   },
   {
     "path": "/api/models/catalog",
@@ -867,10 +867,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. No rate limit on Stripe Checkout Session creation — repeated calls hit Stripe's API directly and upsert a Subscription row each time; same anomaly class as stripe/portal, stripe/topup POST, and templates/purchase."
+    "notes": "Task 3 origin-check target. No rate limit on Stripe Checkout Session creation — repeated calls hit Stripe's API directly and upsert a Subscription row each time; same anomaly class as stripe/portal, stripe/topup POST, and templates/purchase. Task 3: verifyOrigin wired on POST."
   },
   {
     "path": "/api/stripe/portal",
@@ -879,10 +879,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Creates a Stripe billing-portal session (external side effect, no local DB write). No rate limit."
+    "notes": "Task 3 origin-check target. Creates a Stripe billing-portal session (external side effect, no local DB write). No rate limit. Task 3: verifyOrigin wired on POST."
   },
   {
     "path": "/api/stripe/topup",
@@ -892,10 +892,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "GET is public (lists active CreditPack rows — price list only, no PII, no auth check). POST requires user auth, creates a Stripe Checkout Session and possibly a placeholder Subscription row; no rate limit — same Stripe-API-abuse anomaly as stripe/checkout. Task 3 origin-check target (POST only)."
+    "notes": "GET is public (lists active CreditPack rows — price list only, no PII, no auth check). POST requires user auth, creates a Stripe Checkout Session and possibly a placeholder Subscription row; no rate limit — same Stripe-API-abuse anomaly as stripe/checkout. Task 3 origin-check target (POST only). Task 3: verifyOrigin wired on POST only (GET stays public/unchecked)."
   },
   {
     "path": "/api/stripe/webhook",
@@ -954,10 +954,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Creates a Stripe Checkout Session (onetime pricing model) or a TemplatePurchase row (subscription-included model) per call; no rate limit — same Stripe-API-abuse anomaly noted on stripe/checkout et al."
+    "notes": "Task 3 origin-check target. Creates a Stripe Checkout Session (onetime pricing model) or a TemplatePurchase row (subscription-included model) per call; no rate limit — same Stripe-API-abuse anomaly noted on stripe/checkout et al. Task 3: verifyOrigin wired on POST."
   },
   {
     "path": "/api/templates/purchase/verify",
@@ -1005,10 +1005,10 @@
       "DELETE"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. POST mints a new API key (a bearer credential usable against the mixed(user+apikey) generate routes) with no rate limit — an attacker holding a hijacked session could mint unlimited long-lived keys."
+    "notes": "Task 3 origin-check target. POST mints a new API key (a bearer credential usable against the mixed(user+apikey) generate routes) with no rate limit — an attacker holding a hijacked session could mint unlimited long-lived keys. Task 3: verifyOrigin wired on POST/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/webhooks/generation-complete",
@@ -1042,10 +1042,10 @@
       "DELETE"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/DELETE (all methods on this file)."
   },
   {
     "path": "/api/workflows/[id]/regen",
@@ -1054,10 +1054,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "/api/workflow/regen",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/workflows/[id]/run",
@@ -1068,10 +1068,10 @@
       "PATCH"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "/api/workflow",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Only POST (executeWorkflow) is rate-limited via the '/api/workflow' key; DELETE (deleteWorkflow) and PATCH (updateWorkflow/publishWorkflow) have no rate limit."
+    "notes": "Task 3 origin-check target. Only POST (executeWorkflow) is rate-limited via the '/api/workflow' key; DELETE (deleteWorkflow) and PATCH (updateWorkflow/publishWorkflow) have no rate limit. Task 3: verifyOrigin wired on POST/DELETE/PATCH (all methods on this file)."
   },
   {
     "path": "/api/workflows",
@@ -1081,9 +1081,9 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target (POST only)."
+    "notes": "Task 3 origin-check target (POST only). Task 3: verifyOrigin wired on POST (GET read-only, unchecked)."
   }
 ]

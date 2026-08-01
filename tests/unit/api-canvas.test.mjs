@@ -12,6 +12,10 @@ vi.mock("@/lib/prisma", () => {
   return { default: prisma };
 });
 vi.mock("@/lib/session", () => ({ getCurrentUser: vi.fn() }));
+// Origin verification (Task 3) is exercised on its own in
+// tests/unit/origin-check.test.mjs — stub it here so these tests keep
+// focusing on the canvas persistence shape.
+vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";

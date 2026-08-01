@@ -26,6 +26,11 @@ vi.mock("@/lib/authz", () => ({
       { status: e?.status ?? 500 },
     ),
 }));
+// Origin verification (Task 3) is exercised on its own in
+// tests/unit/origin-check.test.mjs — stub it here so these tests keep
+// focusing on the wallet-ledger/transaction behavior without needing to
+// fabricate matching Origin headers on every request.
+vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 
 vi.mock("@/lib/wallet", () => ({
   adjustWalletTo: vi.fn(),

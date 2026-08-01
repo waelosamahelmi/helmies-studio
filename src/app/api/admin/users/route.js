@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import { adjustWalletTo } from "@/lib/wallet";
 import prisma from "@/lib/prisma";
 
@@ -30,6 +31,7 @@ export async function GET(req) {
 export async function PATCH(req) {
   try {
     const admin = await requireAdmin(req);
+    verifyOrigin(req);
     const { userId, credits, role } = await req.json();
     if (credits !== undefined && (typeof credits !== "number" || credits < 0)) {
       return NextResponse.json({ error: "Credits must be a non-negative number" }, { status: 400 });

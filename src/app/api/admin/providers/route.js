@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 
 export async function GET(req) {
@@ -22,6 +23,7 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const { name, type, apiKey, baseUrl, markup, isActive } = await req.json();
     const trimmed = typeof apiKey === "string" ? apiKey.trim() : "";
     // Masked placeholders (••••1234 / ****1234) round-trip from the GET shape.

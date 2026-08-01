@@ -15,6 +15,10 @@ vi.mock("@/lib/prisma", () => {
 });
 vi.mock("@/lib/session", () => ({ getCurrentUserWithCredits: vi.fn(), getCurrentUser: vi.fn() }));
 vi.mock("@/lib/api-key-auth", () => ({ authenticateApiKey: vi.fn() }));
+// Origin verification (Task 3, generate/async's cookie-session branch) is
+// exercised on its own in tests/unit/origin-check.test.mjs — stub it here so
+// this file's pricing assertions don't need matching Origin headers.
+vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 vi.mock("@/lib/security", () => ({ checkRateLimit: vi.fn(), logAudit: vi.fn() }));
 vi.mock("@/lib/wallet", () => ({
   getWallet: vi.fn(),
