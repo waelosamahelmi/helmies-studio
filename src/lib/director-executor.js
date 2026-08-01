@@ -1,11 +1,11 @@
 import prisma from "@/lib/prisma";
-import { getCurrentUserWithCredits, debitCredits, creditUser } from "@/lib/session";
 import { generateImage, generateI2I, generateVideo, generateI2V, generateAudio } from "@/lib/generation";
 import { resolveProvider, resolveProviderWithFallback, brandError, logProviderError } from "@/lib/providers";
 import { estimateCredits } from "@/lib/pricing-engine";
 import { storeMedia } from "@/lib/media-storage";
 import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt } from "@/lib/director-planner";
+import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 
 // ──────────────────────────────────────────────
 // Pipeline State Machine
@@ -326,17 +326,18 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
   const brief = pipeline.brief || {};
   const costEstimate = pipeline.costEstimate || {};
 
-  // Verify credits
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
-  if (user.credits < (costEstimate.totalCredits || 0)) {
-    throw new Error(`Insufficient credits: need ${costEstimate.totalCredits}, have ${user.credits}`);
+  // Verify credits via the wallet — User.credits is a denormalized mirror
+  // that session.js's syncUserCreditsFromWallet can silently overwrite.
+  const wallet = await getWallet(userId);
+  if (wallet.available < (costEstimate.totalCredits || 0)) {
+    throw new Error(`Insufficient credits: need ${costEstimate.totalCredits}, have ${wallet.available}`);
   }
 
   // Transition to queued
   await transitionPipeline(pipelineId, PIPELINE_STATES.QUEUED);
 
-  // Debit credits
-  await debitCredits(userId, costEstimate.totalCredits);
+  // Debit credits through the wallet ledger
+  await debitWallet(userId, costEstimate.totalCredits, "Director pipeline run", `director:${pipelineId}`);
 
   // Save shot costs for reference
   brief._shotCosts = costEstimate.shotCosts || [];
@@ -369,10 +370,10 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
       failedShots++;
       if (options.stopOnFailure && failedShots > 0) {
         await transitionPipeline(pipelineId, PIPELINE_STATES.FAILED, { failedShot: shot.id });
-        // Refund remaining credits
+        // Refund remaining credits through the wallet ledger
         const remainingCredits = (costEstimate.totalCredits || 0) - creditsUsed;
         if (remainingCredits > 0) {
-          await creditUser(userId, remainingCredits, "director_refund", `Refund for ${shots.length - results.length} unexecuted shots`);
+          await refundCredits(userId, remainingCredits, `director:${pipelineId}`, "Unexecuted shots refund");
         }
         return { success: false, error: `Shot ${shot.id} failed`, results, pipelineId, status: PIPELINE_STATES.FAILED };
       }
@@ -581,7 +582,7 @@ export async function cancelPipeline(pipelineId, userId) {
   const refundAmount = (totalShots - completedShots) * perShotCost;
 
   if (refundAmount > 0) {
-    await creditUser(userId, refundAmount, "director_cancel", `Cancelled pipeline with ${totalShots - completedShots} unexecuted shots`);
+    await refundCredits(userId, refundAmount, `director:${pipelineId}`, "Cancelled pipeline refund");
   }
 
   return { success: true, status: PIPELINE_STATES.CANCELLED, refundAmount };
