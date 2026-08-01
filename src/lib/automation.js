@@ -15,7 +15,10 @@ export async function autoDisableFailingModels() {
     by: ["model"],
     where: { status: "failed", createdAt: { gte: windowStart } },
     _count: true,
-    having: { _count: { gte: MODEL_FAILURE_THRESHOLD } },
+    // Prisma 7: the having aggregate filter must be scoped to the field
+    // being grouped by — a bare `having: { _count: { gte } }` throws
+    // "Unknown argument `_count`" at the database.
+    having: { model: { _count: { gte: MODEL_FAILURE_THRESHOLD } } },
   });
 
   const disabled = [];
@@ -51,7 +54,8 @@ export async function autoSuspendAbusiveUsers() {
     by: ["userId"],
     where: { createdAt: { gte: windowStart } },
     _count: true,
-    having: { _count: { gte: ABUSE_THRESHOLD } },
+    // Prisma 7: same field-scoped having requirement as above.
+    having: { userId: { _count: { gte: ABUSE_THRESHOLD } } },
   });
 
   const suspended = [];
@@ -90,10 +94,23 @@ export async function autoSuspendAbusiveUsers() {
 
 // ── Run all automation checks ──
 export async function runAutomation() {
-  const [models, users, reservations] = await Promise.all([
+  // Promise.allSettled — not Promise.all — so one leg throwing (e.g. a
+  // groupBy/query error) can never suppress the results of the other two.
+  // A single rejected leg is reported as { error } instead of aborting the
+  // whole cron run.
+  const [models, users, reservations] = await Promise.allSettled([
     autoDisableFailingModels(),
     autoSuspendAbusiveUsers(),
     sweepExpiredReservations(),
   ]);
-  return { models, users, reservations, timestamp: new Date().toISOString() };
+
+  const settle = (outcome) =>
+    outcome.status === "fulfilled" ? outcome.value : { error: outcome.reason?.message ?? String(outcome.reason) };
+
+  return {
+    models: settle(models),
+    users: settle(users),
+    reservations: settle(reservations),
+    timestamp: new Date().toISOString(),
+  };
 }
