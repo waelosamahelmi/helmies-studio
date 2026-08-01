@@ -37,4 +37,5 @@ it("reports creditsCost and resolves providerName against the registry", async (
   expect(pricing.detail).toContain("42");
   const provider = json.checks.find((c) => c.name === "Provider");
   expect(provider.ok).toBe(true); // "KIE" must resolve against PROVIDERS.kie
+  expect(json.provider).toBe("KIE"); // top-level field must read providerName, not the nonexistent `provider` column
 });

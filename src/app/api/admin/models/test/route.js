@@ -104,7 +104,7 @@ export async function POST(req) {
       {
         ok,
         model: model.displayName || model.modelId,
-        provider: model.provider,
+        provider: model.providerName,
         elapsedMs: Date.now() - started,
         checks,
         ...(ok ? {} : { error: checks.find((c) => !c.ok)?.detail }),
