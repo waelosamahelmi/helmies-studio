@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import { adjustWalletTo } from "@/lib/wallet";
 import prisma from "@/lib/prisma";
 
@@ -22,13 +24,14 @@ export async function GET(req) {
       users.map(({ wallet, ...u }) => ({ ...u, credits: wallet?.available ?? u.credits }))
     );
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: e.message.includes("Forbidden") ? 403 : 401 });
+    return authzResponse(e);
   }
 }
 
 export async function PATCH(req) {
   try {
     const admin = await requireAdmin(req);
+    verifyOrigin(req);
     const { userId, credits, role } = await req.json();
     if (credits !== undefined && (typeof credits !== "number" || credits < 0)) {
       return NextResponse.json({ error: "Credits must be a non-negative number" }, { status: 400 });
@@ -36,17 +39,27 @@ export async function PATCH(req) {
     if (role !== undefined && !["user", "admin"].includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
-    await prisma.$transaction(async (tx) => {
-      if (role !== undefined) {
-        await tx.user.update({ where: { id: userId }, data: { role } });
+    try {
+      await prisma.$transaction(async (tx) => {
+        if (role !== undefined) {
+          await tx.user.update({ where: { id: userId }, data: { role } });
+        }
+        if (credits !== undefined) {
+          await adjustWalletTo(userId, credits, "Admin credit adjustment", admin.id, tx);
+        }
+      });
+    } catch (txErr) {
+      // adjustWalletTo's compare-and-set throws this when a concurrent
+      // wallet mutation lands between its read and write — surface it as a
+      // retryable conflict instead of falling through to a generic 500.
+      if (/Wallet changed concurrently/.test(txErr.message)) {
+        return NextResponse.json({ error: "Balance changed concurrently — reload and retry" }, { status: 409 });
       }
-      if (credits !== undefined) {
-        await adjustWalletTo(userId, credits, "Admin credit adjustment", admin.id, tx);
-      }
-    });
+      throw txErr;
+    }
     await logAudit("admin_edit_user", "user", userId, { credits, role, adminId: admin.id }, req);
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

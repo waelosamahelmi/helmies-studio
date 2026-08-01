@@ -307,8 +307,15 @@ async function executeFullShot(shot, pipeline, brief) {
   const videoResult = await executeShotVideo(shot, pipeline, brief, imageResult.imageUrl);
   if (!videoResult.success) return { success: false, error: videoResult.error, stage: "video", imageUrl: imageResult.imageUrl };
 
-  // 3. Generate audio (if needed)
+  // 3. Generate audio (if needed). executeShotAudio itself already encodes
+  // "no audio requested" as { success: true, audioUrl: null } — it only
+  // returns { success: false } when audio was actually attempted (shot.audio
+  // set, or brief.type === "music_video") and generation failed — so this
+  // check can never misfire on a shot that legitimately has no audio.
   const audioResult = await executeShotAudio(shot, pipeline, brief);
+  if (!audioResult.success) {
+    return { success: false, error: audioResult.error || "Audio generation failed", stage: "audio", imageUrl: imageResult.imageUrl, videoUrl: videoResult.videoUrl };
+  }
 
   return {
     success: true,
@@ -491,7 +498,27 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
 // ──────────────────────────────────────────────
 // Rerun a specific shot (image only, video only, or full)
 // ──────────────────────────────────────────────
+
+// Canonical rerun types — the single source of truth for both the cost path
+// below and the execution switch, and re-exported so the route can validate
+// client input against the exact same set before ever calling in. Previously
+// the two disagreed on what counted as "unrecognized": the cost path only
+// special-cased `=== "full"` (anything else fell through to a per-shot
+// shotCosts[rerunType] lookup, `undefined` for a bogus type, then the
+// pipeline-wide average fallback below), while the execution switch's
+// `default` treated anything unrecognized as a full (image+video+audio)
+// rerun. A bogus rerunType therefore billed the cheap average while
+// performing the expensive full rerun — an under-charge. Validating against
+// this shared list, defensively, keeps the two paths from ever disagreeing
+// again — including for callers other than the HTTP route, since this
+// function is exported and callable directly.
+export const VALID_RERUN_TYPES = ["image", "video", "audio", "full"];
+
 export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") {
+  if (!VALID_RERUN_TYPES.includes(rerunType)) {
+    throw new Error(`Invalid rerunType: ${rerunType}`);
+  }
+
   const pipeline = await prisma.directorPipeline.findFirst({
     where: { id: pipelineId, userId }
   });
@@ -506,37 +533,75 @@ export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") 
   const shotRecord = await prisma.directorShot.findUnique({ where: { id: shotId } });
   if (!shotRecord) throw new Error("Shot record not found");
 
+  // Charge before regenerating — a rerun is new work on top of what the
+  // pipeline's original executeProductionPipeline debit already paid for,
+  // and was previously free. Prefer the per-shot, per-type cost recorded at
+  // quote time; for a full rerun that means summing whichever of the
+  // image/video/audio entries are present. Fall back to an even split of
+  // the pipeline's total when no per-shot breakdown is available.
+  const shotCosts = pipeline.costEstimate?.shotCosts?.[shot.index]?.costs;
+  let cost = rerunType === "full"
+    ? shotCosts && ((shotCosts.image || 0) + (shotCosts.video || 0) + (shotCosts.audio || 0))
+    : shotCosts?.[rerunType];
+  if (!cost) {
+    const totalShots = plan.shots?.length || 0;
+    cost = Math.ceil((pipeline.costEstimate?.totalCredits || 0) / Math.max(1, totalShots));
+  }
+  await debitWallet(userId, cost, `Director shot rerun (${rerunType})`, `director:${pipelineId}:rerun`);
+
   let result;
 
-  switch (rerunType) {
-    case "image":
-      // Rerun image only
-      const imageResult = await executeShotImage(shot, pipeline, brief);
-      if (!imageResult.success) throw new Error(imageResult.error);
-      result = { shotId, imageUrl: imageResult.imageUrl, videoUrl: shotRecord.videoResult?.url, stage: "image" };
-      break;
+  try {
+    switch (rerunType) {
+      case "image":
+        // Rerun image only
+        const imageResult = await executeShotImage(shot, pipeline, brief);
+        if (!imageResult.success) throw new Error(imageResult.error);
+        result = { shotId, imageUrl: imageResult.imageUrl, videoUrl: shotRecord.videoResult?.url, stage: "image" };
+        break;
 
-    case "video":
-      // Rerun video only (using existing image if available)
-      const existingImage = shotRecord.imageResult?.url;
-      const videoResult = await executeShotVideo(shot, pipeline, brief, existingImage);
-      if (!videoResult.success) throw new Error(videoResult.error);
-      result = { shotId, imageUrl: existingImage, videoUrl: videoResult.videoUrl, stage: "video" };
-      break;
+      case "video":
+        // Rerun video only (using existing image if available)
+        const existingImage = shotRecord.imageResult?.url;
+        const videoResult = await executeShotVideo(shot, pipeline, brief, existingImage);
+        if (!videoResult.success) throw new Error(videoResult.error);
+        result = { shotId, imageUrl: existingImage, videoUrl: videoResult.videoUrl, stage: "video" };
+        break;
 
-    case "audio":
-      // Rerun audio only
-      const audioResult = await executeShotAudio(shot, pipeline, brief);
-      result = { shotId, audioUrl: audioResult.audioUrl, stage: "audio" };
-      break;
+      case "audio":
+        // Rerun audio only
+        const audioResult = await executeShotAudio(shot, pipeline, brief);
+        if (!audioResult.success) throw new Error(audioResult.error || "Audio generation failed");
+        result = { shotId, audioUrl: audioResult.audioUrl, stage: "audio" };
+        break;
 
-    case "full":
-    default:
-      // Full rerun
-      const fullResult = await executeFullShot(shot, pipeline, brief);
-      if (!fullResult.success) throw new Error(fullResult.error);
-      result = { shotId, ...fullResult, stage: "full" };
-      break;
+      case "full":
+      default:
+        // Full rerun. `default` is unreachable other than via "full" now that
+        // rerunType is validated against VALID_RERUN_TYPES above — kept only
+        // as a defensive fallback, not as the "anything unrecognized" catch-all
+        // it used to be (that's what let a bogus rerunType diverge from the
+        // cost path above).
+        const fullResult = await executeFullShot(shot, pipeline, brief);
+        if (!fullResult.success) throw new Error(fullResult.error);
+        result = { shotId, ...fullResult, stage: "full" };
+        break;
+    }
+  } catch (err) {
+    // The debit above has already charged the user for this rerun — mirror
+    // executeProductionPipeline's crash safety net (see the catch block of
+    // executeProductionPipeline) so a provider failure here doesn't leave
+    // the user permanently billed for work that never happened. Guard the
+    // refund itself so a refund failure can't mask the original error.
+    try {
+      await refundCredits(userId, cost, `director:${pipelineId}:rerun`, "Failed rerun refund");
+    } catch (refundErr) {
+      console.error(
+        `[Director] RERUN REFUND FAILED — user is owed ${cost} credits. userId=${userId} pipelineId=${pipelineId} shotId=${shotId} rerunType=${rerunType}:`,
+        refundErr.message
+      );
+    }
+    throw err;
   }
 
   // Update pipeline metadata
@@ -595,37 +660,6 @@ export async function getPipelineStatus(pipelineId, userId) {
     createdAt: pipeline.createdAt,
     updatedAt: pipeline.updatedAt
   };
-}
-
-// ──────────────────────────────────────────────
-// Cancel pipeline
-// ──────────────────────────────────────────────
-export async function cancelPipeline(pipelineId, userId) {
-  const pipeline = await prisma.directorPipeline.findFirst({
-    where: { id: pipelineId, userId }
-  });
-  if (!pipeline) throw new Error("Pipeline not found");
-
-  if (pipeline.status === PIPELINE_STATES.COMPLETED || pipeline.status === PIPELINE_STATES.CANCELLED) {
-    throw new Error("Cannot cancel pipeline in state: " + pipeline.status);
-  }
-
-  await transitionPipeline(pipelineId, PIPELINE_STATES.CANCELLED);
-
-  // Refund any unused credits
-  const completedShots = await prisma.directorShot.count({
-    where: { pipelineId, status: SHOT_STATES.COMPLETED }
-  });
-  const totalShots = pipeline.plan?.shots?.length || 0;
-  const costEstimate = pipeline.costEstimate || {};
-  const perShotCost = totalShots > 0 ? Math.floor((costEstimate.totalCredits || 0) / totalShots) : 0;
-  const refundAmount = (totalShots - completedShots) * perShotCost;
-
-  if (refundAmount > 0) {
-    await refundCredits(userId, refundAmount, `director:${pipelineId}`, "Cancelled pipeline refund");
-  }
-
-  return { success: true, status: PIPELINE_STATES.CANCELLED, refundAmount };
 }
 
 // ──────────────────────────────────────────────

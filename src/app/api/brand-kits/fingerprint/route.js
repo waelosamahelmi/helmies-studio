@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { extractBrandFingerprint } from "@/lib/brand-engine";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 
 // POST /api/brand-kits/fingerprint?id=<brandKitId>
 // Triggers Visual Intelligence analysis on all brand assets to derive the
@@ -10,6 +12,7 @@ export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    verifyOrigin(req);
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
@@ -24,6 +27,6 @@ export async function POST(req) {
     const fingerprint = await extractBrandFingerprint(id);
     return NextResponse.json({ success: true, fingerprint });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

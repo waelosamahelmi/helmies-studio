@@ -8,6 +8,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/session", () => ({
   getCurrentUserWithCredits: vi.fn(),
 }));
+// Origin verification (Task 3, checkout/topup POST) is exercised on its own
+// in tests/unit/origin-check.test.mjs — stub it here so this file's
+// plan/pack-resolution assertions don't need matching Origin headers.
+vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 
 vi.mock("@/lib/prisma", () => {
   const txClient = {

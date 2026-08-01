@@ -15,6 +15,22 @@ vi.mock("@/lib/security", () => ({
   requireAdmin: vi.fn().mockResolvedValue({ id: "admin1" }),
   logAudit: vi.fn(),
 }));
+// The route imports authzResponse from @/lib/authz directly (Task 1's central
+// authz sweep). The real module pulls in @/lib/session -> @/lib/auth ->
+// next-auth, which this test environment can't resolve — stub it out with
+// the same status/publicMessage -> Response contract.
+vi.mock("@/lib/authz", () => ({
+  authzResponse: (e) =>
+    Response.json(
+      { error: e?.publicMessage ?? "Internal error" },
+      { status: e?.status ?? 500 },
+    ),
+}));
+// Origin verification (Task 3) is exercised on its own in
+// tests/unit/origin-check.test.mjs — stub it here so these tests keep
+// focusing on the wallet-ledger/transaction behavior without needing to
+// fabricate matching Origin headers on every request.
+vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 
 vi.mock("@/lib/wallet", () => ({
   adjustWalletTo: vi.fn(),
@@ -142,12 +158,14 @@ describe("PATCH /api/admin/users — credit adjustments via wallet ledger", () =
     );
   });
 
-  it("rolls back atomically and audits nothing when adjustWalletTo rejects on a CAS miss", async () => {
+  it("returns 409 with a retry message and rolls back atomically when adjustWalletTo rejects on a CAS miss", async () => {
     adjustWalletTo.mockRejectedValueOnce(new Error("Wallet changed concurrently — retry the adjustment"));
 
     const res = await PATCH(jsonReq({ userId: "u1", credits: 250, role: "admin" }));
+    const body = await res.json();
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(409);
+    expect(body).toEqual({ error: "Balance changed concurrently — reload and retry" });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     // The role write was only ever issued against the tx client inside the
     // single $transaction call whose callback subsequently threw — real
@@ -156,6 +174,17 @@ describe("PATCH /api/admin/users — credit adjustments via wallet ledger", () =
     // client, and (b) the request never reaches the audit log.
     expect(txClient.user.update).toHaveBeenCalledTimes(1);
     expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it("still falls back to a generic 500 for a non-CAS transaction error", async () => {
+    adjustWalletTo.mockRejectedValueOnce(new Error("some other db failure"));
+
+    const res = await PATCH(jsonReq({ userId: "u1", credits: 250 }));
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body).toEqual({ error: "Internal error" });
     expect(logAudit).not.toHaveBeenCalled();
   });
 });

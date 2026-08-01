@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { adjustWalletTo } from "@/lib/wallet";
+import { adjustWalletTo, sweepExpiredReservations } from "@/lib/wallet";
 
 const MODEL_FAILURE_THRESHOLD = 5;
 const MODEL_FAILURE_WINDOW_MINUTES = 30;
@@ -90,9 +90,10 @@ export async function autoSuspendAbusiveUsers() {
 
 // ── Run all automation checks ──
 export async function runAutomation() {
-  const [models, users] = await Promise.all([
+  const [models, users, reservations] = await Promise.all([
     autoDisableFailingModels(),
     autoSuspendAbusiveUsers(),
+    sweepExpiredReservations(),
   ]);
-  return { models, users, timestamp: new Date().toISOString() };
+  return { models, users, reservations, timestamp: new Date().toISOString() };
 }

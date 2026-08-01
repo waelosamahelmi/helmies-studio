@@ -91,11 +91,11 @@ vi.mock("@/lib/director-planner", () => ({
 import prisma from "@/lib/prisma";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { debitCredits, creditUser } from "@/lib/session";
-import { generateImage, generateI2V } from "@/lib/generation";
+import { generateImage, generateI2V, generateAudio } from "@/lib/generation";
 import { resolveProvider } from "@/lib/providers";
 import { storeMedia } from "@/lib/media-storage";
 import { assembleVideos } from "@/lib/video-assembly";
-import { executeProductionPipeline } from "@/lib/director-executor";
+import { executeProductionPipeline, rerunShot, VALID_RERUN_TYPES } from "@/lib/director-executor";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -118,6 +118,7 @@ beforeEach(() => {
   resolveProvider.mockResolvedValue("mock-provider");
   storeMedia.mockImplementation(async (url) => url);
   assembleVideos.mockResolvedValue("https://cdn.example/assembled.mp4");
+  generateAudio.mockResolvedValue({ url: "https://cdn.example/audio.mp3" });
 });
 
 describe("executeProductionPipeline — wallet ledger debit", () => {
@@ -260,5 +261,216 @@ describe("executeProductionPipeline — wallet ledger debit", () => {
 
     expect(refundCredits).toHaveBeenCalledTimes(1);
     expect(pipelineState.status).toBe("failed");
+  });
+});
+
+// rerunShot bypasses executeProductionPipeline's upfront pipeline debit — a
+// rerun on an already-billed pipeline was previously free. It must now debit
+// its own charge through the wallet before regenerating.
+describe("rerunShot — charges before regenerating", () => {
+  beforeEach(() => {
+    Object.assign(
+      pipelineState,
+      makePipeline({
+        plan: {
+          shots: [{ id: "s1", index: 0, title: "Shot 1", imageStrategy: {}, videoStrategy: {}, durationSec: 5 }],
+        },
+        costEstimate: {
+          totalCredits: 20,
+          shotCosts: [{ costs: { image: 2, video: 10, audio: 3 } }],
+        },
+      })
+    );
+    prisma.directorShot.findUnique.mockResolvedValue({
+      id: "s1",
+      imageResult: { url: "https://cdn.example/old.png" },
+      videoResult: { url: "https://cdn.example/old.mp4" },
+    });
+    generateImage.mockResolvedValue({ url: "https://cdn.example/new.png" });
+    generateI2V.mockResolvedValue({ url: "https://cdn.example/new.mp4" });
+  });
+
+  it("debits the summed image+video+audio cost for a full rerun before regenerating", async () => {
+    await rerunShot("p1", "u1", "s1", "full");
+
+    expect(debitWallet).toHaveBeenCalledTimes(1);
+    const [userId, amount, description, referenceId] = debitWallet.mock.calls[0];
+    expect(userId).toBe("u1");
+    expect(amount).toBe(15); // 2 + 10 + 3
+    expect(description).toContain("Director shot rerun");
+    expect(description).toContain("full");
+    expect(referenceId).toBe("director:p1:rerun");
+  });
+
+  it("debits only the per-type cost for a single-stage (image) rerun", async () => {
+    await rerunShot("p1", "u1", "s1", "image");
+
+    expect(debitWallet).toHaveBeenCalledWith("u1", 2, expect.stringContaining("image"), "director:p1:rerun");
+  });
+
+  it("debits only the per-type cost for a single-stage (video) rerun", async () => {
+    await rerunShot("p1", "u1", "s1", "video");
+
+    expect(debitWallet).toHaveBeenCalledWith("u1", 10, expect.stringContaining("video"), "director:p1:rerun");
+  });
+
+  it("debits only the per-type cost for a single-stage (audio) rerun", async () => {
+    await rerunShot("p1", "u1", "s1", "audio");
+
+    expect(debitWallet).toHaveBeenCalledWith("u1", 3, expect.stringContaining("audio"), "director:p1:rerun");
+  });
+
+  // Task 8 review finding: the cost path only special-cased `=== "full"`
+  // while the execution switch's `default` treated anything unrecognized as
+  // a full rerun — so an unvalidated bogus rerunType billed the cheap
+  // fallback average while performing the expensive full rerun. rerunShot
+  // now validates against VALID_RERUN_TYPES defensively (it is exported and
+  // callable outside the HTTP route, which also validates) and throws before
+  // ever debiting.
+  it("throws on a bogus rerunType without debiting the wallet or regenerating anything", async () => {
+    await expect(rerunShot("p1", "u1", "s1", "bogus")).rejects.toThrow(/Invalid rerunType/);
+
+    expect(debitWallet).not.toHaveBeenCalled();
+    expect(generateImage).not.toHaveBeenCalled();
+  });
+
+  it("VALID_RERUN_TYPES is exactly the four types the cost path and execution switch both understand", () => {
+    expect(VALID_RERUN_TYPES).toEqual(["image", "video", "audio", "full"]);
+  });
+
+  it("falls back to an even per-shot split of totalCredits when no per-type cost is recorded", async () => {
+    Object.assign(pipelineState, { costEstimate: { totalCredits: 20, shotCosts: [] } });
+
+    await rerunShot("p1", "u1", "s1", "full");
+
+    // 1 shot in the plan -> Math.ceil(20 / 1) = 20
+    expect(debitWallet).toHaveBeenCalledWith("u1", 20, expect.any(String), "director:p1:rerun");
+  });
+
+  it("propagates the wallet's insufficient-credit error without regenerating anything", async () => {
+    debitWallet.mockRejectedValue(new Error("Insufficient credits"));
+
+    await expect(rerunShot("p1", "u1", "s1", "full")).rejects.toThrow(/Insufficient credits/);
+    expect(generateImage).not.toHaveBeenCalled();
+  });
+
+  // Regression guard for the audioResult.success check added to
+  // executeFullShot below: the shot fixture in this describe block's
+  // beforeEach has no `audio` field and brief.type is not "music_video", so
+  // executeShotAudio short-circuits to { success: true, audioUrl: null }
+  // without ever calling generateAudio. A full rerun of a shot that
+  // legitimately has no audio must keep succeeding — the success check must
+  // never fire on "no audio requested", only on "audio was attempted and
+  // failed".
+  it("a full rerun still succeeds when the shot has no audio requested", async () => {
+    const { success } = await rerunShot("p1", "u1", "s1", "full");
+
+    expect(success).toBe(true);
+    expect(generateAudio).not.toHaveBeenCalled();
+    expect(refundCredits).not.toHaveBeenCalled();
+  });
+
+  // Final-review finding: rerunShot charges via debitWallet above, then the
+  // execution switch could throw on provider failure with no refund path —
+  // unlike executeProductionPipeline, which refunds unexecuted work on both
+  // its stopOnFailure and crash paths. A user reruns a shot, the provider
+  // errors, and the user was left permanently billed for work that never
+  // happened.
+  describe("rerunShot — refunds on execution failure", () => {
+    it("refunds the debited cost and rethrows the ORIGINAL error when the provider fails mid-rerun", async () => {
+      const providerError = new Error("provider exploded");
+      generateImage.mockRejectedValue(providerError);
+
+      await expect(rerunShot("p1", "u1", "s1", "image")).rejects.toThrow("provider exploded");
+
+      expect(refundCredits).toHaveBeenCalledTimes(1);
+      const [userId, amount, referenceId, reason] = refundCredits.mock.calls[0];
+      expect(userId).toBe("u1");
+      expect(amount).toBe(2); // the debited image-only cost
+      expect(referenceId).toBe("director:p1:rerun");
+      expect(typeof reason).toBe("string");
+    });
+
+    it("still rethrows the ORIGINAL error when the refund itself also fails", async () => {
+      const providerError = new Error("provider exploded");
+      generateImage.mockRejectedValue(providerError);
+      refundCredits.mockRejectedValue(new Error("wallet DB unreachable"));
+
+      await expect(rerunShot("p1", "u1", "s1", "image")).rejects.toThrow("provider exploded");
+      expect(refundCredits).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not refund when the rerun succeeds", async () => {
+      await rerunShot("p1", "u1", "s1", "image");
+
+      expect(refundCredits).not.toHaveBeenCalled();
+    });
+  });
+
+  // Re-review finding: unlike the image/video cases, rerunShot's "audio" case
+  // and executeFullShot never checked audioResult.success before reporting
+  // success — executeShotAudio swallows a provider failure internally and
+  // returns { success: false, error } with no audioUrl (never throws), so
+  // the failure was silently masked: the pipeline was marked COMPLETED,
+  // success:true, despite the audio never being generated, and the refund
+  // net built above never fired because nothing ever threw. These shots all
+  // set `audio` so executeShotAudio actually attempts generation instead of
+  // short-circuiting to { success: true, audioUrl: null }.
+  describe("rerunShot — audio failure must refund, not report false success", () => {
+    beforeEach(() => {
+      Object.assign(
+        pipelineState,
+        makePipeline({
+          plan: {
+            shots: [{
+              id: "s1", index: 0, title: "Shot 1",
+              imageStrategy: {}, videoStrategy: {}, durationSec: 5,
+              audio: { dialogue: "Hello" },
+            }],
+          },
+          costEstimate: {
+            totalCredits: 20,
+            shotCosts: [{ costs: { image: 2, video: 10, audio: 3 } }],
+          },
+        })
+      );
+      prisma.directorShot.findUnique.mockResolvedValue({
+        id: "s1",
+        imageResult: { url: "https://cdn.example/old.png" },
+        videoResult: { url: "https://cdn.example/old.mp4" },
+      });
+      generateImage.mockResolvedValue({ url: "https://cdn.example/new.png" });
+      generateI2V.mockResolvedValue({ url: "https://cdn.example/new.mp4" });
+      generateAudio.mockRejectedValue(new Error("audio provider exploded"));
+    });
+
+    it("audio-only rerun: refunds the debited cost, rethrows the original error, and never marks the pipeline completed", async () => {
+      await expect(rerunShot("p1", "u1", "s1", "audio")).rejects.toThrow(/audio provider exploded/);
+
+      expect(refundCredits).toHaveBeenCalledTimes(1);
+      const [userId, amount, referenceId, reason] = refundCredits.mock.calls[0];
+      expect(userId).toBe("u1");
+      expect(amount).toBe(3); // the debited audio-only cost
+      expect(referenceId).toBe("director:p1:rerun");
+      expect(typeof reason).toBe("string");
+
+      expect(prisma.directorPipeline.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "completed" }) })
+      );
+    });
+
+    it("full rerun: refunds and rethrows when only the audio leg fails, and never marks the pipeline completed", async () => {
+      await expect(rerunShot("p1", "u1", "s1", "full")).rejects.toThrow(/audio provider exploded/);
+
+      expect(refundCredits).toHaveBeenCalledTimes(1);
+      const [userId, amount, referenceId] = refundCredits.mock.calls[0];
+      expect(userId).toBe("u1");
+      expect(amount).toBe(15); // 2 + 10 + 3 summed cost for a full rerun
+      expect(referenceId).toBe("director:p1:rerun");
+
+      expect(prisma.directorPipeline.update).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ status: "completed" }) })
+      );
+    });
   });
 });

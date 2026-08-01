@@ -40,13 +40,3 @@ export async function getCurrentUserWithCredits() {
   return user;
 }
 
-export async function requireAdmin() {
-  const session = await resolveSession();
-  if (!session?.user?.id) return null;
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { id: true, email: true, role: true },
-  });
-  if (!user || user.role !== "admin") return null;
-  return user;
-}

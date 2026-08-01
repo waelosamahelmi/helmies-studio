@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUserWithCredits } from "@/lib/session";
+import { AuthzError, authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
 import { checkRateLimit } from "@/lib/security";
@@ -44,6 +46,11 @@ export async function POST(req) {
   try {
     const user = await getCurrentUserWithCredits();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // This route authenticates via session cookie only (no authenticateApiKey
+    // branch — see the route-manifest note), so the origin check always
+    // applies here; it is never conditional on the auth method the way the
+    // mixed(user+apikey) /api/generate/* tool routes would need it to be.
+    verifyOrigin(req);
 
     const rl = await checkRateLimit(user.id, "/api/generate/async");
     if (!rl.allowed) {
@@ -166,6 +173,7 @@ export async function POST(req) {
       pollUrl: `/api/generations/status?id=${generation.id}`,
     });
   } catch (e) {
+    if (e instanceof AuthzError) return authzResponse(e);
     console.error("[generate/async] ERROR", { tool: body?.tool, model: body?.model, message: e.message, stack: e.stack?.split("\n").slice(0, 3).join(" | ") });
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

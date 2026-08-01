@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
+import { clientIp } from "@/lib/rate-limit";
 
 /* The contact form previously posted to this path, which did not exist —
    every message returned 404 and was lost. There is no mail transport in this
@@ -16,10 +17,10 @@ export async function POST(req) {
     const user = await getCurrentUser(req).catch(() => null);
 
     // Keyed by user when signed in, by IP otherwise — the form is public.
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      req.headers.get("x-real-ip") ||
-      "unknown";
+    // clientIp() prefers x-real-ip (nginx-set, not client-spoofable) over
+    // x-forwarded-for's leftmost hop, which an attacker can prepend to
+    // rotate past this limit (review finding, Fix 3).
+    const ip = clientIp(req);
 
     const rl = await checkRateLimit(user?.id || `ip:${ip}`, "/api/contact");
     if (rl && rl.allowed === false) {

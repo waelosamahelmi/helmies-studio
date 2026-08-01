@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { auth } from "@/lib/auth";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { createTemplatePurchase } from "@/lib/templates";
 
@@ -21,6 +23,7 @@ export async function POST(req) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    verifyOrigin(req);
     const userId = session.user.id;
 
     const { templateSlug } = await req.json();
@@ -82,6 +85,6 @@ export async function POST(req) {
 
     return NextResponse.json({ error: "Unknown pricing model" }, { status: 400 });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

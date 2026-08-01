@@ -3,6 +3,8 @@ import Stripe from "stripe";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { createTemplatePurchase } from "@/lib/templates";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 
 let stripe;
 function getStripe() {
@@ -14,13 +16,20 @@ function getStripe() {
   return stripe;
 }
 
-// GET /api/templates/purchase/verify?session_id=... — verify Stripe checkout
+// GET /api/templates/purchase/verify?session_id=... — verify Stripe checkout.
+// This GET has a side effect (createTemplatePurchase below) — deliberately
+// origin-checked despite being a GET, same rationale as
+// templates/[slug]/apply. In normal use this is called via client-side
+// fetch() from the post-Stripe-redirect landing page (same-origin), so
+// Origin/Referer are present; a cross-site GET riding the cookie is what
+// this specifically guards against.
 export async function GET(req) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    verifyOrigin(req);
 
     const { searchParams } = new URL(req.url);
     const sessionId = searchParams.get("session_id");
@@ -56,6 +65,6 @@ export async function GET(req) {
 
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

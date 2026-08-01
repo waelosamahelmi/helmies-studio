@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { createProductionPlan, estimateDirectorCost, validateShotPlan } from "@/lib/director-planner";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 
 export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    verifyOrigin(req);
 
     const body = await req.json();
     const brief = {
@@ -39,6 +42,6 @@ export async function POST(req) {
       validation,
     }, { status: 201 });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

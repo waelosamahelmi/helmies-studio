@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import { grantCredits, getWallet } from "@/lib/wallet";
 import prisma from "@/lib/prisma";
 
@@ -12,13 +14,14 @@ export async function GET(req) {
     });
     return NextResponse.json(refunds);
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 401 });
+    return authzResponse(e);
   }
 }
 
 export async function POST(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const { userId, generationId, amount, reason } = await req.json();
 
     if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
@@ -40,6 +43,6 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, refund });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

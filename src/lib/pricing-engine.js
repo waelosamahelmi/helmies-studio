@@ -90,7 +90,7 @@ export function creditsToEUR(credits) {
 export async function setProviderMarkup(providerName, markup) {
   await prisma.providerConfig.upsert({
     where: { name: providerName },
-    create: { name: providerName, type: "image+video", apiKey: "", markup },
+    create: { name: providerName, type: "image+video", markup },
     update: { markup },
   });
 }

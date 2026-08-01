@@ -78,10 +78,18 @@ export async function reserveCredits(userId, amount, jobId, expiresInMinutes = 3
     }
     const wallet = await tx.creditWallet.findUnique({ where: { userId } });
 
-    // CreditReservation columns: walletId, amount, generationId, status.
-    // The job id is the Generation id and is stored in generationId.
+    // CreditReservation columns: walletId, amount, generationId, status,
+    // expiresAt. The job id is the Generation id and is stored in
+    // generationId. expiresAt lets sweepExpiredReservations (below) release
+    // or settle a hold whose caller never came back to close it out.
     const reservation = await tx.creditReservation.create({
-      data: { walletId: wallet.id, generationId: jobId, amount, status: "active" },
+      data: {
+        walletId: wallet.id,
+        generationId: jobId,
+        amount,
+        status: "active",
+        expiresAt: new Date(Date.now() + expiresInMinutes * 60000),
+      },
     });
 
     await writeLedger(tx, wallet.id, -amount, wallet.available, "reservation", `Reserved for job ${jobId}`, jobId);
@@ -101,18 +109,36 @@ export async function settleReservation(userId, jobId, actualCredits, db = null)
     const reservation = await findActiveReservation(tx, userId, jobId);
     if (!reservation) throw new Error("No active reservation found");
 
-    const release = reservation.amount - actualCredits;
+    // Clamp: actualCredits is the generation's reported cost and should never
+    // exceed what was reserved for it, but a charge above the reservation
+    // would move `available` below what the ledger tracks — clamp
+    // defensively and flag it, since it means the estimate/reservation was
+    // wrong somewhere upstream.
+    const charge = Math.min(actualCredits, reservation.amount);
+    if (charge < actualCredits) {
+      console.warn(
+        `settleReservation: clamping charge for job ${jobId} — actualCredits ${actualCredits} exceeds reservation ${reservation.amount}`
+      );
+    }
+    const release = reservation.amount - charge;
+
+    // Conditional status flip is the concurrency gate: only one of two
+    // overlapping settle/release calls on the same reservation can move it
+    // out of "active". The loser gets count 0 here and throws before
+    // touching the wallet — sweepExpiredReservations' per-item try/catch
+    // (and any caller racing a webhook against the sweep) relies on this.
+    const claimed = await tx.creditReservation.updateMany({
+      where: { id: reservation.id, status: "active" },
+      data: { status: "settled", releasedAt: new Date() },
+    });
+    if (claimed.count === 0) throw new Error("No active reservation found");
+
     const wallet = await tx.creditWallet.update({
       where: { userId },
       data: { reserved: { decrement: reservation.amount }, available: { increment: release } },
     });
 
-    await tx.creditReservation.update({
-      where: { id: reservation.id },
-      data: { status: "settled", releasedAt: new Date() },
-    });
-
-    await writeLedger(tx, wallet.id, -actualCredits, wallet.available, "generation", `Generation job ${jobId}`, jobId);
+    await writeLedger(tx, wallet.id, -charge, wallet.available, "generation", `Generation job ${jobId}`, jobId);
 
     if (release > 0) {
       await writeLedger(tx, wallet.id, release, wallet.available, "reservation_release", `Unused reservation released for job ${jobId}`, jobId);
@@ -127,24 +153,103 @@ export async function releaseReservation(userId, jobId, db = null) {
     const reservation = await findActiveReservation(tx, userId, jobId);
     if (!reservation) return null;
 
+    // Same conditional-transition concurrency gate as settleReservation
+    // above — a second caller that raced past the read above and lost the
+    // status flip gets count 0 and throws instead of double-releasing.
+    const claimed = await tx.creditReservation.updateMany({
+      where: { id: reservation.id, status: "active" },
+      data: { status: "released", releasedAt: new Date() },
+    });
+    if (claimed.count === 0) throw new Error("No active reservation found");
+
     const wallet = await tx.creditWallet.update({
       where: { userId },
       data: { reserved: { decrement: reservation.amount }, available: { increment: reservation.amount } },
     });
 
-    await tx.creditReservation.update({
-      where: { id: reservation.id },
-      data: { status: "released", releasedAt: new Date() },
-    });
     await writeLedger(tx, wallet.id, reservation.amount, wallet.available, "reservation_release", `Refund for job ${jobId}`, jobId);
 
     return wallet;
   });
 }
 
+// A reservation is only ever created with an amount that was already
+// deducted from `available` (see reserveCredits above) — every branch below
+// resolves that hold one way or another so `reserved` cannot leak.
+const RESERVATION_TERMINAL_STATUSES = ["failed", "cancelled"];
+
+// Reservations created before expiresAt existed (pre-Phase-3-Task-9) have it
+// NULL. A migration (20260801150000) backfills those to createdAt + 30
+// minutes, matching reserveCredits' own default expiresInMinutes — but the
+// sweep must not depend on every database having run that backfill: SQL
+// comparisons against NULL are UNKNOWN, so `expiresAt: { lt: now }` alone
+// silently excludes (not even counts) any row where expiresAt is still NULL,
+// stranding it forever. Matching NULL rows directly against the same 30
+// minute cutoff here means a legacy reservation can never be permanently
+// invisible to the sweep even on a database where the backfill was missed.
+const LEGACY_RESERVATION_TTL_MINUTES = 30;
+
+// Find reservations whose expiresAt has passed and are still "active", then
+// resolve each one against the state of its generation:
+//   - generation missing, failed, or cancelled -> release the hold
+//   - generation completed                     -> settle at its actual cost
+//     (settleReservation's active-reservation lookup makes this idempotent
+//     against a second sweep or a late webhook racing this run)
+//   - generation still pending/processing      -> leave it alone; it hasn't
+//     really finished yet even though the clock ran out
+// Each reservation is handled in its own try/catch so one bad row (a
+// transient DB error, a wallet CAS miss) can't abort the rest of the sweep —
+// same defensive shape as autoSuspendAbusiveUsers above.
+export async function sweepExpiredReservations() {
+  const now = new Date();
+  const legacyCutoff = new Date(now.getTime() - LEGACY_RESERVATION_TTL_MINUTES * 60000);
+  const expired = await prisma.creditReservation.findMany({
+    where: {
+      status: "active",
+      OR: [
+        { expiresAt: { lt: now } },
+        { expiresAt: null, createdAt: { lt: legacyCutoff } },
+      ],
+    },
+    include: { wallet: true },
+  });
+
+  let released = 0;
+  let settled = 0;
+  let skipped = 0;
+
+  for (const reservation of expired) {
+    try {
+      const userId = reservation.wallet.userId;
+      const jobId = reservation.generationId;
+      const generation = jobId
+        ? await prisma.generation.findUnique({ where: { id: jobId } })
+        : null;
+
+      if (!generation || RESERVATION_TERMINAL_STATUSES.includes(generation.status)) {
+        await releaseReservation(userId, jobId);
+        released++;
+      } else if (generation.status === "completed") {
+        await settleReservation(userId, jobId, generation.creditsUsed);
+        settled++;
+      } else {
+        // Still pending/processing — expired-but-live, leave it for the
+        // next sweep once the generation actually finishes.
+        skipped++;
+      }
+    } catch (err) {
+      console.error(`sweepExpiredReservations: failed to process reservation ${reservation.id}:`, err);
+      skipped++;
+    }
+  }
+
+  return { released, settled, skipped };
+}
+
 // ── Credit Operations ────────────────────────────────────────
 
 export async function grantCredits(userId, amount, type = "admin_adjustment", description = "Admin credit grant", referenceId = null, db = null) {
+  if (!LEDGER_TYPES.includes(type)) throw new Error(`Invalid ledger type: ${type}`);
   return withDb(db, async (tx) => {
     const wallet = await tx.creditWallet.upsert({
       where: { userId },

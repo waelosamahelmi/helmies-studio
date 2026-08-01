@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import crypto from "crypto";
 
@@ -23,6 +25,7 @@ export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    verifyOrigin(req);
 
     const { name } = await req.json();
     if (!name) return NextResponse.json({ error: "Name required" }, { status: 400 });
@@ -37,7 +40,7 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, key: rawKey, apiKey: { id: apiKey.id, name, keyPrefix } });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }
 
@@ -45,11 +48,12 @@ export async function DELETE(req) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    verifyOrigin(req);
 
     const { id } = await req.json();
     await prisma.apiKey.deleteMany({ where: { id, userId: user.id } });
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

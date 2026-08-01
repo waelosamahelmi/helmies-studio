@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 
 export async function POST(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const body = await req.json();
     const { id } = body;
     if (!id) return NextResponse.json({ error: "Content id required" }, { status: 400 });
@@ -33,6 +36,6 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, publishedAt: updated.updatedAt, id });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 401 });
+    return authzResponse(e);
   }
 }

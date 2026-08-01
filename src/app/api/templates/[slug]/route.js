@@ -1,8 +1,37 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireAdmin } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { hasTemplateAccess } from "@/lib/templates";
+
+// Mass-assignment allowlist (Phase 3 Task 6): every Template scalar/Json
+// column except id/createdAt/updatedAt (server-controlled) — Template has
+// no owner/creator id field. Unknown/extra body keys are silently dropped.
+const TEMPLATE_FIELDS = [
+  "slug",
+  "name",
+  "description",
+  "thumbnailUrl",
+  "category",
+  "toolType",
+  "pricingModel",
+  "oneTimePrice",
+  "stripePriceId",
+  "config",
+  "isPublished",
+  "isFeatured",
+  "usageLimit",
+];
+
+function pick(body, fields) {
+  const out = {};
+  for (const key of fields) {
+    if (Object.prototype.hasOwnProperty.call(body, key)) out[key] = body[key];
+  }
+  return out;
+}
 
 // GET /api/templates/[slug] — single template detail
 export async function GET(req, { params }) {
@@ -34,23 +63,21 @@ export async function GET(req, { params }) {
 export async function PUT(req, { params }) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
 
     const { slug } = params;
     const body = await req.json();
     const template = await prisma.template.update({
       where: { slug },
-      data: body,
+      data: pick(body, TEMPLATE_FIELDS),
     });
 
     return NextResponse.json(template);
   } catch (e) {
-    if (e.message === "Forbidden: admin access required" || e.message === "Unauthorized") {
-      return NextResponse.json({ error: e.message }, { status: 403 });
-    }
     if (e?.code === "P2025") {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
     }
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }
 
@@ -58,6 +85,7 @@ export async function PUT(req, { params }) {
 export async function DELETE(req, { params }) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
 
     const { slug } = params;
     await prisma.template.update({
@@ -67,12 +95,9 @@ export async function DELETE(req, { params }) {
 
     return NextResponse.json({ success: true });
   } catch (e) {
-    if (e.message === "Forbidden: admin access required" || e.message === "Unauthorized") {
-      return NextResponse.json({ error: e.message }, { status: 403 });
-    }
     if (e?.code === "P2025") {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
     }
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

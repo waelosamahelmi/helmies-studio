@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 
 // GET /api/admin/prompt-guides — list all prompt guides with their latest version
@@ -12,7 +14,7 @@ export async function GET(req) {
     });
     return NextResponse.json(guides);
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 401 });
+    return authzResponse(e);
   }
 }
 
@@ -20,6 +22,7 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const { modelId, category, content, isActive } = await req.json();
     if (!modelId || !content) return NextResponse.json({ error: "modelId and content required" }, { status: 400 });
 
@@ -42,7 +45,7 @@ export async function POST(req) {
 
     return NextResponse.json({ guide, version: v }, { status: 201 });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }
 
@@ -50,10 +53,11 @@ export async function POST(req) {
 export async function PATCH(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const { id, isActive } = await req.json();
     const guide = await prisma.promptGuide.update({ where: { id }, data: { isActive } });
     return NextResponse.json(guide);
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

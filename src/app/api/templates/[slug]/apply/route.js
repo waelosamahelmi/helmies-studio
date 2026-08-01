@@ -2,14 +2,24 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { hasTemplateAccess, recordTemplateUse } from "@/lib/templates";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 
-// GET /api/templates/[slug]/apply — apply template config to studio
+// GET /api/templates/[slug]/apply — apply template config to studio.
+// This GET has a side effect (recordTemplateUse decrements the caller's
+// purchase usage below) — it is deliberately origin-checked despite being a
+// GET, per the manifest's own ANOMALY note on this route: a plain
+// cookie-riding cross-site GET (e.g. an <img>/<link> tag) would otherwise
+// burn the caller's template usage with no CSRF protection possible for a
+// GET. Browsers still send Referer (if not Origin) on such cross-site GETs,
+// so verifyOrigin's fallback still catches it.
 export async function GET(req, { params }) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    verifyOrigin(req);
     const userId = session.user.id;
     const { slug } = params;
 
@@ -44,6 +54,6 @@ export async function GET(req, { params }) {
       purchaseId: purchase?.id || null,
     });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

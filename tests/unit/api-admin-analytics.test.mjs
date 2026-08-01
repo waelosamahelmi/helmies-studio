@@ -9,6 +9,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/security", () => ({
   requireAdmin: vi.fn().mockResolvedValue({ id: "admin1" }),
 }));
+// The route imports authzResponse from @/lib/authz directly (Task 1's central
+// authz sweep). The real module pulls in @/lib/session -> @/lib/auth ->
+// next-auth, which this test environment can't resolve — stub it out with
+// the same status/publicMessage -> Response contract.
+vi.mock("@/lib/authz", () => ({
+  authzResponse: (e) =>
+    Response.json(
+      { error: e?.publicMessage ?? "Internal error" },
+      { status: e?.status ?? 500 },
+    ),
+}));
 
 vi.mock("@/lib/prisma", () => ({
   default: {

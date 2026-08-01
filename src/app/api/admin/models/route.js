@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/security";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS, LIPSYNC_MODELS, RECAST_MODELS, AUDIO_MODELS } from "@/lib/models";
 
@@ -39,13 +41,14 @@ export async function GET(req) {
 
     return NextResponse.json({ models, total: models.length });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 401 });
+    return authzResponse(e);
   }
 }
 
 export async function POST(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const { modelId, modelType, providerName, providerCost, creditsCost, isActive, background, backgroundOverlay, textColor } = await req.json();
 
     const updateData = {};
@@ -64,17 +67,18 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }
 
 export async function DELETE(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const { modelId } = await req.json();
     await prisma.modelPricing.delete({ where: { modelId } }).catch(() => {});
     return NextResponse.json({ success: true });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }
