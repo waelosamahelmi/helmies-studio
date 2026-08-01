@@ -19,3 +19,12 @@ applied instead of running it:
 
 Destructive changes use expand-and-contract: add the new shape, backfill,
 switch readers, then drop the old shape in a later migration.
+
+## Phase 2 adoption
+The Phase 2 migrations (starting 20260801120000) add two CHECK constraints on
+CreditWallet.available and CreditWallet.reserved, plus one nullable column
+SubscriptionPlan.stripePriceIdYearly. These are additive, non-destructive
+changes — no data rewrite, instant on this dataset.
+
+Run the resolve command once on the server before deploying Phase 2, then all
+subsequent deploys apply new migrations via `npx prisma migrate deploy`.

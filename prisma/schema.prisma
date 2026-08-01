@@ -677,17 +677,18 @@ model PromoCode {
 }
 
 model SubscriptionPlan {
-  id            String   @id @default(cuid())
-  name          String
-  slug          String   @unique
-  price         Int
-  credits       Int
-  stripePriceId String?
-  features      Json     @default("[]")
-  isActive      Boolean  @default(true)
-  sortOrder     Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  name               String
+  slug               String   @unique
+  price              Int
+  credits            Int
+  stripePriceId      String?
+  stripePriceIdYearly String?
+  features           Json     @default("[]")
+  isActive           Boolean  @default(true)
+  sortOrder          Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   @@schema("public")
 }
