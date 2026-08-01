@@ -9,7 +9,11 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:generate": "prisma generate",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "check:dead-code": "node scripts/dead-code.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
