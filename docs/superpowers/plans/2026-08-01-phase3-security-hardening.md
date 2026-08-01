@@ -115,7 +115,20 @@ model AnonRateLimit {
   @@schema("public")
 }
 ```
-- `checkAnonLimit(ip, endpoint, { windowMs, max })` (from `@/lib/rate-limit`): key = `sha256((process.env.RATE_LIMIT_SALT || process.env.NEXTAUTH_SECRET) + ip + ":" + endpoint)` — raw IPs are never stored (privacy per contract §4.4). Atomicity: try `updateMany({ where: { key, windowStart: { gte: cutoff }, count: { lt: max } }, data: { count: { increment: 1 } } })`; if count===1 → allowed. Else read the row: none or stale → `upsert` reset (`count: 1, windowStart: now`) → allowed; fresh and `count >= max` → `{ allowed:false, retryAfter }`. No read-then-write race can exceed `max` by more than the single in-flight increment (document this bound in the file header).
+- `checkAnonLimit(ip, endpoint, { windowMs, max })` (from `@/lib/rate-limit`): key = `sha256((process.env.RATE_LIMIT_SALT || process.env.NEXTAUTH_SECRET) + ip + ":" + endpoint)` — raw IPs are never stored (privacy per contract §4.4).
+- **Atomicity (CORRECTED after review — the original multi-statement design was empirically broken: 27 of 30 concurrent first-touch requests were admitted against `max: 5`, because every racer independently saw "no row / stale row" and upserted its own reset).** The increment-or-reset decision MUST happen inside one statement under Postgres's row lock:
+
+```sql
+INSERT INTO "AnonRateLimit" ("key", "count", "windowStart")
+VALUES ($1, 1, $2)
+ON CONFLICT ("key") DO UPDATE
+SET "count" = CASE WHEN "AnonRateLimit"."windowStart" < $3 THEN 1 ELSE "AnonRateLimit"."count" + 1 END,
+    "windowStart" = CASE WHEN "AnonRateLimit"."windowStart" < $3 THEN $2 ELSE "AnonRateLimit"."windowStart" END
+RETURNING "count", "windowStart"
+```
+
+  (`$2` = now, `$3` = cutoff = now − windowMs.) Allowed iff the returned `count <= max`; otherwise blocked with `retryAfter` derived from the returned `windowStart`. Every caller — first-touch, mid-window, and stale-window — takes the same single round trip, so no interleaving can admit more than `max` per window. Document this in the file header, and state the guarantee as exact rather than approximate.
+- **Concurrency test requirement:** the integration test MUST fire at least 20 concurrent calls against a brand-new key with a small `max` and assert on the number of `allowed: true` RESULTS (not on the stored row's `count` — the reset path writes `count: 1` regardless of how many racers passed, which is precisely what hid the original bug).
 - `clientIp(req)`: prefer `x-real-ip` (nginx sets it on this deployment), else first `x-forwarded-for` hop, else `"unknown"` — the Phase 2 review's header-rotation note.
 - `security.js` `checkRateLimit(userId, endpoint)`: `ip:` keys now call `checkAnonLimit`; user path unchanged this task.
 - Register route: replace the in-memory `attempts` map with `checkAnonLimit(clientIp(req), "/api/auth/register", { windowMs: 600000, max: 10 })`.
