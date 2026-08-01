@@ -109,18 +109,36 @@ export async function settleReservation(userId, jobId, actualCredits, db = null)
     const reservation = await findActiveReservation(tx, userId, jobId);
     if (!reservation) throw new Error("No active reservation found");
 
-    const release = reservation.amount - actualCredits;
+    // Clamp: actualCredits is the generation's reported cost and should never
+    // exceed what was reserved for it, but a charge above the reservation
+    // would move `available` below what the ledger tracks — clamp
+    // defensively and flag it, since it means the estimate/reservation was
+    // wrong somewhere upstream.
+    const charge = Math.min(actualCredits, reservation.amount);
+    if (charge < actualCredits) {
+      console.warn(
+        `settleReservation: clamping charge for job ${jobId} — actualCredits ${actualCredits} exceeds reservation ${reservation.amount}`
+      );
+    }
+    const release = reservation.amount - charge;
+
+    // Conditional status flip is the concurrency gate: only one of two
+    // overlapping settle/release calls on the same reservation can move it
+    // out of "active". The loser gets count 0 here and throws before
+    // touching the wallet — sweepExpiredReservations' per-item try/catch
+    // (and any caller racing a webhook against the sweep) relies on this.
+    const claimed = await tx.creditReservation.updateMany({
+      where: { id: reservation.id, status: "active" },
+      data: { status: "settled", releasedAt: new Date() },
+    });
+    if (claimed.count === 0) throw new Error("No active reservation found");
+
     const wallet = await tx.creditWallet.update({
       where: { userId },
       data: { reserved: { decrement: reservation.amount }, available: { increment: release } },
     });
 
-    await tx.creditReservation.update({
-      where: { id: reservation.id },
-      data: { status: "settled", releasedAt: new Date() },
-    });
-
-    await writeLedger(tx, wallet.id, -actualCredits, wallet.available, "generation", `Generation job ${jobId}`, jobId);
+    await writeLedger(tx, wallet.id, -charge, wallet.available, "generation", `Generation job ${jobId}`, jobId);
 
     if (release > 0) {
       await writeLedger(tx, wallet.id, release, wallet.available, "reservation_release", `Unused reservation released for job ${jobId}`, jobId);
@@ -135,15 +153,20 @@ export async function releaseReservation(userId, jobId, db = null) {
     const reservation = await findActiveReservation(tx, userId, jobId);
     if (!reservation) return null;
 
+    // Same conditional-transition concurrency gate as settleReservation
+    // above — a second caller that raced past the read above and lost the
+    // status flip gets count 0 and throws instead of double-releasing.
+    const claimed = await tx.creditReservation.updateMany({
+      where: { id: reservation.id, status: "active" },
+      data: { status: "released", releasedAt: new Date() },
+    });
+    if (claimed.count === 0) throw new Error("No active reservation found");
+
     const wallet = await tx.creditWallet.update({
       where: { userId },
       data: { reserved: { decrement: reservation.amount }, available: { increment: reservation.amount } },
     });
 
-    await tx.creditReservation.update({
-      where: { id: reservation.id },
-      data: { status: "released", releasedAt: new Date() },
-    });
     await writeLedger(tx, wallet.id, reservation.amount, wallet.available, "reservation_release", `Refund for job ${jobId}`, jobId);
 
     return wallet;
@@ -208,6 +231,7 @@ export async function sweepExpiredReservations() {
 // ── Credit Operations ────────────────────────────────────────
 
 export async function grantCredits(userId, amount, type = "admin_adjustment", description = "Admin credit grant", referenceId = null, db = null) {
+  if (!LEDGER_TYPES.includes(type)) throw new Error(`Invalid ledger type: ${type}`);
   return withDb(db, async (tx) => {
     const wallet = await tx.creditWallet.upsert({
       where: { userId },

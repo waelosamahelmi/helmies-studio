@@ -95,7 +95,7 @@ import { generateImage, generateI2V } from "@/lib/generation";
 import { resolveProvider } from "@/lib/providers";
 import { storeMedia } from "@/lib/media-storage";
 import { assembleVideos } from "@/lib/video-assembly";
-import { executeProductionPipeline } from "@/lib/director-executor";
+import { executeProductionPipeline, rerunShot } from "@/lib/director-executor";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -260,5 +260,66 @@ describe("executeProductionPipeline — wallet ledger debit", () => {
 
     expect(refundCredits).toHaveBeenCalledTimes(1);
     expect(pipelineState.status).toBe("failed");
+  });
+});
+
+// rerunShot bypasses executeProductionPipeline's upfront pipeline debit — a
+// rerun on an already-billed pipeline was previously free. It must now debit
+// its own charge through the wallet before regenerating.
+describe("rerunShot — charges before regenerating", () => {
+  beforeEach(() => {
+    Object.assign(
+      pipelineState,
+      makePipeline({
+        plan: {
+          shots: [{ id: "s1", index: 0, title: "Shot 1", imageStrategy: {}, videoStrategy: {}, durationSec: 5 }],
+        },
+        costEstimate: {
+          totalCredits: 20,
+          shotCosts: [{ costs: { image: 2, video: 10, audio: 3 } }],
+        },
+      })
+    );
+    prisma.directorShot.findUnique.mockResolvedValue({
+      id: "s1",
+      imageResult: { url: "https://cdn.example/old.png" },
+      videoResult: { url: "https://cdn.example/old.mp4" },
+    });
+    generateImage.mockResolvedValue({ url: "https://cdn.example/new.png" });
+    generateI2V.mockResolvedValue({ url: "https://cdn.example/new.mp4" });
+  });
+
+  it("debits the summed image+video+audio cost for a full rerun before regenerating", async () => {
+    await rerunShot("p1", "u1", "s1", "full");
+
+    expect(debitWallet).toHaveBeenCalledTimes(1);
+    const [userId, amount, description, referenceId] = debitWallet.mock.calls[0];
+    expect(userId).toBe("u1");
+    expect(amount).toBe(15); // 2 + 10 + 3
+    expect(description).toContain("Director shot rerun");
+    expect(description).toContain("full");
+    expect(referenceId).toBe("director:p1:rerun");
+  });
+
+  it("debits only the per-type cost for a single-stage (image) rerun", async () => {
+    await rerunShot("p1", "u1", "s1", "image");
+
+    expect(debitWallet).toHaveBeenCalledWith("u1", 2, expect.stringContaining("image"), "director:p1:rerun");
+  });
+
+  it("falls back to an even per-shot split of totalCredits when no per-type cost is recorded", async () => {
+    Object.assign(pipelineState, { costEstimate: { totalCredits: 20, shotCosts: [] } });
+
+    await rerunShot("p1", "u1", "s1", "full");
+
+    // 1 shot in the plan -> Math.ceil(20 / 1) = 20
+    expect(debitWallet).toHaveBeenCalledWith("u1", 20, expect.any(String), "director:p1:rerun");
+  });
+
+  it("propagates the wallet's insufficient-credit error without regenerating anything", async () => {
+    debitWallet.mockRejectedValue(new Error("Insufficient credits"));
+
+    await expect(rerunShot("p1", "u1", "s1", "full")).rejects.toThrow(/Insufficient credits/);
+    expect(generateImage).not.toHaveBeenCalled();
   });
 });

@@ -39,14 +39,24 @@ export async function PATCH(req) {
     if (role !== undefined && !["user", "admin"].includes(role)) {
       return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
-    await prisma.$transaction(async (tx) => {
-      if (role !== undefined) {
-        await tx.user.update({ where: { id: userId }, data: { role } });
+    try {
+      await prisma.$transaction(async (tx) => {
+        if (role !== undefined) {
+          await tx.user.update({ where: { id: userId }, data: { role } });
+        }
+        if (credits !== undefined) {
+          await adjustWalletTo(userId, credits, "Admin credit adjustment", admin.id, tx);
+        }
+      });
+    } catch (txErr) {
+      // adjustWalletTo's compare-and-set throws this when a concurrent
+      // wallet mutation lands between its read and write — surface it as a
+      // retryable conflict instead of falling through to a generic 500.
+      if (/Wallet changed concurrently/.test(txErr.message)) {
+        return NextResponse.json({ error: "Balance changed concurrently — reload and retry" }, { status: 409 });
       }
-      if (credits !== undefined) {
-        await adjustWalletTo(userId, credits, "Admin credit adjustment", admin.id, tx);
-      }
-    });
+      throw txErr;
+    }
     await logAudit("admin_edit_user", "user", userId, { credits, role, adminId: admin.id }, req);
     return NextResponse.json({ success: true });
   } catch (e) {

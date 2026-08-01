@@ -158,12 +158,14 @@ describe("PATCH /api/admin/users — credit adjustments via wallet ledger", () =
     );
   });
 
-  it("rolls back atomically and audits nothing when adjustWalletTo rejects on a CAS miss", async () => {
+  it("returns 409 with a retry message and rolls back atomically when adjustWalletTo rejects on a CAS miss", async () => {
     adjustWalletTo.mockRejectedValueOnce(new Error("Wallet changed concurrently — retry the adjustment"));
 
     const res = await PATCH(jsonReq({ userId: "u1", credits: 250, role: "admin" }));
+    const body = await res.json();
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(409);
+    expect(body).toEqual({ error: "Balance changed concurrently — reload and retry" });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     // The role write was only ever issued against the tx client inside the
     // single $transaction call whose callback subsequently threw — real
@@ -172,6 +174,17 @@ describe("PATCH /api/admin/users — credit adjustments via wallet ledger", () =
     // client, and (b) the request never reaches the audit log.
     expect(txClient.user.update).toHaveBeenCalledTimes(1);
     expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it("still falls back to a generic 500 for a non-CAS transaction error", async () => {
+    adjustWalletTo.mockRejectedValueOnce(new Error("some other db failure"));
+
+    const res = await PATCH(jsonReq({ userId: "u1", credits: 250 }));
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body).toEqual({ error: "Internal error" });
     expect(logAudit).not.toHaveBeenCalled();
   });
 });

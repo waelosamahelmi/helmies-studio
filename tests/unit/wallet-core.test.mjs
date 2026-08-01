@@ -4,7 +4,7 @@ vi.mock("@/lib/prisma", () => {
   const models = {
     creditWallet: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), upsert: vi.fn(), create: vi.fn() },
     creditLedger: { create: vi.fn() },
-    creditReservation: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn() },
+    creditReservation: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     generation: { findUnique: vi.fn() },
     user: { findUnique: vi.fn(), update: vi.fn() },
   };
@@ -13,7 +13,7 @@ vi.mock("@/lib/prisma", () => {
 });
 
 import prisma from "@/lib/prisma";
-import { reserveCredits, debitWallet, adjustWalletTo, grantCredits, sweepExpiredReservations } from "@/lib/wallet";
+import { reserveCredits, settleReservation, releaseReservation, debitWallet, adjustWalletTo, grantCredits, sweepExpiredReservations } from "@/lib/wallet";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -79,7 +79,7 @@ describe("sweepExpiredReservations", () => {
     prisma.generation.findUnique.mockResolvedValue({ id: "gen1", status: "failed", creditsUsed: 0 });
     prisma.creditReservation.findFirst.mockResolvedValue({ id: "res1", amount: 20, walletId: "w1" });
     prisma.creditWallet.update.mockResolvedValue({ id: "w1", userId: "u1", available: 120, reserved: 0 });
-    prisma.creditReservation.update.mockResolvedValue({});
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
     prisma.creditLedger.create.mockResolvedValue({});
 
     const result = await sweepExpiredReservations();
@@ -89,8 +89,8 @@ describe("sweepExpiredReservations", () => {
       where: { userId: "u1" },
       data: { reserved: { decrement: 20 }, available: { increment: 20 } },
     });
-    expect(prisma.creditReservation.update.mock.calls[0][0]).toMatchObject({
-      where: { id: "res1" },
+    expect(prisma.creditReservation.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { id: "res1", status: "active" },
       data: { status: "released" },
     });
   });
@@ -102,7 +102,7 @@ describe("sweepExpiredReservations", () => {
     prisma.generation.findUnique.mockResolvedValue({ id: "gen2", status: "completed", creditsUsed: 15 });
     prisma.creditReservation.findFirst.mockResolvedValue({ id: "res2", amount: 20, walletId: "w1" });
     prisma.creditWallet.update.mockResolvedValue({ id: "w1", userId: "u1", available: 105, reserved: 0 });
-    prisma.creditReservation.update.mockResolvedValue({});
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
     prisma.creditLedger.create.mockResolvedValue({});
 
     const result = await sweepExpiredReservations();
@@ -112,8 +112,8 @@ describe("sweepExpiredReservations", () => {
       where: { userId: "u1" },
       data: { reserved: { decrement: 20 }, available: { increment: 5 } },
     });
-    expect(prisma.creditReservation.update.mock.calls[0][0]).toMatchObject({
-      where: { id: "res2" },
+    expect(prisma.creditReservation.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { id: "res2", status: "active" },
       data: { status: "settled" },
     });
   });
@@ -128,7 +128,7 @@ describe("sweepExpiredReservations", () => {
 
     expect(result).toEqual({ released: 0, settled: 0, skipped: 1 });
     expect(prisma.creditWallet.update).not.toHaveBeenCalled();
-    expect(prisma.creditReservation.update).not.toHaveBeenCalled();
+    expect(prisma.creditReservation.updateMany).not.toHaveBeenCalled();
   });
 
   it("releases when the reservation's generation no longer exists", async () => {
@@ -137,7 +137,7 @@ describe("sweepExpiredReservations", () => {
     ]);
     prisma.creditReservation.findFirst.mockResolvedValue({ id: "res4", amount: 20, walletId: "w1" });
     prisma.creditWallet.update.mockResolvedValue({ id: "w1", userId: "u1", available: 120, reserved: 0 });
-    prisma.creditReservation.update.mockResolvedValue({});
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
     prisma.creditLedger.create.mockResolvedValue({});
 
     const result = await sweepExpiredReservations();
@@ -156,7 +156,7 @@ describe("sweepExpiredReservations", () => {
       .mockResolvedValueOnce({ id: "genGood", status: "failed", creditsUsed: 0 });
     prisma.creditReservation.findFirst.mockResolvedValue({ id: "resGood", amount: 10, walletId: "w2" });
     prisma.creditWallet.update.mockResolvedValue({ id: "w2", userId: "u2", available: 60, reserved: 0 });
-    prisma.creditReservation.update.mockResolvedValue({});
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
     prisma.creditLedger.create.mockResolvedValue({});
 
     const result = await sweepExpiredReservations();
@@ -169,6 +169,120 @@ describe("sweepExpiredReservations", () => {
     const result = await sweepExpiredReservations();
     expect(result).toEqual({ released: 0, settled: 0, skipped: 0 });
     expect(prisma.creditWallet.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("settleReservation", () => {
+  it("clamps the charge to the reservation amount and warns when actualCredits overshoots it", async () => {
+    prisma.creditReservation.findFirst.mockResolvedValue({ id: "r1", amount: 20, walletId: "w1" });
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.creditWallet.update.mockResolvedValue({ id: "w1", userId: "u1", available: 100, reserved: 0 });
+    prisma.creditLedger.create.mockResolvedValue({});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await settleReservation("u1", "job1", 35); // actualCredits (35) > reservation.amount (20)
+
+    expect(warnSpy).toHaveBeenCalled();
+    const walletArg = prisma.creditWallet.update.mock.calls[0][0];
+    expect(walletArg).toEqual({
+      where: { userId: "u1" },
+      data: { reserved: { decrement: 20 }, available: { increment: 0 } }, // release = 20 - 20 = 0
+    });
+    const ledgerArg = prisma.creditLedger.create.mock.calls[0][0].data;
+    expect(ledgerArg).toMatchObject({ amount: -20, type: "generation" }); // charge clamped to 20, not 35
+
+    warnSpy.mockRestore();
+  });
+
+  it("does not warn and charges actualCredits as-is when it fits within the reservation", async () => {
+    prisma.creditReservation.findFirst.mockResolvedValue({ id: "r1", amount: 20, walletId: "w1" });
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.creditWallet.update.mockResolvedValue({ id: "w1", userId: "u1", available: 100, reserved: 0 });
+    prisma.creditLedger.create.mockResolvedValue({});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await settleReservation("u1", "job1", 15);
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    const ledgerArg = prisma.creditLedger.create.mock.calls[0][0].data;
+    expect(ledgerArg).toMatchObject({ amount: -15, type: "generation" });
+
+    warnSpy.mockRestore();
+  });
+
+  it("throws 'No active reservation found' and touches no wallet/ledger when the conditional status flip matches zero rows", async () => {
+    prisma.creditReservation.findFirst.mockResolvedValue({ id: "r1", amount: 20, walletId: "w1" });
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 0 }); // a concurrent settle already won
+
+    await expect(settleReservation("u1", "job1", 15)).rejects.toThrow(/No active reservation found/);
+    expect(prisma.creditWallet.update).not.toHaveBeenCalled();
+    expect(prisma.creditLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("passes { id, status: 'active' } as the updateMany guard so a second concurrent caller can't also win", async () => {
+    prisma.creditReservation.findFirst.mockResolvedValue({ id: "r1", amount: 20, walletId: "w1" });
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.creditWallet.update.mockResolvedValue({ id: "w1", userId: "u1", available: 100, reserved: 0 });
+    prisma.creditLedger.create.mockResolvedValue({});
+
+    await settleReservation("u1", "job1", 15);
+
+    expect(prisma.creditReservation.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { id: "r1", status: "active" },
+      data: { status: "settled" },
+    });
+  });
+});
+
+describe("releaseReservation", () => {
+  it("returns null (not a throw) when there was never an active reservation to begin with", async () => {
+    prisma.creditReservation.findFirst.mockResolvedValue(null);
+
+    const result = await releaseReservation("u1", "job1");
+
+    expect(result).toBeNull();
+    expect(prisma.creditReservation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("throws 'No active reservation found' when the conditional status flip matches zero rows", async () => {
+    prisma.creditReservation.findFirst.mockResolvedValue({ id: "r1", amount: 20, walletId: "w1" });
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 0 }); // a concurrent settle/release already won
+
+    await expect(releaseReservation("u1", "job1")).rejects.toThrow(/No active reservation found/);
+    expect(prisma.creditWallet.update).not.toHaveBeenCalled();
+    expect(prisma.creditLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("passes { id, status: 'active' } as the updateMany guard on the happy path", async () => {
+    prisma.creditReservation.findFirst.mockResolvedValue({ id: "r1", amount: 20, walletId: "w1" });
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.creditWallet.update.mockResolvedValue({ id: "w1", userId: "u1", available: 120, reserved: 0 });
+    prisma.creditLedger.create.mockResolvedValue({});
+
+    await releaseReservation("u1", "job1");
+
+    expect(prisma.creditReservation.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { id: "r1", status: "active" },
+      data: { status: "released" },
+    });
+  });
+});
+
+describe("grantCredits — ledger type validation", () => {
+  it("throws on an unknown ledger type before writing anything", async () => {
+    await expect(grantCredits("u1", 10, "not_a_real_type")).rejects.toThrow(/Invalid ledger type/);
+    expect(prisma.creditWallet.upsert).not.toHaveBeenCalled();
+    expect(prisma.creditLedger.create).not.toHaveBeenCalled();
+  });
+
+  it("accepts a known ledger type and proceeds normally", async () => {
+    prisma.creditWallet.upsert.mockResolvedValue({ id: "w1", available: 40 });
+    prisma.creditLedger.create.mockResolvedValue({});
+
+    await grantCredits("u1", 10, "topup");
+
+    expect(prisma.creditWallet.upsert).toHaveBeenCalled();
+    expect(prisma.creditLedger.create.mock.calls[0][0].data).toMatchObject({ type: "topup" });
   });
 });
 

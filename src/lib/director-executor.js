@@ -506,6 +506,22 @@ export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") 
   const shotRecord = await prisma.directorShot.findUnique({ where: { id: shotId } });
   if (!shotRecord) throw new Error("Shot record not found");
 
+  // Charge before regenerating — a rerun is new work on top of what the
+  // pipeline's original executeProductionPipeline debit already paid for,
+  // and was previously free. Prefer the per-shot, per-type cost recorded at
+  // quote time; for a full rerun that means summing whichever of the
+  // image/video/audio entries are present. Fall back to an even split of
+  // the pipeline's total when no per-shot breakdown is available.
+  const shotCosts = pipeline.costEstimate?.shotCosts?.[shot.index]?.costs;
+  let cost = rerunType === "full"
+    ? shotCosts && ((shotCosts.image || 0) + (shotCosts.video || 0) + (shotCosts.audio || 0))
+    : shotCosts?.[rerunType];
+  if (!cost) {
+    const totalShots = plan.shots?.length || 0;
+    cost = Math.ceil((pipeline.costEstimate?.totalCredits || 0) / Math.max(1, totalShots));
+  }
+  await debitWallet(userId, cost, `Director shot rerun (${rerunType})`, `director:${pipelineId}:rerun`);
+
   let result;
 
   switch (rerunType) {
@@ -595,37 +611,6 @@ export async function getPipelineStatus(pipelineId, userId) {
     createdAt: pipeline.createdAt,
     updatedAt: pipeline.updatedAt
   };
-}
-
-// ──────────────────────────────────────────────
-// Cancel pipeline
-// ──────────────────────────────────────────────
-export async function cancelPipeline(pipelineId, userId) {
-  const pipeline = await prisma.directorPipeline.findFirst({
-    where: { id: pipelineId, userId }
-  });
-  if (!pipeline) throw new Error("Pipeline not found");
-
-  if (pipeline.status === PIPELINE_STATES.COMPLETED || pipeline.status === PIPELINE_STATES.CANCELLED) {
-    throw new Error("Cannot cancel pipeline in state: " + pipeline.status);
-  }
-
-  await transitionPipeline(pipelineId, PIPELINE_STATES.CANCELLED);
-
-  // Refund any unused credits
-  const completedShots = await prisma.directorShot.count({
-    where: { pipelineId, status: SHOT_STATES.COMPLETED }
-  });
-  const totalShots = pipeline.plan?.shots?.length || 0;
-  const costEstimate = pipeline.costEstimate || {};
-  const perShotCost = totalShots > 0 ? Math.floor((costEstimate.totalCredits || 0) / totalShots) : 0;
-  const refundAmount = (totalShots - completedShots) * perShotCost;
-
-  if (refundAmount > 0) {
-    await refundCredits(userId, refundAmount, `director:${pipelineId}`, "Cancelled pipeline refund");
-  }
-
-  return { success: true, status: PIPELINE_STATES.CANCELLED, refundAmount };
 }
 
 // ──────────────────────────────────────────────
