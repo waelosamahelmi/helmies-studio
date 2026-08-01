@@ -14,10 +14,11 @@ export async function GET(req) {
       orderBy: { createdAt: "desc" },
     });
 
-    const recentTransactions = await prisma.creditTransaction.findMany({
-      where: { userId: user.id },
+    const recentTransactions = await prisma.creditLedger.findMany({
+      where: { wallet: { userId: user.id } },
       orderBy: { createdAt: "desc" },
       take: 20,
+      select: { id: true, amount: true, type: true, description: true, createdAt: true },
     });
 
     return NextResponse.json({

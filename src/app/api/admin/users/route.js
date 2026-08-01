@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
+import { adjustWalletTo } from "@/lib/wallet";
 import prisma from "@/lib/prisma";
 
 export async function GET(req) {
@@ -19,20 +20,18 @@ export async function PATCH(req) {
   try {
     const admin = await requireAdmin(req);
     const { userId, credits, role } = await req.json();
-    const data = {};
-    if (credits !== undefined) {
-      if (typeof credits !== "number" || credits < 0) {
-        return NextResponse.json({ error: "Credits must be a non-negative number" }, { status: 400 });
-      }
-      data.credits = credits;
+    if (credits !== undefined && (typeof credits !== "number" || credits < 0)) {
+      return NextResponse.json({ error: "Credits must be a non-negative number" }, { status: 400 });
+    }
+    if (role !== undefined && !["user", "admin"].includes(role)) {
+      return NextResponse.json({ error: "Invalid role" }, { status: 400 });
     }
     if (role !== undefined) {
-      if (!["user", "admin"].includes(role)) {
-        return NextResponse.json({ error: "Invalid role" }, { status: 400 });
-      }
-      data.role = role;
+      await prisma.user.update({ where: { id: userId }, data: { role } });
     }
-    await prisma.user.update({ where: { id: userId }, data });
+    if (credits !== undefined) {
+      await adjustWalletTo(userId, credits, "Admin credit adjustment", admin.id);
+    }
     await logAudit("admin_edit_user", "user", userId, { credits, role, adminId: admin.id }, req);
     return NextResponse.json({ success: true });
   } catch (e) {

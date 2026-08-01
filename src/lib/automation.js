@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { adjustWalletTo } from "@/lib/wallet";
 
 const MODEL_FAILURE_THRESHOLD = 5;
 const MODEL_FAILURE_WINDOW_MINUTES = 30;
@@ -58,19 +59,19 @@ export async function autoSuspendAbusiveUsers() {
     const user = await prisma.user.findUnique({ where: { id: u.userId }, select: { credits: true, role: true } });
     if (user?.role === "admin") continue;
     if (user && user.credits > ABUSE_SUSPEND_CREDITS) {
-      await prisma.user.update({
-        where: { id: u.userId },
-        data: { credits: ABUSE_SUSPEND_CREDITS },
-      });
-      await prisma.creditTransaction.create({
-        data: {
-          userId: u.userId,
-          amount: -user.credits,
-          type: "abuse_suspension",
-          description: `Auto-suspended: ${u._count} generations in ${ABUSE_WINDOW_MINUTES}min`,
-        },
-      });
-      suspended.push({ userId: u.userId, generations: u._count });
+      try {
+        await adjustWalletTo(
+          u.userId,
+          ABUSE_SUSPEND_CREDITS,
+          `Auto-suspended: ${u._count} generations in ${ABUSE_WINDOW_MINUTES}min`
+        );
+        suspended.push({ userId: u.userId, generations: u._count });
+      } catch (err) {
+        // A contested wallet (concurrent spend/topup racing this clamp)
+        // throws on CAS miss — log and continue so one bad row doesn't
+        // abort the whole abuse sweep.
+        console.error(`autoSuspendAbusiveUsers: failed to adjust wallet for ${u.userId}:`, err);
+      }
     }
   }
 
