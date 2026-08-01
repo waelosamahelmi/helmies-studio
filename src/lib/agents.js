@@ -6,6 +6,7 @@ import {
   runClipping, runMotionGraphics, generateMarketingAd,
 } from "@/lib/generation";
 import { detectAbuse } from "@/lib/security";
+import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import prisma from "@/lib/prisma";
 
 // ── Agent definitions ──
@@ -432,7 +433,6 @@ export async function executeAgentRunStream(userId, userMessage, context = {}) {
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
   // Wallet is the source of truth; sync the legacy column.
-  const { getWallet } = await import("@/lib/wallet");
   const wallet = await getWallet(userId);
   const availableCredits = wallet.available;
   if (availableCredits < plan.estimate.total) {
@@ -443,7 +443,7 @@ export async function executeAgentRunStream(userId, userMessage, context = {}) {
     return { stream: null, error: "Insufficient credits", creditsNeeded: plan.estimate.total, creditsAvailable: availableCredits };
   }
 
-  await debitCredits(userId, plan.estimate.total, `Agent run: ${plan.summary}`);
+  await debitWallet(userId, plan.estimate.total, `Agent run: ${plan.summary}`, `agent:${agentRun.id}`);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -483,7 +483,7 @@ export async function executeAgentRunStream(userId, userMessage, context = {}) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "run_complete", success: true, outputs, stepResults, assembled, summary: plan.summary, creditsUsed: totalCreditsUsed })}\n\n`));
       } catch (error) {
         const refundAmount = plan.estimate.total - (stepResults.filter(s => s.status === "completed").length * (plan.estimate.total / plan.steps.length));
-        await creditUser(userId, Math.ceil(refundAmount), "agent_refund", `Refund for failed agent run`);
+        await refundCredits(userId, Math.ceil(refundAmount), `agent:${agentRun.id}`, "Agent run partial failure");
         await prisma.agentRun.update({ where: { id: agentRun.id }, data: { status: "failed", error: error.message, result: { stepResults } } });
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "run_complete", success: false, error: error.message, stepResults })}\n\n`));
       }
@@ -513,7 +513,6 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
   });
 
   const user = await prisma.user.findUnique({ where: { id: userId }, select: { credits: true } });
-  const { getWallet } = await import("@/lib/wallet");
   const wallet = await getWallet(userId);
   if (wallet.available < plan.estimate.total) {
     await prisma.agentRun.update({
@@ -523,7 +522,7 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
     return { success: false, error: "Insufficient credits", creditsNeeded: plan.estimate.total, creditsAvailable: wallet.available };
   }
 
-  await debitCredits(userId, plan.estimate.total, `Agent run: ${plan.summary}`);
+  await debitWallet(userId, plan.estimate.total, `Agent run: ${plan.summary}`, `agent:${agentRun.id}`);
 
   const outputs = [];
   const stepResults = [];
@@ -572,27 +571,13 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
     return { success: true, outputs, stepResults, assembled, summary: plan.summary, creditsUsed: plan.estimate.total };
   } catch (error) {
     const refundAmount = plan.estimate.total - (stepResults.filter(s => s.status === "completed").length * (plan.estimate.total / plan.steps.length));
-    await creditUser(userId, Math.ceil(refundAmount), "agent_refund", `Refund for failed agent run`);
+    await refundCredits(userId, Math.ceil(refundAmount), `agent:${agentRun.id}`, "Agent run partial failure");
     await prisma.agentRun.update({
       where: { id: agentRun.id },
       data: { status: "failed", error: error.message, result: { stepResults } },
     });
     return { success: false, error: error.message, stepResults };
   }
-}
-
-async function debitCredits(userId, amount, description) {
-  const result = await prisma.user.updateMany({
-    where: { id: userId, credits: { gte: amount } },
-    data: { credits: { decrement: amount } },
-  });
-  if (result.count === 0) throw new Error("Insufficient credits");
-  await prisma.creditTransaction.create({ data: { userId, amount: -amount, type: "agent_run", description } });
-}
-
-async function creditUser(userId, amount, type, description) {
-  await prisma.user.update({ where: { id: userId }, data: { credits: { increment: amount } } });
-  await prisma.creditTransaction.create({ data: { userId, amount, type, description } });
 }
 
 // ── Assemble outputs into a coherent package ──
