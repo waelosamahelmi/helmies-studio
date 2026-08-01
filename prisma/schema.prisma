@@ -193,11 +193,13 @@ model ProjectMemory {
 }
 
 // ── Admin: Provider config ──
+// Provider API keys are configured via environment variables only
+// (src/lib/providers.js reads process.env.KIE_KEY / ALIBABA_KEY /
+// OPENROUTER_KEY) — this table never stores a plaintext key (Phase 3 Task 7).
 model ProviderConfig {
   id        String   @id @default(cuid())
   name      String   @unique
   type      String
-  apiKey    String   @db.Text
   baseUrl   String?
   isActive  Boolean  @default(true)
   markup    Float    @default(2.5)
@@ -509,6 +511,7 @@ model CreditReservation {
   generationId String?
   status       String       @default("active")
   createdAt    DateTime     @default(now())
+  expiresAt    DateTime?
   releasedAt   DateTime?
   wallet       CreditWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 

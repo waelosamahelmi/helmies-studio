@@ -24,6 +24,7 @@ vi.mock("@/lib/authz", () => ({
 vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 
 import prisma from "@/lib/prisma";
+import { verifyOrigin } from "@/lib/origin-check";
 import { GET, POST } from "@/app/api/admin/providers/route.js";
 
 const jsonReq = (body) =>
@@ -36,33 +37,46 @@ const jsonReq = (body) =>
 beforeEach(() => vi.clearAllMocks());
 
 describe("GET /api/admin/providers", () => {
-  it("never returns apiKey — only hasApiKey and last4", async () => {
+  it("returns provider rows with no apiKey-related fields — env is the only key store", async () => {
     prisma.providerConfig.findMany.mockResolvedValue([
-      { id: "p1", name: "KIE", apiKey: "sk-secret-abcd1234", markup: 2.5, isActive: true },
-      { id: "p2", name: "Alibaba", apiKey: null, markup: 2.5, isActive: true },
+      { id: "p1", name: "KIE", type: "media", baseUrl: null, markup: 2.5, isActive: true },
+      { id: "p2", name: "Alibaba", type: "media", baseUrl: null, markup: 2.5, isActive: true },
     ]);
     const res = await GET(new Request("http://test/api/admin/providers"));
     const rows = await res.json();
-    for (const row of rows) expect(row).not.toHaveProperty("apiKey");
-    expect(rows[0]).toMatchObject({ hasApiKey: true, apiKeyLast4: "1234" });
-    expect(rows[1]).toMatchObject({ hasApiKey: false, apiKeyLast4: null });
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty("apiKey");
+      expect(row).not.toHaveProperty("hasApiKey");
+      expect(row).not.toHaveProperty("apiKeyLast4");
+    }
+    expect(rows[0]).toMatchObject({ id: "p1", name: "KIE", markup: 2.5, isActive: true });
   });
 });
 
 describe("POST /api/admin/providers", () => {
-  it("does not overwrite the stored key when apiKey is blank or masked", async () => {
-    prisma.providerConfig.upsert.mockResolvedValue({});
-    await POST(jsonReq({ name: "KIE", type: "media", apiKey: "", markup: 3 }));
-    await POST(jsonReq({ name: "KIE", type: "media", apiKey: "••••1234", markup: 3 }));
-    for (const call of prisma.providerConfig.upsert.mock.calls) {
-      expect(call[0].update).not.toHaveProperty("apiKey");
-    }
+  it("rejects a supplied apiKey with 400 — keys are env-only now", async () => {
+    const res = await POST(jsonReq({ name: "KIE", type: "media", apiKey: "sk-live-secret-123", markup: 3 }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body).toEqual({ error: "Provider keys are configured via environment variables" });
+    expect(prisma.providerConfig.upsert).not.toHaveBeenCalled();
   });
 
-  it("writes a genuinely new key", async () => {
+  it("upserts only the allowlisted fields on a normal POST", async () => {
     prisma.providerConfig.upsert.mockResolvedValue({});
-    await POST(jsonReq({ name: "KIE", type: "media", apiKey: "sk-new-key-9", markup: 3 }));
-    expect(prisma.providerConfig.upsert.mock.calls[0][0].update)
-      .toHaveProperty("apiKey", "sk-new-key-9");
+    const res = await POST(jsonReq({ name: "KIE", type: "media", baseUrl: "https://api.kie.ai", markup: 3, isActive: true }));
+    expect(res.status).toBe(200);
+    const call = prisma.providerConfig.upsert.mock.calls[0][0];
+    expect(call.where).toEqual({ name: "KIE" });
+    expect(call.create).not.toHaveProperty("apiKey");
+    expect(call.update).not.toHaveProperty("apiKey");
+    expect(call.update).toMatchObject({ type: "media", baseUrl: "https://api.kie.ai", markup: 3, isActive: true });
+  });
+
+  it("still calls verifyOrigin (Task 3 CSRF check) before writing", async () => {
+    prisma.providerConfig.upsert.mockResolvedValue({});
+    await POST(jsonReq({ name: "KIE", type: "media", markup: 3 }));
+    expect(verifyOrigin).toHaveBeenCalled();
   });
 });
