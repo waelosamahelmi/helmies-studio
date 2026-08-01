@@ -41,7 +41,9 @@ describe("provisionNewUser", () => {
       update: {},
       create: { userId: "u1", plan: "free", status: "active" },
     });
-    expect(grantCredits).toHaveBeenCalledWith("u1", 100, "signup", "Welcome bonus: 100 free credits");
+    // referenceId is always null for a signup grant; db is null here because
+    // no tx client was passed — grantCredits opens its own transaction.
+    expect(grantCredits).toHaveBeenCalledWith("u1", 100, "signup", "Welcome bonus: 100 free credits", null, null);
     expect(prisma.user.update).not.toHaveBeenCalled();
   });
 
@@ -56,5 +58,30 @@ describe("provisionNewUser", () => {
   it("does not promote to admin when firstUserAdmin is omitted (defaults false)", async () => {
     await provisionNewUser("u2", {});
     expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("provisionNewUser — tx composability (trailing db param)", () => {
+  it("routes every write through the provided tx client, not the top-level prisma client", async () => {
+    const tx = {
+      user: { update: vi.fn().mockResolvedValue({}) },
+      subscription: { upsert: vi.fn().mockResolvedValue({}) },
+    };
+
+    await provisionNewUser("u1", { firstUserAdmin: true }, tx);
+
+    expect(tx.user.update).toHaveBeenCalledWith({ where: { id: "u1" }, data: { role: "admin" } });
+    expect(tx.subscription.upsert).toHaveBeenCalledWith({
+      where: { userId: "u1" },
+      update: {},
+      create: { userId: "u1", plan: "free", status: "active" },
+    });
+    // The top-level (non-tx) client must never be touched when a tx is supplied.
+    expect(prisma.user.update).not.toHaveBeenCalled();
+    expect(prisma.subscription.upsert).not.toHaveBeenCalled();
+    // grantCredits is tx-composable (src/lib/wallet.js withDb) — passing the
+    // tx through as its trailing db arg makes the wallet grant part of the
+    // same transaction instead of opening a nested one.
+    expect(grantCredits).toHaveBeenCalledWith("u1", 100, "signup", "Welcome bonus: 100 free credits", null, tx);
   });
 });

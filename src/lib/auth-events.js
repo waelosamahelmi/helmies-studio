@@ -12,16 +12,26 @@ import { grantCredits } from "@/lib/wallet";
 
 export const SIGNUP_CREDITS = 100;
 
-export async function provisionNewUser(userId, { firstUserAdmin = false } = {}) {
+// `db`: pass an already-open transaction client (e.g. from prisma.$transaction)
+// to compose provisioning into a caller's own transaction — this is how the
+// register route makes "create the user" + "provision it" atomic, so a
+// mid-provisioning failure rolls back the User row instead of leaving an
+// orphan the client can never re-register (email uniqueness would otherwise
+// 409 on retry). Omit it (default null) to run standalone against the
+// top-level client — the OAuth events.createUser path does this; grantCredits
+// then opens its own transaction internally, matching its pre-existing
+// standalone behavior.
+export async function provisionNewUser(userId, { firstUserAdmin = false } = {}, db = null) {
+  const client = db ?? prisma;
   if (firstUserAdmin) {
-    await prisma.user.update({ where: { id: userId }, data: { role: "admin" } });
+    await client.user.update({ where: { id: userId }, data: { role: "admin" } });
   }
   // Subscription.userId is @unique (prisma/schema.prisma) — safe to upsert so
   // a caller that already created the row (or a retry) never double-creates.
-  await prisma.subscription.upsert({
+  await client.subscription.upsert({
     where: { userId },
     update: {},
     create: { userId, plan: "free", status: "active" },
   });
-  await grantCredits(userId, SIGNUP_CREDITS, "signup", "Welcome bonus: 100 free credits");
+  await grantCredits(userId, SIGNUP_CREDITS, "signup", "Welcome bonus: 100 free credits", null, db);
 }

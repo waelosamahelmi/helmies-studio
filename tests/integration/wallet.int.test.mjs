@@ -121,6 +121,47 @@ describe("provisionNewUser — signup grants the opening ledger entry (Task 8)",
     const subs = await prisma.subscription.findMany({ where: { userId: user.id } });
     expect(subs).toHaveLength(1);
   });
+
+  it("register-route shape: user.create + provisionNewUser composed in one $transaction still yields exactly one user/wallet/subscription/signup-row on the happy path", async () => {
+    const { provisionNewUser } = await import("@/lib/auth-events");
+    const email = `atomic-ok-${randomUUID()}@test.local`;
+
+    const userId = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({ data: { email, role: "user" } });
+      await provisionNewUser(user.id, { firstUserAdmin: false }, tx);
+      return user.id;
+    });
+
+    expect(await prisma.user.count({ where: { email } })).toBe(1);
+    const wallet = await prisma.creditWallet.findUnique({ where: { userId } });
+    expect(wallet.available).toBe(100);
+    const rows = await prisma.creditLedger.findMany({ where: { walletId: wallet.id } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ type: "signup", amount: 100, balanceAfter: 100 });
+    const subs = await prisma.subscription.findMany({ where: { userId } });
+    expect(subs).toHaveLength(1);
+  });
+
+  it("register-route shape: a genuine provisioning failure (FK violation) rolls back the user row too — no orphan, email stays retryable", async () => {
+    const { provisionNewUser } = await import("@/lib/auth-events");
+    const email = `atomic-fail-${randomUUID()}@test.local`;
+
+    await expect(
+      prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({ data: { email, role: "user" } });
+        // Force a real provisioning failure: subscription.upsert's create
+        // references a userId that doesn't exist, violating the
+        // Subscription -> User foreign key (prisma/schema.prisma). This is
+        // the same rollback path a real mid-provisioning failure (e.g. a
+        // wallet-grant error) would take.
+        await provisionNewUser("does-not-exist", { firstUserAdmin: false }, tx);
+      })
+    ).rejects.toThrow();
+
+    // The user row must not have survived the rollback — retrying the same
+    // email must be possible, not blocked by a 409 from an orphaned row.
+    expect(await prisma.user.findUnique({ where: { email } })).toBeNull();
+  });
 });
 
 describe("DB CHECK constraints", () => {

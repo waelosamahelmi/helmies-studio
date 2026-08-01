@@ -13,11 +13,22 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // (this file mocks it as a black box, since vi.mock is hoisted per-file and
 // mixing a mocked and a real import of the same module in one file is fragile).
 
+// Register now wraps user.create + provisionNewUser in ONE prisma.$transaction
+// (so a provisioning failure rolls back the User row too, instead of leaving
+// an orphaned, walletless user that 409s any retry of the same email). The
+// tx client below is deliberately a DIFFERENT object from the top-level
+// `prisma` mock so assertions can prove writes go through the tx, not around it.
 vi.mock("@/lib/prisma", () => {
+  const txClient = {
+    user: { create: vi.fn(), update: vi.fn() },
+    subscription: { upsert: vi.fn(), create: vi.fn() },
+  };
   const models = {
     user: { findUnique: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
     subscription: { upsert: vi.fn(), create: vi.fn() },
+    $transaction: vi.fn(async (fn) => fn(txClient)),
   };
+  models.__txClient = txClient;
   return { default: models };
 });
 
@@ -46,6 +57,8 @@ vi.mock("@auth/prisma-adapter", () => ({ PrismaAdapter: vi.fn(() => ({})) }));
 import prisma from "@/lib/prisma";
 import { provisionNewUser } from "@/lib/auth-events";
 
+const txClient = prisma.__txClient;
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -60,25 +73,28 @@ describe("POST /api/auth/register — provisions via the wallet, not nested crea
 
   beforeEach(() => {
     prisma.user.findUnique.mockResolvedValue(null);
-    prisma.user.create.mockResolvedValue({ id: "new-user-1" });
+    txClient.user.create.mockResolvedValue({ id: "new-user-1" });
     provisionNewUser.mockResolvedValue();
   });
 
-  it("creates the user with no nested wallet/transactions/subscriptions, then calls provisionNewUser", async () => {
+  it("wraps user.create + provisionNewUser in one transaction, threading the tx client through", async () => {
     prisma.user.count.mockResolvedValue(5); // not the first user
     const { POST } = await import("@/app/api/auth/register/route.js");
 
     const res = await POST(jsonReq({ email: "fresh@test.local", password: "password123" }));
     expect(res.status).toBe(200);
 
-    expect(prisma.user.create).toHaveBeenCalledTimes(1);
-    const createArg = prisma.user.create.mock.calls[0][0];
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(txClient.user.create).toHaveBeenCalledTimes(1);
+    expect(prisma.user.create).not.toHaveBeenCalled(); // must never bypass the tx
+
+    const createArg = txClient.user.create.mock.calls[0][0];
     expect(createArg.data).not.toHaveProperty("wallet");
     expect(createArg.data).not.toHaveProperty("transactions");
     expect(createArg.data).not.toHaveProperty("subscriptions");
     expect(createArg.data.role).toBe("user");
 
-    expect(provisionNewUser).toHaveBeenCalledWith("new-user-1", { firstUserAdmin: false });
+    expect(provisionNewUser).toHaveBeenCalledWith("new-user-1", { firstUserAdmin: false }, txClient);
   });
 
   it("first registrant still gets role admin set directly on user.create (unrelated to provisionNewUser's own admin flag)", async () => {
@@ -88,10 +104,27 @@ describe("POST /api/auth/register — provisions via the wallet, not nested crea
     const res = await POST(jsonReq({ email: "first@test.local", password: "password123" }));
     expect(res.status).toBe(200);
 
-    const createArg = prisma.user.create.mock.calls[0][0];
+    const createArg = txClient.user.create.mock.calls[0][0];
     expect(createArg.data.role).toBe("admin");
     // Role was already set on create; provisionNewUser must not redundantly re-promote.
-    expect(provisionNewUser).toHaveBeenCalledWith("new-user-1", { firstUserAdmin: false });
+    expect(provisionNewUser).toHaveBeenCalledWith("new-user-1", { firstUserAdmin: false }, txClient);
+  });
+
+  it("a provisioning failure propagates out of the transaction — the user row never commits, so the email stays retryable", async () => {
+    prisma.user.count.mockResolvedValue(3);
+    txClient.user.create.mockResolvedValue({ id: "user-fail-1" });
+    provisionNewUser.mockRejectedValue(new Error("grant failed"));
+    const { POST } = await import("@/app/api/auth/register/route.js");
+
+    await expect(
+      POST(jsonReq({ email: "willfail@test.local", password: "password123" }))
+    ).rejects.toThrow(/grant failed/);
+
+    // The create ran inside the (rolled-back) tx and never touched the
+    // top-level, always-committed client — that's what makes real Prisma's
+    // $transaction rollback apply to the user row too.
+    expect(txClient.user.create).toHaveBeenCalledTimes(1);
+    expect(prisma.user.create).not.toHaveBeenCalled();
   });
 });
 
