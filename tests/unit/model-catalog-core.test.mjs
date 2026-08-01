@@ -1,7 +1,7 @@
-import test from "node:test";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl } from "../src/lib/model-catalog-core.mjs";
-import { formatAlibabaPayload, getAlibabaApiPath } from "../src/lib/alibaba-provider-core.mjs";
+import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl } from "@/lib/model-catalog-core.mjs";
+import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
 
 test("quotes a fixed per-image model with output count", () => {
   const quote = calculateProviderQuote({ unit: "image", rules: [{ price: 0.03 }] }, { num_images: 4 });
