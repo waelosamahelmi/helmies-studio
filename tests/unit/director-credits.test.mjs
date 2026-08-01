@@ -91,8 +91,10 @@ vi.mock("@/lib/director-planner", () => ({
 import prisma from "@/lib/prisma";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { debitCredits, creditUser } from "@/lib/session";
-import { generateImage } from "@/lib/generation";
+import { generateImage, generateI2V } from "@/lib/generation";
 import { resolveProvider } from "@/lib/providers";
+import { storeMedia } from "@/lib/media-storage";
+import { assembleVideos } from "@/lib/video-assembly";
 import { executeProductionPipeline } from "@/lib/director-executor";
 
 beforeEach(() => {
@@ -114,26 +116,21 @@ beforeEach(() => {
   debitWallet.mockResolvedValue({});
   refundCredits.mockResolvedValue({});
   resolveProvider.mockResolvedValue("mock-provider");
+  storeMedia.mockImplementation(async (url) => url);
+  assembleVideos.mockResolvedValue("https://cdn.example/assembled.mp4");
 });
 
 describe("executeProductionPipeline — wallet ledger debit", () => {
-  // NOTE: with zero shots, the pipeline's own state machine hits a
-  // pre-existing, unrelated bug on its way to a clean return — the code
-  // never transitions through GENERATING_VIDEOS/GENERATING_AUDIO/
-  // QUALITY_CHECK/ASSEMBLING, so the final COMPLETED transition is invalid
-  // per VALID_TRANSITIONS[GENERATING_IMAGES] and throws. That's orthogonal
-  // to wallet routing (this task's scope), so these tests assert the wallet
-  // calls happened before that unrelated throw rather than asserting a
-  // clean `success: true` return.
   it("checks affordability via the wallet, not the stale User.credits mirror", async () => {
-    await expect(executeProductionPipeline("p1", "u1", {})).rejects.toThrow(/Invalid state transition/);
+    const result = await executeProductionPipeline("p1", "u1", {});
 
+    expect(result.success).toBe(true);
     expect(getWallet).toHaveBeenCalledWith("u1");
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
   });
 
   it("debits the wallet for the pipeline cost estimate, tagged with the pipeline reference", async () => {
-    await executeProductionPipeline("p1", "u1", {}).catch(() => {});
+    await executeProductionPipeline("p1", "u1", {});
 
     expect(debitWallet).toHaveBeenCalledTimes(1);
     const [userId, amount, description, referenceId] = debitWallet.mock.calls[0];
@@ -176,5 +173,67 @@ describe("executeProductionPipeline — wallet ledger debit", () => {
     expect(typeof reason).toBe("string");
 
     expect(creditUser).not.toHaveBeenCalled();
+  });
+
+  // Task 6b: VALID_TRANSITIONS[GENERATING_IMAGES] didn't allow ASSEMBLING or
+  // COMPLETED, so every non-failing run threw "Invalid state transition"
+  // after the debit had already gone through, with no refund. Fixed by (1)
+  // extending the transition table to match the real flow and (2) wrapping
+  // the post-debit body in a crash safety net that refunds the un-consumed
+  // remainder and marks the pipeline FAILED before rethrowing.
+  it("completes the full run across multiple shots, transitioning through ASSEMBLING to COMPLETED", async () => {
+    Object.assign(
+      pipelineState,
+      makePipeline({
+        plan: {
+          shots: [
+            { id: "s1", index: 0, title: "Shot 1", imageStrategy: {}, videoStrategy: {}, durationSec: 5 },
+            { id: "s2", index: 1, title: "Shot 2", imageStrategy: {}, videoStrategy: {}, durationSec: 5 },
+          ],
+        },
+        costEstimate: { totalCredits: 12, shotCosts: [{ total: 6 }, { total: 6 }] },
+      })
+    );
+
+    generateImage.mockResolvedValue({ url: "https://cdn.example/img.png" });
+    generateI2V.mockResolvedValue({ url: "https://cdn.example/vid.mp4" });
+
+    const result = await executeProductionPipeline("p1", "u1", {});
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe("completed");
+    // The last transitionPipeline call to land was COMPLETED — proven via
+    // the shared fixture state that every directorPipeline.update mutates.
+    expect(pipelineState.status).toBe("completed");
+    expect(assembleVideos).toHaveBeenCalledTimes(1);
+  });
+
+  it("refunds the un-consumed remainder and marks the pipeline FAILED when the run crashes after the debit", async () => {
+    Object.assign(
+      pipelineState,
+      makePipeline({
+        plan: {
+          shots: [{ id: "s1", index: 0, title: "Shot 1", imageStrategy: {}, videoStrategy: {}, durationSec: 5 }],
+        },
+        costEstimate: { totalCredits: 12, shotCosts: [{ total: 12 }] },
+      })
+    );
+
+    // directorShot.upsert is called outside executeShotImage's own
+    // try/catch, so rejecting it simulates an unhandled crash mid-run —
+    // distinct from a shot generation failure, which is caught internally
+    // and returns { success: false } instead of throwing.
+    prisma.directorShot.upsert.mockRejectedValue(new Error("DB write failed"));
+
+    await expect(executeProductionPipeline("p1", "u1", {})).rejects.toThrow("DB write failed");
+
+    expect(refundCredits).toHaveBeenCalledTimes(1);
+    const [userId, amount, referenceId, reason] = refundCredits.mock.calls[0];
+    expect(userId).toBe("u1");
+    expect(amount).toBe(12);
+    expect(referenceId).toBe("director:p1");
+    expect(typeof reason).toBe("string");
+
+    expect(pipelineState.status).toBe("failed");
   });
 });

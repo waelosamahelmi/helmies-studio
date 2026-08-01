@@ -46,7 +46,12 @@ const VALID_TRANSITIONS = {
   [PIPELINE_STATES.AWAITING_APPROVAL]: [PIPELINE_STATES.QUOTED, PIPELINE_STATES.CANCELLED],
   [PIPELINE_STATES.QUOTED]: [PIPELINE_STATES.QUEUED, PIPELINE_STATES.DRAFT],
   [PIPELINE_STATES.QUEUED]: [PIPELINE_STATES.GENERATING_IMAGES, PIPELINE_STATES.CANCELLED],
-  [PIPELINE_STATES.GENERATING_IMAGES]: [PIPELINE_STATES.GENERATING_VIDEOS, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED],
+  // The executor performs image → video → audio per shot within this one
+  // "generating_images" state (it never transitions through the dedicated
+  // GENERATING_VIDEOS/GENERATING_AUDIO/QUALITY_CHECK states), so ASSEMBLING
+  // and COMPLETED are legitimate direct successors here — the table was
+  // wrong, not the flow.
+  [PIPELINE_STATES.GENERATING_IMAGES]: [PIPELINE_STATES.GENERATING_VIDEOS, PIPELINE_STATES.ASSEMBLING, PIPELINE_STATES.COMPLETED, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED],
   [PIPELINE_STATES.GENERATING_VIDEOS]: [PIPELINE_STATES.GENERATING_AUDIO, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED],
   [PIPELINE_STATES.GENERATING_AUDIO]: [PIPELINE_STATES.QUALITY_CHECK, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED],
   [PIPELINE_STATES.QUALITY_CHECK]: [PIPELINE_STATES.ASSEMBLING, PIPELINE_STATES.FAILED],
@@ -339,113 +344,136 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
   // Debit credits through the wallet ledger
   await debitWallet(userId, costEstimate.totalCredits, "Director pipeline run", `director:${pipelineId}`);
 
-  // Save shot costs for reference
-  brief._shotCosts = costEstimate.shotCosts || [];
-
-  // Filter shots if requested
-  let shots = plan.shots || [];
-  if (options.shotIds?.length) {
-    shots = shots.filter(s => options.shotIds.includes(s.id));
-  }
-
-  // Transition to generating_images
-  await transitionPipeline(pipelineId, PIPELINE_STATES.GENERATING_IMAGES);
-
-  const results = [];
+  // Declared ahead of the try block so the crash safety net below can
+  // compute the un-consumed remainder no matter where execution stops.
   let creditsUsed = 0;
-  let failedShots = 0;
 
-  for (const shot of shots) {
-    // Check if already completed
-    const existing = await prisma.directorShot.findUnique({ where: { id: shot.id } });
-    if (existing?.status === SHOT_STATES.COMPLETED && !options.rerunAll) {
-      results.push({ shotId: shot.id, status: "skipped", alreadyCompleted: true });
-      continue;
+  try {
+    // Save shot costs for reference
+    brief._shotCosts = costEstimate.shotCosts || [];
+
+    // Filter shots if requested
+    let shots = plan.shots || [];
+    if (options.shotIds?.length) {
+      shots = shots.filter(s => options.shotIds.includes(s.id));
     }
 
-    const result = await executeFullShot(shot, pipeline, brief);
-    results.push({ shotId: shot.id, ...result });
+    // Transition to generating_images
+    await transitionPipeline(pipelineId, PIPELINE_STATES.GENERATING_IMAGES);
 
-    if (!result.success) {
-      failedShots++;
-      if (options.stopOnFailure && failedShots > 0) {
-        await transitionPipeline(pipelineId, PIPELINE_STATES.FAILED, { failedShot: shot.id });
-        // Refund remaining credits through the wallet ledger
-        const remainingCredits = (costEstimate.totalCredits || 0) - creditsUsed;
-        if (remainingCredits > 0) {
-          await refundCredits(userId, remainingCredits, `director:${pipelineId}`, "Unexecuted shots refund");
-        }
-        return { success: false, error: `Shot ${shot.id} failed`, results, pipelineId, status: PIPELINE_STATES.FAILED };
+    const results = [];
+    let failedShots = 0;
+
+    for (const shot of shots) {
+      // Check if already completed
+      const existing = await prisma.directorShot.findUnique({ where: { id: shot.id } });
+      if (existing?.status === SHOT_STATES.COMPLETED && !options.rerunAll) {
+        results.push({ shotId: shot.id, status: "skipped", alreadyCompleted: true });
+        continue;
       }
+
+      const result = await executeFullShot(shot, pipeline, brief);
+      results.push({ shotId: shot.id, ...result });
+
+      if (!result.success) {
+        failedShots++;
+        if (options.stopOnFailure && failedShots > 0) {
+          await transitionPipeline(pipelineId, PIPELINE_STATES.FAILED, { failedShot: shot.id });
+          // Refund remaining credits through the wallet ledger
+          const remainingCredits = (costEstimate.totalCredits || 0) - creditsUsed;
+          if (remainingCredits > 0) {
+            await refundCredits(userId, remainingCredits, `director:${pipelineId}`, "Unexecuted shots refund");
+          }
+          return { success: false, error: `Shot ${shot.id} failed`, results, pipelineId, status: PIPELINE_STATES.FAILED };
+        }
+      }
+
+      creditsUsed += costEstimate.shotCosts?.[shot.index]?.total || 0;
     }
 
-    creditsUsed += costEstimate.shotCosts?.[shot.index]?.total || 0;
-  }
+    // ── Assembly ──
+    let assembledUrl = null;
+    const completedShots = results.filter(r => r.success);
+    const videoUrls = completedShots.map(r => r.videoUrl).filter(Boolean);
 
-  // ── Assembly ──
-  let assembledUrl = null;
-  const completedShots = results.filter(r => r.success);
-  const videoUrls = completedShots.map(r => r.videoUrl).filter(Boolean);
+    if (videoUrls.length > 1) {
+      await transitionPipeline(pipelineId, PIPELINE_STATES.ASSEMBLING);
+      try {
+        assembledUrl = await assembleVideos(videoUrls, {
+          transition: "fade",
+          transitionDuration: 0.3
+        });
 
-  if (videoUrls.length > 1) {
-    await transitionPipeline(pipelineId, PIPELINE_STATES.ASSEMBLING);
-    try {
-      assembledUrl = await assembleVideos(videoUrls, {
-        transition: "fade",
-        transitionDuration: 0.3
-      });
-
+        await prisma.directorPipeline.update({
+          where: { id: pipelineId },
+          data: {
+            assembledUrl,
+            assemblyMetadata: { shotOrder: completedShots.map(s => s.shotId) }
+          }
+        });
+      } catch (err) {
+        console.error("[Director] Assembly failed:", err.message);
+        await transitionPipeline(pipelineId, PIPELINE_STATES.FAILED, { error: `Assembly failed: ${err.message}` });
+        return { success: false, error: err.message, results, pipelineId, status: PIPELINE_STATES.FAILED };
+      }
+    } else if (videoUrls.length === 1) {
+      assembledUrl = videoUrls[0];
       await prisma.directorPipeline.update({
         where: { id: pipelineId },
+        data: { assembledUrl }
+      });
+    }
+
+    // Mark completed
+    await transitionPipeline(pipelineId, PIPELINE_STATES.COMPLETED, {
+      completedShots: completedShots.length,
+      failedShots,
+      creditsUsed
+    });
+
+    // Store assembly as a generation record
+    if (assembledUrl) {
+      await prisma.generation.create({
         data: {
-          assembledUrl,
-          assemblyMetadata: { shotOrder: completedShots.map(s => s.shotId) }
+          userId,
+          tool: "director",
+          model: "assembled",
+          prompt: `Production: ${pipeline.title}`,
+          params: { pipelineId, shotCount: shots.length },
+          outputUrl: assembledUrl,
+          status: "completed",
+          creditsUsed: costEstimate.assemblyCost || 0
         }
       });
-    } catch (err) {
-      console.error("[Director] Assembly failed:", err.message);
-      await transitionPipeline(pipelineId, PIPELINE_STATES.FAILED, { error: `Assembly failed: ${err.message}` });
-      return { success: false, error: err.message, results, pipelineId, status: PIPELINE_STATES.FAILED };
     }
-  } else if (videoUrls.length === 1) {
-    assembledUrl = videoUrls[0];
-    await prisma.directorPipeline.update({
-      where: { id: pipelineId },
-      data: { assembledUrl }
-    });
+
+    return {
+      success: true,
+      results,
+      assembledUrl,
+      pipelineId,
+      status: PIPELINE_STATES.COMPLETED,
+      creditsUsed: costEstimate.totalCredits || creditsUsed
+    };
+  } catch (err) {
+    // Crash safety net: the debit above has already charged the user, so an
+    // unexpected throw anywhere past this point (a DB error, a state-machine
+    // rejection, an unhandled provider error, etc.) must not leave them
+    // charged for work that never happened. Refund the un-consumed
+    // remainder using the same math as the stopOnFailure branch, best-effort
+    // mark the pipeline FAILED, then propagate the original error.
+    console.error("[Director] Pipeline crashed after debit:", err.message);
+    const remainder = (costEstimate.totalCredits || 0) - creditsUsed;
+    if (remainder > 0) {
+      await refundCredits(userId, remainder, `director:${pipelineId}`, "Pipeline crashed — unexecuted work refunded");
+    }
+    try {
+      await transitionPipeline(pipelineId, PIPELINE_STATES.FAILED, { error: err.message });
+    } catch (transitionErr) {
+      console.error("[Director] Failed to mark crashed pipeline FAILED:", transitionErr.message);
+    }
+    throw err;
   }
-
-  // Mark completed
-  await transitionPipeline(pipelineId, PIPELINE_STATES.COMPLETED, {
-    completedShots: completedShots.length,
-    failedShots,
-    creditsUsed
-  });
-
-  // Store assembly as a generation record
-  if (assembledUrl) {
-    await prisma.generation.create({
-      data: {
-        userId,
-        tool: "director",
-        model: "assembled",
-        prompt: `Production: ${pipeline.title}`,
-        params: { pipelineId, shotCount: shots.length },
-        outputUrl: assembledUrl,
-        status: "completed",
-        creditsUsed: costEstimate.assemblyCost || 0
-      }
-    });
-  }
-
-  return {
-    success: true,
-    results,
-    assembledUrl,
-    pipelineId,
-    status: PIPELINE_STATES.COMPLETED,
-    creditsUsed: costEstimate.totalCredits || creditsUsed
-  };
 }
 
 // ──────────────────────────────────────────────
