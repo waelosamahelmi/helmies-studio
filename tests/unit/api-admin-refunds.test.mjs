@@ -19,6 +19,11 @@ vi.mock("@/lib/authz", () => ({
       { status: e?.status ?? 500 },
     ),
 }));
+// Origin verification (Task 3) is exercised on its own in
+// tests/unit/origin-check.test.mjs — stub it here so this test keeps
+// focusing on the refund-grant behavior without needing matching Origin
+// headers.
+vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 
 vi.mock("@/lib/wallet", () => ({
   grantCredits: vi.fn(),

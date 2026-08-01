@@ -72,10 +72,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked; no PATCH exists on this file) — reviewer flagged this as a genuine gap: POST creates purchasable CreditPack rows."
   },
   {
     "path": "/api/admin/flags",
@@ -148,10 +148,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked; no PATCH exists on this file) — reviewer flagged this as a genuine gap: SubscriptionPlan rows here are the sole source of truth for which Stripe price a checkout charges."
   },
   {
     "path": "/api/admin/pricing",
@@ -176,10 +176,10 @@
       "DELETE"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked) — reviewer flagged this as a genuine gap: manages discount-code eligibility/value."
   },
   {
     "path": "/api/admin/prompt-guides",
@@ -228,10 +228,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked) — reviewer flagged this as a genuine gap (forged cross-site admin-session POST could silently grant wallet credits via grantCredits), not intentional staging."
   },
   {
     "path": "/api/admin/sync/catalog",
@@ -301,10 +301,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "/api/agent",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Delegates to executeAgentRun/executeAgentRunStream, which create AgentRun and Generation rows and spend credits — same billing surface as /api/generate/*."
+    "notes": "Task 3 origin-check target. Delegates to executeAgentRun/executeAgentRunStream, which create AgentRun and Generation rows and spend credits — same billing surface as /api/generate/*. Task 3 fix: verifyOrigin wired on POST — reviewer flagged this as the same shape as workflows/[id]/run and generate/async (cookie-session, state-changing, credit-consuming), which WERE wired in the original pass; leaving it unwired was an inconsistency, not staging."
   },
   {
     "path": "/api/analyze",
@@ -369,7 +369,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "NextAuth's own sign-in/callback/session/csrf endpoints (export const { GET, POST } = handlers — not detected by the export-function regex, so this file's methods here are hand-verified from src/lib/auth.js, not regex-extracted). Inherently must be reachable pre-session; creates/updates sessions and, on OAuth callback, User rows via the Prisma adapter. This is a 5th public+stateChanging route NOT in the Task 2 brief's enumerated exception list (stripe/webhook, webhooks/*, auth/register, contact) — flagged prominently in the task report for explicit sign-off. NextAuth has its own CSRF-token protection for the credentials flow, independent of this app's Task 3 origin-check work."
+    "notes": "NextAuth's own sign-in/callback/session/csrf endpoints (export const { GET, POST } = handlers — not detected by the export-function regex, so this file's methods here are hand-verified from src/lib/auth.js, not regex-extracted). Inherently must be reachable pre-session; creates/updates sessions and, on OAuth callback, User rows via the Prisma adapter. This is a 5th public+stateChanging route NOT in the Task 2 brief's enumerated exception list (stripe/webhook, webhooks/*, auth/register, contact) — flagged prominently in the task report for explicit sign-off. NextAuth has its own CSRF-token protection for the credentials flow, independent of this app's Task 3 origin-check work. Origin check N/A here specifically: must be reachable pre-session (sign-in itself), and NextAuth carries its own independent CSRF-token protection for the credentials flow — layering this app's verifyOrigin on top is out of scope for Task 3."
   },
   {
     "path": "/api/auth/register",
@@ -381,7 +381,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception. Rate-limited by a custom in-memory per-IP counter (10 attempts/10min) local to this file, NOT the shared checkRateLimit/RATE_LIMITS map (rateLimit is 'none' here because the manifest's rateLimit field tracks checkRateLimit keys only). First-ever registered user is auto-promoted to admin (bootstrap) with no further gate. IP is read from X-Forwarded-For, trivially spoofable without a trusted reverse proxy in front."
+    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception. Rate-limited by a custom in-memory per-IP counter (10 attempts/10min) local to this file, NOT the shared checkRateLimit/RATE_LIMITS map (rateLimit is 'none' here because the manifest's rateLimit field tracks checkRateLimit keys only). First-ever registered user is auto-promoted to admin (bootstrap) with no further gate. IP is read from X-Forwarded-For, trivially spoofable without a trusted reverse proxy in front. Origin check N/A: public-by-design signup endpoint (Task 2's enumerated public+stateChanging exception) — a pre-session caller has no session cookie for CSRF to ride on, so origin verification does not apply here the way it does to cookie-session routes."
   },
   {
     "path": "/api/brand-kits/fingerprint",
@@ -447,7 +447,7 @@
     "originCheck": false,
     "rateLimit": "/api/contact",
     "stateChanging": true,
-    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception. Rate-limited via the shared checkRateLimit, keyed by user id when signed in or an `ip:`-prefixed IP otherwise (5 per 10min)."
+    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception. Rate-limited via the shared checkRateLimit, keyed by user id when signed in or an `ip:`-prefixed IP otherwise (5 per 10min). Origin check N/A: public-by-design endpoint (Task 2's enumerated public+stateChanging exception), reachable by design from anywhere (e.g. an embedded contact form) and already rate-limited; not a cookie-session CSRF surface."
   },
   {
     "path": "/api/credits",
@@ -471,7 +471,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Bearer CRON_SECRET; fails closed (401) if unset or mismatched. Runs autoDisableFailingModels + autoSuspendAbusiveUsers (confirmed DB writes). Not a Task 3 origin-check target — caller is an external cron dispatcher with a bearer secret, not a browser session."
+    "notes": "Bearer CRON_SECRET; fails closed (401) if unset or mismatched. Runs autoDisableFailingModels + autoSuspendAbusiveUsers (confirmed DB writes). Not a Task 3 origin-check target — caller is an external cron dispatcher with a bearer secret, not a browser session. Origin check N/A: bearer CRON_SECRET from an external cron dispatcher, not a browser session — no Origin/Referer header to check."
   },
   {
     "path": "/api/cron/sync-kie",
@@ -483,7 +483,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Bearer CRON_SECRET; fails closed with 503 if unset (cron/automation instead returns 401 for the same unset-secret case — a harmless status-code inconsistency between the two cron routes, not a vulnerability). Not a Task 3 origin-check target."
+    "notes": "Bearer CRON_SECRET; fails closed with 503 if unset (cron/automation instead returns 401 for the same unset-secret case — a harmless status-code inconsistency between the two cron routes, not a vulnerability). Not a Task 3 origin-check target. Origin check N/A: authenticated by a bearer CRON_SECRET from an external cron dispatcher, not a browser session — no Origin/Referer header to check."
   },
   {
     "path": "/api/dev/logs",
@@ -504,10 +504,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Delegates to executeProductionPipeline, which drives a multi-shot generation pipeline (multiple credit-spending Generation rows via DirectorPipeline) — same cost profile as /api/generate/* but with NO rate limit. Flagged as anomaly alongside director/plan and director/rerun."
+    "notes": "Task 3 origin-check target. Delegates to executeProductionPipeline, which drives a multi-shot generation pipeline (multiple credit-spending Generation rows via DirectorPipeline) — same cost profile as /api/generate/* but with NO rate limit. Flagged as anomaly alongside director/plan and director/rerun. Task 3 fix: verifyOrigin wired on POST — reviewer flagged this as the same shape as workflows/[id]/run and generate/async (cookie-session, state-changing, credit-consuming), which WERE wired in the original pass; leaving it unwired was an inconsistency, not staging."
   },
   {
     "path": "/api/director/plan",
@@ -591,7 +591,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/audio",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/cinema",
@@ -603,7 +603,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/cinema",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/clipping",
@@ -615,7 +615,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/clipping",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/i2i",
@@ -627,7 +627,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/i2i",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/i2v",
@@ -639,7 +639,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/i2v",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/image",
@@ -651,7 +651,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/image",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/influencer",
@@ -663,7 +663,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/influencer",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/lipsync",
@@ -675,7 +675,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/lipsync",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/marketing",
@@ -687,7 +687,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/marketing",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/motion",
@@ -699,7 +699,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/motion",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/recast",
@@ -711,7 +711,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/recast",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/v2v",
@@ -723,7 +723,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/v2v",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/video",
@@ -735,7 +735,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/video",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`))."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generations",
@@ -798,7 +798,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/DELETE only, per the task-3 brief scope — PATCH (also a caller-scoped mutation) was NOT included; flagged as a scope gap worth a follow-up decision rather than silently added here."
+    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/DELETE. Task 3 fix: PATCH also wired (GET read-only, unchecked) — reviewer confirmed PATCH does the identical caller-scoped updateMany as POST/DELETE on this file, with no rationale for the earlier asymmetry."
   },
   {
     "path": "/api/models/catalog",
@@ -907,7 +907,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception, and a Phase 1-2 fact ('signature-verified public'). Protected by Stripe signature verification (stripe-signature header + STRIPE_WEBHOOK_SECRET via stripe.webhooks.constructEvent) — NOT the WEBHOOK_SECRET/CRON_SECRET bearer pattern used by /api/webhooks/* and /api/cron/*. Idempotent via a unique constraint on StripeEvent.stripeEventId claimed inside the same transaction as every credit grant. Not a Task 3 origin-check target — Stripe's servers call this directly, not a browser."
+    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception, and a Phase 1-2 fact ('signature-verified public'). Protected by Stripe signature verification (stripe-signature header + STRIPE_WEBHOOK_SECRET via stripe.webhooks.constructEvent) — NOT the WEBHOOK_SECRET/CRON_SECRET bearer pattern used by /api/webhooks/* and /api/cron/*. Idempotent via a unique constraint on StripeEvent.stripeEventId claimed inside the same transaction as every credit grant. Not a Task 3 origin-check target — Stripe's servers call this directly, not a browser. Origin check N/A: Stripe's servers call this directly (signature-verified via stripe-signature/STRIPE_WEBHOOK_SECRET) — never a browser, so no Origin/Referer header to check."
   },
   {
     "path": "/api/templates/[slug]/apply",
@@ -1020,7 +1020,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Bearer WEBHOOK_SECRET or CRON_SECRET; fails closed with 503 if neither is configured, 401 on mismatch. Marks generations failed and mints refunds — an unauthenticated version of this endpoint would be a direct fraud vector. Not a Task 3 origin-check target — the generation provider calls this directly, no browser session involved."
+    "notes": "Bearer WEBHOOK_SECRET or CRON_SECRET; fails closed with 503 if neither is configured, 401 on mismatch. Marks generations failed and mints refunds — an unauthenticated version of this endpoint would be a direct fraud vector. Not a Task 3 origin-check target — the generation provider calls this directly, no browser session involved. Origin check N/A: bearer WEBHOOK_SECRET/CRON_SECRET from the generation provider, not a browser session — no Origin/Referer header to check."
   },
   {
     "path": "/api/webhooks/generation",
@@ -1032,7 +1032,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "ANOMALY: byte-for-byte identical implementation to webhooks/generation-complete (same bearer-secret check, same handleGenerationWebhook call) — appears to be a duplicate/legacy alias route. Worth confirming which URL the active provider webhook actually targets and removing the other. Not a Task 3 origin-check target."
+    "notes": "ANOMALY: byte-for-byte identical implementation to webhooks/generation-complete (same bearer-secret check, same handleGenerationWebhook call) — appears to be a duplicate/legacy alias route. Worth confirming which URL the active provider webhook actually targets and removing the other. Not a Task 3 origin-check target. Origin check N/A: authenticated by a bearer WEBHOOK_SECRET/CRON_SECRET from the generation provider, not a browser session — no Origin/Referer header to check."
   },
   {
     "path": "/api/workflows/[id]/publish",

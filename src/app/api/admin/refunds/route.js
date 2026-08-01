@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import { grantCredits, getWallet } from "@/lib/wallet";
 import prisma from "@/lib/prisma";
 
@@ -20,6 +21,7 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const { userId, generationId, amount, reason } = await req.json();
 
     if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });

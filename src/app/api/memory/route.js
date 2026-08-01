@@ -38,6 +38,7 @@ export async function PATCH(req) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    verifyOrigin(req);
 
     const body = await req.json();
     const { id } = body;
@@ -59,7 +60,7 @@ export async function PATCH(req) {
     const memory = await prisma.projectMemory.findFirst({ where: { id, userId: user.id } });
     return NextResponse.json({ success: true, memory });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }
 
