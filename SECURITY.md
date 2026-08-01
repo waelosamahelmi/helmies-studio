@@ -37,3 +37,9 @@ In scope: the application at studio.helmies.fi and this repository's source code
 
 Out of scope: automated vulnerability scanners' low-signal output without a
 demonstrated impact, social engineering against staff, and physical access attacks.
+
+## Threat model
+
+For the actor/threat inventory this application defends against — current
+controls (named by file), residual risk, and which phase closes each
+residual — see [`docs/security/threat-model.md`](docs/security/threat-model.md).
