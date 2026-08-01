@@ -3,11 +3,7 @@ import crypto from "crypto";
 
 vi.mock("@/lib/prisma", () => ({
   default: {
-    anonRateLimit: {
-      updateMany: vi.fn(),
-      findUnique: vi.fn(),
-      upsert: vi.fn(),
-    },
+    $queryRawUnsafe: vi.fn(),
   },
 }));
 
@@ -27,117 +23,95 @@ beforeEach(() => {
 });
 
 describe("checkAnonLimit — key hashing (privacy contract §4.4)", () => {
-  it("never puts the raw IP in any prisma call argument", async () => {
-    prisma.anonRateLimit.updateMany.mockResolvedValue({ count: 1 });
+  it("never puts the raw IP in the query text or its bound parameters", async () => {
+    prisma.$queryRawUnsafe.mockResolvedValue([{ count: 1, windowStart: new Date() }]);
     const ip = "203.0.113.77";
 
     await checkAnonLimit(ip, "/api/contact", { windowMs: 60000, max: 5 });
 
-    const allCalls = JSON.stringify([
-      ...prisma.anonRateLimit.updateMany.mock.calls,
-      ...prisma.anonRateLimit.findUnique.mock.calls,
-      ...prisma.anonRateLimit.upsert.mock.calls,
-    ]);
-    expect(allCalls).not.toContain(ip);
+    const call = prisma.$queryRawUnsafe.mock.calls[0];
+    expect(JSON.stringify(call)).not.toContain(ip);
   });
 
-  it("keys by sha256(salt + ip + ':' + endpoint)", async () => {
-    prisma.anonRateLimit.updateMany.mockResolvedValue({ count: 1 });
+  it("keys by sha256(salt + ip + ':' + endpoint) as a bound parameter", async () => {
+    prisma.$queryRawUnsafe.mockResolvedValue([{ count: 1, windowStart: new Date() }]);
     const ip = "198.51.100.4";
     const endpoint = "/api/auth/register";
 
     await checkAnonLimit(ip, endpoint, { windowMs: 60000, max: 5 });
 
-    const arg = prisma.anonRateLimit.updateMany.mock.calls[0][0];
-    expect(arg.where.key).toBe(expectedKey(SALT, ip, endpoint));
+    const [, ...params] = prisma.$queryRawUnsafe.mock.calls[0];
+    expect(params).toContain(expectedKey(SALT, ip, endpoint));
   });
 
   it("falls back to NEXTAUTH_SECRET when RATE_LIMIT_SALT is unset", async () => {
     delete process.env.RATE_LIMIT_SALT;
     process.env.NEXTAUTH_SECRET = "fallback-secret";
-    prisma.anonRateLimit.updateMany.mockResolvedValue({ count: 1 });
+    prisma.$queryRawUnsafe.mockResolvedValue([{ count: 1, windowStart: new Date() }]);
     const ip = "198.51.100.9";
     const endpoint = "/api/contact";
 
     await checkAnonLimit(ip, endpoint, { windowMs: 60000, max: 5 });
 
-    const arg = prisma.anonRateLimit.updateMany.mock.calls[0][0];
-    expect(arg.where.key).toBe(expectedKey("fallback-secret", ip, endpoint));
+    const [, ...params] = prisma.$queryRawUnsafe.mock.calls[0];
+    expect(params).toContain(expectedKey("fallback-secret", ip, endpoint));
   });
 });
 
-describe("checkAnonLimit — increment-first shape", () => {
-  it("tries an atomic updateMany first: count:{lt:max}, windowStart:{gte:cutoff}, increment data", async () => {
-    prisma.anonRateLimit.updateMany.mockResolvedValue({ count: 1 });
+describe("checkAnonLimit — single atomic statement (Fix 1: no read-then-write gap)", () => {
+  it("issues exactly one $queryRawUnsafe call: an INSERT .. ON CONFLICT .. RETURNING against AnonRateLimit", async () => {
+    prisma.$queryRawUnsafe.mockResolvedValue([{ count: 1, windowStart: new Date() }]);
 
     await checkAnonLimit("203.0.113.1", "/api/contact", { windowMs: 60000, max: 5 });
 
-    expect(prisma.anonRateLimit.updateMany).toHaveBeenCalledTimes(1);
-    const arg = prisma.anonRateLimit.updateMany.mock.calls[0][0];
-    expect(arg.where.count).toEqual({ lt: 5 });
-    expect(arg.where.windowStart.gte).toBeInstanceOf(Date);
-    expect(arg.data).toEqual({ count: { increment: 1 } });
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
+    const [sql, key, now, cutoff] = prisma.$queryRawUnsafe.mock.calls[0];
+    expect(sql).toMatch(/INSERT INTO "AnonRateLimit"/);
+    expect(sql).toMatch(/ON CONFLICT \("key"\) DO UPDATE/);
+    expect(sql).toMatch(/RETURNING "count", "windowStart"/);
+    expect(typeof key).toBe("string");
+    expect(now).toBeInstanceOf(Date);
+    expect(cutoff).toBeInstanceOf(Date);
+    expect(cutoff.getTime()).toBeLessThan(now.getTime());
   });
 
-  it("when the atomic increment lands (count===1), it is allowed and never reads or upserts", async () => {
-    prisma.anonRateLimit.updateMany.mockResolvedValue({ count: 1 });
+  it("makes no second call — the allow/block decision comes only from the single statement's return value", async () => {
+    prisma.$queryRawUnsafe.mockResolvedValue([{ count: 3, windowStart: new Date() }]);
 
     const res = await checkAnonLimit("203.0.113.2", "/api/contact", { windowMs: 60000, max: 5 });
 
     expect(res).toEqual({ allowed: true });
-    expect(prisma.anonRateLimit.findUnique).not.toHaveBeenCalled();
-    expect(prisma.anonRateLimit.upsert).not.toHaveBeenCalled();
+    expect(prisma.$queryRawUnsafe).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("checkAnonLimit — stale window reset", () => {
-  it("resets (count:1, windowStart:now) when no row exists yet", async () => {
-    prisma.anonRateLimit.updateMany.mockResolvedValue({ count: 0 });
-    prisma.anonRateLimit.findUnique.mockResolvedValue(null);
-    prisma.anonRateLimit.upsert.mockResolvedValue({});
+describe("checkAnonLimit — allowed/blocked from the returned count", () => {
+  it("allows when the returned count is at or below max", async () => {
+    prisma.$queryRawUnsafe.mockResolvedValue([{ count: 5, windowStart: new Date() }]);
 
     const res = await checkAnonLimit("203.0.113.3", "/api/contact", { windowMs: 60000, max: 5 });
 
-    expect(res.allowed).toBe(true);
-    expect(prisma.anonRateLimit.upsert).toHaveBeenCalledTimes(1);
-    const arg = prisma.anonRateLimit.upsert.mock.calls[0][0];
-    expect(arg.where).toEqual({ key: expect.any(String) });
-    expect(arg.create).toMatchObject({ count: 1 });
-    expect(arg.update).toMatchObject({ count: 1 });
-    expect(arg.create.windowStart).toBeInstanceOf(Date);
+    expect(res).toEqual({ allowed: true });
   });
 
-  it("resets when the existing row's window has gone stale", async () => {
-    prisma.anonRateLimit.updateMany.mockResolvedValue({ count: 0 });
-    prisma.anonRateLimit.findUnique.mockResolvedValue({
-      key: "irrelevant-in-this-test",
-      count: 5,
-      windowStart: new Date(Date.now() - 120000), // 2 min ago; window is 60s
-    });
-    prisma.anonRateLimit.upsert.mockResolvedValue({});
-
-    const res = await checkAnonLimit("203.0.113.4", "/api/contact", { windowMs: 60000, max: 5 });
-
-    expect(res.allowed).toBe(true);
-    expect(prisma.anonRateLimit.upsert).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("checkAnonLimit — max block", () => {
-  it("blocks with a positive retryAfter when the window is fresh and already at max", async () => {
-    prisma.anonRateLimit.updateMany.mockResolvedValue({ count: 0 });
+  it("blocks with a positive retryAfter when the returned count exceeds max", async () => {
     const windowStart = new Date(Date.now() - 10000); // 10s ago; window is 60s -> still fresh
-    prisma.anonRateLimit.findUnique.mockResolvedValue({
-      key: "irrelevant-in-this-test",
-      count: 5,
-      windowStart,
-    });
+    prisma.$queryRawUnsafe.mockResolvedValue([{ count: 6, windowStart }]);
 
     const res = await checkAnonLimit("203.0.113.5", "/api/contact", { windowMs: 60000, max: 5 });
 
     expect(res.allowed).toBe(false);
     expect(res.retryAfter).toBeGreaterThan(0);
-    expect(prisma.anonRateLimit.upsert).not.toHaveBeenCalled();
+  });
+
+  it("handles a stringified windowStart (raw driver rows aren't guaranteed to return Date instances)", async () => {
+    const windowStart = new Date(Date.now() - 10000).toISOString();
+    prisma.$queryRawUnsafe.mockResolvedValue([{ count: 6, windowStart }]);
+
+    const res = await checkAnonLimit("203.0.113.6", "/api/contact", { windowMs: 60000, max: 5 });
+
+    expect(res.allowed).toBe(false);
+    expect(res.retryAfter).toBeGreaterThan(0);
   });
 });
 

@@ -14,60 +14,65 @@ import prisma from "@/lib/prisma";
  * in production; NEXTAUTH_SECRET is only a fallback so this keeps working
  * if it's unset.
  *
- * Algorithm (increment-first, atomic):
- *   1. Try `updateMany({ where: { key, windowStart: { gte: cutoff },
- *      count: { lt: max } }, data: { count: { increment: 1 } } })`.
- *      If it matches a row (count === 1 returned by updateMany), the
- *      increment landed atomically — allowed.
- *   2. Otherwise nothing matched: either the key has never been seen, the
- *      window has gone stale, or the window is fresh and already at max.
- *      Read the row to tell which:
- *        - Missing or stale (windowStart < cutoff) -> upsert a reset
- *          (count: 1, windowStart: now) -> allowed.
- *        - Fresh and count >= max -> blocked, with retryAfter computed
- *          from windowStart + windowMs.
+ * Algorithm: ONE atomic statement handles first-touch, mid-window increment,
+ * and stale-window reset in a single round trip —
+ *   `INSERT ... ON CONFLICT ("key") DO UPDATE ... RETURNING "count", "windowStart"`.
+ *   - No existing row: the INSERT branch runs, count starts at 1.
+ *   - Existing row, window stale (windowStart < cutoff): the CASE resets
+ *     count to 1 and windowStart to now.
+ *   - Existing row, window fresh: the CASE increments count and leaves
+ *     windowStart alone.
+ * `allowed = returned count <= max`; otherwise blocked, with retryAfter
+ * computed from the returned windowStart. There is no separate "blocked"
+ * read — the same statement that decides always also returns the value the
+ * decision is based on, so there's nothing left to go stale between a check
+ * and a response.
  *
- * Race bound: Postgres evaluates UPDATE ... WHERE under row-level locking,
- * so two concurrent updateMany calls against the SAME existing row can never
- * both succeed when doing so would push count past max — the second call
- * waits for the first's lock, then re-evaluates `count < max` against the
- * already-incremented row and finds it false. The one real race is on reset:
- * if two callers land in step 2 at once for a brand-new key (or right as a
- * window goes stale), both may see "missing/stale" and both upsert a reset.
- * Postgres serializes the two `ON CONFLICT (key) DO UPDATE` statements, so
- * the stored row still ends at count: 1, but both callers get
- * `allowed: true`. This is the only window where the algorithm can admit a
- * request beyond what a fully serialized version would — and it can only
- * ever admit ONE extra request beyond `max` per window, never more, because
- * every other path (the atomic increment, and blocking once fresh+at-max)
- * is race-free.
+ * Guarantee: EXACT — never more than `max` admitted per window. Not a bound,
+ * an invariant. `INSERT ... ON CONFLICT DO UPDATE` runs as a single atomic
+ * statement under Postgres row-level locking: concurrent callers targeting
+ * the same key serialize on that row (the second waits for the first's lock
+ * to release, then its CASE expressions evaluate against the
+ * already-written row) — there is no read-then-write gap for two racers to
+ * both observe "missing" or "stale" and both reset.
+ *
+ * This replaced an earlier three-step version (try an `updateMany`, then on
+ * a miss separately `findUnique`, then separately `upsert` a reset) that had
+ * exactly that gap: every racer in a burst could independently observe
+ * "missing/stale" via its own `findUnique` and independently upsert its own
+ * reset, all believing they were first. Proven empirically: 30 concurrent
+ * calls against a brand-new key with `max: 5` admitted 24–27, not 5 (see
+ * tests/integration/rate-limit.int.test.mjs's REGRESSION case). The stored
+ * `count` stayed low throughout (upserts kept resetting it to 1), which is
+ * why row-count-based assertions didn't catch it — only asserting on how
+ * many *results* came back `allowed: true` does.
  */
 export async function checkAnonLimit(ip, endpoint, { windowMs, max }) {
   const key = hashKey(ip, endpoint);
   const now = new Date();
   const cutoff = new Date(now.getTime() - windowMs);
 
-  const inc = await prisma.anonRateLimit.updateMany({
-    where: { key, windowStart: { gte: cutoff }, count: { lt: max } },
-    data: { count: { increment: 1 } },
-  });
+  const rows = await prisma.$queryRawUnsafe(
+    `INSERT INTO "AnonRateLimit" ("key", "count", "windowStart")
+     VALUES ($1, 1, $2)
+     ON CONFLICT ("key") DO UPDATE
+     SET "count" = CASE WHEN "AnonRateLimit"."windowStart" < $3 THEN 1 ELSE "AnonRateLimit"."count" + 1 END,
+         "windowStart" = CASE WHEN "AnonRateLimit"."windowStart" < $3 THEN $2 ELSE "AnonRateLimit"."windowStart" END
+     RETURNING "count", "windowStart"`,
+    key,
+    now,
+    cutoff,
+  );
 
-  if (inc.count === 1) {
+  const row = rows[0];
+  const count = Number(row.count);
+
+  if (count <= max) {
     return { allowed: true };
   }
 
-  const existing = await prisma.anonRateLimit.findUnique({ where: { key } });
-
-  if (!existing || existing.windowStart < cutoff) {
-    await prisma.anonRateLimit.upsert({
-      where: { key },
-      create: { key, count: 1, windowStart: now },
-      update: { count: 1, windowStart: now },
-    });
-    return { allowed: true };
-  }
-
-  const retryAfter = Math.ceil((existing.windowStart.getTime() + windowMs - now.getTime()) / 1000);
+  const windowStart = row.windowStart instanceof Date ? row.windowStart : new Date(row.windowStart);
+  const retryAfter = Math.ceil((windowStart.getTime() + windowMs - now.getTime()) / 1000);
   return { allowed: false, retryAfter };
 }
 

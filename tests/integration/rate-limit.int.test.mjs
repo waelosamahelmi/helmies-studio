@@ -66,7 +66,7 @@ describe("checkAnonLimit — real Postgres", () => {
     expect(resetRow.count).toBe(1);
   });
 
-  it("two concurrent calls at count = max-1 never push the stored count past max+1 (documented race bound)", async () => {
+  it("two concurrent calls at count = max-1 admit EXACTLY one (single atomic statement, no race)", async () => {
     const { checkAnonLimit } = await import("@/lib/rate-limit");
     const ip = fakeIp();
     const endpoint = "/api/contact";
@@ -84,39 +84,51 @@ describe("checkAnonLimit — real Postgres", () => {
     ]);
 
     const allowedCount = [a, b].filter((r) => r.allowed).length;
-    expect(allowedCount).toBeGreaterThanOrEqual(1); // progress: at least one must get through
-    expect(allowedCount).toBeLessThanOrEqual(2); // trivial upper bound on 2 racing calls
+    expect(allowedCount).toBe(1); // EXACT — Postgres row-locking on the single INSERT ON CONFLICT statement serializes these.
 
     const key = expectedKey(ip, endpoint);
     const row = await prisma.anonRateLimit.findUnique({ where: { key } });
-    // The one documented race (concurrent resets on a brand-new/stale key)
-    // cannot occur here — the window is fresh throughout — so Postgres's
-    // row-level locking on the atomic updateMany serializes the two racers
-    // exactly: this asserts the general bound (never more than one over
-    // max) rather than assuming the stronger exact-serialization outcome.
-    expect(row.count).toBeLessThanOrEqual(max + 1);
+    expect(row.count).toBe(max + 1); // (max-1) sequential + 2 concurrent = max+1 total attempts recorded.
   });
 
-  it("two concurrent calls on a brand-new key both get admitted, but the stored count never exceeds 1 over what a single request would record", async () => {
+  it("N concurrent calls on a brand-new key are all admitted when N <= max, and the stored count is EXACTLY N", async () => {
     const { checkAnonLimit } = await import("@/lib/rate-limit");
     const ip = fakeIp();
     const endpoint = "/api/contact";
     const max = 10;
+    const N = 6;
 
-    const [a, b] = await Promise.all([
-      checkAnonLimit(ip, endpoint, { windowMs: 60000, max }),
-      checkAnonLimit(ip, endpoint, { windowMs: 60000, max }),
-    ]);
+    const results = await Promise.all(
+      Array.from({ length: N }, () => checkAnonLimit(ip, endpoint, { windowMs: 60000, max }))
+    );
 
-    expect(a.allowed).toBe(true);
-    expect(b.allowed).toBe(true);
+    expect(results.every((r) => r.allowed)).toBe(true);
 
     const key = expectedKey(ip, endpoint);
     const row = await prisma.anonRateLimit.findUnique({ where: { key } });
-    // Documented bound: the reset race can undercount by at most the single
-    // in-flight increment — the stored counter never falls below 1 nor
-    // implies more than max+1 total admits for the window.
-    expect(row.count).toBeGreaterThanOrEqual(1);
-    expect(row.count).toBeLessThanOrEqual(max + 1);
+    expect(row.count).toBe(N);
+  });
+
+  // REGRESSION GUARD (Fix 2, review round 2): the previous multi-step
+  // implementation (updateMany, then a separate findUnique, then a separate
+  // upsert) let every racer in a burst independently observe "missing/stale"
+  // and independently upsert a reset, so the RESULTS admitted could wildly
+  // exceed max even though the STORED row.count stayed low (which is why
+  // row.count-based assertions alone missed it — confirmed by running this
+  // exact test against that implementation first: it admitted 24/30, not 5).
+  // This test asserts on results, not the row, and is the real regression
+  // guard for Fix 1's single-statement rewrite.
+  it("REGRESSION: 30 concurrent calls on a brand-new key with max:5 admit EXACTLY 5", async () => {
+    const { checkAnonLimit } = await import("@/lib/rate-limit");
+    const ip = fakeIp();
+    const endpoint = "/api/contact";
+    const max = 5;
+
+    const results = await Promise.all(
+      Array.from({ length: 30 }, () => checkAnonLimit(ip, endpoint, { windowMs: 60000, max }))
+    );
+
+    const allowedCount = results.filter((r) => r.allowed).length;
+    expect(allowedCount).toBe(max);
   });
 });
