@@ -1,7 +1,13 @@
 name: CI
 on:
   push:
-    branches: [main]
+    # NOTE: feat/phase1-foundation is temporary here so this pipeline can be
+    # validated with a real run before it lands on main (Task 12 explicitly
+    # forbids opening a PR, and workflow_dispatch/schedule triggers require
+    # the file to already exist on the default branch to be dispatchable —
+    # push does not have that restriction). Remove this branch name once
+    # Task 12's CI run is confirmed green.
+    branches: [main, feat/phase1-foundation]
   pull_request:
 
 jobs:
