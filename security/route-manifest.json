@@ -21,10 +21,10 @@
       "DELETE"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/admin/audit",
@@ -45,10 +45,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/admin/cms-content",
@@ -59,10 +59,10 @@
       "PATCH"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST/PATCH (GET read-only, unchecked)."
   },
   {
     "path": "/api/admin/credit-packs",
@@ -85,10 +85,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST (GET read-only, unchecked)."
   },
   {
     "path": "/api/admin/jobs",
@@ -123,10 +123,10 @@
       "DELETE"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/admin/models/test",
@@ -161,10 +161,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST (GET read-only, unchecked)."
   },
   {
     "path": "/api/admin/promos",
@@ -190,10 +190,10 @@
       "PATCH"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST/PATCH (GET read-only, unchecked)."
   },
   {
     "path": "/api/admin/provider-health",
@@ -240,10 +240,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Writes ModelPricing rows from an external KIE/Alibaba catalog fetch."
+    "notes": "Writes ModelPricing rows from an external KIE/Alibaba catalog fetch. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/admin/sync/kie",
@@ -252,10 +252,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/admin/users",
@@ -314,10 +314,10 @@
       "GET"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "/api/analyze",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. POST creates a VisualAnalysis row and is rate-limited via '/api/analyze'. GET (read-only, list-by-caller, correctly userId-scoped) has no rate limit, which is fine for a read."
+    "notes": "POST creates a VisualAnalysis row and is rate-limited via '/api/analyze'. GET (read-only, list-by-caller, correctly userId-scoped) has no rate limit, which is fine for a read. Task 3 (final round): verifyOrigin wired on POST (GET read-only, unchecked)."
   },
   {
     "path": "/api/announcements",
@@ -338,10 +338,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. NO rate limit — video assembly (transcode/concat) is CPU/IO-expensive and unbounded per-user; flagged as a DoS/cost-abuse anomaly."
+    "notes": "NO rate limit — video assembly (transcode/concat) is CPU/IO-expensive and unbounded per-user; flagged as a DoS/cost-abuse anomaly. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/assets",
@@ -353,10 +353,10 @@
       "DELETE"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/auth/[...nextauth]",
@@ -390,10 +390,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. No rate limit despite invoking Visual Intelligence analysis across all brand assets (extractBrandFingerprint, confirmed to prisma.brandKit.update) — an expensive operation; flagged as anomaly."
+    "notes": "No rate limit despite invoking Visual Intelligence analysis across all brand assets (extractBrandFingerprint, confirmed to prisma.brandKit.update) — an expensive operation; flagged as anomaly. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/brand-kits",
@@ -516,10 +516,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Creates a DirectorPipeline row (confirmed). No rate limit on plan creation."
+    "notes": "Creates a DirectorPipeline row (confirmed). No rate limit on plan creation. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/director/rerun",
@@ -528,10 +528,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Re-runs a generation shot (credit-spending) with no rate limit — same anomaly class as director/execute."
+    "notes": "Re-runs a generation shot (credit-spending) with no rate limit — same anomaly class as director/execute. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/director/status",
@@ -916,10 +916,10 @@
       "GET"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "ANOMALY: GET with a side effect — unconditionally calls recordTemplateUse() on every successful call, decrementing usage against the caller's TemplatePurchase. Violates HTTP GET safety/idempotency and is reachable via a plain cookie-riding cross-site GET (e.g. an <img>/<link> tag) with no CSRF protection possible for a GET (Task 3's origin-check work targets state-changing requests broadly, but GET requests are typically exempted by convention — this route is exactly why that convention is dangerous here). Recommend converting to POST in a follow-up."
+    "notes": "ANOMALY: GET with a side effect — unconditionally calls recordTemplateUse() on every successful call, decrementing usage against the caller's TemplatePurchase. Violates HTTP GET safety/idempotency and is reachable via a plain cookie-riding cross-site GET (e.g. an <img>/<link> tag) with no CSRF protection possible for a GET (Task 3's origin-check work targets state-changing requests broadly, but GET requests are typically exempted by convention — this route is exactly why that convention is dangerous here). Recommend converting to POST in a follow-up. Task 3 (final round): verifyOrigin wired on the GET handler itself — deliberate exception to \"GET stays open\", because this GET has a real side effect (recordTemplateUse) and is the anomaly this note already flags. Origin/Referer fallback still catches a cross-site <img>/<link>-tag GET, which is exactly the vector described above."
   },
   {
     "path": "/api/templates/[slug]",
@@ -930,10 +930,10 @@
       "DELETE"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "GET is public (template detail + optional personalized hasAccess via a best-effort auth() call). PUT/DELETE require requireAdmin. Task 3 origin-check target (PUT/DELETE only)."
+    "notes": "GET is public (template detail + optional personalized hasAccess via a best-effort auth() call). PUT/DELETE require requireAdmin. Task 3 origin-check target (PUT/DELETE only). Task 3 (final round): verifyOrigin wired on PUT/DELETE (GET stays public/unchecked)."
   },
   {
     "path": "/api/templates/library",
@@ -966,10 +966,10 @@
       "GET"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "GET with a side effect: calls createTemplatePurchase() (idempotent upsert) after verifying the Stripe session's metadata.userId matches the caller. Same GET-mutates-state pattern flagged on templates/[slug]/apply, though this one is more defensible as a post-Stripe-redirect landing endpoint than a directly client-triggerable action."
+    "notes": "GET with a side effect: calls createTemplatePurchase() (idempotent upsert) after verifying the Stripe session's metadata.userId matches the caller. Same GET-mutates-state pattern flagged on templates/[slug]/apply, though this one is more defensible as a post-Stripe-redirect landing endpoint than a directly client-triggerable action. Task 3 (final round): verifyOrigin wired on the GET handler itself, same rationale as templates/[slug]/apply — this GET has a real side effect (createTemplatePurchase)."
   },
   {
     "path": "/api/templates",
@@ -979,10 +979,10 @@
       "POST"
     ],
     "auth": "admin",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "GET is public (published template listing). POST requires requireAdmin. Task 3 origin-check target (POST only)."
+    "notes": "GET is public (published template listing). POST requires requireAdmin. Task 3 origin-check target (POST only). Task 3 (final round): verifyOrigin wired on POST (GET stays public/unchecked)."
   },
   {
     "path": "/api/upload",
@@ -991,10 +991,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "/api/upload",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/user/keys",

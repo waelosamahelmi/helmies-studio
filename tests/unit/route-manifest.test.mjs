@@ -140,4 +140,30 @@ describe("route security manifest — security/route-manifest.json", () => {
       expect(() => parseExportedMethods(path.join(process.cwd(), f))).not.toThrow();
     }
   });
+
+  // THE DURABLE PART (Task 3, final round): every cookie-session
+  // state-changing route MUST have verifyOrigin wired — this is the gap the
+  // last three review rounds kept finding one bucket at a time (money
+  // routes, then agent/director routes, then the remaining CMS/admin/asset
+  // routes). Making it a CI-enforced invariant means a NEW state-changing
+  // route with auth "user" or "admin" fails this test the moment it's added
+  // to the manifest with originCheck left false — it can no longer just be
+  // missed in review. The only escape hatch is a conscious one: a notes
+  // string starting with "ORIGIN-EXEMPT:" explaining why this specific
+  // route doesn't need (or can't have) the check — mixed(user+apikey),
+  // public, webhook, and cron routes are a different auth class entirely
+  // and are outside this rule's scope, not exempted via the prefix.
+  it("every auth:user/admin state-changing route has originCheck:true, unless notes carry an explicit ORIGIN-EXEMPT: justification", () => {
+    const inScope = manifest.filter(
+      (e) => (e.auth === "user" || e.auth === "admin") && e.stateChanging === true
+    );
+    const violations = inScope.filter(
+      (e) => e.originCheck !== true && !/^ORIGIN-EXEMPT:/.test((e.notes || "").trim())
+    );
+    expect(
+      violations.map((e) => e.file),
+      "cookie-session state-changing routes with no origin check and no ORIGIN-EXEMPT: justification:\n" +
+        violations.map((e) => e.file).join("\n")
+    ).toEqual([]);
+  });
 });

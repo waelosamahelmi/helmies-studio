@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin, logAudit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 
 export async function GET(req) {
@@ -16,6 +17,7 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
     const { key, name, description, enabled, config } = await req.json();
     await prisma.featureFlag.upsert({
       where: { key },

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { listTemplates } from "@/lib/templates";
 
@@ -32,6 +33,7 @@ export async function GET(req) {
 export async function POST(req) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
 
     const body = await req.json();
     const template = await prisma.template.create({ data: body });

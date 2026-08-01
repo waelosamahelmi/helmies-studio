@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { requireAdmin } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { hasTemplateAccess } from "@/lib/templates";
 
@@ -35,6 +36,7 @@ export async function GET(req, { params }) {
 export async function PUT(req, { params }) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
 
     const { slug } = params;
     const body = await req.json();
@@ -56,6 +58,7 @@ export async function PUT(req, { params }) {
 export async function DELETE(req, { params }) {
   try {
     await requireAdmin(req);
+    verifyOrigin(req);
 
     const { slug } = params;
     await prisma.template.update({

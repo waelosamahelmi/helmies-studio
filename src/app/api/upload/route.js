@@ -5,6 +5,8 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import prisma from "@/lib/prisma";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
 
 // Strict MIME → extension allowlist. The stored extension is derived from the
 // declared MIME type only — never from the attacker-controlled filename — so a
@@ -30,6 +32,7 @@ export async function POST(req) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    verifyOrigin(req);
 
     const rl = await checkRateLimit(user.id, "/api/upload");
     if (!rl.allowed) {
@@ -88,6 +91,6 @@ export async function POST(req) {
 
     return NextResponse.json({ url });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return authzResponse(e);
   }
 }

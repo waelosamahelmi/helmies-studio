@@ -20,6 +20,10 @@ vi.mock("@/lib/templates", () => ({
   hasTemplateAccess: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
+// Origin verification (Task 3) is exercised on its own in
+// tests/unit/origin-check.test.mjs — stub it here so these authz-focused
+// assertions don't need matching Origin headers on every request.
+vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 
 import { requireAdmin } from "@/lib/security";
 import prisma from "@/lib/prisma";
