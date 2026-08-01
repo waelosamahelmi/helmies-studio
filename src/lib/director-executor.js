@@ -307,8 +307,15 @@ async function executeFullShot(shot, pipeline, brief) {
   const videoResult = await executeShotVideo(shot, pipeline, brief, imageResult.imageUrl);
   if (!videoResult.success) return { success: false, error: videoResult.error, stage: "video", imageUrl: imageResult.imageUrl };
 
-  // 3. Generate audio (if needed)
+  // 3. Generate audio (if needed). executeShotAudio itself already encodes
+  // "no audio requested" as { success: true, audioUrl: null } — it only
+  // returns { success: false } when audio was actually attempted (shot.audio
+  // set, or brief.type === "music_video") and generation failed — so this
+  // check can never misfire on a shot that legitimately has no audio.
   const audioResult = await executeShotAudio(shot, pipeline, brief);
+  if (!audioResult.success) {
+    return { success: false, error: audioResult.error || "Audio generation failed", stage: "audio", imageUrl: imageResult.imageUrl, videoUrl: videoResult.videoUrl };
+  }
 
   return {
     success: true,
@@ -564,6 +571,7 @@ export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") 
       case "audio":
         // Rerun audio only
         const audioResult = await executeShotAudio(shot, pipeline, brief);
+        if (!audioResult.success) throw new Error(audioResult.error || "Audio generation failed");
         result = { shotId, audioUrl: audioResult.audioUrl, stage: "audio" };
         break;
 
