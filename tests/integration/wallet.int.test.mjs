@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { randomUUID } from "node:crypto";
 import { resetDb, createUserWithWallet } from "./setup.mjs";
 
 let prisma;
@@ -52,6 +53,73 @@ describe("reserve → settle / release invariants", () => {
     expect(wallet.reserved).toBe(0);
 
     await expect(settleReservation(user.id, "job-2", 50)).rejects.toThrow(/No active reservation/);
+  });
+});
+
+describe("provisionNewUser — signup grants the opening ledger entry (Task 8)", () => {
+  it("creates a wallet with a single 'signup' ledger row and a free subscription for a brand-new user", async () => {
+    const { provisionNewUser } = await import("@/lib/auth-events");
+
+    const user = await prisma.user.create({
+      data: { email: `signup-${randomUUID()}@test.local`, role: "user" },
+    });
+
+    // No wallet exists yet — mirrors both signup paths' user.create, which no
+    // longer nests a wallet/transactions create.
+    expect(await prisma.creditWallet.findUnique({ where: { userId: user.id } })).toBeNull();
+
+    await provisionNewUser(user.id);
+
+    const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
+    expect(wallet.available).toBe(100);
+    expect(wallet.lifetime).toBe(100);
+
+    const rows = await prisma.creditLedger.findMany({ where: { walletId: wallet.id } });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ type: "signup", amount: 100, balanceAfter: 100 });
+
+    const subscription = await prisma.subscription.findUnique({ where: { userId: user.id } });
+    expect(subscription).toMatchObject({ userId: user.id, plan: "free", status: "active" });
+
+    // The legacy CreditTransaction table must not receive a signup row —
+    // /api/credits reads CreditLedger as of Task 7.
+    const legacyRows = await prisma.creditTransaction.findMany({ where: { userId: user.id } });
+    expect(legacyRows).toHaveLength(0);
+  });
+
+  it("promotes the very first user to admin and still grants exactly one wallet + ledger row", async () => {
+    const { provisionNewUser } = await import("@/lib/auth-events");
+
+    const user = await prisma.user.create({
+      data: { email: `signup-admin-${randomUUID()}@test.local`, role: "user" },
+    });
+
+    await provisionNewUser(user.id, { firstUserAdmin: true });
+
+    const updated = await prisma.user.findUnique({ where: { id: user.id } });
+    expect(updated.role).toBe("admin");
+
+    const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
+    expect(wallet.available).toBe(100);
+
+    const rows = await prisma.creditLedger.findMany({ where: { walletId: wallet.id } });
+    expect(rows).toHaveLength(1);
+  });
+
+  it("does not double-create the subscription for a user who already has one (register-route shape)", async () => {
+    const { provisionNewUser } = await import("@/lib/auth-events");
+
+    const user = await prisma.user.create({
+      data: { email: `signup-presub-${randomUUID()}@test.local`, role: "user" },
+    });
+    // Pre-existing subscription, e.g. from a retried call — upsert must not throw
+    // a unique-constraint violation nor create a second row.
+    await prisma.subscription.create({ data: { userId: user.id, plan: "free", status: "active" } });
+
+    await provisionNewUser(user.id);
+
+    const subs = await prisma.subscription.findMany({ where: { userId: user.id } });
+    expect(subs).toHaveLength(1);
   });
 });
 
