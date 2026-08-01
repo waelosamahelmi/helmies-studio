@@ -37,6 +37,7 @@ export default function StrokeTitle({ children, bgImage, className = "" }) {
       setMask(gradients.join(", "));
     }
 
+    // eslint-disable-next-line react-hooks/immutability -- self-referencing rAF loop; `updateMask` is fully assigned by call time via closure, this is the standard requestAnimationFrame-loop-in-useCallback pattern (2026-08-01)
     rafRef.current = requestAnimationFrame(updateMask);
   }, []);
 

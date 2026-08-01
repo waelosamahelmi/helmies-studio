@@ -149,6 +149,7 @@ export function Result({
         ) : isAudio(url) ? (
           <audio src={url} controls style={{ width: "min(520px, 80vw)", margin: "var(--s-8)" }} />
         ) : (
+          // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
           <img src={url} alt="Generated result" />
         )}
 

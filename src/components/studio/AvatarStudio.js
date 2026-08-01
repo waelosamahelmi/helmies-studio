@@ -461,6 +461,7 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
           accept="image/*"
           value={portrait}
           onChange={setPortrait}
+          // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
           preview={portraitUrl ? <img src={portraitUrl} alt={portrait?.name || "Portrait"} /> : null}
           icon={<IcImage />}
         />

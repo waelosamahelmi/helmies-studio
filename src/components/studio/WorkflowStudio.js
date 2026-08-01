@@ -231,7 +231,6 @@ export default function WorkflowStudio({ onCreditsChanged }) {
     }, 400);
 
     return () => { dead = true; clearTimeout(timer); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteKey]);
 
   /* ── Step editing ───────────────────────────────────────────────────── */
@@ -706,6 +705,7 @@ export default function WorkflowStudio({ onCreditsChanged }) {
                           AUDIO
                         </span>
                       ) : (
+                        // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                         <img src={url} alt={`Output ${i + 1}`} />
                       )}
                     </a>

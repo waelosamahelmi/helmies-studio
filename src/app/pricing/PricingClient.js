@@ -92,6 +92,7 @@ export default function PricingPlans() {
       });
       const data = await res.json();
       if (!data.url) throw new Error("Stripe did not return a checkout link. Try again in a moment.");
+      // eslint-disable-next-line react-hooks/immutability -- navigating via window.location.href is the standard redirect pattern, not accidental external-state mutation (2026-08-01)
       window.location.href = data.url;
     } catch (err) {
       setFault(

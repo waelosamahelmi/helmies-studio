@@ -32,6 +32,7 @@ export default function ScrollSection({
         {bgVideo ? (
           <video src={bgVideo} muted loop playsInline autoPlay />
         ) : bg ? (
+          // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
           <img src={bg} alt="" />
         ) : null}
         <div className="scroll-section__scrim" style={{ opacity: overlay }} />

@@ -520,6 +520,7 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
               {card.videoUrl ? (
                 <video src={card.videoUrl} muted playsInline loop preload="metadata" />
               ) : card.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                 <img src={card.imageUrl} alt={`Shot ${card.no}`} />
               ) : (
                 <IcFilm style={{ width: 22, height: 22 }} />

@@ -58,6 +58,7 @@ export default function Shell({
       {/* ── Bar ─────────────────────────────────────────────────────────── */}
       <header className="st-bar">
         <Link href="/" className="st-brand" aria-label="Helmies Studio home">
+          {/* eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01) */}
           <img src="/ico.svg" alt="" width={22} height={22} />
           <strong>Helmies</strong>
           <span>Studio</span>

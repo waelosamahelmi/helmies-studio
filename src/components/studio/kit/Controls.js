@@ -296,6 +296,7 @@ export function Dropzone({
             <div key={f.url + i} className="hs-thumb">
               {/\.(mp4|webm|mov)(\?|$)/i.test(f.url)
                 ? <video src={f.url} muted playsInline />
+                // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                 : <img src={f.url} alt={f.name || "Reference"} />}
               <button
                 type="button"
