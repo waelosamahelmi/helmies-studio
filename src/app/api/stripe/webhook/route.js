@@ -47,10 +47,20 @@ export async function POST(req) {
   // Interactive transactions have a default 5s timeout; the only network
   // call any handler needs (Stripe's subscriptions.retrieve for
   // invoice.paid) is fetched here so the transaction body below is pure DB
-  // work with no external round-trip inside it.
+  // work with no external round-trip inside it. This happens before the
+  // main try/catch below (no StripeEvent claim exists yet), so its own
+  // try/catch is required: a rate limit, transient network error, or
+  // deleted subscription id here must not escape as an unhandled
+  // exception — it returns a structured 500 so Stripe retries later, once
+  // the transient issue has likely cleared, with nothing claimed yet.
   let prefetchedSubscription = null;
   if (event.type === "invoice.paid" && event.data.object.subscription) {
-    prefetchedSubscription = await getStripe().subscriptions.retrieve(event.data.object.subscription);
+    try {
+      prefetchedSubscription = await getStripe().subscriptions.retrieve(event.data.object.subscription);
+    } catch (err) {
+      console.error(`[webhook] Failed to prefetch subscription for event ${stripeEventId}:`, err);
+      return NextResponse.json({ error: "Subscription prefetch failed" }, { status: 500 });
+    }
   }
 
   try {

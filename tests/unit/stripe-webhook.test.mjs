@@ -228,6 +228,28 @@ describe("POST /api/stripe/webhook — invoice.paid", () => {
       },
     });
   });
+
+  it("returns a structured retryable 500 when the prefetch itself throws, with no claim or transaction attempted", async () => {
+    stripeInstance.subscriptions.retrieve.mockRejectedValueOnce(new Error("Stripe rate limited"));
+    stripeInstance.webhooks.constructEvent.mockReturnValue({
+      id: "evt_inv_fail_1",
+      type: "invoice.paid",
+      data: {
+        object: {
+          id: "in_2",
+          subscription: "sub_2",
+          billing_reason: "subscription_cycle",
+        },
+      },
+    });
+
+    const res = await POST(webhookRequest());
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toEqual({ error: "Subscription prefetch failed" });
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(txClient.stripeEvent.create).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /api/stripe/webhook — customer.subscription.deleted", () => {
