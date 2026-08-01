@@ -78,10 +78,18 @@ export async function reserveCredits(userId, amount, jobId, expiresInMinutes = 3
     }
     const wallet = await tx.creditWallet.findUnique({ where: { userId } });
 
-    // CreditReservation columns: walletId, amount, generationId, status.
-    // The job id is the Generation id and is stored in generationId.
+    // CreditReservation columns: walletId, amount, generationId, status,
+    // expiresAt. The job id is the Generation id and is stored in
+    // generationId. expiresAt lets sweepExpiredReservations (below) release
+    // or settle a hold whose caller never came back to close it out.
     const reservation = await tx.creditReservation.create({
-      data: { walletId: wallet.id, generationId: jobId, amount, status: "active" },
+      data: {
+        walletId: wallet.id,
+        generationId: jobId,
+        amount,
+        status: "active",
+        expiresAt: new Date(Date.now() + expiresInMinutes * 60000),
+      },
     });
 
     await writeLedger(tx, wallet.id, -amount, wallet.available, "reservation", `Reserved for job ${jobId}`, jobId);
@@ -140,6 +148,61 @@ export async function releaseReservation(userId, jobId, db = null) {
 
     return wallet;
   });
+}
+
+// A reservation is only ever created with an amount that was already
+// deducted from `available` (see reserveCredits above) — every branch below
+// resolves that hold one way or another so `reserved` cannot leak.
+const RESERVATION_TERMINAL_STATUSES = ["failed", "cancelled"];
+
+// Find reservations whose expiresAt has passed and are still "active", then
+// resolve each one against the state of its generation:
+//   - generation missing, failed, or cancelled -> release the hold
+//   - generation completed                     -> settle at its actual cost
+//     (settleReservation's active-reservation lookup makes this idempotent
+//     against a second sweep or a late webhook racing this run)
+//   - generation still pending/processing      -> leave it alone; it hasn't
+//     really finished yet even though the clock ran out
+// Each reservation is handled in its own try/catch so one bad row (a
+// transient DB error, a wallet CAS miss) can't abort the rest of the sweep —
+// same defensive shape as autoSuspendAbusiveUsers above.
+export async function sweepExpiredReservations() {
+  const now = new Date();
+  const expired = await prisma.creditReservation.findMany({
+    where: { status: "active", expiresAt: { lt: now } },
+    include: { wallet: true },
+  });
+
+  let released = 0;
+  let settled = 0;
+  let skipped = 0;
+
+  for (const reservation of expired) {
+    try {
+      const userId = reservation.wallet.userId;
+      const jobId = reservation.generationId;
+      const generation = jobId
+        ? await prisma.generation.findUnique({ where: { id: jobId } })
+        : null;
+
+      if (!generation || RESERVATION_TERMINAL_STATUSES.includes(generation.status)) {
+        await releaseReservation(userId, jobId);
+        released++;
+      } else if (generation.status === "completed") {
+        await settleReservation(userId, jobId, generation.creditsUsed);
+        settled++;
+      } else {
+        // Still pending/processing — expired-but-live, leave it for the
+        // next sweep once the generation actually finishes.
+        skipped++;
+      }
+    } catch (err) {
+      console.error(`sweepExpiredReservations: failed to process reservation ${reservation.id}:`, err);
+      skipped++;
+    }
+  }
+
+  return { released, settled, skipped };
 }
 
 // ── Credit Operations ────────────────────────────────────────
