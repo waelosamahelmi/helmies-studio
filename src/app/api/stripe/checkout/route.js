@@ -9,19 +9,6 @@ function getStripe() {
   return new Stripe(key, { apiVersion: "2024-12-18.acacia" });
 }
 
-function getPriceId(plan, yearly) {
-  const key = yearly ? `${plan}_yearly` : plan;
-  const prices = {
-    starter: process.env.STRIPE_PRICE_STARTER,
-    starter_yearly: process.env.STRIPE_PRICE_STARTER_YEARLY,
-    studio: process.env.STRIPE_PRICE_STUDIO,
-    studio_yearly: process.env.STRIPE_PRICE_STUDIO_YEARLY,
-    pro: process.env.STRIPE_PRICE_PRO,
-    pro_yearly: process.env.STRIPE_PRICE_PRO_YEARLY,
-  };
-  return prices[key];
-}
-
 export async function POST(req) {
   try {
     const user = await getCurrentUserWithCredits();
@@ -30,9 +17,15 @@ export async function POST(req) {
     }
 
     const { plan, yearly } = await req.json();
-    const priceId = getPriceId(plan, yearly);
-    if (!priceId) {
-      return NextResponse.json({ error: "Invalid plan or not configured" }, { status: 400 });
+
+    // The admin Plans editor writes SubscriptionPlan rows — those rows are
+    // now the sole source of truth for which Stripe price a checkout
+    // charges. An inactive plan or a plan missing the requested billing
+    // period's price id must never fall through to a stale env-var price.
+    const planRow = plan ? await prisma.subscriptionPlan.findUnique({ where: { slug: plan } }) : null;
+    const priceId = planRow?.isActive ? (yearly ? planRow.stripePriceIdYearly : planRow.stripePriceId) : null;
+    if (!planRow || !planRow.isActive || !priceId) {
+      return NextResponse.json({ error: "Plan not configured" }, { status: 400 });
     }
 
     const stripe = getStripe();

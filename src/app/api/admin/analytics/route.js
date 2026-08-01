@@ -12,7 +12,7 @@ export async function GET(req) {
       prisma.generation.count({ where: { status: "completed" } }),
       prisma.generation.count({ where: { status: "failed" } }),
       prisma.generation.aggregate({ _sum: { creditsUsed: true } }),
-      prisma.creditTransaction.aggregate({ _sum: { amount: true }, where: { type: { in: ["subscription", "topup"] } } }),
+      prisma.creditLedger.aggregate({ _sum: { amount: true }, where: { type: { in: ["subscription_grant", "topup"] } } }),
       prisma.generation.aggregate({ _sum: { providerCost: true } }),
     ]);
 

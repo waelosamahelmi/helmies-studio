@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
+import { provisionNewUser } from "@/lib/auth-events";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -55,24 +56,26 @@ export async function POST(req) {
   const userCount = await prisma.user.count();
   const role = userCount === 0 ? "admin" : "user";
 
-  const user = await prisma.user.create({
-    data: {
-      email,
-      name: name || null,
-      passwordHash,
-      role,
-      emailVerified: new Date(),
-      subscriptions: { create: { plan: "free", status: "active" } },
-      wallet: { create: { available: 100, lifetime: 100 } },
-      transactions: {
-        create: {
-          amount: 100,
-          type: "signup_bonus",
-          description: "Welcome bonus: 100 free credits",
-        },
+  // user.create + provisionNewUser run as one transaction: if provisioning
+  // (subscription upsert / wallet grant) throws mid-way, the User row rolls
+  // back too, instead of leaving an orphaned, walletless user that then
+  // blocks the same email from ever registering again (409 on retry).
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        email,
+        name: name || null,
+        passwordHash,
+        role,
+        emailVerified: new Date(),
       },
-    },
-    select: { id: true },
+      select: { id: true },
+    });
+
+    // Role is already computed above from the pre-create user count, so this
+    // path never needs provisionNewUser's own admin promotion.
+    await provisionNewUser(created.id, { firstUserAdmin: false }, tx);
+    return created;
   });
 
   return NextResponse.json({ ok: true, userId: user.id });

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import prisma from "@/lib/prisma";
-import { SUBSCRIPTION_CREDITS, PLAN_IDS } from "@/lib/credits";
 import { grantCredits } from "@/lib/wallet";
 
 let stripe;
@@ -12,6 +11,26 @@ function getStripe() {
     stripe = new Stripe(key, { apiVersion: "2024-12-18.acacia" });
   }
   return stripe;
+}
+
+// The admin Plans editor writes SubscriptionPlan rows — those rows are the
+// sole source of truth for how many credits a subscription grant is worth.
+// Tries an exact slug match first (checkout metadata, or a subscription's
+// own metadata.plan), then falls back to matching the Stripe price id
+// against either billing period column. A mis-seeded/deleted plan resolves
+// to `null` here — callers must grant 0 credits, not throw, so a bad plan
+// row can never crash the webhook or lose the event claim.
+async function planBySlugOrPrice(tx, slug, priceId) {
+  if (slug) {
+    const bySlug = await tx.subscriptionPlan.findUnique({ where: { slug } });
+    if (bySlug) return bySlug;
+  }
+  if (priceId) {
+    return tx.subscriptionPlan.findFirst({
+      where: { OR: [{ stripePriceId: priceId }, { stripePriceIdYearly: priceId }] },
+    });
+  }
+  return null;
 }
 
 export async function POST(req) {
@@ -29,7 +48,11 @@ export async function POST(req) {
     return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 });
   }
 
-  // ── Idempotency check ────────────────────────────────────────
+  // ── Idempotency pre-check ────────────────────────────────────
+  // Cheap early-return for the common case (an already-processed event
+  // redelivered). This is NOT the guard against a concurrent duplicate —
+  // that's the unique constraint on stripeEventId, claimed atomically with
+  // every grant inside the transaction below.
   const stripeEventId = event.id;
   const existingEvent = await prisma.stripeEvent.findUnique({
     where: { stripeEventId },
@@ -39,123 +62,166 @@ export async function POST(req) {
     return NextResponse.json({ received: true });
   }
 
-  try {
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object;
-        const userId = session.metadata?.userId;
-        if (!userId) break;
-
-        if (session.metadata?.type === "credit_topup") {
-          const topupCredits = parseInt(session.metadata?.credits || "0");
-          if (topupCredits > 0) {
-            await grantCredits(
-              userId,
-              topupCredits,
-              "topup",
-              `Credit top-up: ${topupCredits} credits`,
-              session.id
-            );
-          }
-        } else if (session.metadata?.type === "template_purchase") {
-          const templateId = session.metadata?.templateId;
-          const purchaseUserId = session.metadata?.userId;
-          if (templateId && purchaseUserId) {
-            await prisma.templatePurchase.upsert({
-              where: {
-                userId_templateId: { userId: purchaseUserId, templateId },
-              },
-              update: {}, // no-op on duplicate
-              create: {
-                userId: purchaseUserId,
-                templateId,
-                purchaseType: "onetime",
-                usageRemaining: 1,
-                stripeSessionId: session.id,
-                stripePricePaid: session.amount_total,
-              },
-            });
-          }
-        } else {
-          const plan = session.metadata?.plan || PLAN_IDS[session.metadata?.priceId];
-          const credits = SUBSCRIPTION_CREDITS[plan] || 0;
-
-          if (credits > 0) {
-            await grantCredits(
-              userId,
-              credits,
-              "subscription_grant",
-              `${plan} plan subscription: ${credits} credits`,
-              session.id
-            );
-          }
-        }
-        break;
-      }
-
-      case "invoice.paid": {
-        const invoice = event.data.object;
-        const subscriptionId = invoice.subscription;
-        if (subscriptionId) {
-          const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
-          const userId = subscription.metadata?.userId;
-          const plan = subscription.metadata?.plan || PLAN_IDS[subscription.items?.data?.[0]?.price?.id];
-          const credits = SUBSCRIPTION_CREDITS[plan] || 0;
-
-          if (userId && credits > 0 && invoice.billing_reason === "subscription_cycle") {
-            await grantCredits(
-              userId,
-              credits,
-              "subscription_grant",
-              `${plan} plan renewal: ${credits} credits`,
-              invoice.id
-            );
-          }
-
-          if (userId) {
-            await prisma.subscription.updateMany({
-              where: { userId },
-              data: {
-                stripeSubscriptionId: subscriptionId,
-                stripePriceId: subscription.items?.data?.[0]?.price?.id,
-                stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
-                plan: plan || "free",
-                status: "active",
-              },
-            });
-          }
-        }
-        break;
-      }
-
-      case "customer.subscription.deleted": {
-        const subscription = event.data.object;
-        const userId = subscription.metadata?.userId;
-        if (userId) {
-          await prisma.subscription.updateMany({
-            where: { userId },
-            data: { status: "cancelled", plan: "free" },
-          });
-        }
-        break;
-      }
-
-      default:
-        break;
+  // ── Network prefetch (must happen OUTSIDE the transaction) ───
+  // Interactive transactions have a default 5s timeout; the only network
+  // call any handler needs (Stripe's subscriptions.retrieve for
+  // invoice.paid) is fetched here so the transaction body below is pure DB
+  // work with no external round-trip inside it. This happens before the
+  // main try/catch below (no StripeEvent claim exists yet), so its own
+  // try/catch is required: a rate limit, transient network error, or
+  // deleted subscription id here must not escape as an unhandled
+  // exception — it returns a structured 500 so Stripe retries later, once
+  // the transient issue has likely cleared, with nothing claimed yet.
+  let prefetchedSubscription = null;
+  if (event.type === "invoice.paid" && event.data.object.subscription) {
+    try {
+      prefetchedSubscription = await getStripe().subscriptions.retrieve(event.data.object.subscription);
+    } catch (err) {
+      console.error(`[webhook] Failed to prefetch subscription for event ${stripeEventId}:`, err);
+      return NextResponse.json({ error: "Subscription prefetch failed" }, { status: 500 });
     }
+  }
 
-    // ── Record event as processed ──────────────────────────────
-    await prisma.stripeEvent.create({
-      data: { stripeEventId, eventType: event.type },
+  try {
+    await prisma.$transaction(async (tx) => {
+      // ── Claim the event id FIRST ───────────────────────────
+      // Claiming before running any handler means a crash anywhere below
+      // rolls back the claim along with every grant/write in this tx — a
+      // Stripe retry sees no claim and reprocesses cleanly. A concurrent
+      // duplicate hits this same unique constraint (P2002) and is caught
+      // below without a second grant.
+      await tx.stripeEvent.create({
+        data: { stripeEventId, eventType: event.type },
+      });
+
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object;
+          const userId = session.metadata?.userId;
+          if (!userId) break;
+
+          if (session.metadata?.type === "credit_topup") {
+            const topupCredits = parseInt(session.metadata?.credits || "0");
+            if (topupCredits > 0) {
+              await grantCredits(
+                userId,
+                topupCredits,
+                "topup",
+                `Credit top-up: ${topupCredits} credits`,
+                session.id,
+                tx
+              );
+            }
+          } else if (session.metadata?.type === "template_purchase") {
+            const templateId = session.metadata?.templateId;
+            const purchaseUserId = session.metadata?.userId;
+            if (templateId && purchaseUserId) {
+              await tx.templatePurchase.upsert({
+                where: {
+                  userId_templateId: { userId: purchaseUserId, templateId },
+                },
+                update: {}, // no-op on duplicate
+                create: {
+                  userId: purchaseUserId,
+                  templateId,
+                  purchaseType: "onetime",
+                  usageRemaining: 1,
+                  stripeSessionId: session.id,
+                  stripePricePaid: session.amount_total,
+                },
+              });
+            }
+          } else {
+            const slug = session.metadata?.plan;
+            const planRow = await planBySlugOrPrice(tx, slug, null);
+            if (!planRow) {
+              console.error(
+                `[webhook] No SubscriptionPlan row found for slug "${slug}" — checkout session ${session.id} will grant 0 credits. Check the admin Plans configuration.`
+              );
+            }
+            const credits = planRow?.credits || 0;
+
+            if (credits > 0) {
+              await grantCredits(
+                userId,
+                credits,
+                "subscription_grant",
+                `${slug} plan subscription: ${credits} credits`,
+                session.id,
+                tx
+              );
+            }
+          }
+          break;
+        }
+
+        case "invoice.paid": {
+          const invoice = event.data.object;
+          const subscriptionId = invoice.subscription;
+          if (subscriptionId) {
+            const subscription = prefetchedSubscription;
+            const userId = subscription.metadata?.userId;
+            const priceId = subscription.items?.data?.[0]?.price?.id;
+            const metaSlug = subscription.metadata?.plan;
+            const planRow = await planBySlugOrPrice(tx, metaSlug, priceId);
+            if (!planRow) {
+              console.error(
+                `[webhook] No SubscriptionPlan row found for slug "${metaSlug}" or price "${priceId}" — invoice ${invoice.id} will grant 0 credits. Check the admin Plans configuration.`
+              );
+            }
+            const credits = planRow?.credits || 0;
+            const plan = metaSlug || planRow?.slug || "free";
+
+            if (userId && credits > 0 && invoice.billing_reason === "subscription_cycle") {
+              await grantCredits(
+                userId,
+                credits,
+                "subscription_grant",
+                `${plan} plan renewal: ${credits} credits`,
+                invoice.id,
+                tx
+              );
+            }
+
+            if (userId) {
+              await tx.subscription.updateMany({
+                where: { userId },
+                data: {
+                  stripeSubscriptionId: subscriptionId,
+                  stripePriceId: priceId,
+                  stripeCurrentPeriodEnd: new Date(subscription.current_period_end * 1000),
+                  plan,
+                  status: "active",
+                },
+              });
+            }
+          }
+          break;
+        }
+
+        case "customer.subscription.deleted": {
+          const subscription = event.data.object;
+          const userId = subscription.metadata?.userId;
+          if (userId) {
+            await tx.subscription.updateMany({
+              where: { userId },
+              data: { status: "cancelled", plan: "free" },
+            });
+          }
+          break;
+        }
+
+        default:
+          break;
+      }
     });
 
     return NextResponse.json({ received: true });
   } catch (e) {
-    // If the StripeEvent create fails with a unique constraint violation,
-    // it means a concurrent request already processed this event.
-    // Return 200 to acknowledge receipt — credits were granted by the
-    // concurrent request, and the unique constraint on stripeEventId
-    // prevents double-processing.
+    // If the transaction fails because the stripeEvent claim hit a unique
+    // constraint violation, a concurrent request already claimed and fully
+    // processed this event (claim + grants committed together). Return 200
+    // to acknowledge receipt — nothing here needs to run again.
     if (e?.code === "P2002" && e?.meta?.target?.includes?.("stripeEventId")) {
       console.warn(`[webhook] Concurrent duplicate event ${stripeEventId} — acknowledged`);
       return NextResponse.json({ received: true });

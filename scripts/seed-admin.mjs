@@ -60,12 +60,39 @@ async function main() {
   });
   console.log("  ✓ Free subscription ensured");
 
-  await prisma.creditWallet.upsert({
-    where: { userId: user.id },
-    update: {},
-    create: { userId: user.id, available: 100, lifetime: 100 },
-  });
-  console.log("  ✓ Credit wallet ensured");
+  // Ledger-safe grant: creating a wallet with no matching CreditLedger row
+  // makes reconcile-credits.mjs report drift on every run (driftAvailable
+  // != 0, since the ledger movement sum can never catch up to a balance
+  // that was never booked as a ledger entry). This mirrors
+  // src/lib/wallet.js's grantCredits(userId, 100, "signup", ...) inline —
+  // wallet.js can't be imported directly here because its own `./prisma`
+  // import is extensionless, which Node's strict ESM resolver refuses under
+  // plain `node` (this script isn't bundled by Next/Vite); see
+  // src/lib/reconciliation.js for the same constraint documented in situ.
+  // Idempotent like the rest of this script: only grants once, on first
+  // creation — a rerun against an already-seeded admin leaves the wallet
+  // (and its ledger history) untouched rather than re-granting.
+  const existingWallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
+  if (!existingWallet) {
+    const signupGrant = 100;
+    await prisma.$transaction(async (tx) => {
+      const wallet = await tx.creditWallet.create({
+        data: { userId: user.id, available: signupGrant, lifetime: signupGrant },
+      });
+      await tx.creditLedger.create({
+        data: {
+          walletId: wallet.id,
+          amount: signupGrant,
+          type: "signup",
+          description: "Seed admin initial balance",
+          balanceAfter: wallet.available,
+        },
+      });
+    });
+    console.log(`  ✓ Credit wallet created with signup ledger entry (${signupGrant} credits)`);
+  } else {
+    console.log("  ✓ Credit wallet already exists (left untouched)");
+  }
 
   console.log("\nDone.");
   await prisma.$disconnect();

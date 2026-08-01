@@ -6,7 +6,6 @@ import { checkRateLimit } from "@/lib/security";
 import { resolveProvider, brandError, submitOnly } from "@/lib/providers";
 import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
 import { applyMemoryToPrompt } from "@/lib/memory";
-import { estimateCredits } from "@/lib/pricing-engine";
 import { quoteCatalogModel } from "@/lib/model-catalog";
 import {
   IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS,
@@ -59,9 +58,16 @@ export async function POST(req) {
     const provider = await resolveProvider(model);
 
     const dbPricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
-    let cost = dbPricing?.creditsCost || await estimateCredits(tool || "image", model, params);
-    let providerCost = dbPricing?.providerCost || 0;
-    if (dbPricing?.pricingRules) {
+    // Billing requires a real, active ModelPricing row — same policy as
+    // generation-handler.js. estimateCredits' flat per-tool fallback is a
+    // planning/preview estimate only and must never be used to actually bill
+    // a generation (that was the async-route half of this hole).
+    if (!dbPricing || dbPricing.isActive === false || dbPricing.isDeprecated) {
+      return NextResponse.json({ error: "Model not priced", model }, { status: 422 });
+    }
+    let cost = dbPricing.creditsCost;
+    let providerCost = dbPricing.providerCost || 0;
+    if (dbPricing.pricingRules) {
       const quote = await quoteCatalogModel(model, { ...params, prompt: prompt || "" });
       if (!quote.valid) return NextResponse.json({ error: "Invalid model parameters", details: quote.errors }, { status: 422 });
       cost = quote.credits;

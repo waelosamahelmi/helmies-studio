@@ -36,11 +36,11 @@ fi
 step "Prisma client"
 npx prisma generate
 
-step "Schema push"
-# Additive columns only (VisualAnalysis.userId/background, ContactMessage).
-# --accept-data-loss is deliberately NOT passed: if a change would drop data,
-# this must fail loudly rather than destroy it.
-npx prisma db push --skip-generate
+step "Database migration"
+# ONE-TIME before the first deploy of this branch: on the server run
+#   npx prisma migrate resolve --applied 0_init
+# (marks the pre-existing schema as the baseline; see prisma/migrations/README.md)
+npx prisma migrate deploy
 
 step "Building"
 # The box has ~6GB free; the default heap is not always enough for this app.

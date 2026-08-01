@@ -40,40 +40,6 @@ export async function getCurrentUserWithCredits() {
   return user;
 }
 
-// Debit immediately (synchronous, non-refundable path). For generation jobs that
-// may fail, prefer the wallet's reserve/settle flow in lib/wallet.js instead.
-export async function debitCredits(userId, amount) {
-  const wallet = await prisma.creditWallet.findUnique({ where: { userId } });
-  if (!wallet || wallet.available < amount) throw new Error("Insufficient credits");
-  const updated = await prisma.creditWallet.update({
-    where: { userId },
-    data: { available: { decrement: amount } },
-  });
-  // mirror to legacy column
-  await prisma.user.update({ where: { id: userId }, data: { credits: updated.available } });
-  await prisma.creditTransaction.create({
-    data: {
-      userId,
-      amount: -amount,
-      type: "generation",
-      description: `Generation cost: ${amount} credits`,
-    },
-  });
-  return true;
-}
-
-export async function creditUser(userId, amount, type, description) {
-  const wallet = await prisma.creditWallet.upsert({
-    where: { userId },
-    update: { available: { increment: amount }, lifetime: { increment: amount } },
-    create: { userId, available: amount, lifetime: amount },
-  });
-  await prisma.user.update({ where: { id: userId }, data: { credits: wallet.available } });
-  await prisma.creditTransaction.create({
-    data: { userId, amount, type, description },
-  });
-}
-
 export async function requireAdmin() {
   const session = await resolveSession();
   if (!session?.user?.id) return null;

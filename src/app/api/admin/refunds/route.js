@@ -36,9 +36,6 @@ export async function POST(req) {
     await getWallet(userId); // ensures a wallet exists (migrates legacy balance)
     const wallet = await grantCredits(userId, credits, "refund", reason || "Admin refund", generationId || null);
     await prisma.user.update({ where: { id: userId }, data: { credits: wallet.available } }).catch(() => {});
-    await prisma.creditTransaction.create({
-      data: { userId, amount: credits, type: "admin_refund", description: reason || "Admin refund" },
-    });
     await logAudit("admin_refund", "user", userId, { amount: credits, reason }, req);
 
     return NextResponse.json({ success: true, refund });

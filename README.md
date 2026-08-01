@@ -84,6 +84,7 @@ run `npm run <script>`.
 | `db:migrate:deploy` | `prisma migrate deploy` | Apply pending migrations (used in deploys/CI) |
 | `check:dead-code` | `node scripts/dead-code.mjs` | Report unused exports/files |
 | `check:env` | `node scripts/check-env.mjs` | Verify required env vars are set and documented in `.env.example` |
+| `reconcile` | `node scripts/reconcile-credits.mjs` | Audit every wallet's ledger/reservation math; `--fix --yes` repairs ledger drift |
 
 `scripts/` also has standalone utility scripts not wired into `package.json` (seeding,
 provider diagnostics, media cleanup, etc.) — run those directly with
@@ -129,7 +130,49 @@ step, which predates the Prisma Migrate workflow adopted in
 for how schema changes should ship; treat `deploy.sh`'s db-push step as due for an
 update to `prisma migrate deploy`.
 
+### Seeding subscription plans and credit packs
+
+Checkout, top-up, and the Stripe webhook read pricing/credit amounts from the
+`SubscriptionPlan` and `CreditPack` tables — the admin Plans/Credit Packs editors
+write these rows and now genuinely drive billing (they used to be decorative).
+Run `node scripts/seed-plans.mjs` once at deploy to create/refresh the default
+rows, and again any time a `STRIPE_PRICE_*` env var changes (it reads
+`DATABASE_URL` and the `STRIPE_PRICE_*` vars from the environment, and upserts —
+safe to re-run, never duplicates rows). A missing or inactive plan/pack row makes
+checkout and top-up return 400; a missing `SubscriptionPlan` row for a webhook
+event grants 0 credits (logged loudly) rather than crashing the webhook.
+
 Full architecture and deploy context: **[AGENTS.md](./AGENTS.md)**.
+
+### Reconciling the credit ledger
+
+`npm run reconcile` (`scripts/reconcile-credits.mjs`) audits every `CreditWallet`
+against `src/lib/wallet.js`'s two money invariants — `available` must equal the
+`CreditLedger` movement sum (all rows except informational `generation` rows) and
+`reserved` must equal the sum of active `CreditReservation` rows. It's read-only by
+default: prints a table of any wallet that fails either check (`userId` only, never
+emails) and exits 1 if any are unfixed, 0 if the whole table is clean.
+
+`--fix --yes` (both flags required — `--fix` alone refuses and makes no writes, a
+safety guard against an accidental bare `--fix`) books one `admin_adjustment`
+`CreditLedger` row per drifted wallet, `amount` equal to the exact gap, described
+`"reconciliation anchor"`. The wallet (`available`/`reserved`) is always authoritative
+and is never modified — the anchor only brings the ledger's movement sum back in line
+with it, then the wallet is re-checked.
+
+The legacy `User.credits` mirror (see "Credit System" in **[AGENTS.md](./AGENTS.md)**)
+is reported separately as `mirrorCredits`/`driftMirror` and summarized as a single
+`WARNING` count — it does **not** affect `ok` or the exit code. `User.credits` is
+synced opportunistically by call sites (`session.js`, `generation-handler.js`, etc.)
+on the user's next session read or generation completion, not by every wallet
+mutation, so a wallet showing stale-mirror-only right after a reserve/settle/grant is
+expected, not a bug — it self-heals. A wallet that stays `WARNING`-flagged for a long
+time (no session activity) is still worth a look, just not an on-call page.
+
+Like `seed-plans.mjs`, this script reads `DATABASE_URL` straight from the
+environment with no host allowlist — run it against a real database deliberately,
+never casually against production. Local/CI verification uses the disposable test
+container: `DATABASE_URL="postgresql://postgres:test@localhost:55432/test" npm run reconcile`.
 
 ## Current quality work
 

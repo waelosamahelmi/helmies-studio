@@ -174,6 +174,7 @@ export function UsersPanel() {
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState(null);
   const [credits, setCredits] = useState("");
+  const [originalCredits, setOriginalCredits] = useState(0);
   const [role, setRole] = useState("user");
   const [saving, setSaving] = useState(false);
   const [fault, setFault] = useState("");
@@ -188,8 +189,10 @@ export function UsersPanel() {
   }, [users, query]);
 
   const open = (u) => {
+    const current = Math.round(Number(u.credits) || 0);
     setEditing(u);
-    setCredits(String(u.credits ?? 0));
+    setCredits(String(current));
+    setOriginalCredits(current);
     setRole(u.role || "user");
     setFault("");
   };
@@ -201,14 +204,17 @@ export function UsersPanel() {
       setConfirmPromote(false);
       return;
     }
+    const rounded = Math.round(value);
     setSaving(true);
     setFault("");
     try {
-      await send("/api/admin/users", "PATCH", {
-        userId: editing.id,
-        credits: Math.round(value),
-        role,
-      });
+      const body = { userId: editing.id, role };
+      // Only send `credits` when the admin actually edited the field — the
+      // server books any included value as an absolute wallet target
+      // (adjustWalletTo), so a role-only edit must never smuggle in a
+      // dialog-population value it never touched.
+      if (rounded !== originalCredits) body.credits = rounded;
+      await send("/api/admin/users", "PATCH", body);
       setEditing(null);
       reload();
     } catch (e) {

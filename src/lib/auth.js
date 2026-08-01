@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
+import { provisionNewUser } from "@/lib/auth-events";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -71,24 +72,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   events: {
     async createUser({ user }) {
+      // userCount is read AFTER the row is created (unlike the register
+      // route's pre-create count), so the first-ever user lands at count 1.
       const userCount = await prisma.user.count();
-      const role = userCount === 1 ? "admin" : "user";
-      await prisma.user.update({ where: { id: user.id }, data: { role } });
-      await prisma.subscription.create({
-        data: { userId: user.id, plan: "free", status: "active" },
-      });
-      // CreditWallet only has available/reserved/lifetime — no lifetimeCredited/lifetimeDebited.
-      await prisma.creditWallet.create({
-        data: { userId: user.id, available: 100, lifetime: 100 },
-      });
-      await prisma.creditTransaction.create({
-        data: {
-          userId: user.id,
-          amount: 100,
-          type: "signup_bonus",
-          description: "Welcome bonus: 100 free credits",
-        },
-      });
+      await provisionNewUser(user.id, { firstUserAdmin: userCount === 1 });
     },
   },
 });
