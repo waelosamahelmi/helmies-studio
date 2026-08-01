@@ -37,6 +37,7 @@ export default function Footer() {
       <div className="pg-foot__in">
         <div className="pg-foot__col">
           <Link href="/" className="pg-logo" aria-label="Helmies Studio home">
+            {/* eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01) */}
             <img src="/ico.svg" alt="" width={24} height={24} />
             <strong>Helmies</strong>
             <span>Studio</span>

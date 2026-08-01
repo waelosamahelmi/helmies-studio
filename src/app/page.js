@@ -150,6 +150,7 @@ function HeroSection() {
   return (
     <section className="hero">
       <div className="hero__bg">
+        {/* eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01) */}
         <img src={isMobile ? "/assets/hero-video-poster.webp" : "/assets/hero-video-poster.webp"} alt="" className="hero__bg-poster" style={{ opacity: playing ? 0 : 1 }} />
         {!isMobile ? (
           <video
@@ -161,6 +162,7 @@ function HeroSection() {
             style={{ opacity: playing ? 1 : 0 }}
           />
         ) : (
+          // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
           <img src="/assets/hero-video-poster.webp" alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         )}
       </div>
@@ -287,6 +289,7 @@ function ServiceSection({ section, index }) {
       <div className={`svc-section__bg ${section.bgClass || ""}`}>
         {section.bgVideo ? (
           <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01) */}
             <img src="/assets/pricing-video-poster.webp" alt="" className="svc-section__bg-poster" style={{ opacity: isMobile ? 1 : vidPlaying ? 0 : 1 }} />
             {!isMobile && (
               <video
@@ -300,6 +303,7 @@ function ServiceSection({ section, index }) {
             )}
           </>
         ) : (
+          // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
           <img src={section.bg} alt="" />
         )}
         <div className="svc-section__scrim" />

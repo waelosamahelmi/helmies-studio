@@ -411,6 +411,7 @@ export default function AssetLibraryStudio() {
                     >
                       <div className="st-item__frame">
                         {a.url && kind === "image" ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                           <img src={a.thumbnailUrl || a.url} alt="" loading="lazy" />
                         ) : a.url && kind === "video" ? (
                           <video src={a.url} muted playsInline preload="metadata" />
@@ -497,6 +498,7 @@ export default function AssetLibraryStudio() {
                 ) : kindOf(detail) === "audio" ? (
                   <audio src={detail.url} controls style={{ width: "100%", padding: "var(--s-4)" }} />
                 ) : (
+                  // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                   <img src={detail.url} alt={nameOf(detail)} style={{ width: "100%", maxHeight: 380, objectFit: "contain", display: "block" }} />
                 )}
               </div>

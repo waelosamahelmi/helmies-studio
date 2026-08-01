@@ -302,6 +302,7 @@ function Outputs({ items }) {
                   AUDIO
                 </span>
               ) : (
+                // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                 <img src={url} alt={`Output ${i + 1}`} />
               )}
             </a>

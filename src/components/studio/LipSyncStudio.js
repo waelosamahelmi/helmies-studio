@@ -450,6 +450,7 @@ export default function LipSyncStudio({ initialModel, templateConfig, onCreditsC
   const facePreview = faceUrl
     ? (usesVideo
         ? <video src={faceUrl} muted playsInline preload="metadata" />
+        // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
         : <img src={faceUrl} alt={face?.name || "Face source"} />)
     : null;
 

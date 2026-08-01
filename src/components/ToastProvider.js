@@ -51,6 +51,7 @@ export function ToastProvider({ children }) {
               transition={{ duration: 0.4, ease: EASE }}
             >
               {t.isGeneration && t.url && (
+                // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                 <img src={t.url} alt="" className="toast__thumb" />
               )}
               <span className="toast__message">{t.message}</span>

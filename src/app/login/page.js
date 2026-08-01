@@ -142,6 +142,7 @@ function Auth() {
       <div className="pg-auth__card">
         <div className="pg-auth__head">
           <Link href="/" className="pg-logo" style={{ justifyContent: "center", marginBottom: "var(--s-2)" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01) */}
             <img src="/ico.svg" alt="" width={24} height={24} />
             <strong>Helmies</strong>
             <span>Studio</span>

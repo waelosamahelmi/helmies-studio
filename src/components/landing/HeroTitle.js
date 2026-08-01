@@ -43,6 +43,7 @@ export default function HeroTitle({ image, line1, line2, accent, line1Accent, li
       setMask(gradients.join(", "));
     }
 
+    // eslint-disable-next-line react-hooks/immutability -- self-referencing rAF loop; `updateMask` is fully assigned by call time via closure, this is the standard requestAnimationFrame-loop-in-useCallback pattern (2026-08-01)
     rafRef.current = requestAnimationFrame(updateMask);
   }, []);
 
@@ -81,6 +82,7 @@ export default function HeroTitle({ image, line1, line2, accent, line1Accent, li
       <h1 className={`hero-title hero-title--base${small ? " hero-title--small" : ""}`}>
         <span className="hero-title__line">
           {line1AccentImg ? (
+            // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
             <img src={line1AccentImg} alt="" className="hero-title__accent-img" />
           ) : line1Accent ? (
             <span className="hero-title__accent">{line1Accent}</span>
@@ -105,6 +107,7 @@ export default function HeroTitle({ image, line1, line2, accent, line1Accent, li
       >
         <span className="hero-title__line">
           {line1AccentImg ? (
+            // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
             <img src={line1AccentImg} alt="" className="hero-title__accent-img" />
           ) : line1Accent ? (
             <span className="hero-title__paint-accent">{line1Accent}</span>

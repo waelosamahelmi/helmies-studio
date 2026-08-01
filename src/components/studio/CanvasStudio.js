@@ -676,7 +676,7 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     setZoom(z);
   }, []);
 
-  useEffect(() => { fit(); /* once, on mount */ }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fit(); /* once, on mount */ }, []);
 
   /* React attaches wheel passively, so the listener is native */
   useEffect(() => {
@@ -1523,6 +1523,7 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
         </button>
 
         {l.type === "image" && entry?.img
+          // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
           ? <img className="st-layer__thumb" src={l.src} alt="" />
           : (
             <span className="st-layer__thumb" style={{ display: "grid", placeItems: "center", color: "var(--tx-mute)" }}>
@@ -1958,6 +1959,7 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
 
         {result?.url && !generating && (
           <div className="st-canvas__result">
+            {/* eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01) */}
             <img src={result.url} alt="" />
             <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
               Placed on canvas · {elapsed}s{result.creditsUsed != null ? ` · ${result.creditsUsed}cr` : ""}

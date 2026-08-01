@@ -21,10 +21,11 @@ import { matchesGroup } from "@/lib/capability-groups";
    Fixed in this rebuild:
    · `hasVoice` / `hasStability` / `hasSimilarity` / `hasSpeed` gated the whole
      TTS panel, and the live catalog never emits them (see model-catalog.js
-     `serializeCatalogModel` — it emits id, capability, credits, schema,
-     constraints, pricing… and no `has*` flag at all). Every one of those
-     controls was dead. They are now gated on the model's own input schema,
-     which the catalog does emit, with "no schema" meaning "show it".
+     `serializeCatalogModel` — the public shape is id, capability, credits,
+     schema, constraints… and no `has*` flag at all; provider cost basis is
+     omitted unless the caller passes `{ includeCosts: true }`). Every one of
+     those controls was dead. They are now gated on the model's own input
+     schema, which the catalog does emit, with "no schema" meaning "show it".
    · `error` from useAsyncGeneration was computed and never rendered, so a
      failed job just stopped with no explanation. It is rendered now.
    · `elapsed` was unused. The transport row shows it while a job runs.

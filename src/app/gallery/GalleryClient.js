@@ -361,7 +361,6 @@ export default function GalleryClient() {
                   return (
                     <div key={g.id} className="pg-gal__item" style={{ padding: "var(--s-4)" }}>
                       <p style={{ fontSize: "var(--t-tiny)", marginBottom: "var(--s-3)" }}>{label}</p>
-                      {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
                       <audio src={url} controls preload="none" style={{ width: "100%" }} aria-label={label} />
                       <p className="hs-mono hs-mute" style={{ fontSize: 10, marginTop: "var(--s-3)" }}>
                         {g.model} · {g.creditsUsed} cr · {ago(g.createdAt)}
@@ -382,6 +381,7 @@ export default function GalleryClient() {
                     {isVideo(url) ? (
                       <video src={url} muted loop playsInline preload="metadata" />
                     ) : (
+                      // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                       <img src={url} alt={label} loading="lazy" decoding="async" />
                     )}
                     <span className="pg-gal__meta">

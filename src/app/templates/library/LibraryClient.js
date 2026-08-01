@@ -138,6 +138,7 @@ export default function LibraryClient() {
             <article key={t.id} className="pg-tpl__card">
               <div className="pg-tpl__frame">
                 {t.thumbnailUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01)
                   <img src={t.thumbnailUrl} alt="" loading="lazy" decoding="async" />
                 ) : (
                   <div style={{ width: "100%", height: "100%", display: "grid", placeItems: "center", color: "var(--tx-ghost)" }}>
