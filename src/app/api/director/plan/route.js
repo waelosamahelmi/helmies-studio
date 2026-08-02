@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { createProductionPlan, estimateDirectorCost, validateShotPlan } from "@/lib/director-planner";
+import { createProductionPlan, DirectorPlanError } from "@/lib/director-planner";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 
@@ -23,25 +23,24 @@ export async function POST(req) {
       model: body.model,
     };
 
-    const plan = await createProductionPlan(brief, user.id);
-    const costEstimate = await estimateDirectorCost(plan, brief);
-
-    const validation = {
-      allValid: true,
-      results: (plan.shots || []).map((shot, i) => {
-        const v = validateShotPlan(shot);
-        return { shotIndex: i, valid: v.valid, errors: v.errors || [] };
-      }),
-    };
-    validation.allValid = validation.results.every((r) => r.valid);
+    // createProductionPlan already runs the shot validators and computes the
+    // cost estimate internally — its return value is { plan, costEstimate,
+    // validation, pipelineId, ... }, not the raw plan. Re-deriving either
+    // from a second, differently-shaped call was the source of the
+    // production "e.shots is not iterable" crash (estimateDirectorCost was
+    // being handed this wrapper object instead of `result.plan`).
+    const result = await createProductionPlan(brief, user.id);
 
     return NextResponse.json({
-      plan,
-      pipelineId: plan.id,
-      costEstimate,
-      validation,
+      plan: result.plan,
+      pipelineId: result.pipelineId,
+      costEstimate: result.costEstimate,
+      validation: result.validation,
     }, { status: 201 });
   } catch (e) {
+    if (e instanceof DirectorPlanError) {
+      return NextResponse.json({ error: e.message, errorId: e.errorId }, { status: e.status });
+    }
     return authzResponse(e);
   }
 }

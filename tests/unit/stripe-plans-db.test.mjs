@@ -165,6 +165,67 @@ describe("POST /api/stripe/checkout — plan resolved from SubscriptionPlan", ()
     await expect(res.json()).resolves.toEqual({ error: "Plan not configured" });
     expect(stripeInstance.checkout.sessions.create).not.toHaveBeenCalled();
   });
+
+  // Production incident: seed-plans.mjs wrote the literal placeholder
+  // "price_..." into stripePriceId when STRIPE_PRICE_* was unset. That value
+  // is truthy and non-empty, so it sailed past the old `!priceId` check and
+  // reached the Stripe SDK verbatim, which threw "No such price: 'price_...'"
+  // — surfaced to the user as a bare 500. A placeholder-shaped id must never
+  // reach stripe.customers.create / stripe.checkout.sessions.create.
+  it("placeholder stripePriceId ('price_...') → 503, no Stripe call at all, error logged with the plan slug", async () => {
+    prisma.subscriptionPlan.findUnique.mockResolvedValue({
+      slug: "starter",
+      isActive: true,
+      stripePriceId: "price_...",
+      stripePriceIdYearly: "price_...",
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { POST } = await import("@/app/api/stripe/checkout/route.js");
+    const res = await POST(jsonRequest("http://test/api/stripe/checkout", { plan: "starter", yearly: false }));
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({ error: "Subscriptions are not configured yet — please contact support" });
+    expect(stripeInstance.customers.create).not.toHaveBeenCalled();
+    expect(stripeInstance.checkout.sessions.create).not.toHaveBeenCalled();
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("starter"));
+    errSpy.mockRestore();
+  });
+
+  it("non-placeholder but still malformed stripePriceId → 503, not passed to Stripe", async () => {
+    prisma.subscriptionPlan.findUnique.mockResolvedValue({
+      slug: "pro",
+      isActive: true,
+      stripePriceId: "not-a-real-price-id",
+      stripePriceIdYearly: null,
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { POST } = await import("@/app/api/stripe/checkout/route.js");
+    const res = await POST(jsonRequest("http://test/api/stripe/checkout", { plan: "pro", yearly: false }));
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({ error: "Subscriptions are not configured yet — please contact support" });
+    expect(stripeInstance.checkout.sessions.create).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("a real-looking stripePriceId still checks out normally (503 guard doesn't over-trigger)", async () => {
+    prisma.subscriptionPlan.findUnique.mockResolvedValue({
+      slug: "studio",
+      isActive: true,
+      stripePriceId: "price_1NxxRealLookingId123",
+      stripePriceIdYearly: null,
+    });
+
+    const { POST } = await import("@/app/api/stripe/checkout/route.js");
+    const res = await POST(jsonRequest("http://test/api/stripe/checkout", { plan: "studio", yearly: false }));
+
+    expect(res.status).toBe(200);
+    expect(stripeInstance.checkout.sessions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ line_items: [{ price: "price_1NxxRealLookingId123", quantity: 1 }] })
+    );
+  });
 });
 
 // ── Top-up ───────────────────────────────────────────────────────────────

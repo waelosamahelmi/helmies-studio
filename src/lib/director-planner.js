@@ -1,9 +1,42 @@
+import { randomUUID } from "node:crypto";
 import { llmComplete, resolveProvider } from "@/lib/providers";
 import { estimateCredits } from "@/lib/pricing-engine";
 import prisma from "@/lib/prisma";
 import { SECTION_VISUAL_STRATEGY, PRODUCTION_TYPE_PRESETS } from "@/lib/director-constants";
 
 export { SECTION_VISUAL_STRATEGY, PRODUCTION_TYPE_PRESETS };
+
+// Thrown when neither the LLM nor the heuristic builder can produce a plan
+// with an iterable, non-empty `shots` array. Callers (the API route) must
+// surface this as a 422 with the public message + errorId — never let it
+// fall through to a generic 500.
+export class DirectorPlanError extends Error {
+  constructor(publicMessage, errorId) {
+    super(publicMessage);
+    this.name = "DirectorPlanError";
+    this.status = 422;
+    this.errorId = errorId;
+  }
+}
+
+// A plan is only usable downstream (estimateDirectorCost, validateShotPlan,
+// the route) if `shots` is a real, non-empty array of shot objects.
+export function isValidPlanShape(plan) {
+  return !!plan && Array.isArray(plan.shots) && plan.shots.length > 0 &&
+    plan.shots.every((s) => s && typeof s === "object" && !Array.isArray(s));
+}
+
+// The LLM is asked for raw JSON but sometimes wraps it in markdown fences,
+// or prefaces/trails it with commentary. Strip fences, then take the
+// outermost {...} span rather than trusting the whole string to be JSON.
+export function extractJsonObject(text) {
+  if (typeof text !== "string") return null;
+  const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return cleaned.slice(start, end + 1);
+}
 
 // ──────────────────────────────────────────────
 // 11 Prompt Policies — validation functions
@@ -462,6 +495,91 @@ export async function estimateDirectorCost(plan, brief) {
   };
 }
 
+// Turn a parsed LLM JSON payload into the canonical plan shape (fills in
+// every field with a safe default so a partial/odd LLM shot never breaks
+// a downstream consumer that expects the full shape).
+function normalizePlanFromLLM(parsed, preset, brief) {
+  return {
+    shots: (parsed.shots || []).map((shot, i) => ({
+      id: shot.id || `shot_${String(i).padStart(3, "0")}`,
+      index: shot.index ?? i,
+      title: shot.title || `Shot ${i + 1}`,
+      durationSec: shot.durationSec || 5,
+      section: shot.section || "verse",
+      narrativeRole: shot.narrativeRole || "",
+      sceneGoal: shot.sceneGoal || "",
+      subjects: shot.subjects || [],
+      environment: shot.environment || "",
+      spatialSetup: shot.spatialSetup || "",
+      lighting: shot.lighting || "",
+      mood: shot.mood || "",
+      camera: {
+        framing: shot.camera?.framing || "medium shot",
+        angle: shot.camera?.angle || "eye-level",
+        lens: shot.camera?.lens || "35mm",
+        movement: shot.camera?.movement || "static",
+        intensity: shot.camera?.intensity || "subtle"
+      },
+      imageStrategy: {
+        mode: shot.imageStrategy?.mode || "generate",
+        prompt: shot.imageStrategy?.prompt || "",
+        references: shot.imageStrategy?.references || []
+      },
+      videoStrategy: {
+        mode: shot.videoStrategy?.mode || "t2v",
+        prompt: shot.videoStrategy?.prompt || "",
+        modelRoute: shot.videoStrategy?.modelRoute || preset.defaultModelVideo,
+        keyframes: shot.videoStrategy?.keyframes || [],
+        windows: shot.videoStrategy?.windows || []
+      },
+      audio: shot.audio || null,
+      continuity: shot.continuity || [],
+      continuityTracker: shot.continuityTracker || {
+        characterIdentity: "not specified",
+        outfit: "not specified",
+        productIdentity: null,
+        environment: "not specified",
+        lighting: "not specified",
+        timeOfDay: "not specified",
+        screenDirection: "not specified",
+        previousEndingFrame: shot.index === 0 ? "first shot" : "not specified",
+        cameraLanguage: "not specified",
+      }
+    })),
+    globalStyle: parsed.globalStyle || {
+      visualStyle: brief.style || "Cinematic",
+      colorPalette: "Warm and moody",
+      pace: "moderate",
+      transition: "cut"
+    },
+    estimatedDuration: parsed.estimatedDuration || (parsed.shots || []).reduce((sum, s) => sum + (s.durationSec || 5), 0) || 60,
+    conceptSummary: parsed.conceptSummary || brief.concept || "Production plan"
+  };
+}
+
+// One request/parse attempt at an LLM plan. Throws on any failure (network,
+// non-JSON response, empty {...} span) — the caller decides whether to
+// retry, fall back, or give up.
+async function requestLLMPlan(systemPrompt, userPrompt, options = {}) {
+  const messages = [
+    { role: "system", content: systemPrompt },
+    {
+      role: "user",
+      content: options.retryHint ? `${userPrompt}\n\n${options.retryHint}` : userPrompt
+    }
+  ];
+
+  const response = await llmComplete(messages, {
+    maxTokens: 4096,
+    temperature: options.retryHint ? 0.2 : 0.4,
+    model: "deepseek/deepseek-v4-flash"
+  });
+
+  const jsonText = extractJsonObject(response);
+  if (!jsonText) throw new Error("LLM response did not contain a JSON object");
+  return JSON.parse(jsonText);
+}
+
 // ──────────────────────────────────────────────
 // MAIN: Create a ProductionPlan from a brief
 // ──────────────────────────────────────────────
@@ -469,96 +587,57 @@ export async function createProductionPlan(brief, userId) {
   const preset = PRODUCTION_TYPE_PRESETS[brief.type] || PRODUCTION_TYPE_PRESETS.music_video;
   const sectionStrategy = preset.sectionStrategy;
 
-  let plan;
-
   const hasLLM = process.env.OPENROUTER_KEY;
+  let plan = null;
+  let lastError = null;
+
   if (hasLLM) {
+    const systemPrompt = buildSystemPrompt(preset.label, sectionStrategy);
+    const userPrompt = buildUserPrompt(brief);
+
+    let parsed = null;
     try {
-      const systemPrompt = buildSystemPrompt(preset.label, sectionStrategy);
-      const userPrompt = buildUserPrompt(brief);
-
-      const messages = [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt }
-      ];
-
-      const response = await llmComplete(messages, {
-        maxTokens: 4096,
-        temperature: 0.4,
-        model: "deepseek/deepseek-v4-flash"
-      });
-
-      // Extract JSON from response — handle markdown code blocks
-      const cleaned = response
-        .replace(/```json\s*/g, "")
-        .replace(/```\s*/g, "")
-        .trim();
-
-      const parsed = JSON.parse(cleaned);
-
-      // Normalize: ensure all shots have id
-      plan = {
-        shots: (parsed.shots || []).map((shot, i) => ({
-          id: shot.id || `shot_${String(i).padStart(3, "0")}`,
-          index: shot.index ?? i,
-          title: shot.title || `Shot ${i + 1}`,
-          durationSec: shot.durationSec || 5,
-          section: shot.section || "verse",
-          narrativeRole: shot.narrativeRole || "",
-          sceneGoal: shot.sceneGoal || "",
-          subjects: shot.subjects || [],
-          environment: shot.environment || "",
-          spatialSetup: shot.spatialSetup || "",
-          lighting: shot.lighting || "",
-          mood: shot.mood || "",
-          camera: {
-            framing: shot.camera?.framing || "medium shot",
-            angle: shot.camera?.angle || "eye-level",
-            lens: shot.camera?.lens || "35mm",
-            movement: shot.camera?.movement || "static",
-            intensity: shot.camera?.intensity || "subtle"
-          },
-          imageStrategy: {
-            mode: shot.imageStrategy?.mode || "generate",
-            prompt: shot.imageStrategy?.prompt || "",
-            references: shot.imageStrategy?.references || []
-          },
-          videoStrategy: {
-            mode: shot.videoStrategy?.mode || "t2v",
-            prompt: shot.videoStrategy?.prompt || "",
-            modelRoute: shot.videoStrategy?.modelRoute || preset.defaultModelVideo,
-            keyframes: shot.videoStrategy?.keyframes || [],
-            windows: shot.videoStrategy?.windows || []
-          },
-          audio: shot.audio || null,
-          continuity: shot.continuity || [],
-          continuityTracker: shot.continuityTracker || {
-            characterIdentity: "not specified",
-            outfit: "not specified",
-            productIdentity: null,
-            environment: "not specified",
-            lighting: "not specified",
-            timeOfDay: "not specified",
-            screenDirection: "not specified",
-            previousEndingFrame: shot.index === 0 ? "first shot" : "not specified",
-            cameraLanguage: "not specified",
-          }
-        })),
-        globalStyle: parsed.globalStyle || {
-          visualStyle: brief.style || "Cinematic",
-          colorPalette: "Warm and moody",
-          pace: "moderate",
-          transition: "cut"
-        },
-        estimatedDuration: parsed.estimatedDuration || (parsed.shots || []).reduce((sum, s) => sum + (s.durationSec || 5), 0) || 60,
-        conceptSummary: parsed.conceptSummary || brief.concept || "Production plan"
-      };
+      parsed = await requestLLMPlan(systemPrompt, userPrompt);
     } catch (err) {
-      console.error("[DirectorPlanner] LLM plan failed, using heuristic:", err.message);
-      plan = buildHeuristicDirectorPlan(brief);
+      console.error("[DirectorPlanner] LLM plan failed, retrying once:", err.message);
+      lastError = err;
+      try {
+        parsed = await requestLLMPlan(systemPrompt, userPrompt, {
+          retryHint: "Your previous reply was not valid JSON. Reply with ONLY a single valid JSON object — no markdown fences, no commentary before or after it."
+        });
+      } catch (retryErr) {
+        console.error("[DirectorPlanner] LLM plan retry failed, using heuristic:", retryErr.message);
+        lastError = retryErr;
+      }
     }
-  } else {
-    plan = buildHeuristicDirectorPlan(brief);
+
+    if (parsed) {
+      try {
+        plan = normalizePlanFromLLM(parsed, preset, brief);
+      } catch (normErr) {
+        console.error("[DirectorPlanner] LLM plan had an unusable shape, using heuristic:", normErr.message);
+        lastError = normErr;
+        plan = null;
+      }
+    }
+  }
+
+  if (!isValidPlanShape(plan)) {
+    try {
+      plan = buildHeuristicDirectorPlan(brief);
+    } catch (heuristicErr) {
+      lastError = heuristicErr;
+      plan = null;
+    }
+  }
+
+  if (!isValidPlanShape(plan)) {
+    const errorId = randomUUID().slice(0, 8);
+    console.error(`[DirectorPlanner] [${errorId}] Could not produce a valid production plan for brief type "${brief?.type}":`, lastError);
+    throw new DirectorPlanError(
+      "We couldn't generate a production plan for this brief. Please try again in a moment, or simplify the request.",
+      errorId
+    );
   }
 
   // Run validators on all shots
