@@ -147,11 +147,43 @@ async function enqueueStep({ runId, userId, step, model, params }) {
   return generation;
 }
 
+// CRITICAL-2 FIX (a) — the reservation TTL half. reserveCredits' own
+// default (30 minutes, sized for a SINGLE generation) is far too short for
+// a multi-step run: each step is its own GenerationJob with its own 30-
+// minute hard timeout (src/lib/job-queue.js's DEFAULT_TIMEOUT_MS — not
+// imported here to avoid a needless cross-module coupling for one mirrored
+// number; if that default ever changes, this should move with it), so a
+// healthy N-step run can legitimately take close to N * 30 minutes end to
+// end. 40 minutes/step (a buffer above the hard per-step cap) with a
+// 60-minute floor for very short runs. This is a defense-in-depth sizing
+// choice, not the actual safety guarantee — sweepExpiredReservations
+// (src/lib/wallet.js) treats a "running" TemplateRun's reservation as
+// unresolvable regardless of how long ago expiresAt passed, which is what
+// actually prevents a double-grant if this estimate is ever too small.
+const MINUTES_PER_STEP_TIMEOUT_BUFFER = 40;
+const MIN_RESERVATION_TTL_MINUTES = 60;
+
+export function reservationTTLMinutes(stepCount) {
+  return Math.max(MIN_RESERVATION_TTL_MINUTES, stepCount * MINUTES_PER_STEP_TIMEOUT_BUFFER);
+}
+
 // startTemplateRun({ userId, slug, inputs }) -> { runId, totalCredits }.
 // Quotes the currently PUBLISHED version, reserves the FULL total ONCE, and
 // enqueues step 1. Insufficient credits throws reserveCredits' own standard
 // "Insufficient credits: ..." error unchanged (the route maps it to 402,
-// matching /api/generate/async).
+// matching /api/generate/async) — nothing has been created yet at that
+// point, so there is nothing to clean up.
+//
+// IMPORTANT-5 FIX — ordering. Everything from the reservation onward is
+// wrapped in one try/catch that releases-or-refunds the SAME reservation on
+// ANY failure (a missing model, a DB hiccup creating the run/generation/
+// job, anything) — a throw here used to strand the reservation forever
+// with nothing tracking it. The TemplateRun row is also now created BEFORE
+// step 1's job is enqueued (previously the reverse): a job that reaches a
+// terminal state before the run row exists would make advanceTemplateRun's
+// very first read return null and silently no-op forever — the run row
+// must exist first so there is always something for advanceTemplateRun to
+// find and act on, however early the first step's job resolves.
 export async function startTemplateRun({ userId, slug, inputs = {} }) {
   const template = await prisma.template.findUnique({ where: { slug } });
   if (!template) throw new Error("Template not found");
@@ -178,42 +210,61 @@ export async function startTemplateRun({ userId, slug, inputs = {} }) {
   const runId = randomUUID();
 
   // Reserve the full total ONCE, up front — never per step. Throws on a
-  // shortfall before anything else is created.
-  await reserveCredits(userId, quote.totalCredits, runId);
+  // shortfall; nothing has been created yet, so nothing to release.
+  await reserveCredits(userId, quote.totalCredits, runId, reservationTTLMinutes(graph.steps.length));
 
-  const model = await prisma.modelPricing.findUnique({ where: { modelId: firstStep.modelId } });
-  if (!model) {
-    // Structurally impossible if canPublish (Task 2) gated this version —
-    // defensive only. The reservation already happened; release it rather
-    // than stranding credits behind a run that will never start.
+  try {
+    const model = await prisma.modelPricing.findUnique({ where: { modelId: firstStep.modelId } });
+    if (!model) {
+      // Structurally impossible if canPublish (Task 2) gated this version
+      // — defensive only.
+      throw new Error(`Model "${firstStep.modelId}" is no longer available`);
+    }
+
+    const stepState = {};
+    for (const s of graph.steps) {
+      stepState[s.id] = { status: "pending", generationId: null, outputUrl: null, error: null };
+    }
+    // Create the run row FIRST — see the IMPORTANT-5 note above. `inputs`
+    // is persisted here (Important-3 fix) so advanceTemplateRun can later
+    // enqueue every subsequent step with the SAME caller overrides that
+    // were actually quoted and reserved for, not the graph's bare defaults.
+    await prisma.templateRun.create({
+      data: {
+        id: runId,
+        userId,
+        templateId: template.id,
+        versionId: version.id,
+        status: "running",
+        stepState,
+        inputs,
+        totalCredits: quote.totalCredits,
+      },
+    });
+
+    const params = resolveStepParams(firstStep, {}, inputs);
+    const generation = await enqueueStep({ runId, userId, step: firstStep, model, params });
+
+    await prisma.templateRun.update({
+      where: { id: runId },
+      data: {
+        stepState: {
+          ...stepState,
+          [firstStepId]: { status: "running", generationId: generation.id, outputUrl: null, error: null },
+        },
+      },
+    });
+
+    return { runId, totalCredits: quote.totalCredits };
+  } catch (err) {
     await releaseOrRefund({ userId, id: runId, creditsUsed: quote.totalCredits }, { payload: {} });
-    throw new Error(`Model "${firstStep.modelId}" is no longer available`);
+    // Mark the run failed too, if it was already created above, so nothing
+    // ever reads it back as a live, in-progress run with no active step.
+    await prisma.templateRun
+      .updateMany({ where: { id: runId, status: "running" }, data: { status: "failed" } })
+      .catch(() => {});
+    throw err;
   }
-
-  const params = resolveStepParams(firstStep, {}, inputs);
-  const generation = await enqueueStep({ runId, userId, step: firstStep, model, params });
-
-  const stepState = {};
-  for (const s of graph.steps) {
-    stepState[s.id] =
-      s.id === firstStepId
-        ? { status: "running", generationId: generation.id, outputUrl: null, error: null }
-        : { status: "pending", generationId: null, outputUrl: null, error: null };
-  }
-
-  await prisma.templateRun.create({
-    data: {
-      id: runId,
-      userId,
-      templateId: template.id,
-      versionId: version.id,
-      status: "running",
-      stepState,
-      totalCredits: quote.totalCredits,
-    },
-  });
-
-  return { runId, totalCredits: quote.totalCredits };
 }
 
 // Never throws — mirrors job-runner.js's safeSettle (rule 3: a credit-side
@@ -306,7 +357,13 @@ export async function advanceTemplateRun(runId) {
       return;
     }
 
-    const params = resolveStepParams(nextStep, stepOutputs, {});
+    // IMPORTANT-3 FIX: run.inputs (persisted at startTemplateRun, not {})
+    // — a caller-supplied per-step override (e.g. a longer duration) was
+    // priced into the ORIGINAL quote/reservation but, before this fix, a
+    // later step always re-resolved against the graph's bare defaults
+    // instead, so what was quoted and what actually ran (and its true
+    // provider cost) silently diverged.
+    const params = resolveStepParams(nextStep, stepOutputs, run.inputs || {});
     const nextGeneration = await enqueueStep({ runId, userId: run.userId, step: nextStep, model, params });
 
     stepState[nextStepId] = { status: "running", generationId: nextGeneration.id, outputUrl: null, error: null };

@@ -4,7 +4,7 @@ vi.mock("@/lib/prisma", () => ({
   default: {
     template: { findUnique: vi.fn() },
     templateVersion: { findFirst: vi.fn(), findUnique: vi.fn() },
-    templateRun: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    templateRun: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     modelPricing: { findUnique: vi.fn() },
     generation: { create: vi.fn(), findUnique: vi.fn() },
   },
@@ -42,7 +42,7 @@ import { reserveCredits, settleReservation } from "@/lib/wallet";
 import { enqueueJob } from "@/lib/job-queue";
 import { releaseOrRefund } from "@/lib/job-runner";
 import { quoteTemplate } from "@/lib/template-quote";
-import { startTemplateRun, advanceTemplateRun } from "@/lib/template-runner";
+import { startTemplateRun, advanceTemplateRun, reservationTTLMinutes } from "@/lib/template-runner";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -68,8 +68,19 @@ const modelRow = (modelId) => ({
   providerModelId: modelId,
 });
 
+describe("reservationTTLMinutes — CRITICAL-2(a) sizing", () => {
+  it("is at least 40 minutes per step (comfortably above the 30-minute per-job hard timeout)", () => {
+    expect(reservationTTLMinutes(1)).toBeGreaterThanOrEqual(40);
+    expect(reservationTTLMinutes(4)).toBeGreaterThanOrEqual(4 * 40);
+  });
+
+  it("floors at 60 minutes even for a single-step run", () => {
+    expect(reservationTTLMinutes(1)).toBeGreaterThanOrEqual(60);
+  });
+});
+
 describe("startTemplateRun", () => {
-  it("reserves the full quoted total exactly once — never per step — and enqueues only step 1", async () => {
+  it("reserves the full quoted total exactly once — never per step — sized by reservationTTLMinutes, not the 30-minute default", async () => {
     prisma.template.findUnique.mockResolvedValue({ id: "tpl1" });
     prisma.templateVersion.findFirst.mockResolvedValue({ id: "v1", version: 1, graph: twoStepGraph() });
     quoteTemplate.mockResolvedValue({
@@ -86,11 +97,12 @@ describe("startTemplateRun", () => {
     prisma.generation.create.mockResolvedValue({ id: "gen1" });
     enqueueJob.mockResolvedValue({ id: "job1" });
     prisma.templateRun.create.mockResolvedValue({});
+    prisma.templateRun.update.mockResolvedValue({});
 
     const result = await startTemplateRun({ userId: "u1", slug: "my-tpl", inputs: {} });
 
     expect(reserveCredits).toHaveBeenCalledTimes(1);
-    expect(reserveCredits).toHaveBeenCalledWith("u1", 13, expect.any(String));
+    expect(reserveCredits).toHaveBeenCalledWith("u1", 13, expect.any(String), reservationTTLMinutes(2));
     expect(result.totalCredits).toBe(13);
     expect(typeof result.runId).toBe("string");
 
@@ -104,8 +116,113 @@ describe("startTemplateRun", () => {
     const runCreateArgs = prisma.templateRun.create.mock.calls[0][0].data;
     expect(runCreateArgs.totalCredits).toBe(13);
     expect(runCreateArgs.status).toBe("running");
-    expect(runCreateArgs.stepState.step1.status).toBe("running");
+    expect(runCreateArgs.inputs).toEqual({});
+    // Important-5: the run row is created BEFORE step 1 is enqueued, so at
+    // CREATE time nothing has a real generationId yet — every step
+    // (including the first) starts "pending"; the first step's own
+    // "running" transition (with its real generationId) happens via a
+    // SUBSEQUENT update, once the generation/job actually exist.
+    expect(runCreateArgs.stepState.step1.status).toBe("pending");
+    expect(runCreateArgs.stepState.step1.generationId).toBeNull();
     expect(runCreateArgs.stepState.step2.status).toBe("pending");
+
+    // Important-5 ordering: templateRun.create must happen BEFORE enqueueJob.
+    expect(prisma.templateRun.create.mock.invocationCallOrder[0]).toBeLessThan(
+      enqueueJob.mock.invocationCallOrder[0]
+    );
+
+    // The follow-up update flips step1 to "running" with the real generationId.
+    const updateArgs = prisma.templateRun.update.mock.calls[0][0];
+    expect(updateArgs.data.stepState.step1).toEqual({
+      status: "running", generationId: "gen1", outputUrl: null, error: null,
+    });
+  });
+
+  it("persists the caller's inputs on the run row (Important-3) so later steps can reuse them", async () => {
+    prisma.template.findUnique.mockResolvedValue({ id: "tpl1" });
+    prisma.templateVersion.findFirst.mockResolvedValue({ id: "v1", version: 1, graph: twoStepGraph() });
+    quoteTemplate.mockResolvedValue({
+      valid: true,
+      steps: [{ stepId: "step1", modelId: "model-a", credits: 5 }, { stepId: "step2", modelId: "model-b", credits: 8 }],
+      totalCredits: 13,
+      errors: [],
+    });
+    reserveCredits.mockResolvedValue({});
+    prisma.modelPricing.findUnique.mockResolvedValue(modelRow("model-a"));
+    prisma.generation.create.mockResolvedValue({ id: "gen1" });
+    enqueueJob.mockResolvedValue({ id: "job1" });
+    prisma.templateRun.create.mockResolvedValue({});
+    prisma.templateRun.update.mockResolvedValue({});
+
+    const callerInputs = { step2: { duration: 10 } };
+    await startTemplateRun({ userId: "u1", slug: "my-tpl", inputs: callerInputs });
+
+    const runCreateArgs = prisma.templateRun.create.mock.calls[0][0].data;
+    expect(runCreateArgs.inputs).toEqual(callerInputs);
+  });
+
+  it("Important-5: releases the reservation and marks the run failed when the first step's model has vanished after reserving", async () => {
+    prisma.template.findUnique.mockResolvedValue({ id: "tpl1" });
+    prisma.templateVersion.findFirst.mockResolvedValue({ id: "v1", version: 1, graph: twoStepGraph() });
+    quoteTemplate.mockResolvedValue({ valid: true, steps: [], totalCredits: 13, errors: [] });
+    reserveCredits.mockResolvedValue({});
+    prisma.modelPricing.findUnique.mockResolvedValue(null); // vanished between publish and this run
+    releaseOrRefund.mockResolvedValue(undefined);
+    prisma.templateRun.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(startTemplateRun({ userId: "u1", slug: "my-tpl", inputs: {} })).rejects.toThrow(
+      /no longer available/
+    );
+
+    expect(releaseOrRefund).toHaveBeenCalledTimes(1);
+    expect(releaseOrRefund).toHaveBeenCalledWith(
+      { userId: "u1", id: expect.any(String), creditsUsed: 13 },
+      { payload: {} }
+    );
+    expect(prisma.templateRun.create).not.toHaveBeenCalled();
+  });
+
+  it("Important-5: releases the reservation when creating the run row itself throws", async () => {
+    prisma.template.findUnique.mockResolvedValue({ id: "tpl1" });
+    prisma.templateVersion.findFirst.mockResolvedValue({ id: "v1", version: 1, graph: twoStepGraph() });
+    quoteTemplate.mockResolvedValue({ valid: true, steps: [], totalCredits: 13, errors: [] });
+    reserveCredits.mockResolvedValue({});
+    prisma.modelPricing.findUnique.mockResolvedValue(modelRow("model-a"));
+    prisma.templateRun.create.mockRejectedValue(new Error("DB write failed"));
+    releaseOrRefund.mockResolvedValue(undefined);
+    prisma.templateRun.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(startTemplateRun({ userId: "u1", slug: "my-tpl", inputs: {} })).rejects.toThrow(
+      "DB write failed"
+    );
+
+    expect(releaseOrRefund).toHaveBeenCalledTimes(1);
+    expect(enqueueJob).not.toHaveBeenCalled(); // never got that far
+  });
+
+  it("Important-5: releases the reservation AND marks an already-created run row failed when enqueueing step 1 throws", async () => {
+    prisma.template.findUnique.mockResolvedValue({ id: "tpl1" });
+    prisma.templateVersion.findFirst.mockResolvedValue({ id: "v1", version: 1, graph: twoStepGraph() });
+    quoteTemplate.mockResolvedValue({ valid: true, steps: [], totalCredits: 13, errors: [] });
+    reserveCredits.mockResolvedValue({});
+    prisma.modelPricing.findUnique.mockResolvedValue(modelRow("model-a"));
+    prisma.generation.create.mockResolvedValue({ id: "gen1" });
+    prisma.templateRun.create.mockResolvedValue({});
+    enqueueJob.mockRejectedValue(new Error("provider enqueue failed"));
+    releaseOrRefund.mockResolvedValue(undefined);
+    prisma.templateRun.updateMany.mockResolvedValue({ count: 1 });
+
+    await expect(startTemplateRun({ userId: "u1", slug: "my-tpl", inputs: {} })).rejects.toThrow(
+      "provider enqueue failed"
+    );
+
+    expect(releaseOrRefund).toHaveBeenCalledTimes(1);
+    // The run row (already created before the enqueue) is marked failed —
+    // never left reading "running" with no active step.
+    expect(prisma.templateRun.updateMany).toHaveBeenCalledWith({
+      where: { id: expect.any(String), status: "running" },
+      data: { status: "failed" },
+    });
   });
 
   it("propagates reserveCredits' insufficient-credits error and creates no run/generation/job", async () => {
@@ -201,6 +318,47 @@ describe("advanceTemplateRun — mid-chain success", () => {
       outputUrl: null,
       error: null,
     });
+  });
+
+  // IMPORTANT-3 fix (found in review, proven against the real test DB): a
+  // caller-supplied per-step override (e.g. a longer duration) was priced
+  // into the ORIGINAL quote/reservation via startTemplateRun's own `inputs`
+  // argument, but advanceTemplateRun used to resolve every LATER step
+  // against {} (the graph's bare defaults) instead of that same `inputs` —
+  // so what was quoted/charged and what actually executed silently
+  // diverged (reviewer's proof: inputs.step2.duration=10 quoted+charged
+  // 258, but step 2 ran with the graph's default duration=5, worth 133).
+  // run.inputs (persisted at start) must be exactly what a later step is
+  // enqueued with.
+  it("executes a later step with the SAME caller-supplied override that was quoted and reserved for — not the graph's bare default", async () => {
+    const graph = twoStepGraph(); // step2's own graph default is duration: 5
+    prisma.templateRun.findUnique.mockResolvedValue({
+      id: "run1",
+      userId: "u1",
+      templateId: "tpl1",
+      versionId: "v1",
+      status: "running",
+      totalCredits: 258,
+      inputs: { step2: { duration: 10 } }, // persisted at startTemplateRun
+      stepState: {
+        step1: { status: "running", generationId: "gen1", outputUrl: null, error: null },
+        step2: { status: "pending", generationId: null, outputUrl: null, error: null },
+      },
+    });
+    prisma.templateVersion.findUnique.mockResolvedValue({ id: "v1", graph });
+    prisma.generation.findUnique.mockResolvedValue({ id: "gen1", status: "completed", outputUrl: "https://out/1.png" });
+    prisma.modelPricing.findUnique.mockResolvedValue(modelRow("model-b"));
+    prisma.generation.create.mockResolvedValue({ id: "gen2" });
+    enqueueJob.mockResolvedValue({ id: "job2" });
+    prisma.templateRun.update.mockResolvedValue({});
+
+    await advanceTemplateRun("run1");
+
+    const genArgs = prisma.generation.create.mock.calls[0][0].data;
+    expect(genArgs.params.duration).toBe(10); // the OVERRIDE, never the graph's bare default (5)
+
+    const enqueueArgs = enqueueJob.mock.calls[0][0];
+    expect(enqueueArgs.payload.duration).toBe(10);
   });
 });
 

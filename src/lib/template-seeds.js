@@ -41,7 +41,20 @@
 
 const linear = (id, dependsOnPrev) => (dependsOnPrev ? [dependsOnPrev] : []);
 
-function template({ slug, name, description, category, safetyNotes, scopeNote, steps }) {
+// `blockedReason` (optional): set on a template whose graph technically
+// PASSES canPublish (structurally valid, real priced models, quotes fine
+// against its own placeholder sample input) but that cannot actually
+// succeed for a real user yet — e.g. its first step fundamentally needs a
+// real user-supplied photo (a placeholder sample URL like
+// "https://example.com/..." stands in for it in the graph) and Task 5's
+// library UI has no per-step input-editing form (ships the graph's own
+// baked defaults only — see TemplateRunPanel.js). scripts/seed-templates.mjs
+// checks this and refuses to auto-publish that one template regardless of
+// what canPublish says, instead of silently shipping a template that
+// always fails for every real user. Not persisted to the DB (script-only
+// gate) — the reason is still recorded in graph.blockedReason for anyone
+// reading the seeded row directly.
+function template({ slug, name, description, category, safetyNotes, scopeNote, blockedReason, steps }) {
   return {
     slug,
     name,
@@ -52,15 +65,17 @@ function template({ slug, name, description, category, safetyNotes, scopeNote, s
     oneTimePrice: null,
     stripePriceId: null,
     thumbnailUrl: null,
-    isPublished: false, // flipped true by the seed script only after canPublish passes
+    isPublished: false, // flipped true by the seed script only after canPublish passes AND publishable
     isFeatured: false,
     usageLimit: "unlimited",
+    publishable: !blockedReason,
     config: { workflow: true, stepCount: steps.length },
     graph: {
       steps,
       sampleInputs: {},
       ...(safetyNotes ? { safetyNotes } : {}),
       ...(scopeNote ? { scopeNote } : {}),
+      ...(blockedReason ? { blockedReason } : {}),
     },
   };
 }
@@ -418,6 +433,19 @@ export const TEMPLATE_SEEDS = [
     safetyNotes: [
       "Every output must be clearly labeled virtual staging — never presented as a photograph of an actually furnished property. Prompts explicitly instruct the model not to alter the room's fixed structure or architecture.",
     ],
+    // MINOR-8 (found in review): step1 fundamentally needs a REAL photo of
+    // the user's own empty room to do anything meaningful — the
+    // images_list value below is a placeholder sample URL, not a real
+    // image, and Task 5's library UI has no per-step input-editing form
+    // (TemplateRunPanel.js runs the graph's own baked defaults as-is). A
+    // real user clicking "Use template" today would virtually stage a
+    // nonexistent placeholder image, not their own room — i.e. this
+    // template cannot succeed for a real user yet. Left unpublished (draft)
+    // until either a per-step input-editing UI ships or this graph is
+    // reworked to not require a user photo — never auto-published just
+    // because canPublish's structural/pricing gate happens to pass.
+    blockedReason:
+      "step1 (image-to-image virtual staging) requires a real user-supplied room photo; Task 5's library UI has no per-step input-editing form yet, so every real run would stage the placeholder sample URL instead of the user's own room.",
     steps: [
       {
         id: "step1",

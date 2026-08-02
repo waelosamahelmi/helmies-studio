@@ -156,6 +156,124 @@ describe("sweepExpiredReservations — end-to-end against a real database", () =
     expect(reservation.status).toBe("active");
   });
 
+  // CRITICAL-2 fix (found in review, proven against the real test DB): a
+  // TemplateRun's reservation is keyed by the run's OWN id (Phase 6 —
+  // src/lib/template-runner.js), which matches no Generation row at all.
+  // Before this fix, the sweep's ONLY lookup was `prisma.generation.findUnique`
+  // — that always returned null for a runId, so a template run's reservation
+  // fell straight into the "generation missing -> release" branch the
+  // instant its TTL lapsed, even while the run was still genuinely running.
+  // Proof this used to mint credits: release the reservation mid-run, then
+  // let the run's own step fail for real — releaseOrRefund finds nothing
+  // active to release (the sweep already released it) and falls back to
+  // refundCredits, crediting the SAME amount a second time.
+  describe("a TemplateRun-keyed reservation (Phase 6)", () => {
+    async function makeRunningTemplateRun(userId, amount) {
+      return prisma.templateRun.create({
+        data: {
+          userId,
+          templateId: "tpl-fixture",
+          versionId: "ver-fixture",
+          status: "running",
+          stepState: { step1: { status: "running", generationId: null, outputUrl: null, error: null } },
+          totalCredits: amount,
+        },
+      });
+    }
+
+    it("does NOT release a still-running template run's reservation, even once expiresAt has passed", async () => {
+      const { reserveCredits, sweepExpiredReservations } = await import("@/lib/wallet");
+      const user = await createUserWithWallet(1000);
+      const run = await makeRunningTemplateRun(user.id, 141);
+      // Backdated expiresAt — simulates the TTL sizing being wrong (or just
+      // a very slow run) without waiting for real time to pass.
+      await reserveCredits(user.id, 141, run.id, -1);
+
+      const result = await sweepExpiredReservations();
+      expect(result).toEqual({ released: 0, settled: 0, skipped: 1 });
+
+      const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
+      expect(wallet.available).toBe(1000 - 141);
+      expect(wallet.reserved).toBe(141);
+
+      const reservation = await prisma.creditReservation.findFirst({ where: { generationId: run.id } });
+      expect(reservation.status).toBe("active");
+    });
+
+    it("never mints credits: a swept-but-still-running run whose step later fails settles via release-or-refund exactly once, not twice", async () => {
+      const { reserveCredits, sweepExpiredReservations } = await import("@/lib/wallet");
+      const { releaseOrRefund } = await import("@/lib/job-runner");
+      const user = await createUserWithWallet(1000);
+      const run = await makeRunningTemplateRun(user.id, 141);
+      await reserveCredits(user.id, 141, run.id, -1);
+
+      // The sweep must skip it (this is the fix under test)...
+      const sweepResult = await sweepExpiredReservations();
+      expect(sweepResult).toEqual({ released: 0, settled: 0, skipped: 1 });
+
+      // ...so when the run's own step genuinely fails later, its ONE
+      // release-or-refund call is the only credit movement that ever
+      // happens — the wallet ends up exactly back at the opening balance,
+      // never higher.
+      await releaseOrRefund({ userId: user.id, id: run.id, creditsUsed: 141 }, { payload: {} });
+
+      const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
+      expect(wallet.available).toBe(1000); // exactly the opening balance — no credits minted
+      expect(wallet.reserved).toBe(0);
+
+      const refundRows = await prisma.creditLedger.findMany({
+        where: { walletId: wallet.id, type: { in: ["reservation_release", "refund"] } },
+      });
+      expect(refundRows).toHaveLength(1); // exactly one movement, not two
+    });
+
+    it("settles a completed template run's reservation at the run's totalCredits (defensive path)", async () => {
+      const { reserveCredits, sweepExpiredReservations } = await import("@/lib/wallet");
+      const user = await createUserWithWallet(1000);
+      const run = await prisma.templateRun.create({
+        data: {
+          userId: user.id,
+          templateId: "tpl-fixture",
+          versionId: "ver-fixture",
+          status: "completed",
+          stepState: {},
+          totalCredits: 50,
+        },
+      });
+      await reserveCredits(user.id, 50, run.id, -1);
+
+      const result = await sweepExpiredReservations();
+      expect(result).toEqual({ released: 0, settled: 1, skipped: 0 });
+
+      const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
+      expect(wallet.available).toBe(950); // settled at the full 50 (no unused-reservation release)
+      expect(wallet.reserved).toBe(0);
+    });
+
+    it("releases a failed template run's reservation", async () => {
+      const { reserveCredits, sweepExpiredReservations } = await import("@/lib/wallet");
+      const user = await createUserWithWallet(1000);
+      const run = await prisma.templateRun.create({
+        data: {
+          userId: user.id,
+          templateId: "tpl-fixture",
+          versionId: "ver-fixture",
+          status: "failed",
+          stepState: {},
+          totalCredits: 30,
+        },
+      });
+      await reserveCredits(user.id, 30, run.id, -1);
+
+      const result = await sweepExpiredReservations();
+      expect(result).toEqual({ released: 1, settled: 0, skipped: 0 });
+
+      const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
+      expect(wallet.available).toBe(1000);
+      expect(wallet.reserved).toBe(0);
+    });
+  });
+
   it("sweeps multiple expired reservations across different users in one pass", async () => {
     const { reserveCredits, sweepExpiredReservations } = await import("@/lib/wallet");
     const userA = await createUserWithWallet(100);

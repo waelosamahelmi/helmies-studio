@@ -82,6 +82,24 @@ describe("TEMPLATE_SEEDS — structure", () => {
     }
   });
 
+  // MINOR-8 (found in review): real-estate-listing-pack's first step
+  // fundamentally needs a REAL user-supplied room photo (the graph's
+  // images_list carries a placeholder sample URL, and Task 5's library UI
+  // has no per-step input-editing form) — it technically passes canPublish
+  // (structurally valid, real priced models, quotes fine against the
+  // placeholder) but would always fail for a real user. It must be marked
+  // non-publishable in the seed itself so scripts/seed-templates.mjs never
+  // auto-publishes it just because the gate happened to pass, and every
+  // OTHER template must NOT be accidentally caught by the same opt-out.
+  it("real-estate-listing-pack is marked non-publishable with a recorded reason; every other template is left publishable", () => {
+    const bySlug = Object.fromEntries(TEMPLATE_SEEDS.map((t) => [t.slug, t]));
+    expect(bySlug["real-estate-listing-pack"].publishable).toBe(false);
+    expect(bySlug["real-estate-listing-pack"].graph.blockedReason).toMatch(/user-supplied|user photo|user's own room/i);
+
+    const blocked = TEMPLATE_SEEDS.filter((t) => t.publishable === false).map((t) => t.slug);
+    expect(blocked).toEqual(["real-estate-listing-pack"]);
+  });
+
   it("the restaurant, influencer, and real-estate templates carry the safety notes the contract requires", () => {
     const bySlug = Object.fromEntries(TEMPLATE_SEEDS.map((t) => [t.slug, t]));
     expect(bySlug["restaurant-content-pack"].graph.safetyNotes.join(" ")).toMatch(/allergen/i);

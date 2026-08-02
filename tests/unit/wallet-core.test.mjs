@@ -6,6 +6,14 @@ vi.mock("@/lib/prisma", () => {
     creditLedger: { create: vi.fn() },
     creditReservation: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     generation: { findUnique: vi.fn() },
+    // Phase 6: sweepExpiredReservations checks TemplateRun first (a
+    // template run's reservation is keyed by the run's own id, not a
+    // Generation id — see wallet.js's CRITICAL-2 fix comment). Every
+    // existing test here is about a plain Generation-keyed reservation, so
+    // this resolves null by default, falling through to the generation
+    // lookup unchanged — tests/integration/reservation-expiry.int.test.mjs
+    // covers the TemplateRun branch itself against the real DB.
+    templateRun: { findUnique: vi.fn().mockResolvedValue(null) },
     user: { findUnique: vi.fn(), update: vi.fn() },
   };
   const prisma = { ...models, $transaction: vi.fn(async (fn) => fn(prisma)) };

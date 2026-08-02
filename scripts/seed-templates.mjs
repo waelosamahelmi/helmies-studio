@@ -67,6 +67,19 @@ async function main() {
 
     const version = await upsertVersion(template, tpl);
 
+    // MINOR-8 (found in review): `publishable === false` is a DELIBERATE,
+    // seed-authored opt-out — a template whose graph passes canPublish's
+    // structural/pricing gate but still cannot succeed for a real user yet
+    // (e.g. needs a real user photo Task 5's UI has no form to collect).
+    // Checked BEFORE canPublish so it always wins regardless of what the
+    // gate says, and is never silently auto-published just because the
+    // gate happened to pass.
+    if (tpl.publishable === false) {
+      results.blocked.push({ slug: tpl.slug, reasons: [tpl.graph?.blockedReason || "marked non-publishable in the seed"] });
+      console.warn(`  ⏸ ${tpl.slug} — left as draft (seed-authored opt-out): ${tpl.graph?.blockedReason || "no reason recorded"}`);
+      continue;
+    }
+
     const gate = await canPublish(template.id, version.version);
     if (gate.ok) {
       if (version.status !== "published" || !template.isPublished) {

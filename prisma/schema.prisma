@@ -808,6 +808,14 @@ model TemplateRun {
   versionId    String
   status       String   @default("running") // running|completed|failed|cancelled
   stepState    Json // { [stepId]: { status, generationId, outputUrl, error } }
+  // The caller's own per-step input overrides from startTemplateRun,
+  // exactly as quoted (quoteTemplate(graph, inputs)) — persisted so
+  // advanceTemplateRun enqueues every later step with the SAME inputs that
+  // were actually quoted and reserved for. Fixed in review: an earlier
+  // version resolved later steps against {} (the graph's own bare
+  // defaults), so a caller-supplied override (e.g. a longer duration) was
+  // priced in but silently never executed, over/under-charging the run.
+  inputs       Json     @default("{}")
   totalCredits Int
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
