@@ -152,6 +152,26 @@ export function getAgentList() {
   return Object.entries(AGENTS).map(([id, a]) => ({ id, name: a.name, description: a.description }));
 }
 
+// Tool agents actually execute (call a generation API or write code); every
+// other AGENTS key is a persona — a system-prompt role that plans/advises
+// and is executed as a single LLM completion (see executePersonaStep).
+const TOOL_AGENT_KEYS = new Set(["image", "video", "audio", "website", "marketing", "coding"]);
+
+const slugify = (s) => s.trim().toLowerCase().replace(/[\s-]+/g, "_");
+
+// The orchestrator LLM sometimes emits a registry key ("creative_director"),
+// sometimes the human-readable display name ("Creative Director"), and
+// occasionally hyphenated or oddly-cased variants. Normalize whatever comes
+// in to the canonical AGENTS key so dispatch never depends on the model's
+// exact casing/spacing choice.
+export function normalizeAgentKey(agent) {
+  if (!agent || typeof agent !== "string") return "";
+  const slug = slugify(agent);
+  if (AGENTS[slug]) return slug;
+  const byName = Object.entries(AGENTS).find(([, def]) => slugify(def.name) === slug);
+  return byName ? byName[0] : slug;
+}
+
 // ── Plan a task with token-by-token streaming ──
 export async function planTaskStream(userMessage, context = {}) {
   const hasLLM = process.env.OPENROUTER_KEY;
@@ -298,7 +318,9 @@ export async function executeStep(step, previousOutputs = []) {
     }
   }
 
-  switch (agent) {
+  const normalized = normalizeAgentKey(agent);
+
+  switch (normalized) {
     case "image":
       return await executeImageStep(resolvedParams);
     case "video":
@@ -311,9 +333,36 @@ export async function executeStep(step, previousOutputs = []) {
       return await executeMarketingStep(resolvedParams);
     case "coding":
       return await executeCodingStep(resolvedParams);
-    default:
-      throw new Error(`Unknown agent: ${agent}`);
+    default: {
+      if (AGENTS[normalized] && !TOOL_AGENT_KEYS.has(normalized)) {
+        // A registered persona agent (creative_director, image_director, ...).
+        // These are system-prompt roles, not tool runners — run them as a
+        // single LLM completion using their own systemPrompt.
+        return await executePersonaStep(normalized, resolvedParams, step.task);
+      }
+      // The orchestrator LLM invented an agent name that matches nothing in
+      // the registry. A plan must never hard-crash over this — log it and
+      // fall back to a generic LLM step so the run can still complete.
+      console.warn(`[agents] Unknown agent "${agent}" (normalized: "${normalized}") — falling back to a generic LLM step.`);
+      return await executePersonaStep(null, resolvedParams, step.task);
+    }
   }
+}
+
+const GENERIC_PERSONA_PROMPT = "You are a Helmies Studio specialist agent. Complete the requested step directly, concisely, and usefully, using any context provided.";
+
+// Execute a persona step as an LLM completion using the persona's own
+// systemPrompt (or a generic fallback for an unrecognized agent name),
+// returning its text. Reuses the existing llmComplete helper — no new
+// provider path.
+async function executePersonaStep(agentKey, params, task) {
+  const systemPrompt = (agentKey && AGENTS[agentKey]?.systemPrompt) || GENERIC_PERSONA_PROMPT;
+  const userContent = params?.prompt || params?.task || task || "Proceed with your role for this step.";
+  const messages = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: typeof userContent === "string" ? userContent : JSON.stringify(userContent) },
+  ];
+  return await llmComplete(messages, { maxTokens: 2000, temperature: 0.5 });
 }
 
 async function executeImageStep(params) {
@@ -363,12 +412,17 @@ const FALLBACKS = {
   ],
 };
 
+// Steps whose output is a media URL worth logging as a Generation record
+// (website/coding return code/text, not a media URL).
+const MEDIA_AGENT_KEYS = new Set(["image", "video", "audio", "marketing"]);
+const isMediaAgent = (agent) => MEDIA_AGENT_KEYS.has(normalizeAgentKey(agent));
+
 // ── Retry with fallback model + provider ──
 async function executeStepWithRetry(step, previousOutputs, attempt = 0) {
   try {
     return await executeStep(step, previousOutputs);
   } catch (error) {
-    const fallbacks = FALLBACKS[step.agent] || [];
+    const fallbacks = FALLBACKS[normalizeAgentKey(step.agent)] || [];
     if (attempt >= fallbacks.length || !fallbacks[attempt]) throw error;
 
     const fb = fallbacks[attempt];
@@ -463,7 +517,7 @@ export async function executeAgentRunStream(userId, userMessage, context = {}) {
             const stepResult = { step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output, retried: false };
             stepResults.push(stepResult);
 
-            if (step.agent === "image" || step.agent === "video" || step.agent === "audio" || step.agent === "marketing") {
+            if (isMediaAgent(step.agent)) {
               const proxiedOutput = typeof output === "string" ? `/api/media/proxy?url=${encodeURIComponent(output)}` : null;
               await prisma.generation.create({
                 data: { userId, tool: step.agent, model: step.params?.model || step.agent, prompt: step.params?.prompt || step.task || "", params: step.params, outputUrl: proxiedOutput, status: "completed", creditsUsed: plan.estimate.breakdown[i]?.credits || 0 },
@@ -535,7 +589,7 @@ export async function executeAgentRun(userId, userMessage, context = {}) {
         outputs.push(output);
         stepResults.push({ step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output, retried: false });
 
-        if (step.agent === "image" || step.agent === "video" || step.agent === "audio" || step.agent === "marketing") {
+        if (isMediaAgent(step.agent)) {
           const proxiedOutput = typeof output === "string" ? `/api/media/proxy?url=${encodeURIComponent(output)}` : null;
           await prisma.generation.create({
             data: {
