@@ -1,0 +1,17 @@
+# Source and scripts must keep LF in the working tree.
+# A shebang line followed by CRLF breaks vitest/esbuild's transform on Windows
+# checkouts (plain `node` tolerates it), which made tests/integration/
+# legacy-adoption.int.test.mjs fail locally while CI (Linux, LF) stayed green.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.mp4 binary
+*.webm binary
+*.mp3 binary
+*.wav binary
+*.ico binary
+*.woff binary
+*.woff2 binary
