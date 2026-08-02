@@ -143,6 +143,7 @@ model GenerationJob {
   @@index([status, nextRunAt])
   @@index([status, leaseUntil])
   @@index([timeoutAt])
+  @@index([providerRequestId])
   @@schema("public")
 }
 

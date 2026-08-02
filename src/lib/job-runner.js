@@ -2,10 +2,10 @@
 //
 // Executes ONE claimed GenerationJob end-to-end: submit to the provider (or
 // resume a prior submission), poll for completion (heartbeating the lease
-// throughout), ingest the output via the SAME downloader the completion
-// webhook uses (src/lib/media-download.js's downloadAllMedia — no second
-// downloader is written here), and drive the Generation row to a terminal
-// state.
+// throughout), ingest the output via the SAME unified ingest path the
+// completion webhook uses (src/lib/storage/ingest.js's ingestFromUrl,
+// Phase 4B Task 4 — no second downloader is written here), and drive the
+// Generation row to a terminal state.
 //
 // Imports below are RELATIVE with explicit ".js" extensions, not the
 // "@/lib/..." alias used elsewhere in this app (e.g. src/lib/director-executor.js).
@@ -15,13 +15,14 @@
 // all — not even a missing-extension problem, an entirely unresolvable bare
 // specifier. Relative-with-extension resolves identically in both contexts,
 // so this file (and its worker-reachable dependencies: job-queue.js,
-// wallet.js, providers.js, media-download.js, prisma.js) needed no separate
-// "app version" vs "worker version". Vitest's alias-based `vi.mock("@/lib/x", ...)`
-// still intercepts these relative imports in unit tests below — both
-// specifiers resolve to the same absolute file, which is what Vitest's
-// mock registry keys on (confirmed by precedent: tests/unit/job-queue.test.mjs
-// mocks "@/lib/prisma" while job-queue.js itself imports the plain relative
-// "./prisma").
+// wallet.js, providers.js, storage/ingest.js and everything IT imports
+// (storage/index.js, storage/local-driver.js, storage/s3-driver.js),
+// prisma.js) needed no separate "app version" vs "worker version". Vitest's
+// alias-based `vi.mock("@/lib/x", ...)` still intercepts these relative
+// imports in unit tests below — both specifiers resolve to the same
+// absolute file, which is what Vitest's mock registry keys on (confirmed by
+// precedent: tests/unit/job-queue.test.mjs mocks "@/lib/prisma" while
+// job-queue.js itself imports the plain relative "./prisma").
 //
 // MONEY RULES (normative — a reviewer checks each of these):
 //   1. The reservation is settled ONLY when output has been ingested AND the
@@ -65,7 +66,7 @@ import prisma from "./prisma.js";
 import { heartbeatJob, completeJob, failJob, findTimedOutJobs } from "./job-queue.js";
 import { settleReservation, releaseReservation, refundCredits } from "./wallet.js";
 import { submitOnly, pollProviderResult, getProvider } from "./providers.js";
-import { downloadAllMedia } from "./media-download.js";
+import { ingestFromUrl } from "./storage/ingest.js";
 
 // Heartbeat cadence during a long poll — comfortably under job-queue's
 // default 5-minute lease (DEFAULT_LEASE_MS in job-queue.js) so a slow
@@ -103,6 +104,28 @@ async function pollWithHeartbeat(provider, requestId, job, workerId) {
     return await pollProviderResult(provider, requestId);
   } finally {
     clearInterval(timer);
+  }
+}
+
+// Ingest the provider's primary output through the unified ingest path
+// (Phase 4B Task 4). Mirrors the pre-Task-4 downloadAllMedia contract this
+// replaced: null on no outputs, and NEVER throws — a download/strip
+// failure falls back to the original provider url exactly as
+// src/lib/media-download.js's (now-deleted) downloadMedia always did,
+// rather than failing the whole job over a storage hiccup. Only the first
+// output is ingested (matches what's actually used: outputUrl is a single
+// field, and outputs beyond the first were previously downloaded but never
+// referenced anywhere).
+async function ingestFirstOutput(outputs) {
+  if (!outputs || outputs.length === 0) return null;
+  const url = outputs[0];
+  if (typeof url !== "string" || url.startsWith("/api/media/local/")) return url ?? null;
+  try {
+    const ingested = await ingestFromUrl(url);
+    return ingested.url;
+  } catch (err) {
+    console.error(`[job-runner] ingestFromUrl failed for ${url}, falling back to the provider url:`, err.message);
+    return url;
   }
 }
 
@@ -260,7 +283,7 @@ export async function runJob(job, { workerId, signal } = {}) {
       }
     }
 
-    const localUrl = await downloadAllMedia(outputs);
+    const localUrl = await ingestFirstOutput(outputs);
 
     const won = await tryTransitionGeneration(generation.id, {
       status: "completed",

@@ -1,50 +1,10 @@
-// Back-compat shim (Phase 4B Task 1) for the storage-related exports.
-// downloadAllMedia's real per-url download now goes through
-// src/lib/storage/ingest.js's ingestFromUrl — this file preserves the OLD
-// downloadAllMedia return shape (the first successfully-downloaded local
-// url, or null) so the two pre-existing call sites
-// (src/lib/generation-webhook.js, src/lib/job-runner.js) need no change in
-// this task. extractKieResults is unrelated to storage (pure payload
-// parsing) and is untouched. Phase 4B Task 4 switches the two call sites to
-// ingestFromUrl directly and deletes downloadMedia/downloadAllMedia from
-// this file — extractKieResults stays.
-import { ingestFromUrl } from "./storage/ingest.js";
-
-/**
- * Download a media file from a URL to local storage.
- * Returns the local url (/api/media/local/{filename}) or the original URL if download fails.
- */
-export async function downloadMedia(url) {
-  if (!url || typeof url !== "string") return null;
-
-  // Already a local URL
-  if (url.startsWith("/api/media/local/")) return url;
-
-  try {
-    const { url: storedUrl } = await ingestFromUrl(url);
-    return storedUrl;
-  } catch (e) {
-    console.error("downloadMedia error:", e.message);
-    // Fall back to original URL if download fails
-    return url;
-  }
-}
-
-/**
- * Download all media URLs from a KIE resultJson or outputs array.
- * Returns the first downloaded local URL (for backward compat with outputUrl field).
- */
-export async function downloadAllMedia(urls) {
-  if (!urls || !Array.isArray(urls) || urls.length === 0) return null;
-
-  const downloaded = [];
-  for (const url of urls) {
-    const local = await downloadMedia(url);
-    if (local) downloaded.push(local);
-  }
-
-  return downloaded.length > 0 ? downloaded[0] : null;
-}
+// Phase 4B Task 4: the storage-related exports that used to live here
+// (downloadMedia, downloadAllMedia — Task 1's back-compat shims over
+// src/lib/storage/ingest.js's ingestFromUrl) were deleted once the last two
+// call sites (src/lib/generation-webhook.js, src/lib/job-runner.js) moved to
+// calling ingestFromUrl directly. extractKieResults is unrelated to storage
+// (pure KIE callback payload parsing) and stays — src/lib/generation-webhook.js
+// still imports it from here.
 
 /**
  * Parse KIE callback format and extract result URLs.

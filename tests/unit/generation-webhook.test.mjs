@@ -9,15 +9,24 @@ vi.mock("@/lib/prisma", () => {
   return { default: prisma };
 });
 vi.mock("@/lib/wallet", () => ({ refundCredits: vi.fn(), settleReservation: vi.fn(), releaseReservation: vi.fn() }));
+vi.mock("@/lib/storage/ingest", () => ({
+  ingestFromUrl: vi.fn(),
+}));
 vi.mock("@/lib/media-download", () => ({
-  downloadAllMedia: vi.fn(),
   extractKieResults: vi.fn(() => null),
 }));
 
 import prisma from "@/lib/prisma";
 import { refundCredits, settleReservation, releaseReservation } from "@/lib/wallet";
-import { downloadAllMedia } from "@/lib/media-download";
+import { ingestFromUrl } from "@/lib/storage/ingest";
 import { handleGenerationWebhook } from "@/lib/generation-webhook";
+
+// ingestFromUrl's return shape is the richer { url, key, bytes, sha256 }
+// (Phase 4B Task 4) — generation-webhook.js only uses .url, but every mock
+// below returns the full shape to match the real contract.
+function ingestResult(url) {
+  return { url, key: url.split("/").pop(), bytes: 123, sha256: "a".repeat(64) };
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -231,7 +240,7 @@ describe("handleGenerationWebhook — success path", () => {
     prisma.generation.findFirst.mockResolvedValueOnce({
       id: "gen1", userId: "u1", status: "processing", creditsUsed: 5, requestId: "req1", outputUrl: null,
     });
-    downloadAllMedia.mockResolvedValue("/api/media/local/x.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/x.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 });
     settleReservation.mockResolvedValue({ available: 10 });
 
@@ -259,7 +268,7 @@ describe("handleGenerationWebhook — success path, job-backed generation: exact
     prisma.generation.findUnique.mockResolvedValueOnce({
       id: "gen1", userId: "u1", status: "pending", creditsUsed: 5, requestId: null, outputUrl: null,
     });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 }); // webhook wins the CAS
     settleReservation.mockResolvedValue({ available: 10 });
 
@@ -285,7 +294,7 @@ describe("handleGenerationWebhook — success path, job-backed generation: exact
     prisma.generation.findUnique.mockResolvedValueOnce({
       id: "gen1", userId: "u1", status: "pending", creditsUsed: 5, requestId: null, outputUrl: null,
     });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     // The runner's OWN updateMany already committed status:"completed"
     // between this webhook's initial (still non-terminal) read and its own
     // conditional transition below — this is the real race, not a
@@ -315,7 +324,7 @@ describe("handleGenerationWebhook — success path, job-backed generation: exact
     prisma.generation.findUnique.mockResolvedValueOnce({
       id: "gen1", userId: "u1", status: "pending", creditsUsed: 5, requestId: null, outputUrl: null,
     });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 });
     settleReservation.mockRejectedValue(new Error("DB connection lost"));
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -336,7 +345,7 @@ describe("handleGenerationWebhook — success path, job-backed generation: exact
     prisma.generation.findUnique.mockResolvedValueOnce({
       id: "gen1", userId: "u1", status: "pending", creditsUsed: 0, requestId: null, outputUrl: null,
     });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 });
 
     const { response } = await handleGenerationWebhook({

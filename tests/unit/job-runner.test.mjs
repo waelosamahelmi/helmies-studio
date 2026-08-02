@@ -24,16 +24,23 @@ vi.mock("@/lib/providers", () => ({
   getProvider: vi.fn(),
 }));
 
-vi.mock("@/lib/media-download", () => ({
-  downloadAllMedia: vi.fn(),
+vi.mock("@/lib/storage/ingest", () => ({
+  ingestFromUrl: vi.fn(),
 }));
 
 import prisma from "@/lib/prisma";
 import { heartbeatJob, completeJob, failJob } from "@/lib/job-queue";
 import { settleReservation, releaseReservation, refundCredits } from "@/lib/wallet";
 import { submitOnly, pollProviderResult, getProvider } from "@/lib/providers";
-import { downloadAllMedia } from "@/lib/media-download";
+import { ingestFromUrl } from "@/lib/storage/ingest";
 import { runJob } from "@/lib/job-runner";
+
+// ingestFromUrl's return shape is the richer { url, key, bytes, sha256 }
+// (Phase 4B Task 4) — job-runner.js only uses .url, but every mock below
+// returns the full shape to match the real contract.
+function ingestResult(url) {
+  return { url, key: url.split("/").pop(), bytes: 123, sha256: "a".repeat(64) };
+}
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -78,7 +85,7 @@ describe("runJob — happy path", () => {
     submitOnly.mockResolvedValue({ provider: PROVIDER_OBJ, requestId: "req_1", submitData: {} });
     prisma.generationJob.update.mockResolvedValue({});
     pollProviderResult.mockResolvedValue({ outputs: ["https://provider/out.png"] });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 });
     settleReservation.mockResolvedValue({ available: 10 });
     completeJob.mockResolvedValue({});
@@ -92,7 +99,7 @@ describe("runJob — happy path", () => {
       data: { providerRequestId: "req_1" },
     });
     expect(pollProviderResult).toHaveBeenCalledWith(PROVIDER_OBJ, "req_1");
-    expect(downloadAllMedia).toHaveBeenCalledWith(["https://provider/out.png"]);
+    expect(ingestFromUrl).toHaveBeenCalledWith("https://provider/out.png");
 
     const transitionCall = prisma.generation.updateMany.mock.calls[0][0];
     expect(transitionCall.where).toEqual({ id: "gen1", status: { notIn: ["completed", "failed"] } });
@@ -115,7 +122,7 @@ describe("runJob — happy path", () => {
       submitData: {},
       immediateResult: { outputs: ["https://provider/immediate.png"] },
     });
-    downloadAllMedia.mockResolvedValue("/api/media/local/immediate.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/immediate.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 });
     settleReservation.mockResolvedValue({});
     completeJob.mockResolvedValue({});
@@ -125,7 +132,7 @@ describe("runJob — happy path", () => {
     expect(result).toEqual({ outcome: "succeeded" });
     expect(pollProviderResult).not.toHaveBeenCalled();
     expect(prisma.generationJob.update).not.toHaveBeenCalled(); // no requestId to persist
-    expect(downloadAllMedia).toHaveBeenCalledWith(["https://provider/immediate.png"]);
+    expect(ingestFromUrl).toHaveBeenCalledWith("https://provider/immediate.png");
     expect(settleReservation).toHaveBeenCalledTimes(1);
   });
 
@@ -135,7 +142,7 @@ describe("runJob — happy path", () => {
     prisma.generation.findUnique.mockResolvedValue(generation);
     getProvider.mockReturnValue(PROVIDER_OBJ);
     pollProviderResult.mockResolvedValue({ outputs: ["https://provider/out.png"] });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 });
     settleReservation.mockResolvedValue({});
     completeJob.mockResolvedValue({});
@@ -159,7 +166,7 @@ describe("runJob — happy path", () => {
     prisma.generation.findUnique.mockResolvedValue(generation);
     submitOnly.mockResolvedValue({ provider: PROVIDER_OBJ, requestId: "req_1" });
     pollProviderResult.mockResolvedValue({ outputs: ["https://provider/out.png"] });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 });
     settleReservation.mockResolvedValue({});
     completeJob.mockResolvedValue({});
@@ -183,7 +190,7 @@ describe("runJob — generation already terminal (rule 4): webhook won the race"
     expect(completeJob).toHaveBeenCalledWith("job1", {});
     expect(submitOnly).not.toHaveBeenCalled();
     expect(pollProviderResult).not.toHaveBeenCalled();
-    expect(downloadAllMedia).not.toHaveBeenCalled();
+    expect(ingestFromUrl).not.toHaveBeenCalled();
     expect(settleReservation).not.toHaveBeenCalled();
     expect(releaseReservation).not.toHaveBeenCalled();
     expect(refundCredits).not.toHaveBeenCalled();
@@ -214,7 +221,7 @@ describe("runJob — generation already terminal (rule 4): webhook won the race"
     prisma.generation.findUnique.mockResolvedValue(generation);
     submitOnly.mockResolvedValue({ provider: PROVIDER_OBJ, requestId: "req_1" });
     pollProviderResult.mockResolvedValue({ outputs: ["https://provider/out.png"] });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 0 }); // lost the race
     completeJob.mockResolvedValue({});
 
@@ -425,7 +432,7 @@ describe("runJob — settle failure is logged loudly, never masks a successful i
     prisma.generation.findUnique.mockResolvedValue(generation);
     submitOnly.mockResolvedValue({ provider: PROVIDER_OBJ, requestId: "req_1" });
     pollProviderResult.mockResolvedValue({ outputs: ["https://provider/out.png"] });
-    downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
     prisma.generation.updateMany.mockResolvedValue({ count: 1 });
     settleReservation.mockRejectedValue(new Error("DB connection lost"));
     completeJob.mockResolvedValue({});
@@ -457,7 +464,7 @@ describe("runJob — long poll heartbeats the lease", () => {
             resolvePoll = resolve;
           })
       );
-      downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+      ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
       prisma.generation.updateMany.mockResolvedValue({ count: 1 });
       settleReservation.mockResolvedValue({});
       completeJob.mockResolvedValue({});
@@ -489,7 +496,7 @@ describe("runJob — long poll heartbeats the lease", () => {
       prisma.generation.findUnique.mockResolvedValue(generation);
       submitOnly.mockResolvedValue({ provider: PROVIDER_OBJ, requestId: "req_1" });
       pollProviderResult.mockResolvedValue({ outputs: ["https://provider/out.png"] });
-      downloadAllMedia.mockResolvedValue("/api/media/local/abc.png");
+      ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/abc.png"));
       prisma.generation.updateMany.mockResolvedValue({ count: 1 });
       settleReservation.mockResolvedValue({});
       completeJob.mockResolvedValue({});

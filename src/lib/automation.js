@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { adjustWalletTo, sweepExpiredReservations } from "@/lib/wallet";
 import { sweepTimedOutJobs } from "@/lib/job-runner";
+import { pruneTerminalJobs } from "@/lib/job-queue";
 
 const MODEL_FAILURE_THRESHOLD = 5;
 const MODEL_FAILURE_WINDOW_MINUTES = 30;
@@ -96,17 +97,24 @@ export async function autoSuspendAbusiveUsers() {
 // ── Run all automation checks ──
 export async function runAutomation() {
   // Promise.allSettled — not Promise.all — so one leg throwing (e.g. a
-  // groupBy/query error) can never suppress the results of the other three.
+  // groupBy/query error) can never suppress the results of the other four.
   // A single rejected leg is reported as { error } instead of aborting the
   // whole cron run. `jobs` (Phase 4A Task 7) is the fourth leg, added in the
   // SAME isolated style established for `reservations` — sweepTimedOutJobs
   // (src/lib/job-runner.js) is exactly as load-bearing for money safety as
   // sweepExpiredReservations, so it gets the same failure isolation.
-  const [models, users, reservations, jobs] = await Promise.allSettled([
+  // `retention` (Phase 4B Task 4) is the fifth leg: pruneTerminalJobs
+  // (src/lib/job-queue.js) only deletes already-terminal, already-settled
+  // GenerationJob history — no money/state-machine implication — but it
+  // gets the identical Promise.allSettled isolation as every other leg so a
+  // slow/failing delete never blocks or masks the four legs that ARE money-
+  // or state-critical.
+  const [models, users, reservations, jobs, retention] = await Promise.allSettled([
     autoDisableFailingModels(),
     autoSuspendAbusiveUsers(),
     sweepExpiredReservations(),
     sweepTimedOutJobs(),
+    pruneTerminalJobs(),
   ]);
 
   const settle = (outcome) =>
@@ -117,6 +125,7 @@ export async function runAutomation() {
     users: settle(users),
     reservations: settle(reservations),
     jobs: settle(jobs),
+    retention: settle(retention),
     timestamp: new Date().toISOString(),
   };
 }
