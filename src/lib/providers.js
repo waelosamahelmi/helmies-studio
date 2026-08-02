@@ -133,23 +133,25 @@ export const DEFAULT_PROVIDER = "kie";
 // Map any providerName (DB ModelPricing.providerName, ProviderConfig.name) to an adapter key.
 // Unknown names resolve to KIE (the primary provider) — never to a removed provider.
 //
-// Exported (Phase 4A Task 8 fix) so callers that need the pure, correctly-
-// normalized lowercase adapter key can get it directly instead of going
-// through resolveProvider() below: resolveProvider's OWN return statement
-// (`{ name, ...p, apiKey: p.getKey() }`) has a pre-existing, separate bug —
-// `p` (PROVIDERS[key]) carries its own display-name `name` field (e.g.
-// "Alibaba", "KIE"), and object-spread order means `...p` is applied AFTER
-// the `name` shorthand, so `p.name` silently overwrites the normalized key
-// computed just above it. `resolveProvider(modelId).name` is therefore
-// ALWAYS the mixed-case display name, never the lowercase adapter key
-// getProvider() indexes PROVIDERS by — verified empirically against the
-// real test database (resolveProvider returns name: "Alibaba", and
-// getProvider("Alibaba") then falls back to KIE, not Alibaba). Left
-// unfixed here — this file's own generate/async and generation-handler.js
-// callers already depend on resolveProvider's current return shape and
-// changing it is a materially larger, separate change outside this task's
-// scope; resolveAdapterKey itself has no such bug and is safe to call
-// directly.
+// Exported (Phase 4A Task 8) so callers that need the pure, correctly-
+// normalized lowercase adapter key can get it directly without going
+// through resolveProvider() below, or without needing a ModelPricing
+// lookup's other fields at all (e.g. scripts/adopt-legacy-generations.mjs).
+//
+// resolveProvider's two return statements previously read
+// `{ name, ...p, apiKey: p.getKey() }`: `p` (PROVIDERS[key]) carries its own
+// display-name `name` field (e.g. "Alibaba", "KIE"), and object-spread order
+// meant `...p` was applied AFTER the `name` shorthand, so `p.name` silently
+// overwrote the normalized key computed just above it —
+// `resolveProvider(modelId).name` came back as the mixed-case display name,
+// never the lowercase adapter key getProvider() indexes PROVIDERS by, which
+// in turn dropped the real primary from resolveProviderWithFallback's chain
+// (`PROVIDERS[primary.name]` missed the index and `.filter(Boolean)` threw
+// it away). Fixed by putting `name` AFTER the spread in both resolveProvider
+// return statements and in resolveProviderWithFallback's own `.map()` below,
+// so the adapter key always wins. resolveAdapterKey itself never had this
+// bug and remains safe — and cheaper for callers that only need the key —
+// to call directly.
 export function resolveAdapterKey(providerName) {
   const n = (providerName || "").toLowerCase();
   if (n.includes("alibaba") || n.includes("qwen") || n.includes("dashscope")) return "alibaba";
@@ -173,11 +175,11 @@ export async function resolveProvider(modelId) {
     if (pricing?.providerName) {
       const name = resolveAdapterKey(pricing.providerName);
       const p = PROVIDERS[name];
-      return { name, ...p, apiKey: p.getKey() };
+      return { ...p, name, apiKey: p.getKey() };
     }
   } catch {}
   const p = PROVIDERS[DEFAULT_PROVIDER];
-  return { name: DEFAULT_PROVIDER, ...p, apiKey: p.getKey() };
+  return { ...p, name: DEFAULT_PROVIDER, apiKey: p.getKey() };
 }
 
 export async function submitOnly(providerName, endpoint, payload) {
@@ -380,7 +382,7 @@ export async function resolveProviderWithFallback(modelId) {
     .filter((name) => !activity || activity[name] !== false)
     .map((name) => {
       const p = PROVIDERS[name];
-      return p ? { name, ...p, apiKey: p.getKey() } : null;
+      return p ? { ...p, name, apiKey: p.getKey() } : null;
     })
     .filter(Boolean);
 }

@@ -122,16 +122,14 @@ async function findLegacyCandidates() {
 // ModelPricing.providerName DB string (e.g. "Alibaba", mixed case): passing
 // "Alibaba" straight through would silently miss the index and fall back to
 // DEFAULT_PROVIDER ("kie") — every adopted Alibaba-model job would resume
-// its poll against the wrong provider's API (verified empirically: also
-// true of resolveProvider(modelId).name in src/lib/providers.js, which
-// carries its OWN separate, pre-existing bug that makes it unsuitable here
-// — see resolveAdapterKey's export comment in that file for the full
-// explanation). resolveAdapterKey is exported specifically for this call
-// site: it does the same lowercasing + alias-matching normalization
-// resolveProvider is SUPPOSED to expose, without going through
-// resolveProvider's buggy return shape. Never throws — an unknown/missing
-// providerName normalizes to the default adapter key ("kie"), same
-// fallback getProvider() itself would apply anyway.
+// its poll against the wrong provider's API. resolveAdapterKey is used
+// directly here (rather than resolveProvider(modelId).name, which now
+// returns the same normalized key — see its export comment in
+// src/lib/providers.js) because it's the cheaper call for a site that only
+// ever needs the plain string key and none of resolveProvider's other
+// return fields. Never throws — an unknown/missing providerName normalizes
+// to the default adapter key ("kie"), same fallback getProvider() itself
+// would apply anyway.
 async function resolveProviderName(model) {
   const pricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
   return resolveAdapterKey(pricing?.providerName);
