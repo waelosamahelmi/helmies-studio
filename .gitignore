@@ -42,3 +42,8 @@ ssh.md
 
 # Written at test time by the E2E provider seam (src/lib/providers.js)
 public/media/e2e-fixture.png
+
+# OWASP ZAP baseline scan output (Phase 8 Task B3, scripts/security-scan.sh)
+# — the triaged findings live in docs/runbook-security-scan.md; the raw
+# report is a local artifact, same treatment as playwright-report/ above.
+/zap-out/
