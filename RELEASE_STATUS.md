@@ -81,6 +81,18 @@ section below.
    closed it too, reusing the same exported assertion functions rather than
    duplicating the check).
 
+**Re-verification after all four fixes:** `origin/main` fetched and merged
+(no-op — main has not moved since this branch forked; Phase 6 lives on the
+unmerged `feat/phase6-templates` branch, nothing to integrate yet).
+Full gate sequence re-run clean: `npm run lint` (0 warnings), `npm run
+typecheck` (clean), `npx vitest run` → **503/503 unit**,
+`TEST_DATABASE_URL=... npx vitest run --config vitest.integration.config.mjs`
+→ **70/70 integration**, `npm run build` (clean), and
+`npx playwright test --workers=1` → **26/26 e2e**, zero failures — confirming
+the intermittent flakiness seen earlier under the default 3-worker run was
+genuinely environmental (concurrent-agent port/DB contention), not a defect
+these fixes (or anything else in this phase) introduced.
+
 ## Task 6 phase-gate verification (final pass before push)
 
 Re-ran the full gate sequence one more time immediately before pushing:
