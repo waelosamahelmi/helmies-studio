@@ -114,6 +114,38 @@ model Generation {
   @@schema("public")
 }
 
+// ── Durable Generation Job Queue (Phase 4A) ──
+// Postgres-backed queue for provider generation calls, replacing in-request
+// synchronous submission. Status vocabulary (normative for every later
+// task): queued (claimable) -> running (leased by a worker) -> succeeded /
+// failed (terminal, credits settled/refunded) or dead (terminal after
+// maxAttempts or timeout — credits refunded). See src/lib/job-queue.js.
+model GenerationJob {
+  id                String    @id @default(cuid())
+  generationId      String    @unique
+  userId            String
+  status            String    @default("queued")   // queued|running|succeeded|failed|dead
+  idempotencyKey    String    @unique
+  attempts          Int       @default(0)
+  maxAttempts       Int       @default(3)
+  nextRunAt         DateTime  @default(now())
+  leaseUntil        DateTime?
+  lockedBy          String?
+  providerRequestId String?
+  providerName      String?
+  endpoint          String?
+  payload           Json
+  timeoutAt         DateTime
+  lastError         String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status, nextRunAt])
+  @@index([status, leaseUntil])
+  @@index([timeoutAt])
+  @@schema("public")
+}
+
 model CreditTransaction {
   id          String   @id @default(cuid())
   userId      String

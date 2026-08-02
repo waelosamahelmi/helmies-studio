@@ -20,7 +20,13 @@
 // by `available: { gte: … }` so concurrent spends can never drive the
 // balance negative, even without a surrounding transaction.
 
-import prisma from "./prisma";
+// Explicit ".js" extension (see src/lib/reconciliation.js's header for the
+// precedent): this module is also imported transitively by
+// scripts/worker.mjs under plain `node` (Phase 4A Task 4, via
+// src/lib/job-runner.js) — Node's strict ESM resolver requires relative
+// specifiers to include their extension; the extensionless form only works
+// when bundled by Next/Vite.
+import prisma from "./prisma.js";
 
 // Run `fn` inside the given client (already a transaction) or a fresh one.
 function withDb(db, fn) {

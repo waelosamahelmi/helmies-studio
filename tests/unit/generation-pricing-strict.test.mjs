@@ -4,7 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/prisma", () => {
   const models = {
     modelPricing: { findUnique: vi.fn() },
-    generation: { create: vi.fn(), update: vi.fn() },
+    generation: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn() },
+    generationJob: { findUnique: vi.fn() },
     asset: { create: vi.fn(), findFirst: vi.fn() },
     promptCompilation: { create: vi.fn() },
     user: { update: vi.fn() },
@@ -28,6 +29,13 @@ vi.mock("@/lib/wallet", () => ({
   refundCredits: vi.fn(),
 }));
 vi.mock("@/lib/model-catalog", () => ({ quoteCatalogModel: vi.fn() }));
+// Task 5: /api/generate/async now enqueues a durable job instead of calling
+// submitOnly inline — see tests/unit/generate-async-enqueue.test.mjs for
+// dedicated coverage of that behavior. This file only needs enqueueJob
+// mocked so the async describe block below (which predates Task 5 and only
+// asserts on pricing/reservation behavior) doesn't hit the real job-queue
+// module against an incomplete prisma mock.
+vi.mock("@/lib/job-queue", () => ({ enqueueJob: vi.fn() }));
 vi.mock("@/lib/providers", () => ({
   resolveProvider: vi.fn(),
   resolveProviderWithFallback: vi.fn(),
@@ -70,6 +78,7 @@ import { checkRateLimit } from "@/lib/security";
 import { getWallet, reserveCredits, settleReservation } from "@/lib/wallet";
 import { quoteCatalogModel } from "@/lib/model-catalog";
 import { resolveProvider, resolveProviderWithFallback, submitOnly } from "@/lib/providers";
+import { enqueueJob } from "@/lib/job-queue";
 import { generateImage } from "@/lib/generation";
 import { POST as postImage } from "@/app/api/generate/image/route.js";
 import { POST as postAsync } from "@/app/api/generate/async/route.js";
@@ -94,6 +103,9 @@ beforeEach(() => {
   settleReservation.mockResolvedValue({ available: 998 });
   prisma.generation.create.mockResolvedValue({ id: "gen1" });
   prisma.generation.update.mockResolvedValue({});
+  prisma.generation.findUnique.mockResolvedValue({ id: "gen1" });
+  prisma.generationJob.findUnique.mockResolvedValue(null); // no pre-existing duplicate job
+  enqueueJob.mockResolvedValue({ id: "job1", generationId: "gen1" });
   generateImage.mockResolvedValue({ url: "https://example.com/out.png", requestId: "req1" });
 });
 

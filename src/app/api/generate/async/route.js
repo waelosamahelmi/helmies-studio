@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { getCurrentUserWithCredits } from "@/lib/session";
 import { AuthzError, authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
-import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
+import { reserveCredits, releaseReservation, getWallet } from "@/lib/wallet";
 import { checkRateLimit } from "@/lib/security";
-import { resolveProvider, brandError, submitOnly } from "@/lib/providers";
+import { resolveProvider } from "@/lib/providers";
+import { enqueueJob } from "@/lib/job-queue";
 import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
 import { applyMemoryToPrompt } from "@/lib/memory";
 import { quoteCatalogModel } from "@/lib/model-catalog";
@@ -36,6 +38,19 @@ async function syncLegacyCredits(userId) {
     const w = await getWallet(userId);
     await prisma.user.update({ where: { id: userId }, data: { credits: w.available } });
   } catch {}
+}
+
+// Deterministic JSON serialization (object keys sorted, recursively) so the
+// idempotency hash below never depends on client-side key ordering — two
+// requests with the same params but different key order must hash to the
+// SAME key.
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 export async function POST(req) {
@@ -83,6 +98,46 @@ export async function POST(req) {
 
     // Wallet is the source of truth for the balance check.
     const wallet = await getWallet(user.id);
+
+    // Idempotency key (Task 5): a double-clicked submit within the same
+    // 60-second wall-clock bucket (minuteBucket = Math.floor(Date.now()/60000))
+    // returns the SAME job instead of creating a second reservation/charge.
+    // This is a coarse bucket, not a sliding window — two submits that
+    // straddle a minute boundary are NOT guaranteed to collide; that's an
+    // accepted false-negative (the submit just gets its own honest
+    // reservation), not a safety hole. Keyed on the RAW client-submitted
+    // prompt/params rather than the expanded/memory-applied prompt built
+    // below, both because prompt-expansion can call an LLM (not guaranteed
+    // deterministic run-to-run) and so a duplicate is caught BEFORE paying
+    // for that expansion work a second time.
+    const minuteBucket = Math.floor(Date.now() / 60000);
+    const idempotencyKey = crypto
+      .createHash("sha256")
+      .update(`${user.id}:${model}:${stableStringify({ tool: tool || null, prompt: prompt || "", ...params })}:${minuteBucket}`)
+      .digest("hex");
+
+    // Pre-check: a recognized duplicate returns the FIRST request's job
+    // without touching the wallet again — it also skips the insufficient-
+    // credits gate below, since the original submit already reserved. The
+    // real safety net against a genuine concurrent race (two requests both
+    // passing this check before either has enqueued) is enqueueJob's own
+    // idempotencyKey unique-constraint fallback (src/lib/job-queue.js),
+    // handled by the `job.generationId !== generation.id` branch further
+    // down.
+    const existingJob = await prisma.generationJob.findUnique({ where: { idempotencyKey } }).catch(() => null);
+    if (existingJob) {
+      const existingGeneration = await prisma.generation.findUnique({ where: { id: existingJob.generationId } }).catch(() => null);
+      return NextResponse.json({
+        success: true,
+        generationId: existingJob.generationId,
+        jobId: existingJob.id,
+        status: "queued",
+        creditsUsed: existingGeneration?.creditsUsed ?? cost,
+        remainingCredits: wallet.available,
+        pollUrl: `/api/generations/status?id=${existingJob.generationId}`,
+      });
+    }
+
     if (wallet.available < cost) {
       return NextResponse.json({ error: "Insufficient credits", credits: wallet.available, cost }, { status: 402 });
     }
@@ -126,8 +181,8 @@ export async function POST(req) {
       },
     });
 
-    // Reserve (not debit) so a submission failure is refundable. debitCredits
-    // is non-refundable — a failed submitOnly charged the user for nothing.
+    // Reserve (not debit) so a failure to enqueue — or a later provider
+    // failure — is refundable. debitCredits is non-refundable.
     try {
       await reserveCredits(user.id, cost, generation.id);
     } catch (reserveErr) {
@@ -138,38 +193,71 @@ export async function POST(req) {
       return NextResponse.json({ error: reserveErr.message, credits: wallet.available, cost }, { status: 402 });
     }
 
-    let requestId;
+    // Money-flow change (Task 5): this route no longer calls the provider
+    // and no longer settles. It ends here with the reservation ACTIVE and a
+    // durable job enqueued — the job runner (src/lib/job-runner.js) submits
+    // to the provider, polls, ingests the output, and settles only once
+    // that output is durably recorded; the completion webhook
+    // (src/lib/generation-webhook.js) settles instead if it wins that race.
+    // A submit that used to fail synchronously here (and get released) now
+    // fails inside the runner instead, which releases/refunds exactly the
+    // same way (see job-runner.js's money rules).
+    let job;
     try {
-      ({ requestId } = await submitOnly(provider, endpoint, payload));
-    } catch (submitErr) {
+      job = await enqueueJob({
+        generationId: generation.id,
+        userId: user.id,
+        idempotencyKey,
+        payload,
+        providerName: provider.name,
+        endpoint,
+      });
+    } catch (enqueueErr) {
       await releaseReservation(user.id, generation.id).catch(() => {});
       await syncLegacyCredits(user.id);
       await prisma.generation.update({
         where: { id: generation.id },
-        data: { status: "failed", error: brandError(submitErr.message) },
+        data: { status: "failed", error: enqueueErr.message },
       }).catch(() => {});
-      return NextResponse.json({ error: brandError(submitErr.message) }, { status: 500 });
+      return NextResponse.json({ error: enqueueErr.message }, { status: 500 });
     }
 
-    if (requestId) {
+    // Race: enqueueJob's own idempotencyKey unique-constraint fallback
+    // (src/lib/job-queue.js) can hand back an EXISTING job belonging to a
+    // DIFFERENT generation than the one just created above — a concurrent
+    // duplicate request that reached enqueueJob a beat ahead of us, after
+    // both of us passed the pre-check earlier. Whoever loses this race must
+    // not keep an orphaned reservation and Generation row that nothing will
+    // ever drive to completion — release it and hand back the winner's data
+    // instead of silently charging twice.
+    if (job.generationId !== generation.id) {
+      await releaseReservation(user.id, generation.id).catch(() => {});
       await prisma.generation.update({
         where: { id: generation.id },
-        data: { requestId },
+        data: { status: "failed", error: "Duplicate submit — superseded by a concurrent identical request" },
+      }).catch(() => {});
+      const winningGeneration = await prisma.generation.findUnique({ where: { id: job.generationId } }).catch(() => null);
+      await syncLegacyCredits(user.id);
+      return NextResponse.json({
+        success: true,
+        generationId: job.generationId,
+        jobId: job.id,
+        status: "queued",
+        creditsUsed: winningGeneration?.creditsUsed ?? cost,
+        remainingCredits: wallet.available,
+        pollUrl: `/api/generations/status?id=${job.generationId}`,
       });
     }
 
-    // Submission accepted — settle at the quoted cost. The completion webhook
-    // refunds if the job later fails.
-    const settled = await settleReservation(user.id, generation.id, cost).catch(() => null);
     await syncLegacyCredits(user.id);
 
     return NextResponse.json({
       success: true,
       generationId: generation.id,
-      requestId,
-      status: "pending",
+      jobId: job.id,
+      status: "queued",
       creditsUsed: cost,
-      remainingCredits: settled?.available ?? (wallet.available - cost),
+      remainingCredits: wallet.available - cost,
       pollUrl: `/api/generations/status?id=${generation.id}`,
     });
   } catch (e) {

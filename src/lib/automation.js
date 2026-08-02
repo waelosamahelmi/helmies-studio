@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { adjustWalletTo, sweepExpiredReservations } from "@/lib/wallet";
+import { sweepTimedOutJobs } from "@/lib/job-runner";
 
 const MODEL_FAILURE_THRESHOLD = 5;
 const MODEL_FAILURE_WINDOW_MINUTES = 30;
@@ -95,13 +96,17 @@ export async function autoSuspendAbusiveUsers() {
 // ── Run all automation checks ──
 export async function runAutomation() {
   // Promise.allSettled — not Promise.all — so one leg throwing (e.g. a
-  // groupBy/query error) can never suppress the results of the other two.
+  // groupBy/query error) can never suppress the results of the other three.
   // A single rejected leg is reported as { error } instead of aborting the
-  // whole cron run.
-  const [models, users, reservations] = await Promise.allSettled([
+  // whole cron run. `jobs` (Phase 4A Task 7) is the fourth leg, added in the
+  // SAME isolated style established for `reservations` — sweepTimedOutJobs
+  // (src/lib/job-runner.js) is exactly as load-bearing for money safety as
+  // sweepExpiredReservations, so it gets the same failure isolation.
+  const [models, users, reservations, jobs] = await Promise.allSettled([
     autoDisableFailingModels(),
     autoSuspendAbusiveUsers(),
     sweepExpiredReservations(),
+    sweepTimedOutJobs(),
   ]);
 
   const settle = (outcome) =>
@@ -111,6 +116,7 @@ export async function runAutomation() {
     models: settle(models),
     users: settle(users),
     reservations: settle(reservations),
+    jobs: settle(jobs),
     timestamp: new Date().toISOString(),
   };
 }

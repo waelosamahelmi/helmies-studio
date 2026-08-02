@@ -1,5 +1,12 @@
-import prisma from "@/lib/prisma";
-import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
+// Relative, ".js"-extended imports (not the "@/lib/..." alias used
+// elsewhere in this file's exports' consumers): this module is also loaded
+// transitively by scripts/worker.mjs under plain `node` (Phase 4A Task 4,
+// via src/lib/job-runner.js). The "@/" alias is a Next/Vite bundler feature
+// only — plain Node has no notion of it at all (not even an extension
+// problem; the specifier is simply unresolvable), so both imports below
+// were changed from the alias form to resolve identically in both contexts.
+import prisma from "./prisma.js";
+import { formatAlibabaPayload, getAlibabaApiPath } from "./alibaba-provider-core.mjs";
 
 const BRANDED_ERRORS = {
   rate_limit: "Too many requests. Please wait a moment and try again.",
@@ -125,7 +132,27 @@ export const DEFAULT_PROVIDER = "kie";
 
 // Map any providerName (DB ModelPricing.providerName, ProviderConfig.name) to an adapter key.
 // Unknown names resolve to KIE (the primary provider) — never to a removed provider.
-function resolveAdapterKey(providerName) {
+//
+// Exported (Phase 4A Task 8) so callers that need the pure, correctly-
+// normalized lowercase adapter key can get it directly without going
+// through resolveProvider() below, or without needing a ModelPricing
+// lookup's other fields at all (e.g. scripts/adopt-legacy-generations.mjs).
+//
+// resolveProvider's two return statements previously read
+// `{ name, ...p, apiKey: p.getKey() }`: `p` (PROVIDERS[key]) carries its own
+// display-name `name` field (e.g. "Alibaba", "KIE"), and object-spread order
+// meant `...p` was applied AFTER the `name` shorthand, so `p.name` silently
+// overwrote the normalized key computed just above it —
+// `resolveProvider(modelId).name` came back as the mixed-case display name,
+// never the lowercase adapter key getProvider() indexes PROVIDERS by, which
+// in turn dropped the real primary from resolveProviderWithFallback's chain
+// (`PROVIDERS[primary.name]` missed the index and `.filter(Boolean)` threw
+// it away). Fixed by putting `name` AFTER the spread in both resolveProvider
+// return statements and in resolveProviderWithFallback's own `.map()` below,
+// so the adapter key always wins. resolveAdapterKey itself never had this
+// bug and remains safe — and cheaper for callers that only need the key —
+// to call directly.
+export function resolveAdapterKey(providerName) {
   const n = (providerName || "").toLowerCase();
   if (n.includes("alibaba") || n.includes("qwen") || n.includes("dashscope")) return "alibaba";
   if (n.includes("kie")) return "kie";
@@ -148,11 +175,11 @@ export async function resolveProvider(modelId) {
     if (pricing?.providerName) {
       const name = resolveAdapterKey(pricing.providerName);
       const p = PROVIDERS[name];
-      return { name, ...p, apiKey: p.getKey() };
+      return { ...p, name, apiKey: p.getKey() };
     }
   } catch {}
   const p = PROVIDERS[DEFAULT_PROVIDER];
-  return { name: DEFAULT_PROVIDER, ...p, apiKey: p.getKey() };
+  return { ...p, name: DEFAULT_PROVIDER, apiKey: p.getKey() };
 }
 
 export async function submitOnly(providerName, endpoint, payload) {
@@ -233,11 +260,17 @@ export async function pollProviderResult(provider, requestId, maxAttempts = 900,
         return { ...data, outputs, url: outputs[0], outputUrl: outputs[0] };
       }
       if (status === "failed" || status === "error" || status === "fail") {
-        throw new Error(brandError(parsed.error || ""));
+        const terminalError = new Error(brandError(parsed.error || ""));
+        terminalError.terminal = true;
+        throw terminalError;
       }
       // pending/waiting/generating/processing — keep polling with gentle backoff
       pollInterval = Math.min(10000, pollInterval + 1000);
     } catch (e) {
+      // A provider-reported terminal failure will never resolve on a later
+      // attempt — retrying it just pins a worker slot (heartbeat keeps the
+      // lease alive) for up to maxAttempts * backoff. Fail fast instead.
+      if (e?.terminal) throw e;
       if (attempt === maxAttempts) throw e;
     }
   }
@@ -355,7 +388,7 @@ export async function resolveProviderWithFallback(modelId) {
     .filter((name) => !activity || activity[name] !== false)
     .map((name) => {
       const p = PROVIDERS[name];
-      return p ? { name, ...p, apiKey: p.getKey() } : null;
+      return p ? { ...p, name, apiKey: p.getKey() } : null;
     })
     .filter(Boolean);
 }

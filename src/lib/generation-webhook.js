@@ -16,8 +16,52 @@
 // transaction guards against a race between two concurrent deliveries too:
 // only the one that matches `status notIn [failed, completed]` gets count 1
 // and issues the refund.
+//
+// Phase 4A Task 6 — job-aware completion. Two changes from the pre-Task-6
+// version of this file:
+//
+//   1. Generation LOOKUP. Since Task 5, /api/generate/async no longer
+//      submits inline — the job runner (src/lib/job-runner.js) does, and it
+//      persists the provider's request id onto GenerationJob.providerRequestId,
+//      never onto Generation.requestId. So for any generation created after
+//      Task 5 shipped, the three legacy lookup paths below (all keyed off
+//      Generation.requestId, still written directly by the synchronous
+//      /api/generate/* routes via src/lib/generation-handler.js) would never
+//      match — this webhook would 404 every async-path callback. The job
+//      table is checked FIRST to cover that case; the legacy paths remain
+//      for sync-route generations.
+//   2. SETTLE. On success, the generation may complete via either this
+//      webhook OR the job runner polling the same provider result — same
+//      race the runner's own header documents. Exactly-once is enforced by
+//      the SAME conditional-transition ("CAS") pattern the failure path
+//      already used: only the delivery whose `updateMany` actually flips
+//      Generation.status out of a non-terminal state settles credits. That
+//      transition, the settle, and the job's own terminal transition all
+//      happen inside one prisma.$transaction — mirrors
+//      src/lib/job-runner.js's tryTransitionGeneration + safeSettle guards
+//      exactly; no second pattern was invented for this file.
+//   3. FAILURE MONEY FIX (found while proving #2 against the real test DB,
+//      not named in the Task 6 brief). Before Task 5, a failure webhook
+//      could only ever arrive AFTER the reservation had already been
+//      settled inline by the old synchronous route — so this branch's
+//      unconditional `refundCredits` call happened to be dollar-correct by
+//      accident (there was never an ACTIVE reservation left for it to
+//      mishandle). Task 5 changes that: the reservation now stays ACTIVE
+//      until something settles it, so a job that fails before either the
+//      runner or this webhook ever settles now hits this branch with an
+//      active reservation still open. `refundCredits` alone only credits
+//      `available` — it never decrements `reserved` or closes the
+//      CreditReservation row (see src/lib/wallet.js), which would leave
+//      `reserved` permanently overstated and a phantom "active" reservation
+//      behind forever (violating wallet.js's own documented invariant:
+//      `reserved == Σ amount of active CreditReservation rows`). Fixed by
+//      reusing job-runner.js's `releaseOrRefund` fallback exactly: try
+//      `releaseReservation` first (closes the still-active hold cleanly),
+//      and fall back to `refundCredits` only when nothing is active to
+//      release (the legacy/already-settled case, which is what every
+//      existing test below exercises).
 import prisma from "@/lib/prisma";
-import { refundCredits } from "@/lib/wallet";
+import { refundCredits, settleReservation, releaseReservation } from "@/lib/wallet";
 import { downloadAllMedia, extractKieResults } from "@/lib/media-download";
 
 export async function handleGenerationWebhook(body) {
@@ -38,9 +82,19 @@ export async function handleGenerationWebhook(body) {
       return { status: 400, response: { error: "Missing task/request ID" } };
     }
 
-    let generation = await prisma.generation.findFirst({
-      where: { requestId },
-    }).catch(() => null);
+    // Primary lookup (Task 6): job-backed (Task 5 async) generations only.
+    // See the file header — Generation.requestId is never set for these.
+    let job = await prisma.generationJob.findFirst({ where: { providerRequestId: requestId } }).catch(() => null);
+
+    let generation = job
+      ? await prisma.generation.findUnique({ where: { id: job.generationId } }).catch(() => null)
+      : null;
+
+    if (!generation) {
+      generation = await prisma.generation.findFirst({
+        where: { requestId },
+      }).catch(() => null);
+    }
 
     if (!generation) {
       generation = await prisma.generation.findFirst({
@@ -69,23 +123,62 @@ export async function handleGenerationWebhook(body) {
       return { status: 200, response: { success: true, alreadyProcessed: true, status: generation.status } };
     }
 
+    // A generation found via one of the legacy paths above may STILL have a
+    // job row (e.g. the runner submitted but this delivery landed before it
+    // finished persisting providerRequestId) — look it up by generationId so
+    // the job-termination logic below still runs.
+    if (!job) {
+      job = await prisma.generationJob.findUnique({ where: { generationId: generation.id } }).catch(() => null);
+    }
+
     const normalizedStatus = status?.toLowerCase();
     const isSuccess = normalizedStatus === "completed" || normalizedStatus === "succeeded" || normalizedStatus === "success";
     const isFail = normalizedStatus === "failed" || normalizedStatus === "error" || normalizedStatus === "fail";
 
     if (isSuccess) {
-      // Download media to our server
+      // Download media to our server — I/O, deliberately outside the
+      // transaction below (mirrors src/lib/job-runner.js, which also
+      // downloads before its own conditional transition).
       let localUrl = null;
       if (urls && urls.length > 0) {
         localUrl = await downloadAllMedia(urls);
       }
 
-      await prisma.generation.update({
-        where: { id: generation.id },
-        data: {
-          status: "completed",
-          outputUrl: localUrl || urls?.[0] || generation.outputUrl,
-        },
+      await prisma.$transaction(async (tx) => {
+        // Same CAS as the failure path below: only the delivery that
+        // actually flips the row out of a non-terminal state may settle.
+        const transitioned = await tx.generation.updateMany({
+          where: { id: generation.id, status: { notIn: ["failed", "completed"] } },
+          data: { status: "completed", outputUrl: localUrl || urls?.[0] || generation.outputUrl },
+        });
+        const won = transitioned.count > 0;
+
+        if (won && generation.creditsUsed > 0) {
+          // Never let a settle failure roll back a successful ingest —
+          // mirrors job-runner.js's safeSettle exactly (a credit-side
+          // failure must never mask the original provider/ingest result).
+          // src/lib/reconciliation.js's sweep is the safety net for a
+          // wallet-side hiccup here, same as every other settle call site.
+          try {
+            await settleReservation(generation.userId, generation.id, generation.creditsUsed, tx);
+          } catch (err) {
+            console.error(
+              `[generation-webhook] SETTLE FAILED — user may not be charged correctly. userId=${generation.userId} generationId=${generation.id} amount=${generation.creditsUsed}:`,
+              err.message
+            );
+          }
+        }
+
+        if (job) {
+          // Unconditional, mirroring job-runner's own unconditional
+          // completeJob call: this delivery genuinely observed the provider
+          // report success, independent of who won the credit race above.
+          // Idempotent/harmless if the runner already did the same thing.
+          await tx.generationJob.update({
+            where: { id: job.id },
+            data: { status: "succeeded", leaseUntil: null, lockedBy: null, providerRequestId: requestId },
+          });
+        }
       });
 
       return { status: 200, response: { success: true, downloaded: !!localUrl } };
@@ -101,9 +194,34 @@ export async function handleGenerationWebhook(body) {
         });
         if (transitioned.count === 0) return { alreadyProcessed: true };
 
+        if (job) {
+          // A provider-reported failure is authoritative — go straight to
+          // `dead`, not through job-queue.js's retryable failJob (retrying
+          // would just resubmit to a provider that already said no).
+          await tx.generationJob.update({
+            where: { id: job.id },
+            data: { status: "dead", leaseUntil: null, lockedBy: null, lastError: errorMsg || "Generation failed" },
+          });
+        }
+
         if (generation.creditsUsed > 0) {
-          await refundCredits(generation.userId, generation.creditsUsed, generation.id,
-            `Refund: ${errorMsg || "Failed generation"}`, tx);
+          // Release the still-active reservation when there is one (the
+          // common post-Task-5 case — nothing has settled yet); fall back
+          // to refundCredits only when there's nothing active to release
+          // (already settled elsewhere, or a legacy sync-route generation).
+          // Mirrors job-runner.js's releaseOrRefund exactly — see point 3
+          // in the file header.
+          let released = null;
+          try {
+            released = await releaseReservation(generation.userId, generation.id, tx);
+          } catch (err) {
+            if (err?.message !== "No active reservation found") throw err;
+            released = null; // fall through to refund below
+          }
+          if (released === null) {
+            await refundCredits(generation.userId, generation.creditsUsed, generation.id,
+              `Refund: ${errorMsg || "Failed generation"}`, tx);
+          }
         }
         return { refunded: generation.creditsUsed > 0 };
       });

@@ -15,14 +15,16 @@ import { randomUUID } from "node:crypto";
 
 export async function resetDb() {
   const { default: prisma } = await import("@/lib/prisma");
-  // Order respects FKs; cascade handles the rest. StripeEvent and
-  // AnonRateLimit have no FK to User (both are standalone, key-addressed
-  // tables — an idempotency ledger and a hashed-IP rate-limit store,
-  // respectively), so they must be truncated explicitly — otherwise rows
-  // from a prior test run survive and collide with fixed keys used by
-  // idempotency / rate-limit tests.
+  // Order respects FKs; cascade handles the rest. StripeEvent,
+  // AnonRateLimit, and GenerationJob have no FK to User (all are standalone,
+  // key-addressed tables — an idempotency ledger, a hashed-IP rate-limit
+  // store, and the durable job queue, respectively), so they must be
+  // truncated explicitly — otherwise rows from a prior test run survive and
+  // collide with fixed keys/ids used by idempotency / rate-limit / job-claim
+  // tests (this exact gap bit Phase 2 Task 9 with StripeEvent before it was
+  // added here).
   await prisma.$executeRawUnsafe(
-    `TRUNCATE "public"."User", "public"."StripeEvent", "public"."AnonRateLimit" RESTART IDENTITY CASCADE`
+    `TRUNCATE "public"."User", "public"."StripeEvent", "public"."AnonRateLimit", "public"."GenerationJob" RESTART IDENTITY CASCADE`
   );
   return prisma;
 }
