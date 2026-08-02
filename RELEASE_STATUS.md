@@ -24,42 +24,104 @@ the exact reasons already on record.
    and were rehearsed against the disposable test container
    (`postgresql://postgres:test@localhost:55432/test`) — never against
    `.env`'s `DATABASE_URL`. Exact commands and before/after row counts are
-   in `docs/runbook-backup.md`: 3 recognizable marker `User` rows were
-   seeded, the database was backed up, **dropped and recreated from
-   scratch (confirmed zero tables, not just zero rows)**, restored, and all
-   3 marker rows plus the full table totals (`User`=4, `Generation`=1,
-   `CreditWallet`=1, `GenerationJob`=0) came back exactly, alongside the
-   `_prisma_migrations` table proving the full schema — not just data —
-   round-tripped. 19 unit tests (`tests/unit/backup-args.test.mjs`) cover
-   the pure filename/pruning/guard logic in isolation.
+   in `docs/runbook-backup.md`.
 2. **Threshold alerting with webhook delivery and dedup (Gate F).**
    `src/lib/alerts.js`'s `evaluateAlerts()` reuses Phase 7's
-   `collectMetrics()` directly (worker liveness, queue backlog, job
-   dead-letter rate, generation failure rate, wallet reconciliation drift,
-   and per-provider failure-exceeds-success are all real, data-backed
-   rules); `deliverAlerts()` posts to `ALERT_WEBHOOK_URL` when configured, a
-   logged no-op otherwise; `filterDueAlerts()` dedupes per alert key against
+   `collectMetrics()` directly; `deliverAlerts()` posts to
+   `ALERT_WEBHOOK_URL` when configured, a logged no-op otherwise;
+   `selectDueAlerts()`/`recordAlertsFired()` dedupe per alert key against
    the existing `FeatureFlag` table. `GET /api/cron/alerts` (bearer
    `CRON_SECRET`) and `runAutomation()`'s new 6th leg both wire this
-   together. Proven against real Postgres
-   (`tests/integration/alerts.int.test.mjs`): seeded a genuinely stale
-   queued job, hit the route, confirmed a critical `worker_liveness` alert
-   fired and was delivered exactly once via a stubbed webhook, then was
-   suppressed on an immediate second call. One rule — Stripe webhook
-   failures — is implemented and unit-tested against a synthetic metrics
-   object but **cannot fire against real production data today**:
-   `collectMetrics()` has no failure count to read, because a failed
-   webhook's `StripeEvent` claim row is created inside the same transaction
-   that rolls back on failure, so there is structurally no row to count
-   (only a log line). This is not silently upgraded to "implemented" — see
-   `docs/runbook-ops.md`'s alert table for the exact wording.
-3. **Full gate sequence re-run clean after both tasks:** `npm run lint` (0
-   warnings), `npm run typecheck` (clean), `npx vitest run` → **621/621
-   unit** (baseline 570 + 19 backup-args + 32 alerts/automation),
-   `TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/test npx
-   vitest run --config vitest.integration.config.mjs` → **89/89
-   integration** (baseline 85 + 4 alerts), `npm run build` (clean,
-   `ƒ /api/cron/alerts` present in the route list).
+   together.
+
+### Code review follow-up (executed-proof round, same phase)
+
+An independent review executed adversarial tests against both A1 and A2 —
+not a read-through, actual exploit attempts against a stand-in database and
+a stubbed webhook — and found **three Critical** issues in
+`restore-db.mjs`'s production-host guard (each proven by actually
+destroying a stand-in database) plus **five Important** issues. All eight
+are fixed; re-verified with fresh executed evidence, not merely re-reading
+the code.
+
+**Criticals (restore-db.mjs's guard):**
+
+1. The guard was a bare hostname STRING compare. Proven bypass: production
+   addressed as `localhost`, target as `127.0.0.1` (same machine) — the
+   guard allowed it, `pg_restore` ran, 51 tables were overwritten in the
+   reviewer's stand-in. Fixed: `assertRestoreTargetAllowed` now resolves
+   both hosts to IP address sets — a manual legacy-IPv4 parser
+   (`parseLegacyIPv4`, exported) for `127.1`/`2130706433`/`0177.0.0.1`-style
+   forms (confirmed `dns.lookup` itself does NOT normalize these on this
+   platform) plus a real DNS lookup for genuine hostnames — and also
+   compares port and database name, so a same-host restore into a clearly
+   different (scratch) database doesn't force `--allow-production` for a
+   legitimate case.
+2. `.env` loading was `process.cwd()`-relative; with `DATABASE_URL` unset,
+   the guard silently skipped its check. Proven bypass: the identical
+   `--target` invocation that was refused from the repo root restored
+   successfully when run from a scratch directory — exactly what an
+   operator following this runbook's own restore recipe would hit (dumps
+   live in `/root/backups/db`, not the app directory). Fixed: both scripts
+   now load `.env` from a path relative to the script file itself
+   (`fileURLToPath(import.meta.url)`), never `process.cwd()`.
+3. The guard failed OPEN on a missing/empty/unparseable `DATABASE_URL`
+   ("can't tell what production is" was treated as "no conflict, proceed").
+   Fixed: now fails CLOSED — refuses unless `--allow-production` is passed
+   explicitly.
+
+All three were re-executed against the real script (not just unit tests)
+after the fix — every one of the bypass forms above, plus the
+cwd-independence scenario, is now REFUSED; the cases that must keep passing
+(a genuinely different host, a same-host different-database-name target,
+`--allow-production` itself) are still ALLOWED. The full table of inputs and
+results is in `docs/runbook-backup.md`'s "Security hardening" section.
+
+**Importants:**
+
+4. Alert dedup state was written BEFORE delivery was attempted — an
+   undelivered critical (webhook 500) was marked "fired" and suppressed for
+   the full 60-minute repeat window, reaching nobody. Fixed: `alerts.js`
+   now splits `selectDueAlerts` (read-only) from `recordAlertsFired`
+   (write-only), and callers (`GET /api/cron/alerts`, the automation leg)
+   call the latter ONLY after `deliverAlerts()` reports `delivered: true`.
+   Proven against real Postgres: a webhook 500 now leaves the same critical
+   alert due again on the very next call
+   (`tests/integration/alerts.int.test.mjs`).
+5. `deliverAlerts()`'s `fetch` had no timeout — a hanging webhook would
+   stall the entire `runAutomation()` cron response (including the
+   money-safety legs) indefinitely. Fixed: `AbortSignal.timeout(10_000)` on
+   the request.
+6. `alert_state:*` `FeatureFlag` rows were visible (and writable) via
+   `GET`/`POST /api/admin/flags` as if they were ordinary operator flags.
+   Fixed: `GET` now excludes the `alert_state:` prefix at the query level;
+   `POST` 400s if asked to write one.
+7. `restore-db.mjs` exited 0 regardless of `pg_restore`'s own exit code — a
+   partial restore (after `--clean --if-exists` already dropped objects)
+   printed row counts and reported success. Fixed and re-verified: a
+   deliberately truncated dump now produces exit code 1, matching
+   `pg_restore`'s.
+8. `backup-db.mjs` read the dump's byte size right after the child
+   process's `"close"` event, which does not guarantee the piped
+   `WriteStream` had finished flushing — a slow disk could under-report the
+   size, and the (now-incorrect) `size === 0` check would delete a real,
+   merely-not-yet-flushed dump; `WriteStream` also had no `"error"`
+   handler. Fixed: `runPgDump` now resolves only once BOTH the child has
+   closed AND the stream has emitted `"finish"`, and the stream's own
+   `"error"` is handled.
+
+The full rehearsal (seed → backup → drop/recreate → restore → verify) was
+re-run after all eight fixes, against the corrected scripts — fresh numbers
+are in `docs/runbook-backup.md`, not reused from before the fixes.
+
+**Full gate sequence re-run clean after the review fixes:** `npm run lint`
+(0 warnings), `npm run typecheck` (clean), `npx vitest run` → **659/659
+unit** (baseline 570 + 89 new: 45 backup-args, 36 alerts, 4
+api-admin-flags, plus automation-leg additions), `TEST_DATABASE_URL=
+postgresql://postgres:test@localhost:55432/test npx vitest run --config
+vitest.integration.config.mjs` → **90/90 integration** (baseline 85 + 5
+alerts, including the Important-1 undelivered-alert proof), `npm run build`
+(clean, `ƒ /api/cron/alerts` present in the route list).
 
 Neither task touched anything under `src/components/`, `src/app/templates/`,
 `tests/e2e/`, `playwright.config.mjs`, or `src/lib/template*` — Stream B's
@@ -215,7 +277,7 @@ now closed (see Gate B below).
 | Stripe cases (simulated) | `npx vitest run tests/unit/stripe-webhook.test.mjs` + the integration Stripe tests above | Pass — checkout/topup/subscription/invoice-renewal/cancellation branches all exercised against a mocked Stripe SDK + real Postgres for the DB side. |
 | No client-controlled price | `npx vitest run tests/unit/generation-pricing-strict.test.mjs` | 12/12 pass — price is always resolved server-side from `ModelPricing`, never from the request body. |
 | **Margin floor enforced** | `npx vitest run tests/unit/pricing-engine.test.mjs tests/unit/api-admin-pricing.test.mjs tests/unit/api-admin-models.test.mjs tests/unit/api-admin-providers.test.mjs` | **PASS — fixed this review round.** `setModelPricing`/`setProviderMarkup` (`src/lib/pricing-engine.js`) now reject (never clamp) a `creditsCost` below the model's provider cost or a `markup` below `1.0`, reusing `CREDIT_TO_EUR` (no second constant). Enforced at all three write paths: `POST /api/admin/pricing`, `POST /api/admin/models` (partial-update, floored against the row's effective post-update cost), `POST /api/admin/providers` (upserts markup directly, same shared assertion). The review's exact quantified scenario (10s video, ~$0.75 provider cost, `creditsCost:5`) is a named test case and is rejected with a 400 naming the real minimum (75 credits); a markup of `0.5` is rejected the same way; a valid update at or above the floor still succeeds. 20 new tests total (14 in `pricing-engine.test.mjs`, 2 in the new `api-admin-pricing.test.mjs`, 4 in the new `api-admin-models.test.mjs`, 2 added to `api-admin-providers.test.mjs`). |
-| Backup and restore tested | `docs/runbook-backup.md`'s rehearsal section — exact commands, run for real against `helmies-test-pg` | **PASS (Phase 8 Task A1).** `scripts/backup-db.mjs`/`scripts/restore-db.mjs` were rehearsed against the disposable test container only, never `.env`'s `DATABASE_URL`: seeded 3 recognizable marker `User` rows (`backup-rehearsal-N@test.local`), backed up (96,434 bytes), **dropped and recreated the database from scratch** (confirmed zero tables — `relation "User" does not exist`), restored, and confirmed all 3 marker rows plus the full table totals (`User`=4, `Generation`=1, `CreditWallet`=1, `GenerationJob`=0 — exactly matching the pre-drop snapshot) came back, alongside the `_prisma_migrations` table (10 rows) proving the full schema, not just data, round-tripped. 19 unit tests cover the pure filename/pruning/guard logic (`tests/unit/backup-args.test.mjs`). |
+| Backup and restore tested | `docs/runbook-backup.md`'s rehearsal + "Security hardening" sections — exact commands, run for real against `helmies-test-pg` and re-run after a review found and fixed 3 executable Criticals in the production-host guard | **PASS (Phase 8 Task A1, re-verified after code review).** `scripts/backup-db.mjs`/`scripts/restore-db.mjs` were rehearsed against the disposable test container only, never `.env`'s `DATABASE_URL`: seeded 3 recognizable marker `User` rows, backed up (105,487 bytes, via the corrected stream-flush-safe `runPgDump`), **dropped and recreated the database from scratch** (confirmed zero tables), restored, and confirmed all 3 marker rows plus the full table totals came back exactly, alongside `_prisma_migrations` (10 rows) proving the full schema round-tripped. **The production-host guard itself was adversarially re-tested**: `127.0.0.1` vs `localhost`, `127.1`, `2130706433` (decimal), `0177.0.0.1` (octal), and a trailing-dot FQDN are all now REFUSED (previously all bypassed a bare string compare); an empty or unparseable `DATABASE_URL` now fails CLOSED (previously failed open); the guard's `.env` load is cwd-independent (confirmed identical behavior running from the repo root vs. an unrelated directory with `DATABASE_URL` unset in the shell); a genuinely different host, a same-host different-database target, and `--allow-production` itself all remain correctly ALLOWED. A corrupted/partial dump now makes `restore-db.mjs` exit non-zero (previously always exited 0). 45 unit tests cover the pure filename/pruning/guard/legacy-IPv4/DNS logic (`tests/unit/backup-args.test.mjs`). |
 | Live Stripe test-clock flows | — | **BLOCKED.** Requires a real Stripe test-mode account and `stripe trigger`/test-clock API access, not available in this worktree. One-command instruction: `stripe trigger checkout.session.completed --add checkout_session:metadata.userId=<test-user-id>` against a configured Stripe CLI pointed at the app's `/api/stripe/webhook`, then confirm the matching `CreditLedger` row. |
 
 Gate B stays **BLOCKED**, not PASS: the margin-floor defect is fixed, and
@@ -276,7 +338,7 @@ credentials.
 | **Maintenance mode — verified with a test, not by inspection** | `npx playwright test tests/e2e/admin-ops.spec.mjs --workers=1` (test: "toggling maintenance ON requires typed confirmation, then /studio 503s; toggling OFF restores it") | **PASS.** The test: opens Admin → Operator controls, requires typing `MAINTENANCE` + a reason before the confirm button enables, confirms, then a **fresh unauthenticated browser context** gets a real `503` from `GET /studio`; toggles back off (no confirmation gate on that direction) and a second fresh context confirms `/studio` no longer 503s. The ON window is wrapped in `try/finally` so a failed assertion can never leave maintenance stuck on for other concurrently-running specs. |
 | **Maintenance mode never blocks money-critical paths — verified with a test** | `npx vitest run tests/unit/ops-flags.test.mjs` (12 middleware-specific test cases) | **PASS.** Directly asserts, with a real `middleware()` invocation and a mocked `/api/health` response of `maintenance: true`, that `POST /api/webhooks/generation-complete`, `POST /api/stripe/webhook`, `POST /api/cron/automation`, `POST /api/admin/ops`, and `GET /api/health` itself all still reach `NextResponse.next()` (never a 503), while a normal state-changing route (`POST /api/assets`) and `/studio` correctly do 503. |
 | Incident runbook | `docs/runbook-ops.md`, `docs/incident-response.md` (this phase) | Written — maintenance mode, provider kill switch, worker-down/stuck-job/reconciliation-drift triage, the automation cron's role as the money safety net, severity levels, who to page (currently: no one, automatically — documented honestly), and the first five commands for a SEV-1. |
-| **Alerts working (paging)** | `TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/test npx vitest run --config vitest.integration.config.mjs tests/integration/alerts.int.test.mjs` + `npx vitest run tests/unit/alerts.test.mjs tests/unit/automation.test.mjs` | **PASS (Phase 8 Task A2).** `src/lib/alerts.js`'s `evaluateAlerts()` (reusing Phase 7's `collectMetrics()` directly, never re-querying) implements 6 real, data-backed rules (worker liveness, queue backlog, job dead-letter rate, generation failure rate, wallet reconciliation drift, per-provider failure-exceeds-success) plus a 7th (Stripe webhook failures) that is real and unit-tested but cannot fire against production data yet — `collectMetrics()` has no failure count to read, since a failed webhook's `StripeEvent` claim rolls back with the transaction, leaving nothing to count (log-only today; not silently upgraded to "implemented" — see `docs/runbook-ops.md`). `deliverAlerts()` posts to `ALERT_WEBHOOK_URL` when set, logs a warning no-op otherwise; `filterDueAlerts()` dedupes per key against the existing `FeatureFlag` table. `GET /api/cron/alerts` (bearer `CRON_SECRET`) and `runAutomation()`'s new 6th Promise.allSettled-isolated leg both wire this together. **Executed proof against real Postgres:** seeded a stale queued job, hit the route, confirmed a critical `worker_liveness` alert fired and was delivered exactly once via a stubbed webhook, then was suppressed on an immediate second call (the `FeatureFlag`-backed dedup window). 29 alert-rule/dedup/delivery unit tests + 4 integration tests + 3 new automation-leg unit tests, all passing. |
+| **Alerts working (paging)** | `TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/test npx vitest run --config vitest.integration.config.mjs tests/integration/alerts.int.test.mjs` + `npx vitest run tests/unit/alerts.test.mjs tests/unit/automation.test.mjs tests/unit/api-admin-flags.test.mjs` | **PASS (Phase 8 Task A2, re-verified after code review).** `src/lib/alerts.js`'s `evaluateAlerts()` (reusing Phase 7's `collectMetrics()` directly, never re-querying) implements 6 real, data-backed rules plus a 7th (Stripe webhook failures) that is real and unit-tested but cannot fire against production data yet (documented honestly, see `docs/runbook-ops.md`). `deliverAlerts()` posts to `ALERT_WEBHOOK_URL` with a 10s `AbortSignal.timeout` (fixed: a hanging webhook used to stall `runAutomation()`'s entire response, including the money-safety legs), logs a warning no-op when unset. Dedup is split into `selectDueAlerts()` (read-only) and `recordAlertsFired()` (write-only, called ONLY after a confirmed delivery — fixed: it used to write before delivery was attempted, so an undelivered critical was suppressed for the full 60-minute window; re-proven against real Postgres that a webhook 500 now leaves the alert due again immediately). `GET /api/cron/alerts` and `runAutomation()`'s 6th leg both wire this together. `alert_state:*` `FeatureFlag` rows are now excluded from `GET /api/admin/flags` and rejected by its `POST` (fixed: they used to appear as editable operator flags). 36 alert unit tests + 5 integration tests + automation-leg tests + 4 admin-flags tests, all passing. |
 | **Rollback tested** | — | **BLOCKED.** Would require a real deploy + intentional rollback rehearsal against the production server; not performed in this environment. One-command instruction: on the server, `git reset --hard <previous-sha> && npx prisma generate && npm run build && pm2 startOrReload ecosystem.config.cjs --update-env`, then confirm `/api/admin/metrics` and `/api/health` respond correctly post-rollback. |
 | **Production smoke test checklist completed** | `docs/release-checklist.md` (written this phase) | The checklist itself is written and matches CI exactly, plus a manual post-deploy section (metrics reachable, maintenance mode off, worker not crash-looping). **Running it against real production is BLOCKED** — no deploy was performed as part of this phase. One-command instruction: `scripts/deploy.sh` via the documented `plink` invocation, followed by the "Pre-deploy (manual today)" section's four checks in `docs/release-checklist.md`. |
 
