@@ -11,6 +11,7 @@ import { enqueueJob } from "@/lib/job-queue";
 import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expansion";
 import { applyMemoryToPrompt } from "@/lib/memory";
 import { quoteCatalogModel } from "@/lib/model-catalog";
+import { resolveModelPricingRow } from "@/lib/model-catalog-core.mjs";
 import {
   IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS,
   LIPSYNC_MODELS, AUDIO_MODELS, RECAST_MODELS,
@@ -79,7 +80,11 @@ export async function POST(req) {
 
     const provider = await resolveProvider(model);
 
-    const dbPricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
+    // Tolerant of the "public" (provider-prefix-stripped) id the catalog now
+    // hands back to clients (see resolveModelPricingRow's header in
+    // model-catalog-core.mjs) — falls straight through to this exact query,
+    // unchanged, for the real id every existing/internal caller still uses.
+    const dbPricing = await resolveModelPricingRow(prisma, model).catch(() => null);
     // Billing requires a real, active ModelPricing row — same policy as
     // generation-handler.js. estimateCredits' flat per-tool fallback is a
     // planning/preview estimate only and must never be used to actually bill
@@ -182,7 +187,13 @@ export async function POST(req) {
       data: {
         userId: user.id,
         tool: tool || "image",
-        model,
+        // dbPricing.modelId (not the raw `model` the client sent, which may
+        // be the catalog's public/provider-prefix-stripped id) is guaranteed
+        // non-null here (the !dbPricing check above already returned) and
+        // is the real, canonical ModelPricing.modelId — keeping this record
+        // consistent with every other row regardless of which id form the
+        // client happened to submit.
+        model: dbPricing.modelId,
         prompt: prompt || "",
         params: body,
         status: "pending",

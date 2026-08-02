@@ -10,6 +10,7 @@ import { authenticateApiKey } from "@/lib/api-key-auth";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
 import { quoteCatalogModel } from "@/lib/model-catalog";
+import { resolveModelPricingRow } from "@/lib/model-catalog-core.mjs";
 import {
   IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS,
   LIPSYNC_MODELS, AUDIO_MODELS, RECAST_MODELS,
@@ -140,7 +141,10 @@ export async function handleGeneration(req, tool, cost, apiFn) {
 
     const provider = await resolveProvider(model);
 
-    const dbPricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
+    // Tolerant of the "public" (provider-prefix-stripped) id the catalog now
+    // hands back to clients — see resolveModelPricingRow's header in
+    // model-catalog-core.mjs.
+    const dbPricing = await resolveModelPricingRow(prisma, model).catch(() => null);
     // Billing requires a real, active ModelPricing row — the caller-supplied
     // `cost` parameter (the tool's flat per-route default) is never used as a
     // price once we get here. MODEL_REGISTRY is endpoint metadata only; it is
@@ -173,7 +177,10 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       data: {
         userId: user.id,
         tool,
-        model,
+        // dbPricing.modelId (not the raw `model` from the request, which may
+        // be the catalog's public/provider-prefix-stripped id) — see the
+        // identical note in generate/async/route.js.
+        model: dbPricing.modelId,
         prompt: rawPrompt,
         params: body,
         status: "pending",

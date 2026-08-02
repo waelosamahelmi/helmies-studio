@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/prisma", () => {
   const models = {
-    modelPricing: { findUnique: vi.fn() },
+    modelPricing: { findUnique: vi.fn(), findFirst: vi.fn() },
     providerConfig: { findMany: vi.fn() },
   };
   return { default: models };
@@ -54,6 +54,20 @@ describe("resolveProvider — the adapter key must survive the PROVIDERS spread"
     expect(result.name).toBe(DEFAULT_PROVIDER);
     expect(result.baseUrl).toBe(PROVIDERS.kie.baseUrl);
     expect(PROVIDERS[result.name]).toBeDefined();
+  });
+
+  // URGENT fix, requirement 4: the public catalog now hands back
+  // "qwen-image-max" instead of the real "alibaba:qwen-image-max" — routing
+  // still has to land on the Alibaba adapter for it.
+  it("resolves a public (provider-prefix-stripped) id to the same adapter its real, prefixed row maps to", async () => {
+    prisma.modelPricing.findUnique.mockResolvedValue(null); // no exact match on the stripped id
+    prisma.modelPricing.findFirst.mockResolvedValue({ modelId: "alibaba:qwen-image-max", providerName: "Alibaba" });
+
+    const result = await resolveProvider("qwen-image-max");
+
+    expect(result.name).toBe("alibaba");
+    expect(result.baseUrl).toBe(PROVIDERS.alibaba.baseUrl);
+    expect(prisma.modelPricing.findFirst).toHaveBeenCalledWith({ where: { modelId: { endsWith: ":qwen-image-max" } } });
   });
 });
 

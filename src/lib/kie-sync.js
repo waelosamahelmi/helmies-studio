@@ -14,7 +14,7 @@
  */
 
 import prisma from "@/lib/prisma";
-import { defaultSchemaForCapability, inferKieModelFromUrl } from "@/lib/model-catalog-core.mjs";
+import { defaultSchemaForCapability, inferKieModelFromUrl, modelTypeForCapability, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
 import { calculateCredits } from "@/lib/pricing-engine";
 
 const KIE_SITEMAP_URL = "https://docs.kie.ai/sitemap.xml";
@@ -352,7 +352,12 @@ export async function fetchKieModels() {
         modelId,
         providerModelId: inferred?.providerModelId || modelId,
         endpoint: inferred?.endpoint || modelId,
-        displayName: inferred?.displayName || modelId.split(/[-/]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" "),
+        // slugToTitle (not the naive per-segment titlecasing this replaced)
+        // re-joins split version numbers, drops known vendor-folder
+        // segments, and strips a redundant trailing capability phrase — see
+        // its header comment in model-catalog-core.mjs for the exact bugs
+        // ("Bytedance Seedance 1 5 Pro", "Generate 4 O Image") this fixes.
+        displayName: inferred?.displayName || slugToTitle(modelId, { capability }),
         provider: provider.charAt(0).toUpperCase() + provider.slice(1),
         type,
         capability,
@@ -430,8 +435,20 @@ export async function syncKieModels() {
     const providerCost = getPricing(model.modelId, model.type);
     const creditsCost = calculateCredits(providerCost, MARKUP);
     const pricingRules = { currency: "USD", unit: model.type === "image" || model.type === "i2i" ? "image" : "fixed", rules: [{ price: providerCost }] };
+    // modelType is ALWAYS derived from capability (single source of truth —
+    // see modelTypeForCapability's header). model.type above is the old
+    // path-text guess; it still drives the default pricing unit and modality
+    // fallback above/below, but it must never be what lands in the DB's
+    // modelType column — that was the entire bug (see the header comment on
+    // CAPABILITY_TO_MODEL_TYPE for the Bytedance Seedance example). A
+    // capability this doesn't recognize (including a bare "video"/"image"
+    // fallback the inference above can't tell a direction for) is written
+    // as UNCATEGORIZED, not guessed — it needs a real capability fixed at
+    // the sync source, and getCatalogModels/serializeCatalogModel (model-
+    // catalog.js) never show an UNCATEGORIZED row to end users.
+    const modelType = modelTypeForCapability(model.capability) || UNCATEGORIZED_MODEL_TYPE;
     const modelData = {
-      modelType: model.type,
+      modelType,
       providerName: "KIE",
       providerModelId: model.providerModelId,
       endpoint: model.endpoint,

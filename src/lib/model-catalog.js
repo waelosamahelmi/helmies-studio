@@ -7,7 +7,10 @@
 // knowledge of the "@/" alias at all, only Next/Vite's bundler does.
 import prisma from "./prisma.js";
 import { ALIBABA_MEDIA_MODELS } from "./alibaba-catalog.js";
-import { calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput } from "./model-catalog-core.mjs";
+import {
+  calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput,
+  modelTypeForCapability, UNCATEGORIZED_MODEL_TYPE, slugToTitle, toPublicModelId, resolveModelPricingRow,
+} from "./model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
 
@@ -87,17 +90,50 @@ export async function syncAlibabaModels() {
   return { provider: "Alibaba", added, updated, deactivated: stale.length, total: ALIBABA_MEDIA_MODELS.length };
 }
 
-export function serializeCatalogModel(model, { includeCosts = false } = {}) {
+// KIE's displayName is ALWAYS sync-derived from its docs URL slug (there is
+// no admin path that ever writes a custom one — see admin/models/route.js
+// and admin/pricing/route.js's setModelPricing, neither of which touch
+// displayName), so recomputing it here with the fixed slugToTitle is a pure
+// improvement, applied live to every row regardless of whether a fresh sync
+// has run yet. Alibaba's displayName, by contrast, is hand-authored right
+// in alibaba-catalog.js's model() calls — that IS the "provider-supplied"
+// name the task asks us to prefer, so it's left alone (falling back to
+// slugToTitle only if a future row somehow has none).
+function displayNameFor(model) {
+  if (model.providerName === "KIE") {
+    return slugToTitle(model.modelId, { capability: model.capability }) || model.displayName || model.modelId;
+  }
+  return model.displayName || slugToTitle(model.modelId, { capability: model.capability }) || model.modelId;
+}
+
+// isAdmin controls two things the public catalog must never leak (see
+// toPublicModelId's header and the URGENT-fix task notes): the upstream
+// provider identity (providerName/provider — dropped entirely) and a
+// provider-prefixed real id (e.g. Alibaba's "alibaba:qwen-image-max" —
+// stripped to "qwen-image-max"; resolveModelPricingRow below is what makes
+// that safe to hand back to a client — see its own header). The real id
+// is NEVER changed at rest; only what this function returns to a non-admin
+// caller differs.
+export function serializeCatalogModel(model, { includeCosts = false, isAdmin = false } = {}) {
+  // modelType is re-derived from capability HERE too, not just trusted from
+  // whatever the DB column says — belt-and-suspenders against a row that
+  // hasn't been through a sync/backfill since this fix landed. A capability
+  // this doesn't map (including null) is never shown to a non-admin caller
+  // (requirement: uncategorized models must not appear in any user-facing
+  // list) — the admin path still gets it, flagged via isUncategorized, so
+  // whoever owns the sync can go fix its capability.
+  const effectiveType = modelTypeForCapability(model.capability);
+  const isUncategorized = effectiveType === null;
+  const publicId = isAdmin ? model.modelId : toPublicModelId(model.modelId, model.providerName);
   const base = {
-    id: model.modelId,
-    modelId: model.modelId,
+    id: publicId,
+    modelId: publicId,
     providerModelId: model.providerModelId || model.modelId,
     endpoint: model.endpoint || model.modelId,
-    displayName: model.displayName || model.modelId,
+    displayName: displayNameFor(model),
     description: model.description,
-    provider: model.providerName,
-    modelType: model.modelType,
-    capability: model.capability || model.modelType,
+    modelType: isUncategorized ? UNCATEGORIZED_MODEL_TYPE : effectiveType,
+    capability: model.capability || null,
     inputModalities: model.inputModalities || [],
     outputModalities: model.outputModalities || [],
     schema: model.inputSchema || null,
@@ -112,7 +148,12 @@ export function serializeCatalogModel(model, { includeCosts = false } = {}) {
     sourceUrl: model.sourceUrl,
     catalogVersion: model.catalogVersion,
     isDeprecated: model.isDeprecated,
+    isUncategorized,
   };
+  if (isAdmin) {
+    base.provider = model.providerName;
+    base.providerName = model.providerName;
+  }
   if (includeCosts) {
     base.providerCost = model.providerCost;
     base.pricing = model.pricingRules || null;
@@ -120,24 +161,33 @@ export function serializeCatalogModel(model, { includeCosts = false } = {}) {
   return base;
 }
 
-export async function getCatalogModels({ capability, modelType, provider, includeInactive = false, includeCosts = false } = {}) {
+export async function getCatalogModels({ capability, modelType, provider, includeInactive = false, includeCosts = false, isAdmin = false } = {}) {
   const where = {
     ...(includeInactive ? {} : { isActive: true, isDeprecated: false }),
     ...(capability ? { capability } : {}),
     ...(modelType ? { modelType } : {}),
     ...(provider ? { providerName: { equals: provider, mode: "insensitive" } } : {}),
   };
+  // Coarse DB-level exclusion of rows already written as UNCATEGORIZED — an
+  // optimization, not the actual guarantee (see the in-memory filter below).
+  if (!modelType && !isAdmin) where.modelType = { not: UNCATEGORIZED_MODEL_TYPE };
   const rows = await prisma.modelPricing.findMany({ where, orderBy: [{ sortOrder: "asc" }, { displayName: "asc" }, { modelId: "asc" }] });
-  return rows.map((row) => serializeCatalogModel(row, { includeCosts }));
+  // The actual guarantee: re-derive from capability regardless of what the
+  // DB's modelType column currently says, so a row that drifted out of sync
+  // (no backfill/sync run yet) still never reaches a non-admin caller.
+  const visible = isAdmin ? rows : rows.filter((row) => modelTypeForCapability(row.capability) !== null);
+  return visible.map((row) => serializeCatalogModel(row, { includeCosts, isAdmin }));
 }
 
-export async function getCatalogModel(modelId, { includeCosts = false } = {}) {
-  const row = await prisma.modelPricing.findUnique({ where: { modelId } });
-  return row ? serializeCatalogModel(row, { includeCosts }) : null;
+export async function getCatalogModel(modelId, { includeCosts = false, isAdmin = false } = {}) {
+  const row = await resolveModelPricingRow(prisma, modelId);
+  if (!row) return null;
+  if (!isAdmin && modelTypeForCapability(row.capability) === null) return null;
+  return serializeCatalogModel(row, { includeCosts, isAdmin });
 }
 
 export async function quoteCatalogModel(modelId, params = {}) {
-  const row = await prisma.modelPricing.findUnique({ where: { modelId } });
+  const row = await resolveModelPricingRow(prisma, modelId);
   if (!row || !row.isActive || row.isDeprecated) throw new Error("Model is unavailable");
   const errors = validateModelInput(row.inputSchema, params);
   if (errors.length) return { valid: false, errors };

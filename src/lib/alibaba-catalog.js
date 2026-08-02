@@ -1,3 +1,5 @@
+import { modelTypeForCapability, UNCATEGORIZED_MODEL_TYPE } from "./model-catalog-core.mjs";
+
 const PRICING_URL = "https://www.alibabacloud.com/help/en/model-studio/model-pricing";
 const IMAGE_DOCS = "https://www.alibabacloud.com/help/en/model-studio/image-model";
 const VIDEO_DOCS = "https://www.alibabacloud.com/help/en/model-studio/use-video-generation";
@@ -42,7 +44,13 @@ function model(modelId, capability, schema, pricingRules, extra = {}) {
     endpoint: modelId,
     displayName: extra.displayName || modelId,
     description: extra.description || `Alibaba Model Studio ${capability.replaceAll("-", " ")} model.`,
-    modelType: output === "video" ? (capability === "image-to-video" ? "i2v" : capability === "video-to-video" ? "v2v" : "video") : output === "audio" ? "audio" : capability === "image-to-image" ? "i2i" : "image",
+    // Single source of truth (URGENT fix): modelType is always derived from
+    // capability via modelTypeForCapability, never hand-rolled here — every
+    // capability this file passes is one of the mapped ones already, so
+    // this is a behavior-preserving refactor for existing rows, but it
+    // means a typo'd/future capability can no longer silently drift from
+    // its modelType the way it did before this fix.
+    modelType: modelTypeForCapability(capability) || UNCATEGORIZED_MODEL_TYPE,
     capability,
     inputModalities: inputs,
     outputModalities: [output],
