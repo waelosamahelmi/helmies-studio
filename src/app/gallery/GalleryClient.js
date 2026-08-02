@@ -21,6 +21,9 @@ import { useSession } from "next-auth/react";
 import { apiFetch } from "@/lib/client-fetch";
 import { TOOLS } from "@/components/studio/kit/tools";
 import { IcArchive, IcLock, IcAlert, IcRefresh, IcClock, IcExternal } from "@/components/studio/kit/Icons";
+import EmptyState from "@/components/states/EmptyState";
+import ErrorState from "@/components/states/ErrorState";
+import LoadingSkeleton from "@/components/states/LoadingSkeleton";
 
 const PAGE = 48;
 const POLL_MS = 6000;
@@ -47,19 +50,16 @@ function ago(iso) {
 
 function SignedOut() {
   return (
-    <div className="hs-empty">
-      <span className="hs-empty__mark"><IcLock /></span>
-      <h2>Your gallery is behind the sign-in</h2>
-      <p>
-        The gallery shows your own generations and the jobs still running on your
-        account, so it needs to know who you are. Signing in takes a moment and
-        starts you with 100 credits.
-      </p>
-      <div className="pg-head__row">
-        <Link href="/login?callbackUrl=%2Fgallery" className="hs-btn hs-btn--primary">Sign in</Link>
-        <Link href="/login?new=1" className="hs-btn hs-btn--outline">Create an account</Link>
-      </div>
-    </div>
+    <EmptyState
+      icon={<IcLock />}
+      titleAs="h2"
+      title="Your gallery is behind the sign-in"
+      description="The gallery shows your own generations and the jobs still running on your account, so it needs to know who you are. Signing in takes a moment and starts you with 100 credits."
+      action={[
+        { label: "Sign in", href: "/login?callbackUrl=%2Fgallery" },
+        { label: "Create an account", href: "/login?new=1", variant: "outline" },
+      ]}
+    />
   );
 }
 
@@ -200,26 +200,23 @@ export default function GalleryClient() {
   }
 
   if (authStatus === "loading") {
-    return (
-      <div className="pg-gal" aria-busy="true">
-        <p className="hs-sr" role="status">Checking your session</p>
-        {[220, 300, 180, 260, 200, 320, 240, 190].map((h, i) => (
-          <div key={i} className="pg-gal__item" aria-hidden="true">
-            <div className="hs-skel" style={{ height: h, borderRadius: 0 }} />
-          </div>
-        ))}
-      </div>
-    );
+    return <LoadingSkeleton variant="grid" className="pg-gal" itemClassName="pg-gal__item" count={8} label="Checking your session" />;
   }
 
   if (!authed) return <SignedOut />;
 
   const chips = TOOLS.filter((t) => seen.includes(t.id));
   const hasMore = done.length < total;
+  // The finished-work section below shows a dedicated ErrorState of its own
+  // when the fault means there is genuinely nothing to display (done.length
+  // === 0) — this banner is for a fault that happened ALONGSIDE content that
+  // did load (a queue-poll hiccup, a load-more page failure), not instead of
+  // duplicating the same message twice.
+  const showFaultBanner = fault && done.length > 0;
 
   return (
     <>
-      {fault && (
+      {showFaultBanner && (
         <div className="hs-notice hs-notice--fault" role="alert" style={{ marginBottom: "var(--s-5)" }}>
           <IcAlert className="hs-icon" />
           <span>{fault}</span>
@@ -316,36 +313,32 @@ export default function GalleryClient() {
         </div>
 
         {loading && (
-          <div className="pg-gal" aria-busy="true">
-            <p className="hs-sr" role="status">Loading your generations</p>
-            {[240, 320, 200, 280, 210, 340, 260, 190, 300, 230, 270, 210].map((h, i) => (
-              <div key={i} className="pg-gal__item" aria-hidden="true">
-                <div className="hs-skel" style={{ height: h, borderRadius: 0 }} />
-              </div>
-            ))}
-          </div>
+          <LoadingSkeleton variant="grid" className="pg-gal" itemClassName="pg-gal__item" count={12} label="Loading your generations" />
         )}
 
-        {!loading && done.length === 0 && (
-          <div className="hs-empty">
-            <span className="hs-empty__mark"><IcArchive /></span>
-            <h3>{tool === "all" ? "Nothing finished yet" : `Nothing from ${TOOL_LABEL[tool] || tool} yet`}</h3>
-            <p>
-              {tool === "all"
-                ? "Everything you generate lands here — stills, video and audio, newest first, with the model and the credits it cost."
-                : "You have not completed a run in this studio yet. Switch the filter back, or open the studio and make the first one."}
-            </p>
-            {tool === "all" ? (
-              <Link href="/studio/image" className="hs-btn hs-btn--primary">Make the first one</Link>
-            ) : (
-              <div className="pg-head__row">
-                <Link href={`/studio/${tool}`} className="hs-btn hs-btn--primary">Open {TOOL_LABEL[tool] || tool}</Link>
-                <button type="button" className="hs-btn hs-btn--outline" onClick={() => setTool("all")}>
-                  Show everything
-                </button>
-              </div>
-            )}
-          </div>
+        {!loading && done.length === 0 && fault && (
+          <ErrorState message={fault} onRetry={retry} />
+        )}
+
+        {!loading && done.length === 0 && !fault && (
+          tool === "all" ? (
+            <EmptyState
+              icon={<IcArchive />}
+              title="Nothing finished yet"
+              description="Everything you generate lands here — stills, video and audio, newest first, with the model and the credits it cost."
+              action={{ label: "Make the first one", href: "/studio/image" }}
+            />
+          ) : (
+            <EmptyState
+              icon={<IcArchive />}
+              title={`Nothing from ${TOOL_LABEL[tool] || tool} yet`}
+              description="You have not completed a run in this studio yet. Switch the filter back, or open the studio and make the first one."
+              action={[
+                { label: `Open ${TOOL_LABEL[tool] || tool}`, href: `/studio/${tool}` },
+                { label: "Show everything", onClick: () => setTool("all"), variant: "outline" },
+              ]}
+            />
+          )
         )}
 
         {!loading && done.length > 0 && (

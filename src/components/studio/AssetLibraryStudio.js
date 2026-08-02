@@ -8,6 +8,8 @@ import {
   IcImage, IcVideo, IcMusic, IcSearch, IcDownload, IcCopy, IcCheck,
   IcTrash, IcExternal, IcRefresh, IcLayers, IcAlert, IcClose,
 } from "@/components/studio/kit";
+import EmptyState from "@/components/states/EmptyState";
+import ErrorState from "@/components/states/ErrorState";
 
 /* ══════════════════════════════════════════════════════════════════════════
    ASSET LIBRARY — .st-lib collection browser
@@ -321,7 +323,15 @@ export default function AssetLibraryStudio() {
 
       {/* ── Body ─────────────────────────────────────────────────────── */}
       <div className="st-lib__body">
-        {error && (
+        {/* A genuine load failure (nothing shown, not just filtered to zero)
+            gets the dedicated ErrorState below instead of this banner, so
+            the library never claims to be "empty" when it actually just
+            failed to load — same reasoning as GalleryClient's fault
+            handling. This banner stays for every OTHER error (a mutation
+            failure, a load-more page failure, an error while filters are
+            also narrowing the view) — those happen alongside content that
+            did load. */}
+        {error && !(shown.length === 0 && !filtering) && (
           <div className="hs-notice hs-notice--fault" style={{ marginBottom: "var(--s-4)" }} role="alert">
             <IcAlert className="hs-icon-sm" style={{ marginTop: 2 }} />
             <span style={{ flex: 1 }}>{error}</span>
@@ -343,47 +353,35 @@ export default function AssetLibraryStudio() {
               </div>
             ))}
           </div>
+        ) : shown.length === 0 && !filtering && error ? (
+          <ErrorState message={error} onRetry={() => setReloads((n) => n + 1)} />
         ) : shown.length === 0 ? (
-          <div className="hs-empty">
-            <span className="hs-empty__mark"><IcLayers /></span>
-            {filtering ? (
-              <>
-                <h3>Nothing matches these filters</h3>
-                <p>
-                  {hasMore
-                    ? "Search runs over the assets loaded so far. Clear the filters, or load more pages and search again."
-                    : "Clear the search, the type filter, or the favourites filter to see the rest of the library."}
-                </p>
-                <div className="hs-row" style={{ marginTop: "var(--s-2)" }}>
-                  <button
-                    type="button"
-                    className="hs-btn hs-btn--outline"
-                    onClick={() => { setQuery(""); setFavouritesOnly(false); setType("all"); }}
-                  >
-                    <IcClose className="hs-icon-sm" /> Clear filters
-                  </button>
-                  {hasMore && (
-                    <button type="button" className="hs-btn hs-btn--outline" onClick={loadMore} disabled={loadingMore}>
-                      Load more
-                    </button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <h3>The library is empty</h3>
-                <p>
-                  Every image, video and audio file you generate lands here automatically, with its model and
-                  settings attached. Make something first.
-                </p>
-                <div className="hs-row" style={{ marginTop: "var(--s-2)", flexWrap: "wrap", justifyContent: "center" }}>
-                  <Link href="/studio/image" className="hs-btn hs-btn--primary"><IcImage className="hs-icon-sm" /> Compose an image</Link>
-                  <Link href="/studio/video" className="hs-btn hs-btn--outline"><IcVideo className="hs-icon-sm" /> Shoot a video</Link>
-                  <Link href="/studio/audio" className="hs-btn hs-btn--outline"><IcMusic className="hs-icon-sm" /> Record audio</Link>
-                </div>
-              </>
-            )}
-          </div>
+          filtering ? (
+            <EmptyState
+              icon={<IcLayers />}
+              title="Nothing matches these filters"
+              description={
+                hasMore
+                  ? "Search runs over the assets loaded so far. Clear the filters, or load more pages and search again."
+                  : "Clear the search, the type filter, or the favourites filter to see the rest of the library."
+              }
+              action={[
+                { label: "Clear filters", icon: <IcClose className="hs-icon-sm" />, onClick: () => { setQuery(""); setFavouritesOnly(false); setType("all"); }, variant: "outline" },
+                ...(hasMore ? [{ label: "Load more", onClick: loadMore, variant: "outline", disabled: loadingMore }] : []),
+              ]}
+            />
+          ) : (
+            <EmptyState
+              icon={<IcLayers />}
+              title="The library is empty"
+              description="Every image, video and audio file you generate lands here automatically, with its model and settings attached. Make something first."
+              action={[
+                { label: "Compose an image", icon: <IcImage className="hs-icon-sm" />, href: "/studio/image" },
+                { label: "Shoot a video", icon: <IcVideo className="hs-icon-sm" />, href: "/studio/video", variant: "outline" },
+                { label: "Record audio", icon: <IcMusic className="hs-icon-sm" />, href: "/studio/audio", variant: "outline" },
+              ]}
+            />
+          )
         ) : (
           <>
             <div
