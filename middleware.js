@@ -25,6 +25,14 @@ const MAINTENANCE_EXEMPT_API_PREFIXES = [
   "/api/cron/",
   "/api/webhooks/",
   "/api/stripe/webhook",
+  // NextAuth's own sign-in/callback/session/csrf endpoints — not a money or
+  // state-mutation surface the maintenance window is protecting against,
+  // and this app's own auth check just below already calls
+  // /api/auth/session on every protected-page visit. Exempting the whole
+  // /api/auth/ prefix keeps that (and every credentials sign-in POST) from
+  // paying a second internal round trip for a maintenance check it would
+  // never fail differently on.
+  "/api/auth/",
 ];
 
 function isMaintenanceExemptApiPath(pathname) {
@@ -66,14 +74,31 @@ function maintenanceResponse() {
   );
 }
 
+// Resolves the session for this request against this same deployment.
+// Returns the parsed session body, or null on anything that means "treat as
+// signed out" (non-200, network failure, timeout, malformed body).
+async function fetchSession(request, internalUrl) {
+  try {
+    const sessionRes = await fetch(new URL("/api/auth/session", internalUrl), {
+      headers: { cookie: request.headers.get("cookie") || "" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (sessionRes.status !== 200) return null;
+    return await sessionRes.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(request) {
   const pathname = request.nextUrl.pathname;
 
-  // Resolve the session (and, below, the maintenance flag) against this
-  // same deployment. Falling back to the incoming origin matters:
-  // NEXTAUTH_URL is wrong or absent in local and preview runs, and an
-  // unreachable URL used to throw straight out of the middleware — every
-  // protected route answered 500 instead of asking the visitor to sign in.
+  // Resolve the session and the maintenance flag against this same
+  // deployment. Falling back to the incoming origin matters: NEXTAUTH_URL
+  // is wrong or absent in local and preview runs, and an unreachable URL
+  // used to throw straight out of the middleware — every protected route
+  // answered 500 instead of asking the visitor to sign in.
   const internalUrl = process.env.NEXTAUTH_URL || request.nextUrl.origin;
 
   const isStudioPage = pathname.startsWith("/studio");
@@ -82,15 +107,8 @@ export async function middleware(request) {
     STATE_CHANGING_METHODS.has(request.method) &&
     !isMaintenanceExemptApiPath(pathname);
 
-  if (isStudioPage || isStateChangingApi) {
-    if (await isInMaintenanceMode(internalUrl)) {
-      return maintenanceResponse();
-    }
-  }
-
   const protectedPaths = ["/admin", "/studio", "/settings"];
   const needsAuth = protectedPaths.some((p) => pathname.startsWith(p));
-  if (!needsAuth) return NextResponse.next();
 
   const toLogin = () => {
     const url = new URL("/login", request.url);
@@ -101,17 +119,18 @@ export async function middleware(request) {
   };
 
   let session;
-  try {
-    const sessionRes = await fetch(new URL("/api/auth/session", internalUrl), {
-      headers: { cookie: request.headers.get("cookie") || "" },
-      redirect: "manual",
-      signal: AbortSignal.timeout(5000),
-    });
-    if (sessionRes.status !== 200) return toLogin();
-    session = await sessionRes.json();
-  } catch {
-    // Network failure, timeout, or malformed body — treat as signed out.
-    return toLogin();
+
+  if (isStudioPage) {
+    // /studio always needs BOTH the maintenance check and the session check
+    // (it's always in protectedPaths too).
+    if (await isInMaintenanceMode(internalUrl)) return maintenanceResponse();
+    session = await fetchSession(request, internalUrl);
+  } else {
+    if (isStateChangingApi && (await isInMaintenanceMode(internalUrl))) {
+      return maintenanceResponse();
+    }
+    if (!needsAuth) return NextResponse.next();
+    session = await fetchSession(request, internalUrl);
   }
 
   if (!session?.user) return toLogin();
