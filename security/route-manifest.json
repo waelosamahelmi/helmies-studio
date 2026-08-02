@@ -959,6 +959,42 @@
     "notes": "ANOMALY: GET with a side effect — unconditionally calls recordTemplateUse() on every successful call, decrementing usage against the caller's TemplatePurchase. Violates HTTP GET safety/idempotency and is reachable via a plain cookie-riding cross-site GET (e.g. an <img>/<link> tag) with no CSRF protection possible for a GET (Task 3's origin-check work targets state-changing requests broadly, but GET requests are typically exempted by convention — this route is exactly why that convention is dangerous here). Recommend converting to POST in a follow-up. Task 3 (final round): verifyOrigin wired on the GET handler itself — deliberate exception to \"GET stays open\", because this GET has a real side effect (recordTemplateUse) and is the anomaly this note already flags. Origin/Referer fallback still catches a cross-site <img>/<link>-tag GET, which is exactly the vector described above."
   },
   {
+    "path": "/api/templates/[slug]/publish",
+    "file": "src/app/api/templates/[slug]/publish/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "admin",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Phase 6 Task 2. Flips a TemplateVersion to status:published (and mirrors Template.isPublished) ONLY when canPublish passes; otherwise 422 with reasons and no write. verifyOrigin wired on POST (only method on this file)."
+  },
+  {
+    "path": "/api/templates/[slug]/quote",
+    "file": "src/app/api/templates/[slug]/quote/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "Phase 6 Task 2. Pure server-authoritative quote (quoteTemplate/quoteCatalogModel against ModelPricing) for the currently published TemplateVersion — no persistence, but origin-checked anyway since it's a cookie-session POST accepting a caller-supplied inputs body. verifyOrigin wired on POST (only method on this file)."
+  },
+  {
+    "path": "/api/templates/[slug]/run",
+    "file": "src/app/api/templates/[slug]/run/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Phase 6 Task 3. Reserves credits (startTemplateRun) and creates a TemplateRun + enqueues the first step's GenerationJob — same money-path shape as /api/generate/async and /api/workflows/[id]/run. verifyOrigin wired on POST (only method on this file)."
+  },
+  {
     "path": "/api/templates/[slug]",
     "file": "src/app/api/templates/[slug]/route.js",
     "methods": [
@@ -1007,6 +1043,18 @@
     "rateLimit": "none",
     "stateChanging": true,
     "notes": "GET with a side effect: calls createTemplatePurchase() (idempotent upsert) after verifying the Stripe session's metadata.userId matches the caller. Same GET-mutates-state pattern flagged on templates/[slug]/apply, though this one is more defensible as a post-Stripe-redirect landing endpoint than a directly client-triggerable action. Task 3 (final round): verifyOrigin wired on the GET handler itself, same rationale as templates/[slug]/apply — this GET has a real side effect (createTemplatePurchase)."
+  },
+  {
+    "path": "/api/templates/runs/[runId]",
+    "file": "src/app/api/templates/runs/[runId]/route.js",
+    "methods": [
+      "GET"
+    ],
+    "auth": "user",
+    "originCheck": false,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "Phase 6 Task 5. Read-only poll of a TemplateRun's status/per-step state, scoped to the caller (a run owned by someone else 404s the same as one that doesn't exist)."
   },
   {
     "path": "/api/templates",

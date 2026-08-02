@@ -762,9 +762,65 @@ model Template {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   purchases       TemplatePurchase[]
+  versions        TemplateVersion[]
 
   @@index([toolType, isPublished])
   @@index([category])
+  @@schema("public")
+}
+
+// ── Phase 6: versioned executable template graphs ──
+// A TemplateVersion.graph is immutable once created: { steps: [{ id, tool,
+// modelId, inputs, dependsOn }], sampleInputs }. src/lib/template-graph.js
+// validates its structure (validateGraph/topoSort); src/lib/template-quote.js
+// prices it step-by-step from ModelPricing (never from the graph or a
+// client request) and gates publishing (canPublish). status starts "draft"
+// and only becomes "published" via the publish route once canPublish
+// passes; "archived" retires a version without deleting run history that
+// references it.
+model TemplateVersion {
+  id         String   @id @default(cuid())
+  templateId String
+  version    Int
+  graph      Json // { steps: [{ id, tool, modelId, inputs, dependsOn }], sampleInputs }
+  status     String   @default("draft") // draft|published|archived
+  createdAt  DateTime @default(now())
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+  @@index([templateId, status])
+  @@schema("public")
+}
+
+// TemplateRun (Phase 6 Task 3): one execution of a published TemplateVersion
+// over the Phase 4A durable job queue. No FK to User/Template/TemplateVersion
+// — deliberately a standalone, id-addressed table like GenerationJob (see
+// that model's comment and tests/integration/setup.mjs's explicit truncate
+// list): a run must be queryable/updatable independent of those rows' own
+// lifecycle, and src/lib/template-runner.js only ever looks it up by its own
+// id or by (userId, status), never via a Prisma relation. stepState is keyed
+// by the graph's own step ids: { [stepId]: { status, generationId,
+// outputUrl, error } }.
+model TemplateRun {
+  id           String   @id @default(cuid())
+  userId       String
+  templateId   String
+  versionId    String
+  status       String   @default("running") // running|completed|failed|cancelled
+  stepState    Json // { [stepId]: { status, generationId, outputUrl, error } }
+  // The caller's own per-step input overrides from startTemplateRun,
+  // exactly as quoted (quoteTemplate(graph, inputs)) — persisted so
+  // advanceTemplateRun enqueues every later step with the SAME inputs that
+  // were actually quoted and reserved for. Fixed in review: an earlier
+  // version resolved later steps against {} (the graph's own bare
+  // defaults), so a caller-supplied override (e.g. a longer duration) was
+  // priced in but silently never executed, over/under-charging the run.
+  inputs       Json     @default("{}")
+  totalCredits Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, status])
   @@schema("public")
 }
 

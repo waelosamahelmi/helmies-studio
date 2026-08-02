@@ -4,8 +4,10 @@ import { notFound } from "next/navigation";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import TemplateActions from "./TemplateActions";
+import TemplateRunPanel from "./TemplateRunPanel";
 import { TemplateCard } from "../TemplatesClient";
-import { getTemplateBySlug, listTemplates } from "@/lib/templates";
+import { getTemplateBySlug, listTemplates, getPublishedVersion } from "@/lib/templates";
+import { auth } from "@/lib/auth";
 import { getTool } from "@/components/studio/kit/tools";
 import { IcInfo, IcLayers } from "@/components/studio/kit/Icons";
 
@@ -58,11 +60,22 @@ const cardProps = (t) => ({
   isFeatured: t.isFeatured,
 });
 
+// An unpublished template is admin-preview only. Shared by generateMetadata
+// and the page body below so BOTH gate the same way — metadata alone isn't
+// enough: the <title>/OpenGraph/Twitter tags (browser tab, social link
+// previews) would otherwise leak the real name/description of an
+// unpublished template to a normal visitor even though the page BODY
+// correctly renders the not-found UI.
+async function canViewUnpublished() {
+  const session = await auth().catch(() => null);
+  return session?.user?.role === "admin";
+}
+
 export async function generateMetadata({ params }) {
   const { slug } = await params;
   const t = await readTemplate(slug).catch(() => null);
 
-  if (!t) {
+  if (!t || (!t.isPublished && !(await canViewUnpublished()))) {
     return { title: "Template not found", robots: { index: false, follow: true } };
   }
 
@@ -99,6 +112,18 @@ export default async function TemplateDetailPage({ params, searchParams }) {
   const sp = (await searchParams) || {};
   const t = await readTemplate(slug);
   if (!t) notFound();
+
+  // An unpublished template is admin-preview only — everyone else gets the
+  // same 404 as a slug that doesn't exist at all (never a "not published
+  // yet" leak to a normal visitor). Same gate generateMetadata uses above,
+  // so the <title>/meta tags never reveal it either.
+  if (!t.isPublished && !(await canViewUnpublished())) notFound();
+
+  // Phase 6: an executable workflow template (one with a published
+  // TemplateVersion) replaces the legacy purchase/access flow below with
+  // TemplateRunPanel — running it costs credits directly, there is nothing
+  // to "unlock" first.
+  const publishedVersion = await getPublishedVersion(t.id).catch(() => null);
 
   const tool = getTool(t.toolType);
   const ToolIcon = tool.icon;
@@ -208,45 +233,55 @@ export default async function TemplateDetailPage({ params, searchParams }) {
                   </div>
                 )}
 
-                <div className="hs-card hs-stack">
-                  <span className="hs-label">What it costs</span>
+                {publishedVersion ? (
+                  // Phase 6 — executable workflow template: no purchase/
+                  // access gate, the quote (server-computed, shown before
+                  // any run) and the run itself are the whole story.
+                  <div className="hs-card hs-stack">
+                    <span className="hs-label">What it costs</span>
+                    <TemplateRunPanel slug={t.slug} />
+                  </div>
+                ) : (
+                  <div className="hs-card hs-stack">
+                    <span className="hs-label">What it costs</span>
 
-                  {oneTime ? (
-                    <div>
-                      <p className="pg-plan__amount">{price || "—"}</p>
-                      <p className="hs-hint">One payment. It stays on your account.</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p style={{ fontSize: "var(--t-lg)", fontWeight: 600, color: "var(--signal)" }}>
-                        Included with a paid plan
-                      </p>
-                      <p className="hs-hint">
-                        Starter, Studio or Pro. A free account can read this page but cannot run
-                        the template.
-                      </p>
-                    </div>
-                  )}
+                    {oneTime ? (
+                      <div>
+                        <p className="pg-plan__amount">{price || "—"}</p>
+                        <p className="hs-hint">One payment. It stays on your account.</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p style={{ fontSize: "var(--t-lg)", fontWeight: 600, color: "var(--signal)" }}>
+                          Included with a paid plan
+                        </p>
+                        <p className="hs-hint">
+                          Starter, Studio or Pro. A free account can read this page but cannot run
+                          the template.
+                        </p>
+                      </div>
+                    )}
 
-                  <hr className="hs-rule" />
+                    <hr className="hs-rule" />
 
-                  <p className="hs-hint">
-                    Either way the generation itself spends credits at the normal rate for the
-                    model this template selects —{" "}
-                    <Link href="/pricing" style={{ color: "var(--filament-lit)", textDecoration: "underline", textUnderlineOffset: 2 }}>
-                      see the price list
-                    </Link>
-                    .
-                  </p>
+                    <p className="hs-hint">
+                      Either way the generation itself spends credits at the normal rate for the
+                      model this template selects —{" "}
+                      <Link href="/pricing" style={{ color: "var(--filament-lit)", textDecoration: "underline", textUnderlineOffset: 2 }}>
+                        see the price list
+                      </Link>
+                      .
+                    </p>
 
-                  <TemplateActions
-                    slug={t.slug}
-                    toolType={t.toolType}
-                    pricingModel={t.pricingModel}
-                    oneTimePrice={t.oneTimePrice}
-                    purchase={typeof sp.purchase === "string" ? sp.purchase : null}
-                  />
-                </div>
+                    <TemplateActions
+                      slug={t.slug}
+                      toolType={t.toolType}
+                      pricingModel={t.pricingModel}
+                      oneTimePrice={t.oneTimePrice}
+                      purchase={typeof sp.purchase === "string" ? sp.purchase : null}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>
