@@ -22,7 +22,10 @@
 // transition, reapExpiredLeases) is a single conditional update/updateMany —
 // no read-then-write gap for those either.
 
-import prisma from "./prisma";
+// Explicit ".js" extension — see src/lib/wallet.js's identical comment:
+// this module is also loaded transitively by scripts/worker.mjs under plain
+// `node` (Phase 4A Task 4), whose strict ESM resolver requires it.
+import prisma from "./prisma.js";
 
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_LEASE_MS = 5 * 60 * 1000; // 5 minutes

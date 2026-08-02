@@ -1,5 +1,12 @@
-import prisma from "@/lib/prisma";
-import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
+// Relative, ".js"-extended imports (not the "@/lib/..." alias used
+// elsewhere in this file's exports' consumers): this module is also loaded
+// transitively by scripts/worker.mjs under plain `node` (Phase 4A Task 4,
+// via src/lib/job-runner.js). The "@/" alias is a Next/Vite bundler feature
+// only — plain Node has no notion of it at all (not even an extension
+// problem; the specifier is simply unresolvable), so both imports below
+// were changed from the alias form to resolve identically in both contexts.
+import prisma from "./prisma.js";
+import { formatAlibabaPayload, getAlibabaApiPath } from "./alibaba-provider-core.mjs";
 
 const BRANDED_ERRORS = {
   rate_limit: "Too many requests. Please wait a moment and try again.",

@@ -12,6 +12,7 @@ set -euo pipefail
 
 APP_DIR=/root/helmies-studio
 PM2_NAME=helmies-studio
+PM2_WORKER_NAME=helmies-worker
 
 cd "$APP_DIR"
 
@@ -47,9 +48,17 @@ step "Building"
 NODE_OPTIONS="--max-old-space-size=3072" npm run build
 
 step "Restarting"
-pm2 restart "$PM2_NAME" --update-env
+# startOrReload (Phase 4A Task 4) instead of `pm2 restart "$PM2_NAME"` alone
+# — ecosystem.config.cjs declares BOTH processes (the app and
+# helmies-worker, the durable generation job queue drain loop), so this one
+# command brings up or reloads both together. Before this the worker had no
+# deploy step at all; forgetting to (re)start it silently stops the queue
+# from draining (see docs/runbook-jobs.md's "worker down" symptom) while the
+# app itself looks perfectly healthy.
+pm2 startOrReload ecosystem.config.cjs --update-env
 sleep 4
 pm2 describe "$PM2_NAME" | grep -E "status|restarts|uptime" || true
+pm2 describe "$PM2_WORKER_NAME" | grep -E "status|restarts|uptime" || true
 
 step "Health check"
 for i in $(seq 1 12); do

@@ -16,7 +16,8 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "check:dead-code": "node scripts/dead-code.mjs",
     "check:env": "node scripts/check-env.mjs",
-    "reconcile": "node scripts/reconcile-credits.mjs"
+    "reconcile": "node scripts/reconcile-credits.mjs",
+    "worker": "node scripts/worker.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
