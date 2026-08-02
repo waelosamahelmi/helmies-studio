@@ -14,14 +14,70 @@
         rendering each step's own status as it updates.
    ══════════════════════════════════════════════════════════════════════════ */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { apiJson } from "@/lib/client-fetch";
 import { IcBolt, IcLock, IcAlert, IcCheck, IcRefresh, IcExternal } from "@/components/studio/kit/Icons";
+import StepInputsForm from "@/components/templates/StepInputsForm";
 
 const POLL_MS = 2000;
+const QUOTE_DEBOUNCE_MS = 350;
 const TERMINAL_STATUSES = new Set(["completed", "failed", "cancelled"]);
+
+// Seed local form state from each field's descriptor (built server-side by
+// page.js's buildStepInputs): an upload-style field (image/array) always
+// starts empty (see StepInputsForm's own header comment on why — never
+// pre-filled with the graph's placeholder sample URL), everything else
+// starts at the graph's own baked default so the FIRST quote matches what
+// the page already showed before this form existed.
+function initialValues(stepInputs) {
+  const out = {};
+  for (const step of stepInputs) {
+    const stepValues = {};
+    for (const field of step.fields) {
+      if (field.type === "array") stepValues[field.name] = [];
+      else if (field.format === "uri") stepValues[field.name] = null;
+      else if (field.type === "boolean") stepValues[field.name] = !!field.default;
+      else stepValues[field.name] = field.default ?? "";
+    }
+    out[step.stepId] = stepValues;
+  }
+  return out;
+}
+
+// Translate the form's own control-shaped state (Dropzone hands back
+// {url,name,type,size} objects, or arrays of them) into the wire shape
+// POST .../quote and .../run actually accept: inputs[stepId][field] ->
+// a plain value. A field the caller never touched (still empty/blank) is
+// simply OMITTED — src/lib/template-quote.js's stepParams merges caller
+// overrides on top of the graph's own baked `inputs`, so leaving a field out
+// here means the server falls back to the graph's own default for it,
+// exactly as it did before this form existed.
+function buildInputsPayload(stepInputs, values) {
+  const payload = {};
+  for (const step of stepInputs) {
+    const stepValues = values?.[step.stepId] || {};
+    const out = {};
+    for (const field of step.fields) {
+      const raw = stepValues[field.name];
+      if (field.type === "array") {
+        const urls = (Array.isArray(raw) ? raw : []).map((f) => f?.url).filter(Boolean);
+        if (urls.length) out[field.name] = urls;
+      } else if (field.format === "uri") {
+        if (raw?.url) out[field.name] = raw.url;
+      } else if (field.type === "boolean") {
+        out[field.name] = !!raw;
+      } else if (field.type === "number") {
+        if (raw !== "" && raw != null && Number.isFinite(Number(raw))) out[field.name] = Number(raw);
+      } else if (raw !== "" && raw != null) {
+        out[field.name] = raw;
+      }
+    }
+    if (Object.keys(out).length) payload[step.stepId] = out;
+  }
+  return payload;
+}
 
 const STEP_LABEL = { pending: "Waiting", running: "Running", completed: "Done", failed: "Failed" };
 
@@ -53,7 +109,7 @@ function StepRow({ stepId, state }) {
   );
 }
 
-export default function TemplateRunPanel({ slug }) {
+export default function TemplateRunPanel({ slug, stepInputs = [] }) {
   const { status: authStatus } = useSession();
   const authed = authStatus === "authenticated";
 
@@ -65,6 +121,19 @@ export default function TemplateRunPanel({ slug }) {
   const [starting, setStarting] = useState(false);
   const [runFault, setRunFault] = useState(null);
 
+  // Phase 8 Task B1 — per-step input state. `values` holds each editable
+  // field's CONTROL-shaped value (a Dropzone's {url,name,...} object for an
+  // upload field, a plain scalar for everything else); buildInputsPayload
+  // translates that into the wire shape on every quote/run call, so this is
+  // the one place either request body comes from.
+  const [values, setValues] = useState(() => initialValues(stepInputs));
+  const setFieldValue = useCallback((stepId, field, value) => {
+    setValues((prev) => ({ ...prev, [stepId]: { ...prev[stepId], [field]: value } }));
+  }, []);
+
+  const inputsPayload = useMemo(() => buildInputsPayload(stepInputs, values), [stepInputs, values]);
+  const inputsPayloadKey = useMemo(() => JSON.stringify(inputsPayload), [inputsPayload]);
+
   const pollRef = useRef(null);
 
   const loadQuote = useCallback(async () => {
@@ -74,7 +143,7 @@ export default function TemplateRunPanel({ slug }) {
       const data = await apiJson(`/api/templates/${encodeURIComponent(slug)}/quote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ inputs: inputsPayload }),
         retries: 0,
       });
       setQuote(data);
@@ -83,11 +152,23 @@ export default function TemplateRunPanel({ slug }) {
     } finally {
       setLoadingQuote(false);
     }
-  }, [slug]);
+    // Deps deliberately narrower than the closure: `inputsPayload` is a new
+    // object every render (buildInputsPayload isn't memoized on identity),
+    // but `inputsPayloadKey` (its JSON string) is exactly its stable
+    // identity for this purpose — react-hooks/exhaustive-deps is off
+    // project-wide (eslint.config.mjs) so this is a deliberate choice, not
+    // an oversight.
+  }, [slug, inputsPayloadKey]);
 
+  // Re-quotes on every input change, debounced — the displayed credits must
+  // always match what a run would actually charge (the same reason the
+  // per-step form exists at all), but a quote request per keystroke would
+  // hammer the server for no benefit. Same 400ms-class debounce pattern as
+  // src/components/studio/WorkflowStudio.js's own per-step quote effect.
   useEffect(() => {
     if (authStatus === "loading" || !authed) return;
-    loadQuote();
+    const timer = setTimeout(() => { loadQuote(); }, QUOTE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
   }, [authStatus, authed, loadQuote]);
 
   const pollRun = useCallback(async (runId) => {
@@ -114,7 +195,7 @@ export default function TemplateRunPanel({ slug }) {
       const data = await apiJson(`/api/templates/${encodeURIComponent(slug)}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ inputs: inputsPayload }),
         retries: 0,
       });
       setRun({ id: data.runId, status: "running", stepState: {}, totalCredits: data.totalCredits });
@@ -153,6 +234,8 @@ export default function TemplateRunPanel({ slug }) {
 
   return (
     <div className="hs-stack">
+      {!run && <StepInputsForm stepInputs={stepInputs} values={values} onChange={setFieldValue} />}
+
       {loadingQuote && (
         <button type="button" className="hs-btn hs-btn--lg hs-btn--block" disabled>
           <span className="hs-spin" />
