@@ -62,7 +62,7 @@
 // BRANDED_ERRORS) is terminal — retrying it would never succeed.
 
 import prisma from "./prisma.js";
-import { heartbeatJob, completeJob, failJob } from "./job-queue.js";
+import { heartbeatJob, completeJob, failJob, findTimedOutJobs } from "./job-queue.js";
 import { settleReservation, releaseReservation, refundCredits } from "./wallet.js";
 import { submitOnly, pollProviderResult, getProvider } from "./providers.js";
 import { downloadAllMedia } from "./media-download.js";
@@ -280,4 +280,63 @@ export async function runJob(job, { workerId, signal } = {}) {
     // instead of crashing the worker process.
     return await handleFailure(job, generation, err);
   }
+}
+
+// Terminal timeout sweep (Phase 4A Task 7) — the risk this whole phase
+// exists to close: a job whose timeoutAt has passed (queued too long, or
+// stuck polling past the hard deadline) must ALWAYS end and ALWAYS return
+// the user's credits, independent of whatever a worker is or isn't doing
+// with it. findTimedOutJobs() (src/lib/job-queue.js) only REPORTS these rows
+// — it never touches credits or job/generation status; this is where
+// "timed out" gets translated into money and a terminal state, using the
+// EXACT SAME translation runJob's handleFailure already uses for a live
+// provider error (rule 2 in the file header above) — reused via
+// tryTransitionGeneration/releaseOrRefund, not a second copy of the money
+// logic.
+//
+// failJob(..., { retryable: false }) marks the job `dead` unconditionally
+// (retryable:false always takes the dead branch of job-queue.js's state
+// machine regardless of remaining attempts), mirroring how every other
+// terminal-job transition in this codebase (handleFailure above,
+// generation-webhook.js's failure branch) treats its own trigger as
+// authoritative. The one race this leaves open — a worker completes the
+// SAME job in the narrow window between findTimedOutJobs()'s snapshot and
+// this function's failJob call — cannot cause a money bug:
+// tryTransitionGeneration's conditional update below is the actual money
+// gate, and it only fires while the generation is still non-terminal, so a
+// job that genuinely just succeeded loses that race cleanly (count 0, no
+// credit move) even though its job row may end up reading "dead" instead of
+// "succeeded" — a job-row cosmetic race, not a wallet one.
+const TIMEOUT_ERROR_MESSAGE = "Timed out waiting for the provider";
+
+export async function sweepTimedOutJobs() {
+  const rows = await findTimedOutJobs();
+  let timedOut = 0;
+  let refunded = 0;
+
+  for (const job of rows) {
+    await failJob(job.id, TIMEOUT_ERROR_MESSAGE, { retryable: false });
+    timedOut++;
+
+    const generation = await prisma.generation.findUnique({ where: { id: job.generationId } });
+    if (!generation) {
+      console.error(
+        `[job-runner] sweepTimedOutJobs: generation ${job.generationId} not found for timed-out job ${job.id}`
+      );
+      continue;
+    }
+
+    const won = await tryTransitionGeneration(generation.id, {
+      status: "failed",
+      error: TIMEOUT_ERROR_MESSAGE,
+    });
+    if (won) {
+      await releaseOrRefund(generation, job);
+      refunded++;
+    }
+    // else: the webhook (or the worker's own runJob) already terminalized
+    // this generation first — rule 4, no credit move, same as handleFailure.
+  }
+
+  return { timedOut, refunded };
 }
