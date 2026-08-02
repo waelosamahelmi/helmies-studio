@@ -132,7 +132,25 @@ export const DEFAULT_PROVIDER = "kie";
 
 // Map any providerName (DB ModelPricing.providerName, ProviderConfig.name) to an adapter key.
 // Unknown names resolve to KIE (the primary provider) — never to a removed provider.
-function resolveAdapterKey(providerName) {
+//
+// Exported (Phase 4A Task 8 fix) so callers that need the pure, correctly-
+// normalized lowercase adapter key can get it directly instead of going
+// through resolveProvider() below: resolveProvider's OWN return statement
+// (`{ name, ...p, apiKey: p.getKey() }`) has a pre-existing, separate bug —
+// `p` (PROVIDERS[key]) carries its own display-name `name` field (e.g.
+// "Alibaba", "KIE"), and object-spread order means `...p` is applied AFTER
+// the `name` shorthand, so `p.name` silently overwrites the normalized key
+// computed just above it. `resolveProvider(modelId).name` is therefore
+// ALWAYS the mixed-case display name, never the lowercase adapter key
+// getProvider() indexes PROVIDERS by — verified empirically against the
+// real test database (resolveProvider returns name: "Alibaba", and
+// getProvider("Alibaba") then falls back to KIE, not Alibaba). Left
+// unfixed here — this file's own generate/async and generation-handler.js
+// callers already depend on resolveProvider's current return shape and
+// changing it is a materially larger, separate change outside this task's
+// scope; resolveAdapterKey itself has no such bug and is safe to call
+// directly.
+export function resolveAdapterKey(providerName) {
   const n = (providerName || "").toLowerCase();
   if (n.includes("alibaba") || n.includes("qwen") || n.includes("dashscope")) return "alibaba";
   if (n.includes("kie")) return "kie";

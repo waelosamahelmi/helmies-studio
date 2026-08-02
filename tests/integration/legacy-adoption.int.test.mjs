@@ -196,4 +196,60 @@ describe("adoptLegacyGenerations — end-to-end against a real database", () => 
 
     expect(result.total).toBe(0);
   });
+
+  // Regression: resolveProviderName used to return the raw
+  // ModelPricing.providerName DB string unnormalized. getProvider()
+  // (src/lib/providers.js) indexes PROVIDERS with a case-sensitive direct
+  // lookup keyed on lowercase adapter names ("kie", "alibaba") — a mixed-case
+  // DB value like "Alibaba" missed that index entirely and silently fell
+  // back to DEFAULT_PROVIDER ("kie"), so every adopted Alibaba-model job
+  // would have resumed its poll against KIE's API instead of Alibaba's.
+  // Proven here against the REAL getProvider() adapter lookup, not just a
+  // string comparison — asserting adapter identity (reference equality
+  // against PROVIDERS.alibaba) and the resolved baseUrl.
+  it("adopts a job whose providerName resolves through getProvider() to the Alibaba adapter, even though ModelPricing.providerName is mixed-case", async () => {
+    const { adoptLegacyGenerations } = await import("../../scripts/adopt-legacy-generations.mjs");
+    const { reserveCredits } = await import("@/lib/wallet");
+    const { getProvider, PROVIDERS } = await import("@/lib/providers");
+
+    const user = await makeFundedUser(50);
+    const model = `alibaba-mixed-case-model-${randomUUID()}`;
+    await prisma.modelPricing.create({
+      data: {
+        modelId: model,
+        modelType: "image",
+        providerName: "Alibaba", // mixed case, exactly as ProviderConfig/ModelPricing store it
+        providerCost: 0,
+        creditsCost: 1,
+        isActive: true,
+      },
+    });
+    const generation = await prisma.generation.create({
+      data: {
+        userId: user.id,
+        tool: "image",
+        model,
+        prompt: "a mixed-case provider adoption test prompt",
+        status: "pending",
+        creditsUsed: 10,
+        requestId: "req_alibaba_legacy",
+      },
+    });
+    await reserveCredits(user.id, 10, generation.id);
+
+    const result = await adoptLegacyGenerations({ apply: true });
+    expect(result.adopted).toBe(1);
+
+    const job = await prisma.generationJob.findUnique({ where: { generationId: generation.id } });
+    expect(job.status).toBe("running");
+    expect(job.providerRequestId).toBe("req_alibaba_legacy");
+
+    // The stored providerName must resolve to the SAME adapter object
+    // job-runner.js's runJob would resume polling against — not merely a
+    // string that happens to look right.
+    const resolved = getProvider(job.providerName);
+    expect(resolved).toBe(PROVIDERS.alibaba);
+    expect(resolved).not.toBe(PROVIDERS.kie);
+    expect(resolved.baseUrl).not.toBe(PROVIDERS.kie.baseUrl);
+  });
 });

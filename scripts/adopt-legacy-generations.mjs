@@ -57,6 +57,7 @@ import "dotenv/config";
 import { pathToFileURL } from "node:url";
 import prisma from "../src/lib/prisma.js";
 import { releaseReservation, refundCredits } from "../src/lib/wallet.js";
+import { resolveAdapterKey } from "../src/lib/providers.js";
 
 const FAILURE_MESSAGE = "Interrupted by a deployment";
 // Same 30-minute default window enqueueJob (src/lib/job-queue.js) uses for a
@@ -112,19 +113,28 @@ async function findLegacyCandidates() {
   return pending.filter((g) => !withJob.has(g.id));
 }
 
-// Best-effort provider resolution for the adopted job's providerName. The
-// resume branch of job-runner.js's runJob only ever calls
-// getProvider(job.providerName) (no submit, no endpoint/payload use at all)
-// once providerRequestId is already set, so this only needs to be a
-// reasonable guess — getProvider (src/lib/providers.js) falls back to the
-// default provider on an unknown/null name regardless, it never throws.
+// Provider resolution for the adopted job's providerName. The resume branch
+// of job-runner.js's runJob calls getProvider(job.providerName) (no submit,
+// no endpoint/payload use at all) once providerRequestId is already set —
+// getProvider (src/lib/providers.js) indexes its PROVIDERS map with a
+// case-sensitive direct lookup, so job.providerName MUST be the canonical
+// lowercase adapter key ("kie", "alibaba"), never the raw
+// ModelPricing.providerName DB string (e.g. "Alibaba", mixed case): passing
+// "Alibaba" straight through would silently miss the index and fall back to
+// DEFAULT_PROVIDER ("kie") — every adopted Alibaba-model job would resume
+// its poll against the wrong provider's API (verified empirically: also
+// true of resolveProvider(modelId).name in src/lib/providers.js, which
+// carries its OWN separate, pre-existing bug that makes it unsuitable here
+// — see resolveAdapterKey's export comment in that file for the full
+// explanation). resolveAdapterKey is exported specifically for this call
+// site: it does the same lowercasing + alias-matching normalization
+// resolveProvider is SUPPOSED to expose, without going through
+// resolveProvider's buggy return shape. Never throws — an unknown/missing
+// providerName normalizes to the default adapter key ("kie"), same
+// fallback getProvider() itself would apply anyway.
 async function resolveProviderName(model) {
-  try {
-    const pricing = await prisma.modelPricing.findUnique({ where: { modelId: model } });
-    return pricing?.providerName || null;
-  } catch {
-    return null;
-  }
+  const pricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
+  return resolveAdapterKey(pricing?.providerName);
 }
 
 function planFor(generation) {
