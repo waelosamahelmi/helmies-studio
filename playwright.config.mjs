@@ -43,9 +43,9 @@ const webServerEnv = {
   OPENROUTER_KEY: "",
   ALIBABA_KEY: "",
   ALIBABA_WORKSPACE_ID: "",
-  STRIPE_SECRET_KEY: "sk_test_e2e_dummy_0000000000000000000000",
-  STRIPE_WEBHOOK_SECRET: "whsec_e2e_dummy_0000000000000000000000",
-  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_e2e_dummy_0000000000000000000000",
+  STRIPE_SECRET_KEY: "e2e-dummy-stripe-secret-not-a-real-key",
+  STRIPE_WEBHOOK_SECRET: "e2e-dummy-stripe-webhook-not-a-real-key",
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "e2e-dummy-stripe-publishable-not-a-real-key",
   NODE_ENV: "production",
 };
 
