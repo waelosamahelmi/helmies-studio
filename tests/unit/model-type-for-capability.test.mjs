@@ -8,6 +8,15 @@ import { modelTypeForCapability, CAPABILITY_TO_MODEL_TYPE, UNCATEGORIZED_MODEL_T
 // modelTypeForCapability is the ONE function every write path now routes
 // through, so this test exhaustively locks down the mapping the task spec
 // gave us, plus the "never guess" behavior for anything outside it.
+//
+// A first version of this mapping left the BARE "image"/"video" capability
+// values unmapped, treating them as an unreliable sync fallback — a
+// read-only preview against the REAL production catalog caught that this
+// was wrong: they're genuine, valid, coarse-but-real capability values (see
+// modalitiesForCapability in model-catalog-core.mjs, which already had
+// entries for both independently) and hiding them would have hidden 28
+// working models. That's the exact gap this test's "bare capability" cases
+// now lock down the OPPOSITE way.
 
 describe("modelTypeForCapability — the single source of truth for modelType", () => {
   const expected = {
@@ -23,13 +32,15 @@ describe("modelTypeForCapability — the single source of truth for modelType", 
     "image-upscale": "i2i",
     "video-upscale": "v2v",
     "background-removal": "i2i",
+    image: "image",
+    video: "video",
   };
 
   it.each(Object.entries(expected))("maps capability %s -> modelType %s", (capability, modelType) => {
     expect(modelTypeForCapability(capability)).toBe(modelType);
   });
 
-  it("covers every mapping exactly (no more, no fewer, than the task's table)", () => {
+  it("covers every mapping exactly (no more, no fewer, than the corrected table)", () => {
     expect(CAPABILITY_TO_MODEL_TYPE).toEqual(expected);
   });
 
@@ -39,14 +50,17 @@ describe("modelTypeForCapability — the single source of truth for modelType", 
     expect(modelTypeForCapability("")).toBeNull();
   });
 
-  it("returns null for a bare/generic capability a sync's own fallback can produce — never guesses a direction for it", () => {
-    // This is exactly how the Bytedance Seedance bug happened: a sync's own
-    // best-guess inference couldn't tell text-to-video from image-to-video
-    // just from the slug and fell back to a bare "video"/"image". Guessing
-    // a modelType for that here would just reintroduce the same class of
-    // bug under a different name.
-    expect(modelTypeForCapability("video")).toBeNull();
-    expect(modelTypeForCapability("image")).toBeNull();
+  // The exact gap a first version of this mapping got wrong: bare "image"
+  // and "video" are real, first-class capability values a sync can
+  // legitimately emit when it can't determine a more specific hyphenated
+  // direction — NOT a broken fallback to hide. This is the regression test
+  // for that production-preview finding.
+  it("maps bare/generic 'image' and 'video' capabilities directly — they are real values, not hidden", () => {
+    expect(modelTypeForCapability("video")).toBe("video");
+    expect(modelTypeForCapability("image")).toBe("image");
+  });
+
+  it("still returns null for 'media' — the sync's own last-resort fallback when it can tell NOTHING from the slug", () => {
     expect(modelTypeForCapability("media")).toBeNull();
   });
 

@@ -10,66 +10,120 @@ import { randomUUID } from "node:crypto";
 // deletes exactly those rows again afterward, never asserting on the
 // table's total contents.
 //
-// The seed below deliberately mirrors the EXACT pattern measured on the
-// live catalog in the task this fixes: 10 rows with capability="video"
-// filed under modelType="image" (the Bytedance Seedance bug), 4 with
-// capability="reference-to-video" also under "image", 2 with
-// capability="video-to-video" filed under "i2i", and 19 rows with a null
-// capability spread across modelTypes (3 image, 5 i2v, 5 v2v, 2 audio, 1
-// lipsync, 3 video) — the same shape as the numbers reported for
-// production — plus 3 already-correct control rows that must never move.
+// This seed mirrors the shape of a READ-ONLY preview a coordinator ran
+// against the REAL production catalog (189 active, non-deprecated rows)
+// that caught a real gap in a first version of this fix: bare "image" and
+// "video" capability values were left unmapped, which would have HIDDEN 28
+// genuinely working models (14 image, 14 video) plus 20 null-capability
+// and 1 "media"-capability row — 49 total, on top of 8 rows that legitimately
+// needed recategorizing (a mapped-but-misfiled capability, e.g.
+// reference-to-video/video-to-video stuck under the wrong modelType).
 //
-// "uncategorized" is a brand-new sentinel this fix introduces (nothing was
-// ever stored that way before), so every one of the 10 bare-"video" rows
-// AND all 19 null-capability rows shows up as a modelType MISMATCH (their
-// stored value isn't "uncategorized" yet) as well as NEEDING ATTENTION
-// (their capability itself is null/unmapped and can't be auto-corrected) —
-// those two lists overlap for exactly those 29 rows.
+//   8  recategorize bucket: 5 reference-to-video + 3 video-to-video rows,
+//      each stored under the wrong modelType — corrected to a REAL category.
+//   28 bare "image"/"video" capability rows (14 each) — these are REAL,
+//      already-correctly-stored models (modelType already matches their
+//      capability); the only thing wrong was the mapping gap that would
+//      have hidden them. After the fix: zero changes needed, just visible.
+//   20 null-capability rows — split so the recovery mechanism
+//      (inferCapabilityFromRow: modalities first, then the same
+//      text-based inference every other synced model already gets its
+//      capability from) recovers some and not others:
+//        5 recoverable from unambiguous modalities
+//        5 recoverable from endpoint/modelId text (no modalities present)
+//        10 genuinely unrecoverable (no modalities, no recognizable text)
+//   1  "media"-capability row (the sync's own last-resort fallback) — given
+//      modalities that unambiguously produce an image, demonstrating the
+//      "if it produces an image, map it to image" recovery path.
+//   132 already-correct control rows spread across all 7 real modes —
+//      never touched, confirming the fix doesn't disturb working data.
+//
+// 8 + 28 + 20 + 1 + 132 = 189, matching the production preview exactly.
 
-const PREFIX = `zz-test-catalog-fix-${randomUUID()}-`;
-const TOTAL_SEEDED = 10 + 4 + 2 + 19 + 3; // 38
+const PREFIX = `zz-test-catalog-fix2-${randomUUID()}-`;
+const TOTAL_SEEDED = 8 + 28 + 20 + 1 + 132; // 189
 
-function baseRow(suffix, { modelType, capability, providerName = "KIE" }) {
+function baseRow(suffix, fields) {
   return {
     modelId: `${PREFIX}${suffix}`,
-    modelType,
-    capability,
-    providerName,
+    providerName: "KIE",
     displayName: suffix,
     providerCost: 0.05,
     creditsCost: 5,
     isActive: true,
     isDeprecated: false,
+    ...fields,
   };
 }
 
 function buildSeed() {
   const rows = [];
-  // 10 video-capability rows miscategorized as "image" (Bytedance Seedance).
-  for (let i = 0; i < 10; i++) {
-    rows.push(baseRow(`seedance-${i}`, { modelType: "image", capability: "video" }));
-  }
-  // 4 reference-to-video rows miscategorized as "image".
-  for (let i = 0; i < 4; i++) {
+
+  // ── 8: recategorize bucket (mapped capability, wrong modelType) ────────
+  for (let i = 0; i < 5; i++) {
     rows.push(baseRow(`r2v-${i}`, { modelType: "image", capability: "reference-to-video" }));
   }
-  // 2 video-to-video rows miscategorized as "i2i".
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     rows.push(baseRow(`v2v-${i}`, { modelType: "i2i", capability: "video-to-video" }));
   }
-  // 19 null-capability rows spread across modelTypes — needs attention,
-  // never auto-fixable.
-  const nullSpread = [["image", 3], ["i2v", 5], ["v2v", 5], ["audio", 2], ["lipsync", 1], ["video", 3]];
-  let n = 0;
-  for (const [modelType, count] of nullSpread) {
+
+  // ── 28: bare image/video capability, ALREADY correctly stored ──────────
+  // (the exact gap: these were fine all along, only the mapping hid them)
+  for (let i = 0; i < 14; i++) {
+    rows.push(baseRow(`bare-image-${i}`, { modelType: "image", capability: "image" }));
+  }
+  for (let i = 0; i < 14; i++) {
+    rows.push(baseRow(`bare-video-${i}`, { modelType: "video", capability: "video" }));
+  }
+
+  // ── 20: null-capability, split by recoverability ───────────────────────
+  // Every null-capability/media row below is deliberately stored under
+  // modelType="audio" — an arbitrary placeholder guaranteed to differ from
+  // every possible target here (none of these rows recover to audio, and
+  // "uncategorized" never existed as a real column value before this fix),
+  // so every one of them is a genuine, demonstrable mismatch pre-apply.
+  const NULL_CAP_PLACEHOLDER_TYPE = "audio";
+
+  // 5 recoverable from unambiguous modalities.
+  const modalityRecoverable = [
+    { io: ["text"], out: ["image"] },       // -> text-to-image
+    { io: ["text"], out: ["image"] },       // -> text-to-image
+    { io: ["text", "image"], out: ["video"] }, // -> image-to-video
+    { io: ["text", "image"], out: ["video"] }, // -> image-to-video
+    { io: ["text"], out: ["video"] },       // -> text-to-video
+  ];
+  modalityRecoverable.forEach((m, i) => {
+    rows.push(baseRow(`null-cap-modality-${i}`, {
+      modelType: NULL_CAP_PLACEHOLDER_TYPE, capability: null, inputModalities: m.io, outputModalities: m.out,
+    }));
+  });
+  // 5 recoverable only from endpoint/modelId text (no modalities set).
+  const textRecoverableSlugs = ["flux-mystery-a", "flux-mystery-b", "kling-mystery-a", "kling-mystery-b", "qwen-mystery-a"];
+  textRecoverableSlugs.forEach((slug, i) => {
+    rows.push(baseRow(`null-cap-text-${i}`, { modelType: NULL_CAP_PLACEHOLDER_TYPE, capability: null, endpoint: slug }));
+  });
+  // 10 genuinely unrecoverable — no modalities, endpoint text matches nothing.
+  for (let i = 0; i < 10; i++) {
+    rows.push(baseRow(`null-cap-unrecoverable-${i}`, { modelType: NULL_CAP_PLACEHOLDER_TYPE, capability: null, endpoint: `qzx-${i}-nnn` }));
+  }
+
+  // ── 1: "media"-capability row, recoverable via modalities (image output) ──
+  rows.push(baseRow("media-row", {
+    modelType: NULL_CAP_PLACEHOLDER_TYPE, capability: "media", inputModalities: ["text"], outputModalities: ["image"],
+  }));
+
+  // ── 132: already-correct control rows across all 7 real modes ──────────
+  const controlCounts = { image: 19, i2i: 19, video: 19, i2v: 19, v2v: 19, lipsync: 19, audio: 18 };
+  const capabilityForMode = {
+    image: "text-to-image", i2i: "image-to-image", video: "text-to-video", i2v: "image-to-video",
+    v2v: "video-to-video", lipsync: "avatar-video", audio: "audio",
+  };
+  for (const [mode, count] of Object.entries(controlCounts)) {
     for (let i = 0; i < count; i++) {
-      rows.push(baseRow(`null-cap-${modelType}-${n++}`, { modelType, capability: null }));
+      rows.push(baseRow(`control-${mode}-${i}`, { modelType: mode, capability: capabilityForMode[mode] }));
     }
   }
-  // 3 already-correct control rows that must NEVER be touched.
-  rows.push(baseRow("control-image", { modelType: "image", capability: "text-to-image" }));
-  rows.push(baseRow("control-i2v", { modelType: "i2v", capability: "image-to-video" }));
-  rows.push(baseRow("control-alibaba", { modelType: "video", capability: "text-to-video", providerName: "Alibaba" }));
+
   return rows;
 }
 
@@ -77,13 +131,13 @@ async function cleanup(prisma) {
   await prisma.modelPricing.deleteMany({ where: { modelId: { startsWith: PREFIX } } });
 }
 
-describe("scripts/fix-model-categories.mjs against real Postgres", () => {
+describe("scripts/fix-model-categories.mjs against a test DB seeded to the corrected production shape (189 rows)", () => {
   afterEach(async () => {
     const { default: prisma } = await import("@/lib/prisma");
     await cleanup(prisma);
   });
 
-  it("dry run reports the exact before counts, apply fixes them, and a second run is a no-op", async () => {
+  it("dry run: 8 recategorized (mapped-but-misfiled), 11 recovered capabilities, only 10 genuinely-unidentifiable rows hidden", async () => {
     const { default: prisma } = await import("@/lib/prisma");
     const { run } = await import("../../scripts/fix-model-categories.mjs");
 
@@ -91,109 +145,96 @@ describe("scripts/fix-model-categories.mjs against real Postgres", () => {
 
     const mine = (list) => list.filter((r) => r.modelId.startsWith(PREFIX));
 
-    // ── BEFORE: dry run ────────────────────────────────────────────────
     const before = await run({ apply: false, yes: false });
-    const beforeMismatches = mine(before.modelTypeFixes);
-    const beforeAttention = mine(before.needsAttention);
+    const capabilityFixes = mine(before.capabilityFixes);
+    const modelTypeFixes = mine(before.modelTypeFixes);
+    const needsAttention = mine(before.needsAttention);
 
-    // 10 (seedance) + 4 (r2v) + 2 (v2v) + 19 (null-capability) = 35 rows
-    // need their modelType rewritten. The 3 control rows must not appear.
-    expect(beforeMismatches).toHaveLength(35);
-    expect(beforeMismatches.some((m) => m.modelId.includes("control"))).toBe(false);
+    // 11 recovered: 5 modality-based + 5 text-based + the 1 media row.
+    expect(capabilityFixes).toHaveLength(11);
+    expect(capabilityFixes.filter((f) => f.modelId.includes("null-cap-modality"))).toHaveLength(5);
+    expect(capabilityFixes.filter((f) => f.modelId.includes("null-cap-text"))).toHaveLength(5);
+    expect(capabilityFixes.find((f) => f.modelId.includes("media-row"))).toMatchObject({ from: "media", to: "text-to-image" });
 
-    const seedanceFixes = beforeMismatches.filter((m) => m.modelId.includes("seedance"));
-    expect(seedanceFixes).toHaveLength(10);
-    // Bare "video" has no entry in the mapping — written as uncategorized,
-    // never guessed into a real category. That's the whole point of this fix.
-    expect(seedanceFixes.every((m) => m.to === "uncategorized")).toBe(true);
+    // Only the 10 genuinely unrecoverable rows are hidden — small, and each
+    // one really has no usable signal (no modalities, unrecognizable text).
+    expect(needsAttention).toHaveLength(10);
+    expect(needsAttention.every((n) => n.modelId.includes("null-cap-unrecoverable"))).toBe(true);
 
-    const r2vFixes = beforeMismatches.filter((m) => m.modelId.includes("r2v-"));
-    expect(r2vFixes).toHaveLength(4);
-    expect(r2vFixes.every((m) => m.to === "video")).toBe(true);
+    // modelType rewrites: 8 (recategorize bucket) + 20 (all null-capability
+    // rows move off whatever placeholder they were stored under, recovered
+    // or not) + 1 (media row) = 29. The 28 bare image/video rows need NONE
+    // — they were already correctly stored, only the mapping hid them.
+    expect(modelTypeFixes).toHaveLength(29);
+    expect(modelTypeFixes.some((f) => f.modelId.includes("bare-image") || f.modelId.includes("bare-video"))).toBe(false);
 
-    // NOTE: "v2v-" alone would also match the null-capability "...null-cap-
-    // v2v-N" rows below — exclude those explicitly to isolate the 2 real
-    // video-to-video control rows.
-    const v2vFixes = beforeMismatches.filter((m) => m.modelId.includes("v2v-") && !m.modelId.includes("null-cap"));
-    expect(v2vFixes).toHaveLength(2);
-    expect(v2vFixes.every((m) => m.to === "v2v")).toBe(true);
-
-    const nullCapFixes = beforeMismatches.filter((m) => m.modelId.includes("null-cap"));
-    expect(nullCapFixes).toHaveLength(19);
-    expect(nullCapFixes.every((m) => m.to === "uncategorized" && m.capability === null)).toBe(true);
-
-    // 19 null-capability rows + 10 bare-"video" Seedance rows = 29 total
-    // rows needing attention (reference-to-video and video-to-video ARE
-    // real, mapped capabilities, so those 6 rows are NOT in this list).
-    expect(beforeAttention).toHaveLength(29);
-
-    // Dry run must not have written anything.
-    const untouchedRow = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}seedance-0` } });
-    expect(untouchedRow.modelType).toBe("image");
-
-    // ── APPLY ────────────────────────────────────────────────────────────
+    // ── APPLY ──────────────────────────────────────────────────────────
     const applied = await run({ apply: true, yes: true });
-    expect(mine(applied.modelTypeFixes)).toHaveLength(35); // same plan, now executed
+    expect(mine(applied.modelTypeFixes)).toHaveLength(29);
 
-    const fixedSeedance = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}seedance-0` } });
-    expect(fixedSeedance.modelType).toBe("uncategorized");
-    const fixedR2v = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}r2v-0` } });
-    expect(fixedR2v.modelType).toBe("video");
-    const fixedV2v = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}v2v-0` } });
-    expect(fixedV2v.modelType).toBe("v2v");
-    const fixedNullCap = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}null-cap-image-0` } });
-    expect(fixedNullCap.modelType).toBe("uncategorized");
-
-    // Control rows must be byte-for-byte untouched.
-    const control = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}control-image` } });
-    expect(control.modelType).toBe("image");
-    const controlI2v = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}control-i2v` } });
-    expect(controlI2v.modelType).toBe("i2v");
-    const controlAlibaba = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}control-alibaba` } });
-    expect(controlAlibaba.modelType).toBe("video");
+    const r2v0 = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}r2v-0` } });
+    expect(r2v0.modelType).toBe("video");
+    const v2v0 = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}v2v-0` } });
+    expect(v2v0.modelType).toBe("v2v");
+    const bareImage0 = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}bare-image-0` } });
+    expect(bareImage0.modelType).toBe("image"); // untouched
+    const bareVideo0 = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}bare-video-0` } });
+    expect(bareVideo0.modelType).toBe("video"); // untouched
+    const recoveredModality0 = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}null-cap-modality-0` } });
+    expect(recoveredModality0.capability).toBe("text-to-image");
+    expect(recoveredModality0.modelType).toBe("image");
+    const recoveredText0 = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}null-cap-text-0` } }); // flux-mystery-a
+    expect(recoveredText0.capability).toBe("image");
+    expect(recoveredText0.modelType).toBe("image");
+    const mediaRow = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}media-row` } });
+    expect(mediaRow.capability).toBe("text-to-image");
+    expect(mediaRow.modelType).toBe("image");
+    const stillUnrecoverable0 = await prisma.modelPricing.findUnique({ where: { modelId: `${PREFIX}null-cap-unrecoverable-0` } });
+    expect(stillUnrecoverable0.modelType).toBe("uncategorized");
+    expect(stillUnrecoverable0.capability).toBeNull(); // never invented
 
     // ── AFTER: second dry run is a no-op (idempotent) ───────────────────
     const after = await run({ apply: false, yes: false });
     expect(mine(after.modelTypeFixes)).toHaveLength(0);
-    // The 29 rows with a null/unmapped capability still correctly need
-    // attention — fixing modelType never invents a capability, so this
-    // count is UNCHANGED after apply; only a human fixing the sync source
-    // can clear it.
-    expect(mine(after.needsAttention)).toHaveLength(29);
+    expect(mine(after.capabilityFixes)).toHaveLength(0);
+    expect(mine(after.needsAttention)).toHaveLength(10); // unchanged — still genuinely unrecoverable
   });
 
-  it("getCatalogModels excludes every uncategorized row from a non-admin listing, but the admin path still sees them", async () => {
+  it("final per-mode visible counts: only the 10 unrecoverable rows are missing from every listing", async () => {
     const { default: prisma } = await import("@/lib/prisma");
     const { getCatalogModels } = await import("@/lib/model-catalog");
+    const { run } = await import("../../scripts/fix-model-categories.mjs");
 
     await prisma.modelPricing.createMany({ data: buildSeed() });
-    const { run } = await import("../../scripts/fix-model-categories.mjs");
     await run({ apply: true, yes: true });
 
     const mine = (list) => list.filter((r) => r.modelId.startsWith(PREFIX));
 
-    const publicImageModels = mine(await getCatalogModels({ modelType: "image", includeInactive: true }));
-    // Only the control image row should ever surface publicly under "image"
-    // — every one of the 10 Seedance rows (bare "video") and the 3
-    // null-capability rows originally stored as "image" are gone from it.
-    expect(publicImageModels.map((m) => m.id)).toEqual([`${PREFIX}control-image`]);
+    const counts = {};
+    for (const mode of ["image", "i2i", "video", "i2v", "v2v", "lipsync", "audio"]) {
+      counts[mode] = mine(await getCatalogModels({ modelType: mode, includeInactive: true })).length;
+    }
 
-    const publicAll = mine(await getCatalogModels({ includeInactive: true }));
-    // Public sees the 3 control rows plus the 4 reference-to-video and 2
-    // video-to-video rows — all of those have a REAL, mapped capability, so
-    // fixing their modelType is exactly what makes them showable again
-    // (previously they were miscategorized, not absent). Only the 29 rows
-    // whose capability is itself null/unmapped (the 10 bare-"video"
-    // Seedance rows and the 19 null-capability rows) stay invisible.
-    expect(publicAll).toHaveLength(9);
-    expect(publicAll.every((m) => !m.isUncategorized)).toBe(true);
+    // image: 19 control + 14 bare-image + (2 modality text-to-image + 3
+    //   text-based flux/flux/qwen recoveries + the media row) = 19+14+2+3+1 = 39
+    expect(counts.image).toBe(39);
+    // i2i: 19 control, untouched by any recovery in this seed.
+    expect(counts.i2i).toBe(19);
+    // video: 19 control + 14 bare-video + 5 (recategorized reference-to-
+    //   video) + (1 modality text-to-video + 2 kling text-based) = 19+14+5+3 = 41
+    expect(counts.video).toBe(41);
+    // i2v: 19 control + 2 modality-recovered image-to-video = 21
+    expect(counts.i2v).toBe(21);
+    // v2v: 19 control + 3 (recategorized video-to-video) = 22
+    expect(counts.v2v).toBe(22);
+    expect(counts.lipsync).toBe(19);
+    expect(counts.audio).toBe(18);
+
+    const totalVisible = Object.values(counts).reduce((a, b) => a + b, 0);
+    expect(totalVisible).toBe(TOTAL_SEEDED - 10); // every row except the 10 genuinely unrecoverable ones
 
     const adminAll = mine(await getCatalogModels({ includeInactive: true, isAdmin: true }));
-    // Admin sees every one of the 38 seeded rows, including uncategorized ones.
     expect(adminAll).toHaveLength(TOTAL_SEEDED);
-    // isUncategorized reflects capability, not "needed a modelType rewrite" —
-    // r2v/v2v had the latter but a real, mapped capability, so only the 29
-    // truly unmapped rows (10 Seedance + 19 null-capability) are flagged.
-    expect(adminAll.filter((m) => m.isUncategorized)).toHaveLength(29);
+    expect(adminAll.filter((m) => m.isUncategorized)).toHaveLength(10);
   });
 });

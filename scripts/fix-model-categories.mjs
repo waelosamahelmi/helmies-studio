@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Backfill: recompute ModelPricing.modelType (and, for KIE rows, the
-// slug-derived displayName) from what's already on each row.
+// slug-derived displayName), recovering a null/unmapped capability where
+// possible, from what's already on each row.
 //
 // URGENT production fix — modelType used to be computed INDEPENDENTLY of
 // capability at sync time (see model-catalog-core.mjs's
@@ -17,23 +18,31 @@
 // every row that was written BEFORE that fix landed (or edited by hand) and
 // hasn't been re-synced since.
 //
-// Dry-run by default: reports every row whose modelType disagrees with
-// modelTypeForCapability(capability) (and, for KIE rows, whose displayName
-// disagrees with the fixed slugToTitle — the "Bytedance Seedance 1 5 Pro" /
-// "Generate 4 O Image" class of bug), plus every row whose capability is
-// null/unmapped. That last category is reported as NEEDING ATTENTION, never
-// auto-fixed — a bare/generic capability (e.g. "video" with no direction)
-// is exactly how a sync's own best-guess fallback produced this bug in the
-// first place, so this script does not guess a modelType for it either; it
-// writes UNCATEGORIZED and the row stays invisible to end users (see
-// model-catalog.js's serializeCatalogModel/getCatalogModels) until a human
-// fixes its capability at the sync source.
+// A first version of this fix treated a bare "video"/"image" capability as
+// unmapped/uncategorized — a read-only preview against the REAL production
+// catalog caught that this would have HIDDEN 28 genuinely working models
+// (14 image, 14 video) that legitimately use that coarse-but-valid value.
+// "image" and "video" are now mapped directly (see CAPABILITY_TO_MODEL_TYPE).
+// For the null-capability rows that preview also found (and anything else
+// this mapping still doesn't recognize, e.g. the sync's own "media"
+// fallback), this script tries inferCapabilityFromRow (model-catalog-
+// core.mjs) — modalities first, then the same text-based inference every
+// other synced model already gets its capability from — before giving up
+// and reporting the row as needing attention.
 //
-// `--apply --yes` writes the recomputed modelType/displayName for every
-// row this can safely fix. Idempotent: run it again right after and both
-// lists come back empty (a mismatch it already fixed matches on the next
-// scan; an UNCATEGORIZED row stays UNCATEGORIZED — unchanged — until its
-// capability itself changes).
+// Dry-run by default: reports every row whose modelType disagrees with its
+// (possibly recovered) capability, every capability this recovers, every
+// stale KIE displayName (the "Bytedance Seedance 1 5 Pro" / "Generate 4 O
+// Image" class of bug), and every row that's STILL null/unmapped after
+// recovery is attempted — those are NEVER auto-fixed with a guess; they're
+// written/kept as UNCATEGORIZED and reported as needing a human to assign a
+// real capability at the sync source.
+//
+// `--apply --yes` writes the recomputed modelType/displayName/capability
+// for every row this can safely fix. Idempotent: run it again right after
+// and every list comes back empty (a row it already fixed matches on the
+// next scan; a row still genuinely uncategorized stays that way —
+// unchanged — until its capability itself changes).
 //
 // SAFETY: like scripts/reconcile-credits.mjs, this reads DATABASE_URL
 // straight from the environment and has no built-in host allowlist — that
@@ -49,17 +58,35 @@ import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import prisma from "../src/lib/prisma.js";
-import { modelTypeForCapability, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "../src/lib/model-catalog-core.mjs";
+import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE } from "../src/lib/model-catalog-core.mjs";
 
 // Pure planning function — no DB access, so it's directly unit-testable
 // against plain row arrays (tests/unit/fix-model-categories.test.mjs).
 export function planFixes(rows) {
   const modelTypeFixes = [];
   const displayNameFixes = [];
+  const capabilityFixes = [];
   const needsAttention = [];
 
   for (const row of rows) {
-    const correctType = modelTypeForCapability(row.capability) || UNCATEGORIZED_MODEL_TYPE;
+    let capability = row.capability;
+    let mappedType = modelTypeForCapability(capability);
+
+    if (mappedType === null) {
+      const inferred = inferCapabilityFromRow(row);
+      if (inferred) {
+        capabilityFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          from: row.capability ?? null,
+          to: inferred,
+        });
+        capability = inferred;
+        mappedType = modelTypeForCapability(inferred);
+      }
+    }
+
+    const correctType = mappedType || UNCATEGORIZED_MODEL_TYPE;
 
     if (correctType === UNCATEGORIZED_MODEL_TYPE) {
       needsAttention.push({
@@ -85,7 +112,7 @@ export function planFixes(rows) {
     // displayNameFor), so recomputing it is always safe there. Alibaba's is
     // hand-authored in alibaba-catalog.js and must never be touched here.
     if (row.providerName === "KIE") {
-      const correctName = slugToTitle(row.modelId, { capability: row.capability });
+      const correctName = slugToTitle(row.modelId, { capability });
       if (correctName && correctName !== row.displayName) {
         displayNameFixes.push({
           modelId: row.modelId,
@@ -97,10 +124,20 @@ export function planFixes(rows) {
     }
   }
 
-  return { modelTypeFixes, displayNameFixes, needsAttention };
+  return { modelTypeFixes, displayNameFixes, capabilityFixes, needsAttention };
 }
 
-function printPlan({ modelTypeFixes, displayNameFixes, needsAttention }, { apply }) {
+function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, needsAttention }, { apply }) {
+  console.log("");
+  if (capabilityFixes.length === 0) {
+    console.log("capability: no null/unmapped rows were recoverable from modalities/endpoint.");
+  } else {
+    console.log(`capability: ${capabilityFixes.length} row(s) ${apply ? "were" : "would be"} recovered from modalities/endpoint inference:`);
+    for (const f of capabilityFixes) {
+      console.log(`  ${f.modelId} (${f.providerName}): capability ${JSON.stringify(f.from)} -> ${JSON.stringify(f.to)}`);
+    }
+  }
+
   console.log("");
   if (modelTypeFixes.length === 0) {
     console.log("modelType: no mismatches found.");
@@ -123,9 +160,9 @@ function printPlan({ modelTypeFixes, displayNameFixes, needsAttention }, { apply
 
   console.log("");
   if (needsAttention.length === 0) {
-    console.log("needs attention: none — every row's capability maps to a modelType.");
+    console.log("needs attention: none — every row's capability maps to a modelType (directly or via recovery).");
   } else {
-    console.log(`needs attention: ${needsAttention.length} row(s) have a null/unmapped capability. These are NOT auto-fixed — they are written/kept as "${UNCATEGORIZED_MODEL_TYPE}" and stay invisible to end users until a human assigns a real capability at the sync source:`);
+    console.log(`needs attention: ${needsAttention.length} row(s) have a null/unmapped capability that inference could NOT recover. These are NOT guessed — they are written/kept as "${UNCATEGORIZED_MODEL_TYPE}" and stay invisible to end users until a human assigns a real capability at the sync source:`);
     for (const n of needsAttention) {
       console.log(`  ${n.modelId} (${n.providerName}): capability=${JSON.stringify(n.capability)}, currently stored modelType=${JSON.stringify(n.currentModelType)}`);
     }
@@ -139,7 +176,10 @@ export async function run({ apply, yes }) {
   }
 
   const rows = await prisma.modelPricing.findMany({
-    select: { id: true, modelId: true, providerName: true, capability: true, modelType: true, displayName: true },
+    select: {
+      id: true, modelId: true, providerName: true, capability: true, modelType: true, displayName: true,
+      inputModalities: true, outputModalities: true, endpoint: true, providerModelId: true,
+    },
   });
 
   const plan = planFixes(rows);
@@ -147,23 +187,26 @@ export async function run({ apply, yes }) {
   printPlan(plan, { apply });
 
   if (!apply) {
-    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.modelTypeFixes.length} modelType fix(es) and ${plan.displayNameFixes.length} displayName fix(es) above.`);
+    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), and ${plan.displayNameFixes.length} displayName fix(es) above.`);
     return { ...plan, applied: 0 };
   }
 
+  const modelIds = new Set([
+    ...plan.modelTypeFixes.map((f) => f.modelId),
+    ...plan.displayNameFixes.map((f) => f.modelId),
+    ...plan.capabilityFixes.map((f) => f.modelId),
+  ]);
+
   let applied = 0;
-  for (const f of plan.modelTypeFixes) {
-    const nameFix = plan.displayNameFixes.find((n) => n.modelId === f.modelId);
-    await prisma.modelPricing.update({
-      where: { modelId: f.modelId },
-      data: { modelType: f.to, ...(nameFix ? { displayName: nameFix.to } : {}) },
-    });
-    applied++;
-  }
-  // Any displayName fix on a row that did NOT also need a modelType fix.
-  for (const n of plan.displayNameFixes) {
-    if (plan.modelTypeFixes.some((f) => f.modelId === n.modelId)) continue;
-    await prisma.modelPricing.update({ where: { modelId: n.modelId }, data: { displayName: n.to } });
+  for (const modelId of modelIds) {
+    const typeFix = plan.modelTypeFixes.find((f) => f.modelId === modelId);
+    const nameFix = plan.displayNameFixes.find((f) => f.modelId === modelId);
+    const capFix = plan.capabilityFixes.find((f) => f.modelId === modelId);
+    const data = {};
+    if (typeFix) data.modelType = typeFix.to;
+    if (nameFix) data.displayName = nameFix.to;
+    if (capFix) data.capability = capFix.to;
+    await prisma.modelPricing.update({ where: { modelId }, data });
     applied++;
   }
 

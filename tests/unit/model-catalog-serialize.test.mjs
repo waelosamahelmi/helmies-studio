@@ -28,16 +28,17 @@ describe("serializeCatalogModel", () => {
 
   // ── URGENT fix: modelType is re-derived from capability, not trusted blindly ──
   describe("modelType — single source of truth, re-derived from capability", () => {
-    it("derives modelType from capability even if the stored column disagrees (drift protection)", () => {
-      // This is the measured production bug: a Bytedance Seedance row had
-      // capability="video" but a stored modelType of "image". The serializer
-      // must present the CORRECT type regardless of what's stored.
+    it("corrects a bare-video-capability row stored under the wrong modelType — measured production bug", () => {
+      // The exact production bug: a Bytedance Seedance row had
+      // capability="video" but a stored modelType of "image". "video" IS a
+      // real, mapped capability (a read-only preview against production
+      // caught a first version of this fix wrongly treating it as
+      // unmapped/hidden — see CAPABILITY_TO_MODEL_TYPE's header) — the
+      // serializer must present the CORRECT modelType, not hide the row.
       const drifted = { ...row, modelType: "image", capability: "video" };
       const pub = serializeCatalogModel(drifted);
-      // "video" is a bare/generic capability with no entry in the mapping —
-      // it must never be guessed into "video" modelType; it's uncategorized.
-      expect(pub.modelType).toBe("uncategorized");
-      expect(pub.isUncategorized).toBe(true);
+      expect(pub.modelType).toBe("video");
+      expect(pub.isUncategorized).toBe(false);
     });
 
     it("a reference-to-video row is corrected to modelType video even if stored as image", () => {
@@ -50,11 +51,72 @@ describe("serializeCatalogModel", () => {
       expect(serializeCatalogModel(drifted).modelType).toBe("v2v");
     });
 
-    it("null/missing capability is uncategorized, not whatever modelType happens to be stored", () => {
+    it("null/missing capability is uncategorized when nothing on the row can recover it", () => {
+      // modelId "m1" carries no signal inferCapabilityFromRow can use
+      // either (no modalities, and the text itself matches nothing) — a
+      // genuinely unidentifiable row, unlike the recovery cases below.
       const noCapability = { ...row, modelType: "image", capability: null };
       const pub = serializeCatalogModel(noCapability);
       expect(pub.modelType).toBe("uncategorized");
       expect(pub.isUncategorized).toBe(true);
+    });
+
+    it("a capability this mapping has never heard of (not null, just unrecognized) is still uncategorized when unrecoverable", () => {
+      const unrecognized = { ...row, modelType: "image", capability: "media" };
+      const pub = serializeCatalogModel(unrecognized);
+      expect(pub.modelType).toBe("uncategorized");
+      expect(pub.isUncategorized).toBe(true);
+    });
+  });
+
+  // ── Recovering a null/unmapped capability instead of silently hiding it ──
+  // (production-preview finding: 20 null-capability rows must not just be
+  // hidden — recover what can genuinely be identified first).
+  describe("capability recovery from modalities/endpoint (requirement: don't hide what's identifiable)", () => {
+    it("recovers a null-capability row from unambiguous outputModalities/inputModalities", () => {
+      const recoverable = {
+        modelId: "mystery-1", displayName: "Mystery 1", providerName: "KIE", modelType: "uncategorized",
+        capability: null, creditsCost: 5, inputModalities: ["text"], outputModalities: ["image"],
+      };
+      const pub = serializeCatalogModel(recoverable);
+      expect(pub.capability).toBe("text-to-image");
+      expect(pub.modelType).toBe("image");
+      expect(pub.isUncategorized).toBe(false);
+    });
+
+    it("recovers an image-to-video row (image+text in, video out)", () => {
+      const recoverable = {
+        modelId: "mystery-2", providerName: "KIE", modelType: "uncategorized",
+        capability: null, creditsCost: 5, inputModalities: ["text", "image"], outputModalities: ["video"],
+      };
+      expect(serializeCatalogModel(recoverable).modelType).toBe("i2v");
+    });
+
+    it("does not guess when output+input modalities are genuinely ambiguous (reference-to-video vs video-to-video)", () => {
+      const ambiguous = {
+        modelId: "mystery-3", providerName: "KIE", modelType: "uncategorized",
+        capability: null, creditsCost: 5, inputModalities: ["text", "image", "video"], outputModalities: ["video"],
+      };
+      const pub = serializeCatalogModel(ambiguous);
+      expect(pub.isUncategorized).toBe(true);
+    });
+
+    it("falls back to the same text-based inference every synced model already gets its capability from, when modalities are absent", () => {
+      const noModalities = {
+        modelId: "some-seedance-model", providerName: "KIE", modelType: "uncategorized",
+        capability: null, creditsCost: 5,
+      };
+      const pub = serializeCatalogModel(noModalities);
+      expect(pub.capability).toBe("video");
+      expect(pub.modelType).toBe("video");
+    });
+
+    it("stays uncategorized when even the text fallback can tell nothing (the sync's own 'media' last resort)", () => {
+      const unrecoverable = {
+        modelId: "totally-unknown-thing", providerName: "KIE", modelType: "uncategorized",
+        capability: null, creditsCost: 5,
+      };
+      expect(serializeCatalogModel(unrecoverable).isUncategorized).toBe(true);
     });
   });
 
@@ -108,10 +170,13 @@ describe("serializeCatalogModel", () => {
   });
 });
 
-describe("getCatalogModels — never returns an uncategorized row to a non-admin caller", () => {
-  it("excludes a row whose capability doesn't map even if the stored modelType claims a real category", async () => {
+describe("getCatalogModels — a stale/wrong modelType can never leak into the wrong mode, and uncategorized rows never reach a non-admin caller", () => {
+  it("excludes a bare-video-capability row from an image-mode query even though its stored modelType still says image", async () => {
     // The exact shape of the bug: a video-capability row stored under
-    // modelType="image" must never come back from an image-mode query.
+    // modelType="image" must never come back from an image-mode query —
+    // "video" is a real capability now (see CAPABILITY_TO_MODEL_TYPE), so
+    // this row is excluded from IMAGE mode specifically, not hidden
+    // entirely (see the next test: it correctly surfaces under video mode).
     prisma.modelPricing.findMany.mockResolvedValueOnce([
       { modelId: "seedance-1-5-pro", providerName: "KIE", modelType: "image", capability: "video", creditsCost: 5, isActive: true, isDeprecated: false },
       { modelId: "flux-2", providerName: "KIE", modelType: "image", capability: "text-to-image", creditsCost: 5, isActive: true, isDeprecated: false },
@@ -120,9 +185,26 @@ describe("getCatalogModels — never returns an uncategorized row to a non-admin
     expect(models.map((m) => m.id)).toEqual(["flux-2"]);
   });
 
-  it("an admin call sees the uncategorized row too, flagged", async () => {
+  it("the same bare-video-capability row correctly surfaces under a video-mode query", async () => {
     prisma.modelPricing.findMany.mockResolvedValueOnce([
       { modelId: "seedance-1-5-pro", providerName: "KIE", modelType: "image", capability: "video", creditsCost: 5, isActive: true, isDeprecated: false },
+    ]);
+    const models = await getCatalogModels({ modelType: "video" });
+    expect(models.map((m) => m.id)).toEqual(["seedance-1-5-pro"]);
+  });
+
+  it("excludes a genuinely uncategorized row (unrecognized capability, unrecoverable) from a non-admin listing", async () => {
+    prisma.modelPricing.findMany.mockResolvedValueOnce([
+      { modelId: "totally-unknown-thing", providerName: "KIE", modelType: "image", capability: "media", creditsCost: 5, isActive: true, isDeprecated: false },
+      { modelId: "flux-2", providerName: "KIE", modelType: "image", capability: "text-to-image", creditsCost: 5, isActive: true, isDeprecated: false },
+    ]);
+    const models = await getCatalogModels({ modelType: "image" });
+    expect(models.map((m) => m.id)).toEqual(["flux-2"]);
+  });
+
+  it("an admin call sees the uncategorized row too, flagged", async () => {
+    prisma.modelPricing.findMany.mockResolvedValueOnce([
+      { modelId: "totally-unknown-thing", providerName: "KIE", modelType: "image", capability: "media", creditsCost: 5, isActive: true, isDeprecated: false },
     ]);
     const models = await getCatalogModels({ modelType: "image", isAdmin: true });
     expect(models).toHaveLength(1);
@@ -141,18 +223,18 @@ describe("getCatalogModel — id resolution and uncategorized gating", () => {
     expect(prisma.modelPricing.findFirst).toHaveBeenCalledWith({ where: { modelId: { endsWith: ":qwen-image-max" } } });
   });
 
-  it("returns null for an uncategorized row to a non-admin caller", async () => {
+  it("returns null for a genuinely uncategorized row to a non-admin caller", async () => {
     prisma.modelPricing.findUnique.mockResolvedValueOnce({
-      modelId: "seedance-1-5-pro", providerName: "KIE", capability: "video", creditsCost: 5,
+      modelId: "totally-unknown-thing", providerName: "KIE", capability: "media", creditsCost: 5,
     });
-    expect(await getCatalogModel("seedance-1-5-pro")).toBeNull();
+    expect(await getCatalogModel("totally-unknown-thing")).toBeNull();
   });
 
   it("returns the uncategorized row for an admin caller", async () => {
     prisma.modelPricing.findUnique.mockResolvedValueOnce({
-      modelId: "seedance-1-5-pro", providerName: "KIE", capability: "video", creditsCost: 5,
+      modelId: "totally-unknown-thing", providerName: "KIE", capability: "media", creditsCost: 5,
     });
-    const model = await getCatalogModel("seedance-1-5-pro", { isAdmin: true });
+    const model = await getCatalogModel("totally-unknown-thing", { isAdmin: true });
     expect(model.isUncategorized).toBe(true);
   });
 });

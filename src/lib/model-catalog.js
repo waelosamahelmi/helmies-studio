@@ -10,6 +10,7 @@ import { ALIBABA_MEDIA_MODELS } from "./alibaba-catalog.js";
 import {
   calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput,
   modelTypeForCapability, UNCATEGORIZED_MODEL_TYPE, slugToTitle, toPublicModelId, resolveModelPricingRow,
+  inferCapabilityFromRow,
 } from "./model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
@@ -99,11 +100,24 @@ export async function syncAlibabaModels() {
 // in alibaba-catalog.js's model() calls — that IS the "provider-supplied"
 // name the task asks us to prefer, so it's left alone (falling back to
 // slugToTitle only if a future row somehow has none).
-function displayNameFor(model) {
+function displayNameFor(model, capability) {
   if (model.providerName === "KIE") {
-    return slugToTitle(model.modelId, { capability: model.capability }) || model.displayName || model.modelId;
+    return slugToTitle(model.modelId, { capability }) || model.displayName || model.modelId;
   }
-  return model.displayName || slugToTitle(model.modelId, { capability: model.capability }) || model.modelId;
+  return model.displayName || slugToTitle(model.modelId, { capability }) || model.modelId;
+}
+
+// A row's own capability might be null, or something this mapping doesn't
+// recognize at all (the sync's own last-resort "media") — try recovering a
+// real one via inferCapabilityFromRow (modalities first, then the same
+// text-based inference every other synced model already gets its
+// capability from — see its header in model-catalog-core.mjs) before
+// giving up. Used everywhere modelType is derived so a recoverable row is
+// never reported (or hidden) as uncategorized just because the sync never
+// set — or mis-set — its capability column.
+function resolveEffectiveCapability(model) {
+  if (modelTypeForCapability(model.capability)) return model.capability;
+  return inferCapabilityFromRow(model) || model.capability || null;
 }
 
 // isAdmin controls two things the public catalog must never leak (see
@@ -117,12 +131,17 @@ function displayNameFor(model) {
 export function serializeCatalogModel(model, { includeCosts = false, isAdmin = false } = {}) {
   // modelType is re-derived from capability HERE too, not just trusted from
   // whatever the DB column says — belt-and-suspenders against a row that
-  // hasn't been through a sync/backfill since this fix landed. A capability
-  // this doesn't map (including null) is never shown to a non-admin caller
-  // (requirement: uncategorized models must not appear in any user-facing
-  // list) — the admin path still gets it, flagged via isUncategorized, so
-  // whoever owns the sync can go fix its capability.
-  const effectiveType = modelTypeForCapability(model.capability);
+  // hasn't been through a sync/backfill since this fix landed. capability
+  // itself is resolveEffectiveCapability's job: recover one from the row's
+  // modalities/endpoint when the stored value is null/unmapped before
+  // falling back to UNCATEGORIZED, so a genuinely-identifiable model is
+  // never hidden just because its capability column is empty or stale. A
+  // capability that's STILL unresolvable is never shown to a non-admin
+  // caller (requirement: uncategorized models must not appear in any
+  // user-facing list) — the admin path still gets it, flagged via
+  // isUncategorized, so whoever owns the sync can go fix it for good.
+  const capability = resolveEffectiveCapability(model);
+  const effectiveType = modelTypeForCapability(capability);
   const isUncategorized = effectiveType === null;
   const publicId = isAdmin ? model.modelId : toPublicModelId(model.modelId, model.providerName);
   const base = {
@@ -130,10 +149,10 @@ export function serializeCatalogModel(model, { includeCosts = false, isAdmin = f
     modelId: publicId,
     providerModelId: model.providerModelId || model.modelId,
     endpoint: model.endpoint || model.modelId,
-    displayName: displayNameFor(model),
+    displayName: displayNameFor(model, capability),
     description: model.description,
     modelType: isUncategorized ? UNCATEGORIZED_MODEL_TYPE : effectiveType,
-    capability: model.capability || null,
+    capability,
     inputModalities: model.inputModalities || [],
     outputModalities: model.outputModalities || [],
     schema: model.inputSchema || null,
@@ -172,17 +191,28 @@ export async function getCatalogModels({ capability, modelType, provider, includ
   // optimization, not the actual guarantee (see the in-memory filter below).
   if (!modelType && !isAdmin) where.modelType = { not: UNCATEGORIZED_MODEL_TYPE };
   const rows = await prisma.modelPricing.findMany({ where, orderBy: [{ sortOrder: "asc" }, { displayName: "asc" }, { modelId: "asc" }] });
-  // The actual guarantee: re-derive from capability regardless of what the
-  // DB's modelType column currently says, so a row that drifted out of sync
-  // (no backfill/sync run yet) still never reaches a non-admin caller.
-  const visible = isAdmin ? rows : rows.filter((row) => modelTypeForCapability(row.capability) !== null);
+  // The actual guarantee: re-derive from capability (recovering one via
+  // resolveEffectiveCapability where possible) regardless of what the DB's
+  // modelType column currently says. Two things this catches that the DB
+  // query alone can't: (1) a row that's uncategorized never reaches a
+  // non-admin caller, recovered or not; (2) a row whose STORED modelType is
+  // stale — e.g. capability="video" but modelType still says "image", the
+  // exact shape of the bug this fix targets — can never come back from a
+  // query for a DIFFERENT modelType than its true one, even before a
+  // backfill/sync has run to correct the column itself.
+  const visible = isAdmin ? rows : rows.filter((row) => {
+    const effectiveType = modelTypeForCapability(resolveEffectiveCapability(row));
+    if (effectiveType === null) return false;
+    if (modelType && effectiveType !== modelType) return false;
+    return true;
+  });
   return visible.map((row) => serializeCatalogModel(row, { includeCosts, isAdmin }));
 }
 
 export async function getCatalogModel(modelId, { includeCosts = false, isAdmin = false } = {}) {
   const row = await resolveModelPricingRow(prisma, modelId);
   if (!row) return null;
-  if (!isAdmin && modelTypeForCapability(row.capability) === null) return null;
+  if (!isAdmin && modelTypeForCapability(resolveEffectiveCapability(row)) === null) return null;
   return serializeCatalogModel(row, { includeCosts, isAdmin });
 }
 

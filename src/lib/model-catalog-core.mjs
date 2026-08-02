@@ -95,13 +95,23 @@ export function validateModelInput(schema, params = {}) {
 // capability="video" but modelType="image", because inferModelType's regex
 // list had no case for "seedance" and fell through to its "image" default).
 // Every place that wrote modelType now MUST go through this one function
-// instead of guessing its own. A capability with no entry here — including
-// null/undefined, and a bare/generic "image" or "video" capability a sync's
-// own fallback produced because it couldn't tell direction from the slug —
-// intentionally returns null. Callers must treat that as UNCATEGORIZED
-// (never displayed to end users, see serializeCatalogModel/getCatalogModels
-// in model-catalog.js) rather than silently guess a category for it; the
-// model needs its capability fixed at the sync source.
+// instead of guessing its own.
+//
+// "image" and "video" ARE real, first-class capability values here, not a
+// broken fallback to paper over — a read-only preview of this mapping
+// against the actual production catalog (before the first version of this
+// fix shipped) found that treating them as unmapped/uncategorized would
+// have hidden 28 genuinely working models (14 image, 14 video) that KIE's
+// sync legitimately files under the coarse capability with no more specific
+// hyphenated direction available (modalitiesForCapability, below, already
+// had entries for both, independently confirming they're an intentional,
+// supported value, not an artifact of the bug this fix targets). A
+// capability with NO entry here at all (including null/undefined, and
+// anything else unrecognized, e.g. the sync's own last-resort "media")
+// still returns null — callers must treat that as UNCATEGORIZED (never
+// displayed to end users, see serializeCatalogModel/getCatalogModels in
+// model-catalog.js) UNLESS inferCapabilityFromRow (below) can recover a
+// real capability for it from data already on the row.
 export const CAPABILITY_TO_MODEL_TYPE = {
   "text-to-image": "image",
   "image-to-image": "i2i",
@@ -115,6 +125,8 @@ export const CAPABILITY_TO_MODEL_TYPE = {
   "image-upscale": "i2i",
   "video-upscale": "v2v",
   "background-removal": "i2i",
+  image: "image",
+  video: "video",
 };
 
 export const UNCATEGORIZED_MODEL_TYPE = "uncategorized";
@@ -252,7 +264,7 @@ export async function resolveModelPricingRow(prisma, candidateId, selectOpt) {
   }
 }
 
-function inferCapability(path) {
+export function inferCapability(path) {
   if (/text-to-image|text2image/.test(path)) return "text-to-image";
   if (/image-to-image|image-edit|edit-image|remix|character-edit/.test(path)) return "image-to-image";
   if (/image-to-video/.test(path)) return "image-to-video";
@@ -267,6 +279,61 @@ function inferCapability(path) {
   if (/image|imagen|seedream|flux|ideogram|qwen|recraft|gpt-image|nano-banana|z-image/.test(path)) return "image";
   if (/video|kling|wan|seedance|hailuo|pixverse|happyhorse|runway|veo/.test(path)) return "video";
   return "media";
+}
+
+// ── Recovering a capability the row never got, or got as something this
+// mapping doesn't recognize ("media") ──────────────────────────────────────
+// A null/unmapped capability must NOT be silently hidden if it can be
+// recovered from data already sitting on the row — hiding a genuinely
+// working model is a worse regression than the miscategorization bug this
+// whole fix targets (see the production preview numbers cited on
+// CAPABILITY_TO_MODEL_TYPE's header: 28 of the models that mapping alone
+// would have hidden were real image/video models using the coarse
+// capability). Tried in order, each strictly more speculative than the last:
+//
+//   1. outputModalities/inputModalities — a structured, reliable signal
+//      (what actually comes out of a generation is definitional, not a
+//      guess). Only trusted when unambiguous: a "video" output with BOTH
+//      "image" and "video" in its inputs could be either reference-to-video
+//      or video-to-video — modalitiesForCapability (above) gives both an
+//      identical-shaped signature, so that specific case is left alone
+//      rather than guessed.
+//   2. the SAME text-based inferCapability (above) already trusted to
+//      assign every OTHER synced model its capability in the first
+//      place — run against endpoint/providerModelId/modelId. This is not a
+//      new guess introduced to paper over missing data; it's the existing,
+//      already-relied-on mechanism, applied to a row that fell through it
+//      (e.g. added via some other path, or lost its capability to a
+//      migration/manual edit) without ever getting one.
+//
+// A row where both signals are absent or still ambiguous keeps returning
+// null — genuinely unidentifiable, not a recoverable gap.
+function inferCapabilityFromModalities(inputModalities, outputModalities) {
+  const out = new Set((Array.isArray(outputModalities) ? outputModalities : []).map(String));
+  const inp = new Set((Array.isArray(inputModalities) ? inputModalities : []).map(String));
+  if (out.size !== 1) return null;
+  const [outType] = out;
+  if (outType === "image") return inp.has("image") ? "image-to-image" : "text-to-image";
+  if (outType === "video") {
+    if (inp.has("image") && inp.has("video")) return null; // ambiguous: reference-to-video vs video-to-video
+    if (inp.has("video")) return "video-to-video";
+    if (inp.has("image")) return "image-to-video";
+    return "text-to-video";
+  }
+  if (outType === "audio") return "audio";
+  return null;
+}
+
+export function inferCapabilityFromRow(row) {
+  const fromModalities = inferCapabilityFromModalities(row?.inputModalities, row?.outputModalities);
+  if (fromModalities) return fromModalities;
+  const text = row?.endpoint || row?.providerModelId || row?.modelId;
+  if (!text) return null;
+  const guessed = inferCapability(String(text).toLowerCase());
+  // inferCapability's own last-resort fallback is literally "media" when
+  // it can't tell anything at all from the text either — that's the same
+  // "genuinely can't tell" signal as everywhere else, not a usable answer.
+  return guessed === "media" ? null : guessed;
 }
 
 function modalitiesForCapability(capability) {
