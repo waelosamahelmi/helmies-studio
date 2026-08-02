@@ -260,11 +260,17 @@ export async function pollProviderResult(provider, requestId, maxAttempts = 900,
         return { ...data, outputs, url: outputs[0], outputUrl: outputs[0] };
       }
       if (status === "failed" || status === "error" || status === "fail") {
-        throw new Error(brandError(parsed.error || ""));
+        const terminalError = new Error(brandError(parsed.error || ""));
+        terminalError.terminal = true;
+        throw terminalError;
       }
       // pending/waiting/generating/processing — keep polling with gentle backoff
       pollInterval = Math.min(10000, pollInterval + 1000);
     } catch (e) {
+      // A provider-reported terminal failure will never resolve on a later
+      // attempt — retrying it just pins a worker slot (heartbeat keeps the
+      // lease alive) for up to maxAttempts * backoff. Fail fast instead.
+      if (e?.terminal) throw e;
       if (attempt === maxAttempts) throw e;
     }
   }

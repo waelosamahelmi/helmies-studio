@@ -24,11 +24,13 @@ module.exports = {
       name: "helmies-studio",
       script: "npm",
       args: "start -- -p 3010",
+      cwd: "/root/helmies-studio",
       env: { NODE_ENV: "production" },
     },
     {
       name: "helmies-worker",
       script: "scripts/worker.mjs",
+      cwd: "/root/helmies-studio",
       env: { NODE_ENV: "production" },
       max_restarts: 20,
       restart_delay: 5000,
