@@ -1,6 +1,13 @@
-import prisma from "@/lib/prisma";
-import { ALIBABA_MEDIA_MODELS } from "@/lib/alibaba-catalog";
-import { calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput } from "@/lib/model-catalog-core.mjs";
+// Relative + explicit extension (not the "@/lib/..." bundler-only alias
+// used elsewhere in this app — see src/lib/wallet.js/job-queue.js's
+// identical header comments for the precedent): this module is also loaded
+// transitively under plain `node` — scripts/seed-templates.mjs (Phase 6
+// Task 4) imports src/lib/template-quote.js's canPublish, which imports
+// quoteCatalogModel from here — and Node's strict ESM resolver has no
+// knowledge of the "@/" alias at all, only Next/Vite's bundler does.
+import prisma from "./prisma.js";
+import { ALIBABA_MEDIA_MODELS } from "./alibaba-catalog.js";
+import { calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput } from "./model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
 

@@ -120,6 +120,29 @@ describe("POST /api/generate/async — enqueues a durable job (Task 5)", () => {
     expect(call.payload.endpoint).toBe("resolved-endpoint");
   });
 
+  // IMPORTANT-4 fix (found in review): job-runner.js/generation-webhook.js
+  // both read job.payload.templateRunId to decide whether a job belongs to
+  // a Phase 6 TemplateRun step, routing its terminal transition to
+  // advanceTemplateRun instead of this generation's own settle/release. A
+  // client-injected templateRunId/stepId in an ordinary /api/generate/async
+  // body must never reach the job payload — that would let an attacker
+  // hijack a normal generation into skipping its own settle/release and
+  // instead driving an arbitrary (attacker-chosen) template run.
+  it("strips a client-injected templateRunId/stepId — never reaches the job payload", async () => {
+    const res = await POST(jsonReq({
+      tool: "image", model: "m1", prompt: "a cat",
+      templateRunId: "attacker-chosen-run-id", stepId: "step1",
+    }));
+
+    expect(res.status).toBe(200);
+    expect(enqueueJob).toHaveBeenCalledTimes(1);
+    const call = enqueueJob.mock.calls[0][0];
+    expect(call.payload.templateRunId).toBeUndefined();
+    expect(call.payload.stepId).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(call.payload, "templateRunId")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(call.payload, "stepId")).toBe(false);
+  });
+
   it("reserves credits but never settles in the route — settle is the runner's/webhook's job now", async () => {
     const res = await POST(jsonReq({ tool: "image", model: "m1", prompt: "a cat" }));
 

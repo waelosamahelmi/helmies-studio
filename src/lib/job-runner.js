@@ -67,6 +67,17 @@ import { heartbeatJob, completeJob, failJob, findTimedOutJobs } from "./job-queu
 import { settleReservation, releaseReservation, refundCredits } from "./wallet.js";
 import { submitOnly, pollProviderResult, getProvider } from "./providers.js";
 import { ingestFromUrl } from "./storage/ingest.js";
+// Phase 6 Task 3: a job whose payload carries `templateRunId` belongs to a
+// TemplateRun step, not a standalone generation — src/lib/template-runner.js
+// owns ALL money movement for those (one reservation per run, not per
+// step), so this module's own per-generation settle/release path is
+// deliberately bypassed for them (see the three call sites below) in favor
+// of calling advanceTemplateRun instead. This import is circular
+// (template-runner.js imports releaseOrRefund back from here) — safe
+// because both are hoisted `export async function` declarations only ever
+// INVOKED later, never touched at module-evaluation time; see
+// template-runner.js's header for the full worker-safety rationale.
+import { advanceTemplateRun } from "./template-runner.js";
 
 // Heartbeat cadence during a long poll — comfortably under job-queue's
 // default 5-minute lease (DEFAULT_LEASE_MS in job-queue.js) so a slow
@@ -132,8 +143,13 @@ async function ingestFirstOutput(outputs) {
 // Rule 2 + rule 3: release the still-active reservation, or refund if it's
 // already settled/gone — never both — and never let a credit-side failure
 // throw out of here (it would mask whatever provider/ingest error got us
-// here).
-async function releaseOrRefund(generation, job) {
+// here). Exported (Phase 6 Task 3) so template-runner.js's advanceTemplateRun
+// can reuse this EXACT function for a TemplateRun's own single reservation
+// (passing a synthetic `{ userId, id: runId, creditsUsed: totalCredits }` in
+// place of a Generation row — this function only ever reads those three
+// fields) instead of writing a second copy of the same release-then-refund
+// fallback logic.
+export async function releaseOrRefund(generation, job) {
   const { userId, id: generationId, creditsUsed } = generation;
   const amount = job.payload?.creditsUsed ?? creditsUsed;
   try {
@@ -168,6 +184,18 @@ async function safeSettle(generation) {
       `[job-runner] SETTLE FAILED — user may not be charged correctly. userId=${generation.userId} generationId=${generation.id} amount=${generation.creditsUsed}:`,
       err.message
     );
+  }
+}
+
+// Phase 6 Task 3: never let a template run's own money/chaining logic throw
+// out of the job-runner's own success/failure path — same "log loudly,
+// never mask the real outcome" shape as safeSettle/releaseOrRefund's own
+// internal catch above.
+async function safeAdvanceTemplateRun(runId) {
+  try {
+    await advanceTemplateRun(runId);
+  } catch (err) {
+    console.error(`[job-runner] advanceTemplateRun FAILED for template run ${runId}:`, err.message);
   }
 }
 
@@ -207,7 +235,16 @@ async function handleFailure(job, generation, err) {
   // the webhook may already have terminalized this generation).
   const won = await tryTransitionGeneration(generation.id, { status: "failed", error: message });
   if (won) {
-    await releaseOrRefund(generation, job);
+    // Phase 6 Task 3: a template-run step's own Generation never holds its
+    // own reservation — advanceTemplateRun owns the run's ONE reservation
+    // (release-or-refund happens there, reusing this file's own
+    // releaseOrRefund unchanged). Every other job takes the pre-existing
+    // per-generation path.
+    if (job.payload?.templateRunId) {
+      await safeAdvanceTemplateRun(job.payload.templateRunId);
+    } else {
+      await releaseOrRefund(generation, job);
+    }
   }
   return { outcome: "failed" };
 }
@@ -290,7 +327,15 @@ export async function runJob(job, { workerId, signal } = {}) {
       outputUrl: localUrl || outputs?.[0] || generation.outputUrl,
     });
     if (won) {
-      await safeSettle(generation);
+      // Phase 6 Task 3: same split as handleFailure above — a template-run
+      // step chains to advanceTemplateRun (which settles the run's ONE
+      // reservation only once the LAST step lands) instead of settling this
+      // step's own (nonexistent) per-generation reservation.
+      if (job.payload?.templateRunId) {
+        await safeAdvanceTemplateRun(job.payload.templateRunId);
+      } else {
+        await safeSettle(generation);
+      }
     }
     // else: the webhook already completed (or failed) this generation first
     // — rule 4, no credit move.
@@ -354,7 +399,15 @@ export async function sweepTimedOutJobs() {
       error: TIMEOUT_ERROR_MESSAGE,
     });
     if (won) {
-      await releaseOrRefund(generation, job);
+      // Phase 6 Task 3: same split as handleFailure/runJob above — a
+      // template-run step's timeout closes out the WHOLE run (release-or-
+      // refund of its one reservation) via advanceTemplateRun, not this
+      // step's own nonexistent per-generation reservation.
+      if (job.payload?.templateRunId) {
+        await safeAdvanceTemplateRun(job.payload.templateRunId);
+      } else {
+        await releaseOrRefund(generation, job);
+      }
       refunded++;
     }
     // else: the webhook (or the worker's own runJob) already terminalized

@@ -26,6 +26,11 @@ const eslintConfig = [
       // .worktrees/, already covered by .gitignore) — their build output and
       // source shouldn't be linted from this branch's `npm run lint`.
       ".worktrees/**",
+      // Claude Code's own agent-managed worktrees (a concurrent agent's
+      // isolated copy of this repo, including its own .next build output),
+      // nested under .claude/worktrees/ by the harness itself — not tracked
+      // by git, not this branch's source, and not ours to lint or touch.
+      ".claude/**",
     ],
   },
   ...nextCoreWebVitals,

@@ -29,6 +29,18 @@ export async function getTemplateBySlug(slug) {
   });
 }
 
+// ── The currently published TemplateVersion for an executable-workflow
+// template (Phase 6), or null for a legacy static-config template (or one
+// with no published version yet). "Currently published" = highest version
+// number carrying status "published" — publishing a later version never
+// unpublishes an earlier one explicitly, but only one is ever surfaced here. ──
+export async function getPublishedVersion(templateId) {
+  return prisma.templateVersion.findFirst({
+    where: { templateId, status: "published" },
+    orderBy: { version: "desc" },
+  });
+}
+
 // ── User's purchased templates (with template details) ──
 export async function getUserTemplates(userId) {
   const purchases = await prisma.templatePurchase.findMany({

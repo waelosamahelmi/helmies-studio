@@ -160,7 +160,17 @@ export async function POST(req) {
     // — same hole as generation-handler: a caller could target an arbitrary
     // provider endpoint while being billed for the cheap default.
     const endpoint = dbPricing?.endpoint || staticModel?.endpoint || model;
-    const { endpoint: _ep, ...cleanParams } = params;
+    // IMPORTANT-4 FIX (found in review): templateRunId/stepId are ALSO
+    // stripped, same as endpoint — job-runner.js reads job.payload.templateRunId
+    // to decide whether a job belongs to a Phase 6 TemplateRun step (and, if
+    // so, routes its terminal transition to advanceTemplateRun instead of
+    // this generation's own settle/release — see job-runner.js's header). A
+    // client-supplied templateRunId here would let an attacker inject an
+    // arbitrary run id into an ordinary /api/generate/async submission,
+    // making job-runner.js skip THIS generation's own settle/release
+    // entirely and instead call advanceTemplateRun against a run the
+    // attacker doesn't even own.
+    const { endpoint: _ep, templateRunId: _trid, stepId: _sid, ...cleanParams } = params;
     const providerModelId = dbPricing?.providerModelId || staticModel?.providerModelId || model;
     const payload = { ...cleanParams, model: providerModelId, prompt: finalPrompt, endpoint, callBackUrl: webhookUrl };
     if (!body.negative_prompt) {

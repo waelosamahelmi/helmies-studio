@@ -196,13 +196,48 @@ const RESERVATION_TERMINAL_STATUSES = ["failed", "cancelled"];
 const LEGACY_RESERVATION_TTL_MINUTES = 30;
 
 // Find reservations whose expiresAt has passed and are still "active", then
-// resolve each one against the state of its generation:
-//   - generation missing, failed, or cancelled -> release the hold
-//   - generation completed                     -> settle at its actual cost
-//     (settleReservation's active-reservation lookup makes this idempotent
-//     against a second sweep or a late webhook racing this run)
-//   - generation still pending/processing      -> leave it alone; it hasn't
-//     really finished yet even though the clock ran out
+// resolve each one against the state of whatever the reservation's key
+// (CreditReservation.generationId — an overloaded field name; see the
+// per-branch comments) actually names:
+//   - a TemplateRun (Phase 6 — src/lib/template-runner.js reserves once per
+//     run, keyed by the run's OWN id, not any Generation's) —
+//       running                -> leave it alone; the run is genuinely
+//                                  still in progress, however long the
+//                                  clock says it's been (see the CRITICAL-2
+//                                  fix note below)
+//       completed               -> settle at the run's quoted total
+//                                  (defensive only — advanceTemplateRun
+//                                  already settles a completed run, which
+//                                  flips the reservation out of "active"
+//                                  and off this query entirely; only
+//                                  reachable if that settle itself failed)
+//       failed/cancelled/other  -> release
+//   - a Generation (every other reservation) —
+//       missing, failed, or cancelled -> release the hold
+//       completed                     -> settle at its actual cost
+//         (settleReservation's active-reservation lookup makes this
+//         idempotent against a second sweep or a late webhook racing this
+//         run)
+//       still pending/processing      -> leave it alone; it hasn't really
+//         finished yet even though the clock ran out
+//
+// CRITICAL-2 FIX (found in review, proven against the real test DB): before
+// this function checked TemplateRun at all, a template run's reservation —
+// keyed by the run's id, which matches no Generation row — always fell into
+// the "generation missing -> release" branch the instant its TTL lapsed,
+// even while the run was still genuinely mid-flight. That released hold
+// then got refunded a SECOND time when the run's own advanceTemplateRun
+// later failed or settled it for real, minting credits out of nothing
+// (reconcileWallet cannot see this: it only compares ledger movements
+// against the wallet's own `available`/`reserved` columns, and the extra
+// refund IS a real ledger row — the invariant it checks held; the SECOND
+// grant was still there). The TemplateRun lookup must happen before the
+// Generation lookup, and "running" must be treated as genuinely not-yet-
+// resolvable regardless of how long ago expiresAt passed — sizing the TTL
+// generously (template-runner.js's reservationTTLMinutes) makes this rare,
+// but this check is what actually prevents the double-grant if the TTL
+// estimate is ever wrong, not the TTL sizing itself.
+//
 // Each reservation is handled in its own try/catch so one bad row (a
 // transient DB error, a wallet CAS miss) can't abort the rest of the sweep —
 // same defensive shape as autoSuspendAbusiveUsers above.
@@ -228,6 +263,22 @@ export async function sweepExpiredReservations() {
     try {
       const userId = reservation.wallet.userId;
       const jobId = reservation.generationId;
+
+      const templateRun = jobId ? await prisma.templateRun.findUnique({ where: { id: jobId } }) : null;
+
+      if (templateRun) {
+        if (templateRun.status === "running") {
+          skipped++;
+        } else if (templateRun.status === "completed") {
+          await settleReservation(userId, jobId, templateRun.totalCredits);
+          settled++;
+        } else {
+          await releaseReservation(userId, jobId);
+          released++;
+        }
+        continue;
+      }
+
       const generation = jobId
         ? await prisma.generation.findUnique({ where: { id: jobId } })
         : null;
