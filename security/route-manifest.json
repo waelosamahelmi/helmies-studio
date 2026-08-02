@@ -487,6 +487,18 @@
     "notes": ""
   },
   {
+    "path": "/api/cron/alerts",
+    "file": "src/app/api/cron/alerts/route.js",
+    "methods": [
+      "GET"
+    ],
+    "auth": "cron",
+    "originCheck": false,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Phase 8 Task A2. Bearer CRON_SECRET, identical pattern to /api/cron/automation; fails closed (401) if unset or mismatched. Evaluates Phase 7's collectMetrics() through evaluateAlerts (src/lib/alerts.js, pure), writes FeatureFlag dedup-state rows (key prefix alert_state:) via filterDueAlerts, and posts to ALERT_WEBHOOK_URL via deliverAlerts when configured (a logged no-op otherwise) — hence stateChanging:true (the FeatureFlag writes). Not a Task 3 origin-check target — same rationale as /api/cron/automation: an external cron dispatcher with a bearer secret, not a browser session, so no Origin/Referer header to check."
+  },
+  {
     "path": "/api/cron/automation",
     "file": "src/app/api/cron/automation/route.js",
     "methods": [
