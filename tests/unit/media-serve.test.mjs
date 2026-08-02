@@ -115,6 +115,27 @@ describe("GET /api/media/local/[name] — STORAGE_DRIVER=s3", () => {
 
     expect(res.status).toBe(404);
   });
+
+  it("falls back to the local filesystem and still 200s when the S3 driver THROWS (e.g. an outage) instead of returning null", async () => {
+    const buffer = Buffer.from("pre-S3-era file, S3 is down right now");
+    getDriver.mockReturnValue({ getObject: vi.fn().mockRejectedValue(new Error("S3 putObject/getObject failed: 503")) });
+    localDriver.getObject.mockResolvedValue({ buffer, contentType: "image/png" });
+
+    const res = await GET({}, req("legacy.png"));
+
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer())).toEqual(buffer);
+    expect(localDriver.getObject).toHaveBeenCalledWith("legacy.png");
+  });
+
+  it("404s (does not crash) when the S3 driver throws AND the local fallback also misses", async () => {
+    getDriver.mockReturnValue({ getObject: vi.fn().mockRejectedValue(new Error("S3 outage")) });
+    localDriver.getObject.mockResolvedValue(null);
+
+    const res = await GET({}, req("nowhere.png"));
+
+    expect(res.status).toBe(404);
+  });
 });
 
 describe("GET /api/media/local/[name] — security headers present in every 200 response", () => {

@@ -20,8 +20,9 @@ const REQUIRED = [
 // The S3 storage driver (src/lib/storage/s3-driver.js, Phase 4B Task 2) is
 // opt-in via STORAGE_DRIVER=s3 — its config vars are only REQUIRED when that
 // driver is actually selected. S3_PUBLIC_BASE_URL is intentionally excluded
-// here: it's optional even with STORAGE_DRIVER=s3 (getSignedUrl is the
-// fallback when it's unset).
+// here: it's always optional, even with STORAGE_DRIVER=s3 — putObject
+// always returns a stable app-relative URL regardless of whether it's set
+// (see s3-driver.js's putObject comment).
 if ((process.env.STORAGE_DRIVER || "local").toLowerCase() === "s3") {
   REQUIRED.push("S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY");
 }

@@ -15,10 +15,15 @@ import * as s3Driver from "./s3-driver.js";
 
 // Driver contract every backend implements identically:
 //   putObject(key, buffer, contentType) -> { key, url }
+//     `url` is an app-relative "/api/media/local/<key>" path from BOTH
+//     drivers — stable and driver-independent, since it's what gets
+//     persisted into Generation.outputUrl. Never a presigned or
+//     bucket/CDN-direct URL; use getSignedUrl() for that instead.
 //   getObject(key)                      -> { buffer, contentType } | null
 //   deleteObject(key)                   -> boolean
 //   exists(key)                         -> boolean
-//   getSignedUrl(key, ttlSeconds)       -> string
+//   getSignedUrl(key, ttlSeconds)       -> string (direct, time-limited
+//     link for callers that need one — NOT for persistence)
 export function getDriver() {
   const which = (process.env.STORAGE_DRIVER || "local").toLowerCase();
   if (which === "s3") return s3Driver;

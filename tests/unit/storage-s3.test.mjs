@@ -65,25 +65,32 @@ describe("s3-driver putObject — SigV4 header signing", () => {
     await expect(putObject("k.jpg", Buffer.from("x"), "image/jpeg")).rejects.toThrow(/500/);
   });
 
-  it("returns a presigned url when S3_PUBLIC_BASE_URL is unset", async () => {
+  it("returns a stable app-relative url when S3_PUBLIC_BASE_URL is unset — never a presigned link", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeResponse()));
     const { putObject } = await import("@/lib/storage/s3-driver");
 
     const result = await putObject("k.jpg", Buffer.from("x"), "image/jpeg");
 
-    expect(result.key).toBe("k.jpg");
-    expect(result.url).toContain("X-Amz-Signature=");
-    expect(result.url).toContain("https://s3.fake-region-1.example.com/helmies-test-bucket/k.jpg");
+    expect(result).toEqual({ key: "k.jpg", url: "/api/media/local/k.jpg" });
   });
 
-  it("returns a plain S3_PUBLIC_BASE_URL-prefixed url when configured, no signing needed", async () => {
+  it("returns the same app-relative url even when S3_PUBLIC_BASE_URL IS configured — putObject never persists a bucket/CDN-direct link", async () => {
     process.env.S3_PUBLIC_BASE_URL = "https://cdn.example.com/media";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeResponse()));
     const { putObject } = await import("@/lib/storage/s3-driver");
 
     const result = await putObject("k.jpg", Buffer.from("x"), "image/jpeg");
 
-    expect(result.url).toBe("https://cdn.example.com/media/k.jpg");
+    expect(result.url).toBe("/api/media/local/k.jpg");
+  });
+
+  it("NEVER returns a url containing X-Amz-Signature — a presigned link must not be persisted (Generation.outputUrl would die after its ttl)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(fakeResponse()));
+    const { putObject } = await import("@/lib/storage/s3-driver");
+
+    const result = await putObject("some-key.jpg", Buffer.from("x"), "image/jpeg");
+
+    expect(result.url).not.toContain("X-Amz-Signature");
   });
 });
 

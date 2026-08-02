@@ -21,7 +21,8 @@
 // immediately):
 //   S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID,
 //   S3_SECRET_ACCESS_KEY (required when this driver is actually invoked),
-//   S3_PUBLIC_BASE_URL (optional — see getObjectUrl below).
+//   S3_PUBLIC_BASE_URL (optional; NOT used by putObject — see its comment
+//   below. Parsed here in case a future direct-link caller wants it).
 //
 // Plain-node safe: reachable from scripts/worker.mjs transitively via
 // src/lib/job-runner.js -> storage/ingest.js -> storage/index.js -> here —
@@ -123,22 +124,24 @@ async function request(method, key, { body, contentType } = {}) {
   });
 }
 
-// putObject/getObject's plain `url`: a configured public base (e.g. a CDN
-// in front of the bucket) when set, otherwise a presigned URL — matching
-// the brief's "S3_PUBLIC_BASE_URL (optional; when absent getSignedUrl
-// returns a presigned URL)".
-function publicOrSignedUrl(key) {
-  const { publicBaseUrl } = config();
-  if (publicBaseUrl) return `${publicBaseUrl.replace(/\/$/, "")}/${key}`;
-  return getSignedUrl(key, 3600);
-}
-
 export async function putObject(key, buffer, contentType) {
   const res = await request("PUT", key, { body: buffer, contentType });
   if (!res.ok) {
     throw new Error(`S3 putObject failed: ${res.status} ${res.statusText || ""}`.trim());
   }
-  return { key, url: publicOrSignedUrl(key) };
+  // The returned `url` is what callers (storage/ingest.js) persist into
+  // Generation.outputUrl — it must be stable forever, not a link that can
+  // expire or move. A presigned URL (the old behavior here when
+  // S3_PUBLIC_BASE_URL was unset) dies after its ttl; even a plain
+  // S3_PUBLIC_BASE_URL-prefixed URL is one bucket/CDN migration away from
+  // breaking every already-stored row. Instead, every driver returns the
+  // SAME app-relative shape — the serving route
+  // (src/app/api/media/local/[name]/route.js) resolves it back through
+  // whichever driver is active at read time, local or s3 — so a persisted
+  // URL never needs to know or care which backend actually holds the
+  // bytes. Callers that genuinely need a direct, time-limited link (NOT
+  // for persistence) should call getSignedUrl() separately.
+  return { key, url: `/api/media/local/${key}` };
 }
 
 // Returns { buffer, contentType } or null on a 404 — never throws for

@@ -14,7 +14,19 @@ export async function GET(req, { params }) {
     // directly. With STORAGE_DRIVER=s3, a miss on S3 falls back to the local
     // filesystem — old rows were written before the S3 driver existed and
     // point at files that were never uploaded there.
-    let object = await getDriver().getObject(safeName);
+    //
+    // The primary call is wrapped so a THROWN driver error (e.g. an S3
+    // outage/5xx) is treated exactly like a null "not found" result, not
+    // left to escape to this route's outer catch (which would 404 without
+    // ever trying the fallback). Without this, every pre-S3 file goes dark
+    // for the duration of an S3 incident even though it's sitting right
+    // there on disk.
+    let object;
+    try {
+      object = await getDriver().getObject(safeName);
+    } catch {
+      object = null;
+    }
     if (!object && process.env.STORAGE_DRIVER?.toLowerCase() === "s3") {
       object = await localDriver.getObject(safeName);
     }
