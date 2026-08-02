@@ -19,8 +19,9 @@ vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
 import {
   evaluateAlerts,
-  filterDueAlerts,
+  selectDueAlerts,
   deliverAlerts,
+  recordAlertsFired,
   WORKER_LIVENESS_CRITICAL_SEC,
   QUEUE_BACKLOG_WARN_SEC,
   JOB_DEAD_LETTER_RATE_WARN,
@@ -28,6 +29,7 @@ import {
   GENERATION_SUCCESS_RATE_FLOOR,
   GENERATION_FAILURE_MIN_SAMPLE,
   PROVIDER_FAILURE_MIN_ATTEMPTS,
+  ALERT_WEBHOOK_TIMEOUT_MS,
 } from "@/lib/alerts";
 
 function baseMetrics(overrides = {}) {
@@ -185,31 +187,28 @@ describe("evaluateAlerts — provider failure exceeds success", () => {
   });
 });
 
-describe("filterDueAlerts — dedup against FeatureFlag (mocked prisma)", () => {
+describe("selectDueAlerts — READ-ONLY dedup check against FeatureFlag (mocked prisma)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    prismaMock.featureFlag.upsert.mockResolvedValue({});
   });
 
   it("returns [] for an empty alert list without touching prisma", async () => {
-    const result = await filterDueAlerts([]);
+    const result = await selectDueAlerts([]);
     expect(result).toEqual([]);
     expect(prismaMock.featureFlag.findUnique).not.toHaveBeenCalled();
   });
 
-  it("fires an alert that has never fired before, and records it", async () => {
+  it("selects an alert that has never fired before, WITHOUT writing anything", async () => {
     prismaMock.featureFlag.findUnique.mockResolvedValue(null);
     const now = new Date("2026-08-02T12:00:00.000Z");
     const alert = { key: "worker_liveness", severity: "critical", title: "t", detail: "d", value: 1, threshold: 0 };
 
-    const due = await filterDueAlerts([alert], { now });
+    const due = await selectDueAlerts([alert], { now });
     expect(due).toEqual([alert]);
-    expect(prismaMock.featureFlag.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { key: "alert_state:worker_liveness" },
-        update: expect.objectContaining({ config: expect.objectContaining({ lastFiredAt: now.toISOString() }) }),
-      })
-    );
+    // selectDueAlerts is read-only — it must never write the dedup state
+    // itself. That is recordAlertsFired's job, called only after a
+    // confirmed delivery (see the IMPORTANT-1 fix).
+    expect(prismaMock.featureFlag.upsert).not.toHaveBeenCalled();
   });
 
   it("suppresses a repeated alert fired inside the repeat window", async () => {
@@ -218,20 +217,18 @@ describe("filterDueAlerts — dedup against FeatureFlag (mocked prisma)", () => 
     prismaMock.featureFlag.findUnique.mockResolvedValue({ config: { lastFiredAt: firedRecently.toISOString() } });
     const alert = { key: "worker_liveness", severity: "critical", title: "t", detail: "d", value: 1, threshold: 0 };
 
-    const due = await filterDueAlerts([alert], { now, repeatMinutes: 60 });
+    const due = await selectDueAlerts([alert], { now, repeatMinutes: 60 });
     expect(due).toEqual([]);
-    expect(prismaMock.featureFlag.upsert).not.toHaveBeenCalled();
   });
 
-  it("fires again once the repeat window has elapsed", async () => {
+  it("selects again once the repeat window has elapsed", async () => {
     const now = new Date("2026-08-02T12:00:00.000Z");
     const firedLongAgo = new Date(now.getTime() - 61 * 60 * 1000); // 61 min ago
     prismaMock.featureFlag.findUnique.mockResolvedValue({ config: { lastFiredAt: firedLongAgo.toISOString() } });
     const alert = { key: "worker_liveness", severity: "critical", title: "t", detail: "d", value: 1, threshold: 0 };
 
-    const due = await filterDueAlerts([alert], { now, repeatMinutes: 60 });
+    const due = await selectDueAlerts([alert], { now, repeatMinutes: 60 });
     expect(due).toEqual([alert]);
-    expect(prismaMock.featureFlag.upsert).toHaveBeenCalledTimes(1);
   });
 
   it("tracks distinct alert keys independently", async () => {
@@ -242,8 +239,96 @@ describe("filterDueAlerts — dedup against FeatureFlag (mocked prisma)", () => 
     const alertA = { key: "a", severity: "warn", title: "t", detail: "d", value: 1, threshold: 0 };
     const alertB = { key: "b", severity: "warn", title: "t", detail: "d", value: 1, threshold: 0 };
 
-    const due = await filterDueAlerts([alertA, alertB], { now });
+    const due = await selectDueAlerts([alertA, alertB], { now });
     expect(due).toEqual([alertB]);
+  });
+});
+
+describe("recordAlertsFired — WRITE-ONLY, called only after confirmed delivery", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.featureFlag.upsert.mockResolvedValue({});
+  });
+
+  it("does nothing for an empty alert list", async () => {
+    await recordAlertsFired([]);
+    expect(prismaMock.featureFlag.upsert).not.toHaveBeenCalled();
+  });
+
+  it("writes a FeatureFlag row keyed alert_state:<key> with lastFiredAt", async () => {
+    const now = new Date("2026-08-02T12:00:00.000Z");
+    const alert = { key: "worker_liveness", severity: "critical", title: "t", detail: "d", value: 1, threshold: 0 };
+
+    await recordAlertsFired([alert], { now });
+    expect(prismaMock.featureFlag.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { key: "alert_state:worker_liveness" },
+        update: expect.objectContaining({ config: expect.objectContaining({ lastFiredAt: now.toISOString() }) }),
+      })
+    );
+  });
+
+  it("writes one row per alert, independently", async () => {
+    const alertA = { key: "a", severity: "warn", title: "t", detail: "d", value: 1, threshold: 0 };
+    const alertB = { key: "b", severity: "warn", title: "t", detail: "d", value: 1, threshold: 0 };
+    await recordAlertsFired([alertA, alertB]);
+    expect(prismaMock.featureFlag.upsert).toHaveBeenCalledTimes(2);
+  });
+});
+
+// IMPORTANT 1 (executed-proof review finding): the full select -> deliver ->
+// record sequence a real caller (the cron route / automation leg) runs.
+// Proves the dedup write genuinely depends on delivery succeeding, not just
+// that the two functions exist independently.
+describe("select -> deliver -> record sequence — dedup is written only on successful delivery", () => {
+  const ORIGINAL_URL = process.env.ALERT_WEBHOOK_URL;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.featureFlag.findUnique.mockResolvedValue(null); // never fired before
+    prismaMock.featureFlag.upsert.mockResolvedValue({});
+    process.env.ALERT_WEBHOOK_URL = "https://hooks.example.com/alerts";
+  });
+  afterEach(() => {
+    if (ORIGINAL_URL === undefined) delete process.env.ALERT_WEBHOOK_URL;
+    else process.env.ALERT_WEBHOOK_URL = ORIGINAL_URL;
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals(); // vi.restoreAllMocks() does NOT undo vi.stubGlobal("fetch", ...)
+  });
+
+  it("a webhook 500 leaves the alert un-recorded, so it is still due on the very next call", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 500 })));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const alert = { key: "wallet_reconciliation_drift", severity: "critical", title: "t", detail: "d", value: 1, threshold: 0 };
+
+    const due1 = await selectDueAlerts([alert]);
+    const delivery1 = await deliverAlerts(due1);
+    expect(delivery1.delivered).toBe(false);
+    if (due1.length > 0 && delivery1.delivered) await recordAlertsFired(due1);
+
+    expect(prismaMock.featureFlag.upsert).not.toHaveBeenCalled(); // never recorded as fired
+
+    // Second call: findUnique still returns null (nothing was ever
+    // recorded) — the SAME critical alert is due again immediately,
+    // not suppressed for the rest of the 60-minute window.
+    const due2 = await selectDueAlerts([alert]);
+    expect(due2).toEqual([alert]);
+  });
+
+  it("a successful delivery DOES record the alert as fired, suppressing the next immediate call", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("ok", { status: 200 })));
+    const alert = { key: "wallet_reconciliation_drift", severity: "critical", title: "t", detail: "d", value: 1, threshold: 0 };
+
+    const due1 = await selectDueAlerts([alert]);
+    const delivery1 = await deliverAlerts(due1);
+    expect(delivery1.delivered).toBe(true);
+    if (due1.length > 0 && delivery1.delivered) await recordAlertsFired(due1);
+
+    expect(prismaMock.featureFlag.upsert).toHaveBeenCalledTimes(1);
+
+    // Now simulate the recorded state being read back on the next call.
+    prismaMock.featureFlag.findUnique.mockResolvedValue({ config: { lastFiredAt: new Date().toISOString() } });
+    const due2 = await selectDueAlerts([alert]);
+    expect(due2).toEqual([]);
   });
 });
 
@@ -254,6 +339,7 @@ describe("deliverAlerts", () => {
     if (ORIGINAL_URL === undefined) delete process.env.ALERT_WEBHOOK_URL;
     else process.env.ALERT_WEBHOOK_URL = ORIGINAL_URL;
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("is a no-op that logs a warning when ALERT_WEBHOOK_URL is unset — nothing posted", async () => {
@@ -299,6 +385,37 @@ describe("deliverAlerts", () => {
       { key: "worker_liveness", severity: "critical", title: "Worker may be down", detail: "d", value: 999, threshold: 900 },
     ]);
     expect(JSON.stringify(body)).not.toMatch(/secret|token|password|prompt/i);
+  });
+
+  // IMPORTANT 2 (executed-proof review finding): a hanging webhook must
+  // never leave this promise unresolved indefinitely — because
+  // runAutomation() runs deliverAlerts as one of several Promise.allSettled
+  // legs, a hung ALERT_WEBHOOK_URL would otherwise stall the entire
+  // automation cron response, including the money-safety legs.
+  it("passes an AbortSignal to fetch so a hanging webhook is forcibly timed out", async () => {
+    process.env.ALERT_WEBHOOK_URL = "https://hooks.example.com/alerts";
+    const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deliverAlerts([{ key: "k", severity: "warn", title: "t", detail: "d", value: 1, threshold: 0 }]);
+
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("returns delivered:false and logs an error when the fetch aborts (simulating the timeout firing)", async () => {
+    process.env.ALERT_WEBHOOK_URL = "https://hooks.example.com/alerts";
+    // Simulates what a real hung connection looks like once
+    // AbortSignal.timeout(ALERT_WEBHOOK_TIMEOUT_MS) fires: fetch rejects
+    // with an AbortError, exactly like any other network failure — no
+    // special-casing needed in deliverAlerts's own catch block.
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError")));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await deliverAlerts([{ key: "k", severity: "warn", title: "t", detail: "d", value: 1, threshold: 0 }]);
+    expect(result.delivered).toBe(false);
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(ALERT_WEBHOOK_TIMEOUT_MS).toBeGreaterThan(0); // the timeout constant is real and positive
   });
 
   it("returns delivered:false and logs an error when the webhook responds non-2xx", async () => {

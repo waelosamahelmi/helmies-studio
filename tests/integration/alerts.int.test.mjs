@@ -26,6 +26,7 @@ afterEach(() => {
   if (ORIGINAL_ALERT_WEBHOOK_URL === undefined) delete process.env.ALERT_WEBHOOK_URL;
   else process.env.ALERT_WEBHOOK_URL = ORIGINAL_ALERT_WEBHOOK_URL;
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function makeRequest() {
@@ -107,6 +108,38 @@ describe("GET /api/cron/alerts — evaluate, deliver, and dedupe against real Po
     const stateRow = await prisma.featureFlag.findUnique({ where: { key: "alert_state:worker_liveness" } });
     expect(stateRow).toBeTruthy();
     expect(stateRow.config.lastFiredAt).toBeTruthy();
+  });
+
+  // IMPORTANT 1 (executed-proof review finding): dedup state must be
+  // recorded ONLY on a confirmed delivery. Proven here against a REAL
+  // FeatureFlag row, not just a mocked prisma call: with the webhook
+  // returning 500, the critical alert must NOT be suppressed on the very
+  // next call — a 60-minute blackout on an undelivered wallet-drift/
+  // worker-liveness critical is exactly what alerting exists to prevent.
+  it("a failed webhook delivery leaves the alert un-recorded — it is still due on an immediate second call", async () => {
+    const user = await createUserWithWallet(100);
+    await seedStaleQueuedJob(user.id);
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response("server error", { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { GET } = await import("@/app/api/cron/alerts/route.js");
+
+    const firstRes = await GET(makeRequest());
+    const firstBody = await firstRes.json();
+    expect(firstBody.fired).toBeGreaterThanOrEqual(1);
+    expect(firstBody.delivery.delivered).toBe(false); // webhook 500'd
+
+    // No FeatureFlag dedup row was written — delivery never succeeded.
+    const stateRow = await prisma.featureFlag.findUnique({ where: { key: "alert_state:worker_liveness" } });
+    expect(stateRow).toBeNull();
+
+    // Second, immediate call: the SAME critical alert fires again (not
+    // suppressed), and delivery is attempted again (not skipped).
+    const secondRes = await GET(makeRequest());
+    const secondBody = await secondRes.json();
+    expect(secondBody.fired).toBeGreaterThanOrEqual(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("evaluates cleanly with no alerts when nothing is amiss", async () => {

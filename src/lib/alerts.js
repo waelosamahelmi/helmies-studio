@@ -1,20 +1,27 @@
 // Helmies Studio — threshold alerting with webhook delivery and dedup
 // (Phase 8 Task A2)
 //
-// Three layers, deliberately kept separate:
+// Four layers, deliberately kept separate:
 //   - evaluateAlerts(metrics) — a PURE function of Phase 7's collectMetrics()
 //     return shape (src/lib/metrics.js). No I/O, no re-querying the
 //     database — every rule reads a field collectMetrics already computed.
-//   - filterDueAlerts(alerts, opts) — applies the dedup window, backed by
-//     the EXISTING FeatureFlag table (key prefix "alert_state:") — no new
-//     prisma model, no migration, same pattern src/lib/ops-flags.js already
-//     established for maintenance mode / the provider kill switch.
+//   - selectDueAlerts(alerts, opts) — READ-ONLY: which alerts are NOT
+//     currently suppressed by the dedup window, backed by the EXISTING
+//     FeatureFlag table (key prefix "alert_state:") — no new prisma model,
+//     no migration, same pattern src/lib/ops-flags.js already established
+//     for maintenance mode / the provider kill switch. Writes nothing.
 //   - deliverAlerts(alerts) — posts a compact JSON payload to
-//     ALERT_WEBHOOK_URL when set; a no-op that LOGS a warning when unset,
-//     so the system is honest about being un-delivered rather than
-//     silently pretending an alert reached anyone.
+//     ALERT_WEBHOOK_URL when set (with a hard timeout — see below); a
+//     no-op that LOGS a warning when unset, so the system is honest about
+//     being un-delivered rather than silently pretending an alert reached
+//     anyone.
+//   - recordAlertsFired(alerts, opts) — WRITE-ONLY: marks each given alert
+//     as freshly fired. Callers MUST call this only for alerts
+//     deliverAlerts() actually reported delivered:true for — see the
+//     IMPORTANT-1 note on recordAlertsFired below for why the write must
+//     come after a successful delivery, never before or unconditionally.
 //
-// GET /api/cron/alerts (src/app/api/cron/alerts/route.js) wires all three
+// GET /api/cron/alerts (src/app/api/cron/alerts/route.js) wires all four
 // together; src/lib/automation.js's runAutomation() also runs them as a 6th
 // leg, so alerting rides the ALREADY-installed automation timer even if the
 // alerts-specific 5-minute timer (docs/runbook-ops.md) hasn't been set up
@@ -32,6 +39,7 @@ export const GENERATION_SUCCESS_RATE_FLOOR = 80; // matches Phase 7's "Error-rat
 export const GENERATION_FAILURE_MIN_SAMPLE = 20; // same sample floor Phase 7's runbook already documented
 export const PROVIDER_FAILURE_MIN_ATTEMPTS = 5; // below this, one bad attempt would look like a trend
 export const ALERT_REPEAT_MINUTES_DEFAULT = 60;
+export const ALERT_WEBHOOK_TIMEOUT_MS = 10_000; // a hanging webhook must never stall the caller indefinitely
 
 const ALERT_STATE_PREFIX = "alert_state:";
 
@@ -168,15 +176,13 @@ export function evaluateAlerts(metrics) {
   return alerts;
 }
 
-// filterDueAlerts(alerts, opts) -> alerts NOT suppressed by the dedup
-// window, and records each returned alert as freshly fired.
-//
-// Persists last-fired state in the existing FeatureFlag table (key prefix
-// "alert_state:") — no new model, same table src/lib/ops-flags.js already
-// uses for maintenance mode. An alert with the same `key` does not re-fire
-// more often than `repeatMinutes` (default ALERT_REPEAT_MINUTES env var, or
-// ALERT_REPEAT_MINUTES_DEFAULT).
-export async function filterDueAlerts(alerts, { now = new Date(), repeatMinutes } = {}) {
+// selectDueAlerts(alerts, opts) -> the subset of `alerts` NOT currently
+// suppressed by the dedup window. READ-ONLY — writes nothing to
+// FeatureFlag. Callers must call recordAlertsFired() separately, and only
+// for the alerts that were ACTUALLY delivered (see that function's header
+// note) — this split exists specifically so a caller cannot accidentally
+// record "fired" before delivery is confirmed.
+export async function selectDueAlerts(alerts, { now = new Date(), repeatMinutes } = {}) {
   if (!alerts || alerts.length === 0) return [];
   const windowMinutes = repeatMinutes ?? (Number(process.env.ALERT_REPEAT_MINUTES) || ALERT_REPEAT_MINUTES_DEFAULT);
   const windowMs = windowMinutes * 60 * 1000;
@@ -187,8 +193,30 @@ export async function filterDueAlerts(alerts, { now = new Date(), repeatMinutes 
     const existing = await prisma.featureFlag.findUnique({ where: { key: stateKey } });
     const lastFiredAt = existing?.config?.lastFiredAt ? new Date(existing.config.lastFiredAt) : null;
     const suppressed = lastFiredAt && now.getTime() - lastFiredAt.getTime() < windowMs;
-    if (suppressed) continue;
+    if (!suppressed) due.push(alert);
+  }
+  return due;
+}
 
+// recordAlertsFired(alerts, opts) -> marks each given alert as freshly
+// fired (writes the FeatureFlag dedup-state row). Persists in the existing
+// FeatureFlag table (key prefix "alert_state:") — no new model, same table
+// src/lib/ops-flags.js already uses for maintenance mode.
+//
+// IMPORTANT (post-review fix, executed proof): this used to be written
+// unconditionally as part of selecting the due alerts, BEFORE delivery was
+// attempted. An executed review proved the consequence: with the webhook
+// returning 500, a `wallet_reconciliation_drift` CRITICAL was marked fired,
+// reached nobody, and was then suppressed on the very next evaluation for
+// the rest of the repeat window (up to 60 minutes of silence on a real
+// wallet drift — exactly what alerting exists to prevent). Callers must
+// call this ONLY after `deliverAlerts()` reports `delivered: true` for
+// these exact alerts — an undelivered alert must remain due so the next
+// evaluation tries again immediately, not an hour later.
+export async function recordAlertsFired(alerts, { now = new Date() } = {}) {
+  if (!alerts || alerts.length === 0) return;
+  for (const alert of alerts) {
+    const stateKey = `${ALERT_STATE_PREFIX}${alert.key}`;
     await prisma.featureFlag.upsert({
       where: { key: stateKey },
       create: {
@@ -200,15 +228,21 @@ export async function filterDueAlerts(alerts, { now = new Date(), repeatMinutes 
       },
       update: { enabled: true, config: { lastFiredAt: now.toISOString(), severity: alert.severity } },
     });
-    due.push(alert);
   }
-  return due;
 }
 
 // deliverAlerts(alerts) -> posts a compact JSON payload to
 // ALERT_WEBHOOK_URL when set; a no-op that LOGS a warning when unset. Never
 // includes secrets or prompt text — the payload is exactly the alert
 // shape's five public fields, nothing else.
+//
+// The fetch carries a hard ALERT_WEBHOOK_TIMEOUT_MS timeout
+// (AbortSignal.timeout) — post-review fix: without one, a hanging
+// ALERT_WEBHOOK_URL left this promise unresolved indefinitely, and because
+// runAutomation() runs this as one of several Promise.allSettled legs, a
+// hung webhook would stall the ENTIRE automation cron's response —
+// including the money-safety legs (reservation sweep, timed-out-job sweep)
+// — for that invocation and every subsequent timer firing queued behind it.
 export async function deliverAlerts(alerts) {
   if (!alerts || alerts.length === 0) return { delivered: false, count: 0 };
 
@@ -236,6 +270,7 @@ export async function deliverAlerts(alerts) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(ALERT_WEBHOOK_TIMEOUT_MS),
     });
     if (!res.ok) {
       log.error("alerts_webhook_delivery_failed", { status: res.status, count: alerts.length });

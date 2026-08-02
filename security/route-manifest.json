@@ -88,7 +88,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 (final round): verifyOrigin wired on POST (GET read-only, unchecked)."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST (GET read-only, unchecked). Phase 8 Task A2 review fix: GET excludes FeatureFlag rows keyed alert_state:* (src/lib/alerts.js's internal dedup bookkeeping, not an operator-facing flag) and POST rejects writing any alert_state:*-prefixed key with a 400."
   },
   {
     "path": "/api/admin/jobs",

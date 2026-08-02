@@ -3,7 +3,7 @@ import { adjustWalletTo, sweepExpiredReservations } from "@/lib/wallet";
 import { sweepTimedOutJobs } from "@/lib/job-runner";
 import { pruneTerminalJobs } from "@/lib/job-queue";
 import { collectMetrics } from "@/lib/metrics";
-import { evaluateAlerts, filterDueAlerts, deliverAlerts } from "@/lib/alerts";
+import { evaluateAlerts, selectDueAlerts, deliverAlerts, recordAlertsFired } from "@/lib/alerts";
 
 const MODEL_FAILURE_THRESHOLD = 5;
 const MODEL_FAILURE_WINDOW_MINUTES = 30;
@@ -108,8 +108,13 @@ export async function autoSuspendAbusiveUsers() {
 async function runAlertsLeg() {
   const metrics = await collectMetrics();
   const alerts = evaluateAlerts(metrics);
-  const due = await filterDueAlerts(alerts);
+  const due = await selectDueAlerts(alerts);
   const delivery = await deliverAlerts(due);
+  // Dedup state is recorded ONLY on confirmed delivery — see
+  // recordAlertsFired's header in src/lib/alerts.js.
+  if (due.length > 0 && delivery.delivered) {
+    await recordAlertsFired(due);
+  }
   return { evaluated: alerts.length, fired: due.length, delivery };
 }
 

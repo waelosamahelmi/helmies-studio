@@ -21,14 +21,15 @@ vi.mock("@/lib/wallet", () => ({
 vi.mock("@/lib/metrics", () => ({ collectMetrics: vi.fn() }));
 vi.mock("@/lib/alerts", () => ({
   evaluateAlerts: vi.fn(),
-  filterDueAlerts: vi.fn(),
+  selectDueAlerts: vi.fn(),
   deliverAlerts: vi.fn(),
+  recordAlertsFired: vi.fn(),
 }));
 
 import prisma from "@/lib/prisma";
 import { sweepExpiredReservations } from "@/lib/wallet";
 import { collectMetrics } from "@/lib/metrics";
-import { evaluateAlerts, filterDueAlerts, deliverAlerts } from "@/lib/alerts";
+import { evaluateAlerts, selectDueAlerts, deliverAlerts, recordAlertsFired } from "@/lib/alerts";
 import { runAutomation, autoDisableFailingModels, autoSuspendAbusiveUsers } from "@/lib/automation";
 
 beforeEach(() => {
@@ -37,8 +38,9 @@ beforeEach(() => {
   sweepExpiredReservations.mockResolvedValue({ released: 2, settled: 1, skipped: 0 });
   collectMetrics.mockResolvedValue({ jobs: {}, generations: {}, reconciliation: {}, providers: [], webhooks: {} });
   evaluateAlerts.mockReturnValue([]);
-  filterDueAlerts.mockResolvedValue([]);
+  selectDueAlerts.mockResolvedValue([]);
   deliverAlerts.mockResolvedValue({ delivered: false, count: 0 });
+  recordAlertsFired.mockResolvedValue();
 });
 
 describe("runAutomation — reservation expiry sweep wiring (Task 9)", () => {
@@ -121,22 +123,36 @@ describe("runAutomation — per-leg failure isolation", () => {
 // collectMetrics() and follows the SAME Promise.allSettled isolation as
 // every leg above it.
 describe("runAutomation — alerts leg (Task A2)", () => {
-  it("calls collectMetrics once and wires its result through evaluateAlerts -> filterDueAlerts -> deliverAlerts", async () => {
+  it("calls collectMetrics once and wires its result through evaluateAlerts -> selectDueAlerts -> deliverAlerts -> recordAlertsFired", async () => {
     const metrics = { jobs: { oldestQueuedAgeSec: 999 }, generations: {}, reconciliation: {}, providers: [], webhooks: {} };
     const rawAlerts = [{ key: "worker_liveness", severity: "critical" }];
     const dueAlerts = [{ key: "worker_liveness", severity: "critical" }];
     collectMetrics.mockResolvedValue(metrics);
     evaluateAlerts.mockReturnValue(rawAlerts);
-    filterDueAlerts.mockResolvedValue(dueAlerts);
+    selectDueAlerts.mockResolvedValue(dueAlerts);
     deliverAlerts.mockResolvedValue({ delivered: true, count: 1 });
 
     const result = await runAutomation();
 
     expect(collectMetrics).toHaveBeenCalledTimes(1);
     expect(evaluateAlerts).toHaveBeenCalledWith(metrics);
-    expect(filterDueAlerts).toHaveBeenCalledWith(rawAlerts);
+    expect(selectDueAlerts).toHaveBeenCalledWith(rawAlerts);
     expect(deliverAlerts).toHaveBeenCalledWith(dueAlerts);
+    // recordAlertsFired only runs after a CONFIRMED delivery (Important 1 fix).
+    expect(recordAlertsFired).toHaveBeenCalledWith(dueAlerts);
     expect(result.alerts).toEqual({ evaluated: 1, fired: 1, delivery: { delivered: true, count: 1 } });
+  });
+
+  it("does NOT call recordAlertsFired when delivery fails — an undelivered alert must stay due", async () => {
+    const dueAlerts = [{ key: "wallet_reconciliation_drift", severity: "critical" }];
+    evaluateAlerts.mockReturnValue(dueAlerts);
+    selectDueAlerts.mockResolvedValue(dueAlerts);
+    deliverAlerts.mockResolvedValue({ delivered: false, count: 1 });
+
+    const result = await runAutomation();
+
+    expect(recordAlertsFired).not.toHaveBeenCalled();
+    expect(result.alerts).toEqual({ evaluated: 1, fired: 1, delivery: { delivered: false, count: 1 } });
   });
 
   it("a rejecting alerts leg (e.g. collectMetrics throws) never blocks or masks the other five legs", async () => {
