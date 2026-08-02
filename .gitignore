@@ -39,3 +39,6 @@ ssh.md
 /playwright/.cache/
 /blob-report/
 /tests/e2e/.auth/
+
+# Written at test time by the E2E provider seam (src/lib/providers.js)
+public/media/e2e-fixture.png
