@@ -127,6 +127,19 @@
     "notes": "Phase 7 Task 2. Read-only aggregation (collectMetrics) — no DB writes, so unchecked for origin like every other GET-only admin route."
   },
   {
+    "path": "/api/admin/ops",
+    "file": "src/app/api/admin/ops/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "admin",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Phase 7 Task 3. Reads/sets maintenance mode (FeatureFlag) and per-provider kill switch (ProviderConfig.isActive) via @/lib/ops-flags. verifyOrigin wired on POST (GET read-only, unchecked). Deliberately exempt from middleware's own maintenance-mode 503 (/api/admin/* prefix) so an operator can always reach this to toggle maintenance back off."
+  },
+  {
     "path": "/api/admin/models",
     "file": "src/app/api/admin/models/route.js",
     "methods": [
@@ -772,6 +785,18 @@
     "rateLimit": "none",
     "stateChanging": false,
     "notes": ""
+  },
+  {
+    "path": "/api/health",
+    "file": "src/app/api/health/route.js",
+    "methods": [
+      "GET"
+    ],
+    "auth": "public",
+    "originCheck": false,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "Phase 7 Task 3. Public liveness/readiness probe; also the signal middleware.js polls (same-origin fetch) to decide whether to show the maintenance page — must never itself be blocked by maintenance mode. Read-only (isMaintenanceMode only), no DB writes."
   },
   {
     "path": "/api/media/local/[name]",

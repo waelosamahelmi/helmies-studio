@@ -454,7 +454,10 @@ const FALLBACK_CHAIN = ["kie", "alibaba"];
 
 // Reads ProviderConfig activity for media adapters only.
 // Returns null when no config rows exist (env-only mode → all providers eligible).
-async function getProviderActivity() {
+// Exported (Phase 7 Task 3) so src/lib/ops-flags.js's isProviderDisabled can
+// read back the EXACT SAME activity computation setProviderDisabled writes
+// into — the kill switch reuses this path rather than adding a second one.
+export async function getProviderActivity() {
   try {
     const rows = await prisma.providerConfig.findMany({ select: { name: true, isActive: true } });
     if (!rows.length) return null;
@@ -478,11 +481,27 @@ export async function resolveProviderWithFallback(modelId) {
   // Provider-native catalog endpoints are not portable across KIE and DashScope.
   // Keep legacy fallback behavior only for old provider-agnostic rows.
   const chain = catalogModel?.managedBySync ? [primary.name] : [primary.name, ...FALLBACK_CHAIN.filter((n) => n !== primary.name)];
-  return chain
+  const resolved = chain
     .filter((name) => !activity || activity[name] !== false)
     .map((name) => {
       const p = PROVIDERS[name];
       return p ? { ...p, name, apiKey: p.getKey() } : null;
     })
     .filter(Boolean);
+
+  // Phase 7 Task 3 — provider kill switch: this can ONLY be empty because
+  // of the activity filter above (resolveProvider always returns a real,
+  // directly-indexable PROVIDERS entry, so `chain` itself is never
+  // structurally empty) — i.e. every provider capable of serving this
+  // model has been disabled via src/lib/ops-flags.js's setProviderDisabled.
+  // Fail fast with a clear message instead of letting a caller hang, or
+  // silently proceed with an empty chain that was never going to submit
+  // anything.
+  if (resolved.length === 0) {
+    throw new Error(
+      `All providers for model "${modelId}" are currently disabled by an operator. Please try again once one is re-enabled.`
+    );
+  }
+
+  return resolved;
 }

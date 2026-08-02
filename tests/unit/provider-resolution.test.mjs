@@ -72,3 +72,27 @@ describe("resolveProviderWithFallback — the Alibaba primary must not be droppe
     expect(PROVIDERS[chain[0].name]).toBeDefined();
   });
 });
+
+describe("resolveProviderWithFallback — provider kill switch (Phase 7 Task 3)", () => {
+  it("filters a provider explicitly disabled via ProviderConfig.isActive:false out of the chain", async () => {
+    prisma.modelPricing.findUnique.mockResolvedValue(null); // default provider ("kie"), non-managedBySync
+    prisma.providerConfig.findMany.mockResolvedValue([{ name: "kie", isActive: false }]);
+
+    const chain = await resolveProviderWithFallback("some-model");
+
+    expect(chain.map((p) => p.name)).not.toContain("kie");
+    expect(chain.map((p) => p.name)).toContain("alibaba");
+  });
+
+  it("throws a clear error naming the model when every provider for it is disabled", async () => {
+    prisma.modelPricing.findUnique.mockResolvedValue(null);
+    prisma.providerConfig.findMany.mockResolvedValue([
+      { name: "kie", isActive: false },
+      { name: "alibaba", isActive: false },
+    ]);
+
+    await expect(resolveProviderWithFallback("some-model")).rejects.toThrow(
+      /some-model.*disabled/i
+    );
+  });
+});
