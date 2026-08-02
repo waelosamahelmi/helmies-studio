@@ -93,4 +93,26 @@ describe("providers.js — E2E_MOCK_PROVIDERS requires BOTH the env var and a lo
     ).rejects.toThrow("E2E forced provider failure");
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  // Pre-PR review finding: the lock used to be
+  // `/(?:localhost|127\.0\.0\.1)/.test(DATABASE_URL)` — a SUBSTRING match
+  // over the WHOLE connection string, not a hostname check. A remote host
+  // whose password happens to contain the literal word "localhost" (plausible
+  // — "localhost123", a copy-pasted local secret reused as a remote one) made
+  // that regex match anywhere in the URL, activating the mock against a real
+  // database. This case is the proof: hostname is a genuinely remote host,
+  // "localhost" appears only inside the password. Confirmed red against the
+  // old substring guard before the hostname-parsing fix landed.
+  it("does NOT short-circuit when DATABASE_URL's HOST is remote even if credentials contain the literal string \"localhost\"", async () => {
+    process.env.E2E_MOCK_PROVIDERS = "1";
+    process.env.DATABASE_URL = "postgresql://admin:localhost123@db.internal.helmies.fi:5432/prod";
+    process.env.KIE_KEY = ""; // no key — proves the REAL path ran, not the mock's always-succeeds fixture
+
+    const { submitOnly, brandError } = await import("@/lib/providers");
+
+    await expect(
+      submitOnly("kie", "image", { model: "some-model", prompt: "a real generation" }),
+    ).rejects.toThrow(brandError("invalid_api_key"));
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });

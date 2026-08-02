@@ -202,19 +202,36 @@ export async function resolveProvider(modelId) {
 //
 // SAFETY: this is in the money path (it stands in for a real provider call
 // that would otherwise cost real credits/dollars), so activating it
-// requires BOTH the env var AND DATABASE_URL pointing at localhost — a
-// deliberate second lock. E2E_MOCK_PROVIDERS alone is a single string
-// comparison a stray/misconfigured env var could flip in a real deployment;
-// requiring a local DATABASE_URL too means a production database (whose
-// connection string is never localhost) can NEVER take this branch no
-// matter how E2E_MOCK_PROVIDERS ends up set, so a real generation can never
-// be silently answered with the fixture image instead of an actual
-// provider call. tests/unit/providers-e2e-mock.test.mjs asserts this lock
-// holds — E2E_MOCK_PROVIDERS=1 against a non-local DATABASE_URL must still
-// take the real (and here, correctly-erroring-on-a-missing-key) path.
+// requires BOTH the env var AND DATABASE_URL's HOSTNAME being exactly
+// "localhost" or "127.0.0.1" — a deliberate second lock. E2E_MOCK_PROVIDERS
+// alone is a single string comparison a stray/misconfigured env var could
+// flip in a real deployment; requiring a local hostname too means a
+// production database (whose hostname is never localhost) can NEVER take
+// this branch no matter how E2E_MOCK_PROVIDERS ends up set, so a real
+// generation can never be silently answered with the fixture image instead
+// of an actual provider call. The check below parses DATABASE_URL with the
+// URL API and compares `.hostname` exactly — it is NOT a substring/regex
+// test over the whole connection string, because that previously let a
+// remote host whose credentials merely CONTAINED the word "localhost" (e.g.
+// a password like "localhost123") activate the mock; an unparseable URL is
+// treated as NOT local (fails closed). Same pattern as tests/e2e/fixtures/
+// seed.mjs and db.mjs's own local-only guards. tests/unit/
+// providers-e2e-mock.test.mjs asserts this lock holds — E2E_MOCK_PROVIDERS=1
+// against a non-local DATABASE_URL (including one whose credentials contain
+// the literal string "localhost") must still take the real (and here,
+// correctly-erroring-on-a-missing-key) path.
+function isLocalDatabaseUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
 const E2E_MOCK_PROVIDERS =
   process.env.E2E_MOCK_PROVIDERS === "1" &&
-  /(?:localhost|127\.0\.0\.1)/.test(process.env.DATABASE_URL || "");
+  isLocalDatabaseUrl(process.env.DATABASE_URL || "");
 export const E2E_FORCE_FAIL_MARKER = "__E2E_FORCE_FAIL__";
 
 const E2E_FIXTURE_KEY = "e2e-fixture.png";
