@@ -8,13 +8,24 @@ import { NextRequest } from "next/server";
 const { prismaMock, getProviderActivityMock } = vi.hoisted(() => ({
   prismaMock: {
     featureFlag: { findUnique: vi.fn(), upsert: vi.fn() },
-    providerConfig: { upsert: vi.fn() },
+    providerConfig: { findMany: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
     auditLog: { create: vi.fn() },
   },
   getProviderActivityMock: vi.fn(),
 }));
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
-vi.mock("@/lib/providers", () => ({ getProviderActivity: (...args) => getProviderActivityMock(...args) }));
+vi.mock("@/lib/providers", () => ({
+  getProviderActivity: (...args) => getProviderActivityMock(...args),
+  // Real logic (not a spy) — setProviderDisabled's row-matching depends on
+  // this classifying names exactly the way production does, including
+  // display-cased rows like "KIE"/"Alibaba" (scripts/seed-providers.mjs).
+  classifyProviderConfigName: (name) => {
+    const n = (name || "").toLowerCase();
+    if (n.includes("alibaba") || n.includes("qwen") || n.includes("dashscope")) return "alibaba";
+    if (n.includes("kie")) return "kie";
+    return null;
+  },
+}));
 
 import {
   isMaintenanceMode,
@@ -27,7 +38,9 @@ import {
 beforeEach(() => {
   vi.clearAllMocks();
   prismaMock.featureFlag.upsert.mockResolvedValue({});
-  prismaMock.providerConfig.upsert.mockResolvedValue({});
+  prismaMock.providerConfig.findMany.mockResolvedValue([]);
+  prismaMock.providerConfig.updateMany.mockResolvedValue({ count: 0 });
+  prismaMock.providerConfig.create.mockResolvedValue({});
   prismaMock.auditLog.create.mockResolvedValue({});
 });
 
@@ -89,19 +102,21 @@ describe("isProviderDisabled / setProviderDisabled — the kill switch", () => {
 
   it("setProviderDisabled rejects an unknown provider name without touching the database", async () => {
     await expect(setProviderDisabled("not-a-real-provider", true, "admin1")).rejects.toThrow(/Unknown provider/);
-    expect(prismaMock.providerConfig.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.providerConfig.findMany).not.toHaveBeenCalled();
+    expect(prismaMock.providerConfig.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.providerConfig.create).not.toHaveBeenCalled();
     expect(prismaMock.auditLog.create).not.toHaveBeenCalled();
   });
 
-  it("setProviderDisabled upserts ProviderConfig by the canonical key and writes an audit row", async () => {
+  it("setProviderDisabled creates a new (lowercase-key) row and writes an audit row when no ProviderConfig row exists yet", async () => {
+    prismaMock.providerConfig.findMany.mockResolvedValue([]);
     const result = await setProviderDisabled("KIE", true, "admin1", "provider outage");
 
     expect(result).toEqual({ name: "kie", disabled: true });
-    expect(prismaMock.providerConfig.upsert).toHaveBeenCalledWith({
-      where: { name: "kie" },
-      create: { name: "kie", type: "media", isActive: false },
-      update: { isActive: false },
+    expect(prismaMock.providerConfig.create).toHaveBeenCalledWith({
+      data: { name: "kie", type: "media", isActive: false },
     });
+    expect(prismaMock.providerConfig.updateMany).not.toHaveBeenCalled();
     expect(prismaMock.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: "admin1",
@@ -111,6 +126,34 @@ describe("isProviderDisabled / setProviderDisabled — the kill switch", () => {
         metadata: { disabled: true, reason: "provider outage" },
       }),
     });
+  });
+
+  // CRITICAL regression coverage: a real, previously-shipped bug upserted
+  // unconditionally on the lowercase canonical key ("kie"), which — against
+  // a production row seeded with display casing ("KIE",
+  // scripts/seed-providers.mjs; Postgres string equality is case-sensitive)
+  // — created a SEPARATE duplicate row instead of updating the existing
+  // one, leaving the kill switch's effective state dependent on unspecified
+  // findMany row order. The real-database proof of this (seed a
+  // production-cased row, toggle, then survive an unrelated update) lives
+  // in tests/integration/ops-flags.int.test.mjs — this is the unit-level
+  // proof that setProviderDisabled itself never issues a `create` when a
+  // matching row already exists under ANY casing.
+  it("updates an EXISTING production-cased row ('KIE') in place instead of creating a duplicate 'kie' row", async () => {
+    prismaMock.providerConfig.findMany.mockResolvedValue([
+      { id: "row-kie", name: "KIE" },
+      { id: "row-alibaba", name: "Alibaba" },
+    ]);
+    const result = await setProviderDisabled("kie", true, "admin1", "provider outage");
+
+    expect(result).toEqual({ name: "kie", disabled: true });
+    // Only the matching "KIE" row (by id) is updated — never a create, and
+    // the unrelated "Alibaba" row is never touched.
+    expect(prismaMock.providerConfig.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["row-kie"] } },
+      data: { isActive: false },
+    });
+    expect(prismaMock.providerConfig.create).not.toHaveBeenCalled();
   });
 
   it("KNOWN_PROVIDER_KEYS exposes exactly the adapter keys src/lib/providers.js's PROVIDERS registry defines", () => {

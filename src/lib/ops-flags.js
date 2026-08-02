@@ -17,7 +17,7 @@
 // Every setter writes an AuditLog row carrying the admin id and an optional
 // reason — the operator-controls audit trail the contract asks for.
 import prisma from "@/lib/prisma";
-import { getProviderActivity } from "@/lib/providers";
+import { getProviderActivity, classifyProviderConfigName } from "@/lib/providers";
 
 const MAINTENANCE_FLAG_KEY = "maintenance_mode";
 
@@ -51,12 +51,20 @@ export async function setMaintenanceMode(on, adminId, reason = null) {
   return { enabled };
 }
 
-// Canonical adapter keys — src/lib/providers.js's PROVIDERS registry and
-// getProviderActivity()'s substring match both key off these. Restricting
-// setProviderDisabled to this fixed set (rather than accepting whatever
-// casing/string an admin types) guarantees it always upserts the SAME
-// ProviderConfig row getProviderActivity reads back — no casing-drift
-// duplicate row possible.
+// Canonical adapter keys — src/lib/providers.js's PROVIDERS registry keys
+// off these. This is the vocabulary callers of setProviderDisabled/
+// isProviderDisabled use to NAME a provider; it is deliberately NOT what
+// gets written to ProviderConfig.name unconditionally (see
+// setProviderDisabled below) — a real, previously-shipped bug here upserted
+// blindly on this lowercase key, which created a SEPARATE row alongside a
+// production row seeded with display casing ("KIE", "Alibaba" —
+// scripts/seed-providers.mjs; Postgres string equality is case-sensitive),
+// leaving the kill switch's effective state dependent on unspecified
+// findMany row order. Fixed: setProviderDisabled now finds existing rows via
+// classifyProviderConfigName (the SAME classifier getProviderActivity uses)
+// and updates them in place, preserving whatever casing already exists; it
+// only creates a new row (using this lowercase key) when no row for that
+// provider exists at all yet.
 export const KNOWN_PROVIDER_KEYS = ["kie", "alibaba"];
 
 export async function isProviderDisabled(name) {
@@ -73,11 +81,28 @@ export async function setProviderDisabled(name, disabled, adminId, reason = null
     throw new Error(`Unknown provider "${name}" — expected one of: ${KNOWN_PROVIDER_KEYS.join(", ")}`);
   }
   const isActive = !disabled;
-  await prisma.providerConfig.upsert({
-    where: { name: key },
-    create: { name: key, type: "media", isActive },
-    update: { isActive },
-  });
+
+  // Match against EXISTING rows the same way getProviderActivity classifies
+  // them, rather than upserting unconditionally on the lowercase key — see
+  // the KNOWN_PROVIDER_KEYS comment above for why. Every row that already
+  // classifies to this provider gets updated (self-healing any duplicate
+  // that predates this fix, or that some other write path creates), so
+  // there is never a stale row left behind disagreeing with the one just
+  // written.
+  const existing = await prisma.providerConfig.findMany({ select: { id: true, name: true } });
+  const matches = existing.filter((row) => classifyProviderConfigName(row.name) === key);
+
+  if (matches.length > 0) {
+    await prisma.providerConfig.updateMany({
+      where: { id: { in: matches.map((m) => m.id) } },
+      data: { isActive },
+    });
+  } else {
+    await prisma.providerConfig.create({
+      data: { name: key, type: "media", isActive },
+    });
+  }
+
   await prisma.auditLog.create({
     data: {
       userId: adminId || null,

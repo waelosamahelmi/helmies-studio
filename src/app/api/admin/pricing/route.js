@@ -18,7 +18,15 @@ export async function POST(req) {
     await requireAdmin(req);
     verifyOrigin(req);
     const { modelId, modelType, providerName, providerCost, creditsCost } = await req.json();
-    await setModelPricing(modelId, modelType, providerName, providerCost, creditsCost);
+    // setModelPricing rejects (never silently clamps) a creditsCost that
+    // would price this model below its own provider cost — surface that as
+    // a clear 400, not the generic 500 authzResponse's catch-all would give
+    // a validation error.
+    try {
+      await setModelPricing(modelId, modelType, providerName, providerCost, creditsCost);
+    } catch (validationError) {
+      return NextResponse.json({ error: validationError.message }, { status: 400 });
+    }
     await logAudit("admin_set_pricing", "model_pricing", modelId, { providerCost, creditsCost }, req);
     return NextResponse.json({ success: true });
   } catch (e) {

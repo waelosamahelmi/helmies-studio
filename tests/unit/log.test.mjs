@@ -144,3 +144,135 @@ describe("log.error — err serialization and stack redaction", () => {
     expect(parsed.err.stack.length).toBeGreaterThan(0);
   });
 });
+
+// Code-review follow-up: the original redact() only inspected top-level
+// string-keyed fields — a nested object, an array of objects, a
+// case-differently-named prompt key, a non-string prompt, or a secret
+// embedded in err.message's free text all passed through verbatim. Each
+// vector below is the exact scenario the review executed and found leaking.
+describe("redact — nested and non-obvious vectors (code review follow-up)", () => {
+  it("strips a sensitive key nested arbitrarily deep (req.headers.authorization)", async () => {
+    const { log } = await import("@/lib/log");
+    log.info("outbound_request", {
+      req: { headers: { authorization: "Bearer super-secret-nested-token" }, method: "GET" },
+    });
+
+    const line = logSpy.mock.calls[0][0];
+    expect(line).not.toContain("super-secret-nested-token");
+    expect(line).not.toMatch(/authorization/i);
+
+    const parsed = JSON.parse(line);
+    expect(parsed.req.headers).toEqual({});
+    expect(parsed.req.method).toBe("GET"); // non-sensitive nested sibling survives
+  });
+
+  it("strips sensitive keys and truncates prompts inside an array of objects", async () => {
+    const { log } = await import("@/lib/log");
+    const promptText = "a very specific private prompt about a real person";
+    log.info("batch_submitted", {
+      items: [
+        { token: "item-1-secret-token", prompt: promptText },
+        { id: "item-2", apiKey: "item-2-secret-key" },
+      ],
+    });
+
+    const line = logSpy.mock.calls[0][0];
+    expect(line).not.toContain("item-1-secret-token");
+    expect(line).not.toContain(promptText);
+    expect(line).not.toContain("item-2-secret-key");
+
+    const parsed = JSON.parse(line);
+    expect(parsed.items[0].token).toBeUndefined();
+    expect(parsed.items[0].promptChars).toBe(promptText.length);
+    expect(parsed.items[1].apiKey).toBeUndefined();
+    expect(parsed.items[1].id).toBe("item-2");
+  });
+
+  it("handles a non-string prompt value without throwing and without leaking its content", async () => {
+    const { log } = await import("@/lib/log");
+    const structuredPrompt = { text: "hidden content", refs: ["a", "b"] };
+    expect(() => log.info("generation_submitted", { prompt: structuredPrompt })).not.toThrow();
+
+    const line = logSpy.mock.calls[0][0];
+    expect(line).not.toContain("hidden content");
+
+    const parsed = JSON.parse(line);
+    expect(parsed.prompt).toBeUndefined();
+    expect(parsed.promptChars).toBe(JSON.stringify(structuredPrompt).length);
+  });
+
+  it("matches prompt-family keys case-insensitively: Prompt, promptText, negative_prompt", async () => {
+    const { log } = await import("@/lib/log");
+    log.info("generation_submitted", {
+      Prompt: "one two three",
+      promptText: "four five six seven",
+      negative_prompt: "eight nine",
+    });
+
+    const line = logSpy.mock.calls[0][0];
+    expect(line).not.toContain("one two three");
+    expect(line).not.toContain("four five six seven");
+    expect(line).not.toContain("eight nine");
+
+    const parsed = JSON.parse(line);
+    expect(parsed.Prompt).toBeUndefined();
+    expect(parsed.PromptChars).toBe(13);
+    expect(parsed.promptText).toBeUndefined();
+    expect(parsed.promptTextChars).toBe(19);
+    expect(parsed.negative_prompt).toBeUndefined();
+    expect(parsed.negative_promptChars).toBe(10);
+  });
+
+  it("does not mangle a key named promptWarnings (not a prompt-family key)", async () => {
+    const { redact } = await import("@/lib/log");
+    const out = redact({ promptWarnings: ["ok"] });
+    expect(out.promptWarnings).toEqual(["ok"]);
+  });
+
+  it("scrubs a secret-shaped value embedded in err.message free text", async () => {
+    const { log } = await import("@/lib/log");
+    const err = new Error("provider rejected the request: invalid api key: sk-proj-abcdef1234567890xyz");
+    log.error("provider_call_failed", { err });
+
+    const line = errorSpy.mock.calls[0][0];
+    expect(line).not.toContain("sk-proj-abcdef1234567890xyz");
+
+    const parsed = JSON.parse(line);
+    expect(parsed.err.message).toContain("provider rejected the request");
+    expect(parsed.err.message).toContain("[redacted]");
+    expect(parsed.err.message).not.toContain("sk-proj-abcdef1234567890xyz");
+  });
+
+  it("scrubs a Bearer token embedded in err.message free text", async () => {
+    const { log } = await import("@/lib/log");
+    const err = new Error("upstream call failed — Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.reallylongtoken.sig");
+    log.error("provider_call_failed", { err });
+
+    const line = errorSpy.mock.calls[0][0];
+    expect(line).not.toContain("eyJhbGciOiJIUzI1NiJ9.reallylongtoken.sig");
+
+    const parsed = JSON.parse(line);
+    expect(parsed.err.message).toContain("[redacted]");
+  });
+
+  it("does not mangle ordinary prose in err.message that merely contains the word 'Authorization'", async () => {
+    const { log } = await import("@/lib/log");
+    const err = new Error("Authorization failed for this user");
+    log.error("auth_check_failed", { err });
+
+    const parsed = JSON.parse(errorSpy.mock.calls[0][0]);
+    // "failed" is short and not key-shaped — must not be replaced with
+    // "[redacted]", or ordinary diagnostic text becomes useless.
+    expect(parsed.err.message).toBe("Authorization failed for this user");
+  });
+
+  it("caps recursion depth instead of throwing on a pathologically deep object", async () => {
+    const { redact } = await import("@/lib/log");
+    let deep = { secretAtBottom: "leaf-secret-value" };
+    for (let i = 0; i < 20; i++) deep = { nested: deep };
+
+    expect(() => redact({ deep })).not.toThrow();
+    const out = JSON.stringify(redact({ deep }));
+    expect(out).not.toContain("leaf-secret-value");
+  });
+});
