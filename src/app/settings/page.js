@@ -23,6 +23,8 @@ import {
 import { apiFetch } from "@/lib/client-fetch";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
 import { PLAN_NAMES, SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
+import EmptyState from "@/components/states/EmptyState";
+import LoadingSkeleton from "@/components/states/LoadingSkeleton";
 
 /* ── Formatting — every numeral is mono, so keep the strings predictable ── */
 const NF = new Intl.NumberFormat("en-US");
@@ -109,18 +111,14 @@ function AccountPanel({ session, status, plan }) {
 
       <div className="pg-panel__body">
         {status === "loading" ? (
-          <div className="hs-stack" aria-busy="true">
-            <div className="hs-skel" style={{ height: 18, width: "40%" }} />
-            <div className="hs-skel" style={{ height: 18, width: "62%" }} />
-            <div className="hs-skel" style={{ height: 18, width: "30%" }} />
-          </div>
+          <LoadingSkeleton variant="list" count={3} label="Loading account" />
         ) : !user ? (
-          <div className="hs-empty">
-            <span className="hs-empty__mark"><IcPersona /></span>
-            <h3>You are signed out</h3>
-            <p>Sign in to see your account, balance and keys.</p>
-            <Link href="/login" className="hs-btn hs-btn--primary">Sign in</Link>
-          </div>
+          <EmptyState
+            icon={<IcPersona />}
+            title="You are signed out"
+            description="Sign in to see your account, balance and keys."
+            action={{ label: "Sign in", href: "/login" }}
+          />
         ) : (
           <>
             <div>
@@ -356,16 +354,14 @@ function BillingPanel({ data, loading, error, reload }) {
         </div>
         <div className="pg-panel__body">
           {loading ? (
-            <div className="hs-stack" aria-busy="true">
-              {[0, 1, 2, 3].map((i) => <div key={i} className="hs-skel" style={{ height: 34 }} />)}
-            </div>
+            <LoadingSkeleton variant="list" count={4} itemHeight={34} label="Loading credit activity" />
           ) : ledger.length === 0 ? (
-            <div className="hs-empty">
-              <span className="hs-empty__mark"><IcBolt /></span>
-              <h3>Nothing spent yet</h3>
-              <p>Your first generation will show up here with what it cost.</p>
-              <Link href="/studio" className="hs-btn hs-btn--primary">Open the studio</Link>
-            </div>
+            <EmptyState
+              icon={<IcBolt />}
+              title="Nothing spent yet"
+              description="Your first generation will show up here with what it cost."
+              action={{ label: "Open the studio", href: "/studio" }}
+            />
           ) : (
             <div className="hs-table-wrap">
               <table className="hs-table">
@@ -551,15 +547,13 @@ function KeysPanel() {
         )}
 
         {loading ? (
-          <div className="hs-stack" aria-busy="true">
-            {[0, 1].map((i) => <div key={i} className="hs-skel" style={{ height: 44 }} />)}
-          </div>
+          <LoadingSkeleton variant="list" count={2} itemHeight={44} label="Loading API keys" />
         ) : keys.length === 0 ? (
-          <div className="hs-empty">
-            <span className="hs-empty__mark"><IcLock /></span>
-            <h3>No keys yet</h3>
-            <p>Create a key to drive the studio from your own code.</p>
-          </div>
+          <EmptyState
+            icon={<IcLock />}
+            title="No keys yet"
+            description="Create a key to drive the studio from your own code."
+          />
         ) : (
           <div className="hs-table-wrap">
             <table className="hs-table">

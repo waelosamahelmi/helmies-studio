@@ -343,7 +343,7 @@ function ServiceSection({ section, index }) {
                 <div className="pricing-toggle">
                   <span className={`pricing-toggle__label ${!yearly ? "pricing-toggle__label--active" : ""}`} onClick={() => setYearly(false)}>Monthly</span>
                   <label className="pricing-toggle__switch-wrap">
-                    <input type="checkbox" checked={yearly} onChange={(e) => setYearly(e.target.checked)} style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", margin: 0, cursor: "pointer" }} />
+                    <input type="checkbox" checked={yearly} onChange={(e) => setYearly(e.target.checked)} aria-label="Bill yearly" style={{ position: "absolute", opacity: 0, width: "100%", height: "100%", margin: 0, cursor: "pointer" }} />
                     <span className={`pricing-toggle__switch ${yearly ? "pricing-toggle__switch--on" : ""}`}>
                       <span className="pricing-toggle__knob" />
                     </span>
@@ -352,7 +352,7 @@ function ServiceSection({ section, index }) {
                 </div>
                 <div className="pricing-scroll-track">
                   {!scrollState.atStart && (
-                    <button className="pricing-scroll-btn pricing-scroll-btn--left" onClick={() => scrollCards(-1)}>
+                    <button className="pricing-scroll-btn pricing-scroll-btn--left" onClick={() => scrollCards(-1)} aria-label="Scroll pricing cards left">
                       <IconArrowRight style={{ transform: "scaleX(-1)" }} />
                     </button>
                   )}
@@ -378,7 +378,7 @@ function ServiceSection({ section, index }) {
                   ))}
                 </div>
                 {!scrollState.atEnd && (
-                  <button className="pricing-scroll-btn pricing-scroll-btn--right" onClick={() => scrollCards(1)}>
+                  <button className="pricing-scroll-btn pricing-scroll-btn--right" onClick={() => scrollCards(1)} aria-label="Scroll pricing cards right">
                     <IconArrowRight />
                   </button>
                 )}

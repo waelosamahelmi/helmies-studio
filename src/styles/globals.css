@@ -186,13 +186,21 @@
   white-space: nowrap;
   user-select: none;
 }
+/* Phase 5 Task 3 (a11y): white text on --color-brand was 3.7:1 (axe
+   color-contrast, serious — need 4.5:1 for normal-size text). Uses
+   --color-brand-dark (already defined above, previously unused anywhere)
+   instead — --color-brand/--color-brand-light are untouched everywhere
+   else (glows, ::selection, accents), so only this button's own fill
+   changes. Hover steps up to the original --color-brand, one tier down
+   from before but the same "brightens on hover" direction. Box-shadow
+   (a decorative glow, not text) is left at the original brand hue. */
 .btn-primary {
-  background: var(--color-brand);
+  background: var(--color-brand-dark);
   color: #fff;
   box-shadow: 0 8px 30px -8px rgba(255, 27, 107, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.25);
 }
 .btn-primary:hover {
-  background: var(--color-brand-light);
+  background: var(--color-brand);
   box-shadow: 0 12px 40px -8px rgba(255, 27, 107, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.3);
 }
 .btn-secondary {
@@ -3310,8 +3318,11 @@
 /* ============================================================ */
 
 /* ── Announcement bar ── */
+/* Phase 5 Task 3 (a11y): white text on #FF1B6B was 3.7:1 (axe
+   color-contrast, serious) — same fix as .btn-primary above, the darker
+   --color-brand-dark instead of the raw brand hex. */
 .announcement-bar {
-  background: #FF1B6B;
+  background: var(--color-brand-dark);
   color: #fff;
   text-align: center;
   padding: 0.5rem 1rem;

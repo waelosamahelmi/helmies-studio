@@ -15,6 +15,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { signInWithRetry } from "@/lib/sign-in";
 import { Modal } from "@/components/studio/kit/Sheet";
 import { IcEye, IcEyeOff } from "@/components/studio/kit/Icons";
 
@@ -83,9 +84,17 @@ export function AuthModalProvider({ children }) {
     setFormError("");
     setSubmitting(true);
     try {
-      const result = await signIn("credentials", { email: email.trim(), password, redirect: false });
-      if (result?.error) {
-        setFormError("That email and password do not match an account.");
+      const result = await signInWithRetry({ email: email.trim(), password });
+      if (!result.ok) {
+        setFormError(
+          result.kind === "credentials"
+            // A genuine bad password.
+            ? "That email and password do not match an account."
+            // Not a bad password (signInWithRetry already retried once) —
+            // most likely the cold-start CSRF race. Say so honestly
+            // instead of accusing the user of a wrong password.
+            : "Something went wrong signing you in. Please try again.",
+        );
         return;
       }
       setOpen(false);

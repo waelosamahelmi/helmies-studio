@@ -182,6 +182,95 @@ export async function resolveProvider(modelId) {
   return { ...p, name: DEFAULT_PROVIDER, apiKey: p.getKey() };
 }
 
+// ── E2E provider short-circuit (Phase 5 Task 2) ────────────────────────────
+// Set ONLY by playwright.config.mjs's "worker" webServer entry — undefined
+// in every real deployment (dev, prod, unit/integration tests). This exists
+// because tests/e2e/fixtures/intercept.mjs's page.route() stubs can only
+// ever see requests the BROWSER makes; the actual KIE call for an async
+// generation happens server-side, inside the durable job runner
+// (src/lib/job-runner.js), which only runs under the separate
+// scripts/worker.mjs process the E2E harness starts alongside `next start`
+// — a process page.route has no way to reach (see intercept.mjs's header
+// for the full explanation, written when Task 1 first identified this gap).
+// A prompt containing E2E_FORCE_FAIL_MARKER simulates a real, non-retryable
+// provider failure end-to-end (used by the "generation failure refunds"
+// journey); every other prompt "succeeds" against a real 1x1 PNG written
+// once to public/media, so the UI gets back a genuinely servable image —
+// not a fabricated URL — and job-runner's ingestFirstOutput never makes a
+// network call at all (the "/api/media/local/" prefix is its own existing
+// already-ingested short-circuit, not new here).
+//
+// SAFETY: this is in the money path (it stands in for a real provider call
+// that would otherwise cost real credits/dollars), so activating it
+// requires BOTH the env var AND DATABASE_URL's HOSTNAME being exactly
+// "localhost" or "127.0.0.1" — a deliberate second lock. E2E_MOCK_PROVIDERS
+// alone is a single string comparison a stray/misconfigured env var could
+// flip in a real deployment; requiring a local hostname too means a
+// production database (whose hostname is never localhost) can NEVER take
+// this branch no matter how E2E_MOCK_PROVIDERS ends up set, so a real
+// generation can never be silently answered with the fixture image instead
+// of an actual provider call. The check below parses DATABASE_URL with the
+// URL API and compares `.hostname` exactly — it is NOT a substring/regex
+// test over the whole connection string, because that previously let a
+// remote host whose credentials merely CONTAINED the word "localhost" (e.g.
+// a password like "localhost123") activate the mock; an unparseable URL is
+// treated as NOT local (fails closed). Same pattern as tests/e2e/fixtures/
+// seed.mjs and db.mjs's own local-only guards. tests/unit/
+// providers-e2e-mock.test.mjs asserts this lock holds — E2E_MOCK_PROVIDERS=1
+// against a non-local DATABASE_URL (including one whose credentials contain
+// the literal string "localhost") must still take the real (and here,
+// correctly-erroring-on-a-missing-key) path.
+function isLocalDatabaseUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname === "localhost" || hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
+}
+
+const E2E_MOCK_PROVIDERS =
+  process.env.E2E_MOCK_PROVIDERS === "1" &&
+  isLocalDatabaseUrl(process.env.DATABASE_URL || "");
+export const E2E_FORCE_FAIL_MARKER = "__E2E_FORCE_FAIL__";
+
+const E2E_FIXTURE_KEY = "e2e-fixture.png";
+// 1x1 transparent PNG — smallest valid image a browser <img> can render.
+const E2E_FIXTURE_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+let e2eFixtureReady = null;
+function ensureE2EFixture() {
+  if (!e2eFixtureReady) {
+    e2eFixtureReady = (async () => {
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      const { join } = await import("node:path");
+      const dir = join(process.cwd(), "public", "media");
+      await mkdir(dir, { recursive: true });
+      await writeFile(join(dir, E2E_FIXTURE_KEY), Buffer.from(E2E_FIXTURE_PNG_BASE64, "base64"));
+    })();
+  }
+  return e2eFixtureReady;
+}
+
+async function submitOnlyMock(provider, payload) {
+  const prompt = payload?.prompt;
+  if (typeof prompt === "string" && prompt.includes(E2E_FORCE_FAIL_MARKER)) {
+    // Not retryable — job-runner.js's isRetryableError only matches 5xx/
+    // timeout/network/rate-limit wording, none of which this is, so the job
+    // goes straight to `dead` and refunds on the first attempt instead of
+    // eating a 30s+ backoff.
+    throw new Error("E2E forced provider failure");
+  }
+  await ensureE2EFixture();
+  return {
+    provider,
+    requestId: null,
+    submitData: { e2eMock: true },
+    immediateResult: { outputs: [`/api/media/local/${E2E_FIXTURE_KEY}`] },
+  };
+}
+
 export async function submitOnly(providerName, endpoint, payload) {
   let provider;
   if (typeof providerName === "object" && providerName.name) {
@@ -189,6 +278,11 @@ export async function submitOnly(providerName, endpoint, payload) {
   } else {
     provider = getProvider(providerName);
   }
+
+  if (E2E_MOCK_PROVIDERS) {
+    return submitOnlyMock(provider, payload);
+  }
+
   const key = provider.apiKey || provider.getKey();
   if (!key) throw new Error(brandError("invalid_api_key"));
 

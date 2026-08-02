@@ -5,6 +5,7 @@ import { ToastProvider } from "@/components/ToastProvider";
 import { AuthModalProvider } from "@/components/AuthModal";
 import { Toaster } from "react-hot-toast";
 import DevMode from "@/components/DevMode";
+import OfflineBanner from "@/components/states/OfflineBanner";
 
 export default function Providers({ children }) {
   return (
@@ -12,6 +13,7 @@ export default function Providers({ children }) {
       <ToastProvider>
         <AuthModalProvider>{children}</AuthModalProvider>
       </ToastProvider>
+      <OfflineBanner />
       <DevMode />
       <Toaster
         position="top-right"
