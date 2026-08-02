@@ -9,6 +9,25 @@ only where I ran the command and read the output; everything I could not
 personally verify in this environment is BLOCKED, never PASS, per the
 explicit instruction this task was built around.
 
+## Task 6 phase-gate verification (final pass before push)
+
+Re-ran the full gate sequence one more time immediately before pushing:
+`npm run lint` (clean), `npm run typecheck` (clean), `npx vitest run` (475/475
+unit), `TEST_DATABASE_URL=... npx vitest run --config vitest.integration.config.mjs`
+(69/69 integration), `npm run build` (clean, `ƒ Proxy (Middleware)` confirms
+`middleware.js` registered). Landing page diff against `main` confirmed empty:
+`git diff origin/main...HEAD --stat -- src/app/page.js src/components/landing/`
+produces no output. Full `npx playwright test` run 3 more times: 26/26, 25/26,
+and 22/26 across those runs — the new `tests/e2e/admin-ops.spec.mjs` (3 tests)
+passed in every single run; the only failures were pre-existing tests
+(`billing.spec.mjs`, `generation.spec.mjs`, `states.spec.mjs`) hitting the
+same `.st-app:visible`/render-timeout or `net::ERR_CONNECTION_REFUSED`
+symptom documented in the Task 4 commit message and the test-suite summary
+below — consistent with contention from a concurrent agent's own e2e run
+against the same fixed port `3399` and shared `helmies-test-pg` container,
+not a defect introduced by this phase's code (confirmed by isolating
+`--workers=1`, where every affected test passes every time).
+
 ## Gate summary
 
 | Gate | Status | Why |
