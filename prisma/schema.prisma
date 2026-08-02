@@ -762,9 +762,33 @@ model Template {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   purchases       TemplatePurchase[]
+  versions        TemplateVersion[]
 
   @@index([toolType, isPublished])
   @@index([category])
+  @@schema("public")
+}
+
+// ── Phase 6: versioned executable template graphs ──
+// A TemplateVersion.graph is immutable once created: { steps: [{ id, tool,
+// modelId, inputs, dependsOn }], sampleInputs }. src/lib/template-graph.js
+// validates its structure (validateGraph/topoSort); src/lib/template-quote.js
+// prices it step-by-step from ModelPricing (never from the graph or a
+// client request) and gates publishing (canPublish). status starts "draft"
+// and only becomes "published" via the publish route once canPublish
+// passes; "archived" retires a version without deleting run history that
+// references it.
+model TemplateVersion {
+  id         String   @id @default(cuid())
+  templateId String
+  version    Int
+  graph      Json // { steps: [{ id, tool, modelId, inputs, dependsOn }], sampleInputs }
+  status     String   @default("draft") // draft|published|archived
+  createdAt  DateTime @default(now())
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+  @@index([templateId, status])
   @@schema("public")
 }
 
