@@ -946,6 +946,18 @@
     "notes": "Phase 6 Task 2. Pure server-authoritative quote (quoteTemplate/quoteCatalogModel against ModelPricing) for the currently published TemplateVersion — no persistence, but origin-checked anyway since it's a cookie-session POST accepting a caller-supplied inputs body. verifyOrigin wired on POST (only method on this file)."
   },
   {
+    "path": "/api/templates/[slug]/run",
+    "file": "src/app/api/templates/[slug]/run/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Phase 6 Task 3. Reserves credits (startTemplateRun) and creates a TemplateRun + enqueues the first step's GenerationJob — same money-path shape as /api/generate/async and /api/workflows/[id]/run. verifyOrigin wired on POST (only method on this file)."
+  },
+  {
     "path": "/api/templates/[slug]",
     "file": "src/app/api/templates/[slug]/route.js",
     "methods": [

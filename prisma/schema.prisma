@@ -792,6 +792,30 @@ model TemplateVersion {
   @@schema("public")
 }
 
+// TemplateRun (Phase 6 Task 3): one execution of a published TemplateVersion
+// over the Phase 4A durable job queue. No FK to User/Template/TemplateVersion
+// — deliberately a standalone, id-addressed table like GenerationJob (see
+// that model's comment and tests/integration/setup.mjs's explicit truncate
+// list): a run must be queryable/updatable independent of those rows' own
+// lifecycle, and src/lib/template-runner.js only ever looks it up by its own
+// id or by (userId, status), never via a Prisma relation. stepState is keyed
+// by the graph's own step ids: { [stepId]: { status, generationId,
+// outputUrl, error } }.
+model TemplateRun {
+  id           String   @id @default(cuid())
+  userId       String
+  templateId   String
+  versionId    String
+  status       String   @default("running") // running|completed|failed|cancelled
+  stepState    Json // { [stepId]: { status, generationId, outputUrl, error } }
+  totalCredits Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId, status])
+  @@schema("public")
+}
+
 model TemplatePurchase {
   id              String          @id @default(cuid())
   userId          String
