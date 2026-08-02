@@ -32,3 +32,10 @@ next-env.d.ts
 *.log
 dev-*.log
 ssh.md
+
+# playwright (E2E) — reports, traces, and saved auth cookies
+/test-results/
+/playwright-report/
+/playwright/.cache/
+/blob-report/
+/tests/e2e/.auth/
