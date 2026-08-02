@@ -115,6 +115,18 @@
     "notes": "Read-only; returns API key metadata with keyHash stripped."
   },
   {
+    "path": "/api/admin/metrics",
+    "file": "src/app/api/admin/metrics/route.js",
+    "methods": [
+      "GET"
+    ],
+    "auth": "admin",
+    "originCheck": false,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "Phase 7 Task 2. Read-only aggregation (collectMetrics) — no DB writes, so unchecked for origin like every other GET-only admin route."
+  },
+  {
     "path": "/api/admin/models",
     "file": "src/app/api/admin/models/route.js",
     "methods": [
