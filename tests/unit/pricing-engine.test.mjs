@@ -1,11 +1,21 @@
 // tests/unit/pricing-engine.test.mjs
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/prisma", () => ({
-  default: { providerConfig: { findUnique: vi.fn().mockResolvedValue(null) } },
+const prismaMock = vi.hoisted(() => ({
+  providerConfig: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
+  modelPricing: { upsert: vi.fn() },
 }));
+vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
-import { calculateCredits } from "@/lib/pricing-engine";
+import {
+  calculateCredits,
+  setModelPricing,
+  setProviderMarkup,
+  assertCreditsCoverCost,
+  assertMarkupAboveFloor,
+  MIN_MARKUP,
+  CREDIT_TO_EUR,
+} from "@/lib/pricing-engine";
 
 describe("calculateCredits", () => {
   it("applies 2.5x default markup at 1 credit = €0.01", () => {
@@ -30,5 +40,93 @@ describe("calculateCredits", () => {
   it("honors a per-provider markup override", () => {
     // €0.10 * 4.0 / 0.01 = 40
     expect(calculateCredits(0.1, 4.0)).toBe(40);
+  });
+});
+
+// Code review: neither setModelPricing nor setProviderMarkup validated
+// anything before this fix — an admin could price a model below its own
+// provider cost (quantified example the review found: a 10s video at
+// $0.075/sec costs the provider ~$0.75; creditsCost:5, worth €0.05, was
+// accepted with no rejection) or set a provider's markup below breakeven
+// (1.0), both a guaranteed per-generation loss.
+describe("margin floor — setModelPricing rejects pricing below provider cost", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.modelPricing.upsert.mockResolvedValue({});
+  });
+
+  it("rejects the review's exact quantified scenario: $0.75 provider cost, creditsCost:5", async () => {
+    // ceil(0.75 / 0.01) = 75 minimum credits — 5 is nowhere close.
+    await expect(setModelPricing("wan2.6-i2v-flash", "i2v", "KIE", 0.75, 5)).rejects.toThrow(
+      /below its provider cost/
+    );
+    expect(prismaMock.modelPricing.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects creditsCost even one credit short of the floor", async () => {
+    // providerCost 0.10 -> minCredits = ceil(0.10/0.01) = 10
+    await expect(setModelPricing("m1", "image", "KIE", 0.1, 9)).rejects.toThrow(/minimum is 10 credits/);
+    expect(prismaMock.modelPricing.upsert).not.toHaveBeenCalled();
+  });
+
+  it("accepts creditsCost exactly at the floor, and above it", async () => {
+    await expect(setModelPricing("m1", "image", "KIE", 0.1, 10)).resolves.toBeUndefined();
+    await expect(setModelPricing("m1", "image", "KIE", 0.1, 25)).resolves.toBeUndefined();
+    expect(prismaMock.modelPricing.upsert).toHaveBeenCalledTimes(2);
+  });
+
+  it("a valid update still succeeds and writes exactly the given values", async () => {
+    await setModelPricing("m1", "image", "KIE", 0.1, 25);
+    expect(prismaMock.modelPricing.upsert).toHaveBeenCalledWith({
+      where: { modelId: "m1" },
+      create: { modelId: "m1", modelType: "image", providerName: "KIE", providerCost: 0.1, creditsCost: 25 },
+      update: { providerCost: 0.1, creditsCost: 25, providerName: "KIE" },
+    });
+  });
+
+  it("does not floor a brand-new model with no provider cost on record yet (providerCost 0)", async () => {
+    await expect(setModelPricing("new-model", "image", "KIE", 0, 1)).resolves.toBeUndefined();
+    expect(prismaMock.modelPricing.upsert).toHaveBeenCalled();
+  });
+});
+
+describe("margin floor — setProviderMarkup rejects markup below breakeven", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.providerConfig.upsert.mockResolvedValue({});
+  });
+
+  it("rejects the review's exact scenario: markup 0.5", async () => {
+    await expect(setProviderMarkup("KIE", 0.5)).rejects.toThrow(/at least 1/);
+    expect(prismaMock.providerConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-numeric or non-finite markup", async () => {
+    await expect(setProviderMarkup("KIE", NaN)).rejects.toThrow(/at least 1/);
+    await expect(setProviderMarkup("KIE", undefined)).rejects.toThrow(/at least 1/);
+    expect(prismaMock.providerConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("accepts markup exactly at breakeven (1.0), and a valid update still succeeds", async () => {
+    await expect(setProviderMarkup("KIE", MIN_MARKUP)).resolves.toBeUndefined();
+    await setProviderMarkup("KIE", 2.5);
+    expect(prismaMock.providerConfig.upsert).toHaveBeenCalledWith({
+      where: { name: "KIE" },
+      create: { name: "KIE", type: "image+video", markup: 2.5 },
+      update: { markup: 2.5 },
+    });
+  });
+});
+
+describe("assertCreditsCoverCost / assertMarkupAboveFloor — reused constants, no second pricing constant invented", () => {
+  it("computes the minimum credits floor from CREDIT_TO_EUR directly", () => {
+    expect(() => assertCreditsCoverCost(1, Math.ceil(1 / CREDIT_TO_EUR))).not.toThrow();
+    expect(() => assertCreditsCoverCost(1, Math.ceil(1 / CREDIT_TO_EUR) - 1)).toThrow(/below its provider cost/);
+  });
+
+  it("MIN_MARKUP is breakeven (1.0), not the 2.5x default markup", () => {
+    expect(MIN_MARKUP).toBe(1.0);
+    expect(() => assertMarkupAboveFloor(1.0)).not.toThrow();
+    expect(() => assertMarkupAboveFloor(0.999)).toThrow();
   });
 });

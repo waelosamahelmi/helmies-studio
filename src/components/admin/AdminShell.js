@@ -17,8 +17,8 @@ import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Navbar from "@/components/Navbar";
 import {
-  IcArchive, IcBolt, IcClock, IcGrid, IcHistory, IcLayers, IcLock,
-  IcMegaphone, IcPersona, IcSettings, IcShield, IcSpark, IcSwap, IcText,
+  IcAlert, IcArchive, IcBolt, IcClock, IcGrid, IcHistory, IcInfo, IcLayers,
+  IcLock, IcMegaphone, IcPersona, IcSettings, IcShield, IcSpark, IcSwap, IcText,
 } from "@/components/studio/kit/Icons";
 
 import OverviewDashboard from "./OverviewDashboard";
@@ -26,6 +26,8 @@ import ModelManager from "./ModelManager";
 import PlanEditor from "./PlanEditor";
 import PromoManager from "./PromoManager";
 import CmsEditor from "./CmsEditor";
+import MetricsPanel from "./MetricsPanel";
+import OpsPanel from "./OpsPanel";
 import {
   AnnouncementsPanel, AuditPanel, FlagsPanel, JobsPanel,
   ProviderHealthPanel, RefundsPanel, UsersPanel,
@@ -33,6 +35,8 @@ import {
 
 const SECTIONS = [
   { id: "overview",      label: "Overview",        icon: IcGrid },
+  { id: "metrics",       label: "Metrics",         icon: IcInfo },
+  { id: "ops",           label: "Operator controls", icon: IcAlert },
   { id: "users",         label: "Users",           icon: IcPersona },
   { id: "models",        label: "Models",          icon: IcLayers },
   { id: "pricing",       label: "Plans",           icon: IcBolt },
@@ -49,6 +53,8 @@ const SECTIONS = [
 
 function View({ section }) {
   switch (section) {
+    case "metrics":       return <MetricsPanel />;
+    case "ops":           return <OpsPanel />;
     case "users":         return <UsersPanel />;
     case "models":        return <ModelManager />;
     case "pricing":       return <PlanEditor type="plans" />;

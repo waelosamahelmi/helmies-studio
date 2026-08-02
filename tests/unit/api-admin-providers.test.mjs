@@ -79,4 +79,23 @@ describe("POST /api/admin/providers", () => {
     await POST(jsonReq({ name: "KIE", type: "media", markup: 3 }));
     expect(verifyOrigin).toHaveBeenCalled();
   });
+
+  // Code review: this route upserts ProviderConfig.markup directly (not
+  // through src/lib/pricing-engine.js's setProviderMarkup), so it needs its
+  // own margin-floor guard — a markup below breakeven here silently
+  // under-prices every model resolved through this provider.
+  it("rejects a markup below breakeven (1.0) with 400 — the margin floor", async () => {
+    const res = await POST(jsonReq({ name: "KIE", type: "media", markup: 0.5 }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/at least 1/);
+    expect(prisma.providerConfig.upsert).not.toHaveBeenCalled();
+  });
+
+  it("accepts a markup exactly at breakeven (1.0)", async () => {
+    prisma.providerConfig.upsert.mockResolvedValue({});
+    const res = await POST(jsonReq({ name: "OpenRouter", type: "llm", markup: 1.0 }));
+    expect(res.status).toBe(200);
+    expect(prisma.providerConfig.upsert).toHaveBeenCalled();
+  });
 });

@@ -3,6 +3,7 @@ import { requireAdmin, logAudit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
+import { assertMarkupAboveFloor } from "@/lib/pricing-engine";
 
 export async function GET(req) {
   try {
@@ -27,6 +28,21 @@ export async function POST(req) {
         { error: "Provider keys are configured via environment variables" },
         { status: 400 },
       );
+    }
+    // Margin floor (code review follow-up): this route upserts
+    // ProviderConfig.markup directly (not through
+    // src/lib/pricing-engine.js's setProviderMarkup), so it needs the same
+    // guard explicitly — a markup below breakeven here would silently
+    // under-price every model resolved through this provider. Only checked
+    // when the caller actually supplied a markup (an update omitting it
+    // leaves the existing value untouched, per Prisma's undefined-means-
+    // don't-update convention — nothing to floor there).
+    if (markup != null) {
+      try {
+        assertMarkupAboveFloor(markup);
+      } catch (validationError) {
+        return NextResponse.json({ error: validationError.message }, { status: 400 });
+      }
     }
     await prisma.providerConfig.upsert({
       where: { name },

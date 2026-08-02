@@ -63,6 +63,7 @@
 // BRANDED_ERRORS) is terminal — retrying it would never succeed.
 
 import prisma from "./prisma.js";
+import { log } from "./log.js";
 import { heartbeatJob, completeJob, failJob, findTimedOutJobs } from "./job-queue.js";
 import { settleReservation, releaseReservation, refundCredits } from "./wallet.js";
 import { submitOnly, pollProviderResult, getProvider } from "./providers.js";
@@ -108,7 +109,7 @@ function isRetryableError(err) {
 async function pollWithHeartbeat(provider, requestId, job, workerId) {
   const timer = setInterval(() => {
     heartbeatJob(job.id, workerId).catch((err) => {
-      console.error(`[job-runner] heartbeat failed for job ${job.id}:`, err.message);
+      log.error("job_heartbeat_failed", { jobId: job.id, generationId: job.generationId, workerId, err });
     });
   }, HEARTBEAT_INTERVAL_MS);
   try {
@@ -135,7 +136,7 @@ async function ingestFirstOutput(outputs) {
     const ingested = await ingestFromUrl(url);
     return ingested.url;
   } catch (err) {
-    console.error(`[job-runner] ingestFromUrl failed for ${url}, falling back to the provider url:`, err.message);
+    log.error("job_ingest_fallback", { url, err });
     return url;
   }
 }
@@ -164,10 +165,12 @@ export async function releaseOrRefund(generation, job) {
       await refundCredits(userId, amount, generationId, "Generation failed");
     }
   } catch (creditErr) {
-    console.error(
-      `[job-runner] RELEASE/REFUND FAILED — user may be owed credits. userId=${userId} generationId=${generationId} amount=${amount}:`,
-      creditErr.message
-    );
+    log.error("credit_release_refund_failed", {
+      userId,
+      generationId,
+      amount,
+      err: creditErr,
+    });
   }
 }
 
@@ -180,10 +183,12 @@ async function safeSettle(generation) {
   try {
     await settleReservation(generation.userId, generation.id, generation.creditsUsed);
   } catch (err) {
-    console.error(
-      `[job-runner] SETTLE FAILED — user may not be charged correctly. userId=${generation.userId} generationId=${generation.id} amount=${generation.creditsUsed}:`,
-      err.message
-    );
+    log.error("generation_settle_failed", {
+      userId: generation.userId,
+      generationId: generation.id,
+      amount: generation.creditsUsed,
+      err,
+    });
   }
 }
 
@@ -262,9 +267,9 @@ export async function runJob(job, { workerId, signal } = {}) {
   const generation = await prisma.generation.findUnique({ where: { id: job.generationId } });
 
   if (!generation) {
-    console.error(`[job-runner] Generation ${job.generationId} not found for job ${job.id} — marking job dead.`);
+    log.error("job_generation_missing", { jobId: job.id, generationId: job.generationId });
     await failJob(job.id, `Generation ${job.generationId} not found`, { retryable: false }).catch((err) => {
-      console.error(`[job-runner] failJob also failed for orphaned job ${job.id}:`, err.message);
+      log.error("job_fail_also_failed", { jobId: job.id, generationId: job.generationId, err });
     });
     return { outcome: "failed" };
   }
@@ -388,9 +393,7 @@ export async function sweepTimedOutJobs() {
 
     const generation = await prisma.generation.findUnique({ where: { id: job.generationId } });
     if (!generation) {
-      console.error(
-        `[job-runner] sweepTimedOutJobs: generation ${job.generationId} not found for timed-out job ${job.id}`
-      );
+      log.error("job_timeout_generation_missing", { jobId: job.id, generationId: job.generationId });
       continue;
     }
 

@@ -79,6 +79,7 @@
 //      {this webhook, job-runner.js} actually wins the conditional
 //      transition is the one that advances the run, never both.
 import prisma from "@/lib/prisma";
+import { log } from "@/lib/log";
 import { refundCredits, settleReservation, releaseReservation } from "@/lib/wallet";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { extractKieResults } from "@/lib/media-download";
@@ -113,7 +114,7 @@ async function ingestFirstOutput(urls) {
     const ingested = await ingestFromUrl(url);
     return ingested.url;
   } catch (err) {
-    console.error(`[generation-webhook] ingestFromUrl failed for ${url}, falling back to the provider url:`, err.message);
+    log.error("generation_webhook_ingest_fallback", { url, err });
     return url;
   }
 }
@@ -223,10 +224,12 @@ export async function handleGenerationWebhook(body) {
           try {
             await settleReservation(generation.userId, generation.id, generation.creditsUsed, tx);
           } catch (err) {
-            console.error(
-              `[generation-webhook] SETTLE FAILED — user may not be charged correctly. userId=${generation.userId} generationId=${generation.id} amount=${generation.creditsUsed}:`,
-              err.message
-            );
+            log.error("generation_settle_failed", {
+              userId: generation.userId,
+              generationId: generation.id,
+              amount: generation.creditsUsed,
+              err,
+            });
           }
         }
 

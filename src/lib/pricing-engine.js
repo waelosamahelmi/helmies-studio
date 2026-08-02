@@ -86,8 +86,55 @@ export function creditsToEUR(credits) {
   return (credits * CREDIT_TO_EUR).toFixed(2);
 }
 
+// ── Margin floor (code review follow-up) ──
+// Neither setProviderMarkup nor setModelPricing validated anything before
+// this: an admin could set a model's creditsCost below what the provider
+// actually costs (quantified example the review found: wan2.6-i2v-flash at
+// 1080p+audio costs ~$0.075/sec — a 10s video costs the provider ~$0.75, but
+// creditsCost:5 (worth €0.05 at CREDIT_TO_EUR) was accepted with no
+// rejection, ~€0.64+ lost per generation), or set a provider's markup below
+// 1.0 (charging less than cost on every model priced through it). Reuses
+// CREDIT_TO_EUR — no second pricing constant invented. MIN_MARKUP is
+// breakeven (1.0), the absolute floor: below it, calculateCredits' own
+// formula (providerCost * markup / CREDIT_TO_EUR) computes fewer credits
+// than the provider cost actually converts to, i.e. a guaranteed loss on
+// every generation priced through that markup.
+export const MIN_MARKUP = 1.0;
+
+// Throws — never silently clamps — when a markup would price below
+// breakeven. Exported so every write path that can set a provider's markup
+// (setProviderMarkup below, and src/app/api/admin/providers/route.js, which
+// upserts ProviderConfig.markup directly) shares this one check.
+export function assertMarkupAboveFloor(markup) {
+  const value = Number(markup);
+  if (!Number.isFinite(value) || value < MIN_MARKUP) {
+    throw new Error(`Markup must be at least ${MIN_MARKUP} (breakeven) — got ${markup}`);
+  }
+}
+
+// Throws — never silently clamps — when creditsCost would price a model's
+// generations below its own recorded provider cost. No-ops when
+// providerCost is 0/unset: a brand-new model row with its real cost not yet
+// known has nothing to floor against (mirrors setModelPricing's own
+// pre-existing "no provider cost on record" shape) — this is deliberately
+// not a loophole in practice, since providerCost is populated by the
+// catalog sync / KIE test flow before a model is ever exposed for real use.
+// Exported so every write path that can set creditsCost (setModelPricing
+// below, and src/app/api/admin/models/route.js's partial-update POST)
+// shares this one check.
+export function assertCreditsCoverCost(providerCost, creditsCost) {
+  if (!providerCost || providerCost <= 0) return;
+  const minCredits = Math.ceil(providerCost / CREDIT_TO_EUR);
+  if (!(Number(creditsCost) >= minCredits)) {
+    throw new Error(
+      `creditsCost ${creditsCost} would price this model below its provider cost (${providerCost}) — minimum is ${minCredits} credits at CREDIT_TO_EUR=${CREDIT_TO_EUR}`
+    );
+  }
+}
+
 // ── Admin: update markup for a provider ──
 export async function setProviderMarkup(providerName, markup) {
+  assertMarkupAboveFloor(markup);
   await prisma.providerConfig.upsert({
     where: { name: providerName },
     create: { name: providerName, type: "image+video", markup },
@@ -97,6 +144,7 @@ export async function setProviderMarkup(providerName, markup) {
 
 // ── Admin: set model pricing ──
 export async function setModelPricing(modelId, modelType, providerName, providerCost, creditsCost) {
+  assertCreditsCoverCost(providerCost, creditsCost);
   await prisma.modelPricing.upsert({
     where: { modelId },
     create: { modelId, modelType, providerName, providerCost, creditsCost },

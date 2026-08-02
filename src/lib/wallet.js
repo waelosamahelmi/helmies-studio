@@ -27,6 +27,7 @@
 // specifiers to include their extension; the extensionless form only works
 // when bundled by Next/Vite.
 import prisma from "./prisma.js";
+import { log } from "./log.js";
 
 // Run `fn` inside the given client (already a transaction) or a fresh one.
 function withDb(db, fn) {
@@ -122,9 +123,12 @@ export async function settleReservation(userId, jobId, actualCredits, db = null)
     // wrong somewhere upstream.
     const charge = Math.min(actualCredits, reservation.amount);
     if (charge < actualCredits) {
-      console.warn(
-        `settleReservation: clamping charge for job ${jobId} — actualCredits ${actualCredits} exceeds reservation ${reservation.amount}`
-      );
+      log.warn("reservation_settle_clamped", {
+        userId,
+        jobId,
+        actualCredits,
+        reservationAmount: reservation.amount,
+      });
     }
     const release = reservation.amount - charge;
 
@@ -295,7 +299,12 @@ export async function sweepExpiredReservations() {
         skipped++;
       }
     } catch (err) {
-      console.error(`sweepExpiredReservations: failed to process reservation ${reservation.id}:`, err);
+      log.error("reservation_sweep_failed", {
+        reservationId: reservation.id,
+        userId: reservation.wallet?.userId,
+        jobId: reservation.generationId,
+        err,
+      });
       skipped++;
     }
   }

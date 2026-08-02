@@ -4,6 +4,7 @@ import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS, LIPSYNC_MODELS, RECAST_MODELS, AUDIO_MODELS } from "@/lib/models";
+import { assertCreditsCoverCost } from "@/lib/pricing-engine";
 
 const ALL_MODELS = [
   ...IMAGE_MODELS.map((m) => ({ ...m, category: "image" })),
@@ -58,6 +59,22 @@ export async function POST(req) {
     if (background !== undefined) updateData.background = background;
     if (backgroundOverlay !== undefined) updateData.backgroundOverlay = backgroundOverlay;
     if (textColor !== undefined) updateData.textColor = textColor;
+
+    // Margin floor (code review follow-up): this is a partial update (only
+    // fields present in the body land in updateData), so the EFFECTIVE
+    // providerCost/creditsCost after this write — not just whatever this
+    // one request happened to include — is what must clear the floor. A
+    // request that only changes creditsCost, leaving providerCost at
+    // whatever's already on the row, must still be checked against that
+    // existing value.
+    const existing = await prisma.modelPricing.findUnique({ where: { modelId } });
+    const effectiveProviderCost = updateData.providerCost ?? existing?.providerCost ?? 0;
+    const effectiveCreditsCost = updateData.creditsCost ?? existing?.creditsCost ?? (creditsCost || 1);
+    try {
+      assertCreditsCoverCost(effectiveProviderCost, effectiveCreditsCost);
+    } catch (validationError) {
+      return NextResponse.json({ error: validationError.message }, { status: 400 });
+    }
 
     await prisma.modelPricing.upsert({
       where: { modelId },

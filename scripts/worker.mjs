@@ -33,6 +33,7 @@ import { hostname } from "node:os";
 import { claimNextJob, reapExpiredLeases, failJob } from "../src/lib/job-queue.js";
 import { runJob } from "../src/lib/job-runner.js";
 import prisma from "../src/lib/prisma.js";
+import { log } from "../src/lib/log.js";
 
 const WORKER_ID = `${hostname()}-${process.pid}`;
 const CONCURRENCY = Math.max(1, parseInt(process.env.WORKER_CONCURRENCY, 10) || 2);
@@ -47,12 +48,14 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// One JSON line per event — jobId/generationId/outcome/duration land on the
-// same line for every claimed job, per the task brief, and every other
-// worker lifecycle event (start/stop/reap/shutdown) uses the same shape so
-// `pm2 logs helmies-worker` is uniformly greppable/parseable.
-function log(fields) {
-  console.log(JSON.stringify({ ts: new Date().toISOString(), workerId: WORKER_ID, ...fields }));
+// jobId/generationId/outcome/duration land on the same line for every
+// claimed job, per the task brief, and every other worker lifecycle event
+// (start/stop/reap/shutdown) uses the same shape so `pm2 logs
+// helmies-worker` is uniformly greppable/parseable. `workerId` is stitched
+// onto every line here so call sites below don't have to repeat it — src/lib/
+// log.js (Phase 7 Task 1) owns the actual JSON-line format + redaction.
+function wlog(level, event, fields) {
+  log[level](event, { workerId: WORKER_ID, ...fields });
 }
 
 // Claim and run exactly one job, if one is available. Returns true if a job
@@ -72,19 +75,18 @@ async function runOneClaim() {
   const startedAt = Date.now();
   try {
     const { outcome } = await runJob(job, { workerId: WORKER_ID });
-    log({ event: "job_done", jobId: job.id, generationId: job.generationId, outcome, durationMs: Date.now() - startedAt });
+    wlog("info", "job_done", { jobId: job.id, generationId: job.generationId, outcome, durationMs: Date.now() - startedAt });
   } catch (err) {
-    log({
-      event: "job_crashed",
+    wlog("error", "job_crashed", {
       jobId: job.id,
       generationId: job.generationId,
-      error: err.message,
+      err,
       durationMs: Date.now() - startedAt,
     });
     try {
       await failJob(job.id, `Worker crashed: ${err.message}`, { retryable: true });
     } catch (failErr) {
-      console.error(`[worker] failJob also failed for crashed job ${job.id}:`, failErr.message);
+      wlog("error", "job_fail_also_failed", { jobId: job.id, err: failErr });
     }
   } finally {
     inFlight.delete(job.id);
@@ -99,7 +101,7 @@ async function runOneClaim() {
 async function claimLoop(loopIndex) {
   while (!shuttingDown) {
     const claimed = await runOneClaim().catch((err) => {
-      console.error(`[worker] loop ${loopIndex} claim failed:`, err.message);
+      wlog("error", "worker_claim_failed", { loopIndex, err });
       return false;
     });
     if (!claimed) {
@@ -109,14 +111,14 @@ async function claimLoop(loopIndex) {
 }
 
 async function main() {
-  log({ event: "worker_started", concurrency: CONCURRENCY });
+  wlog("info", "worker_started", { concurrency: CONCURRENCY });
 
   const reapTimer = setInterval(async () => {
     try {
       const count = await reapExpiredLeases();
-      if (count > 0) log({ event: "reaped_expired_leases", count });
+      if (count > 0) wlog("info", "reaped_expired_leases", { count });
     } catch (err) {
-      console.error("[worker] reapExpiredLeases failed:", err.message);
+      wlog("error", "worker_reap_failed", { err });
     }
   }, REAP_INTERVAL_MS);
   reapTimer.unref?.();
@@ -128,14 +130,14 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
     clearInterval(reapTimer);
-    log({ event: "shutdown_started", signal, inFlight: inFlight.size });
+    wlog("info", "shutdown_started", { signal, inFlight: inFlight.size });
     // Forced exit if graceful wind-down (each claim loop finishing its
     // current job, then noticing `shuttingDown` and stopping) somehow takes
     // longer than the grace period — e.g. a job stuck in a provider call
     // with no timeout. `.unref()` so this timer itself never keeps the
     // process alive if shutdown finishes cleanly well before it fires.
     shutdownTimer = setTimeout(() => {
-      log({ event: "shutdown_forced", inFlight: inFlight.size });
+      wlog("error", "shutdown_forced", { inFlight: inFlight.size });
       process.exit(1);
     }, SHUTDOWN_GRACE_MS);
     shutdownTimer.unref?.();
@@ -146,11 +148,11 @@ async function main() {
   await Promise.all(claimLoops);
   if (shutdownTimer) clearTimeout(shutdownTimer);
   await prisma.$disconnect().catch(() => {});
-  log({ event: "worker_stopped" });
+  wlog("info", "worker_stopped", {});
   process.exit(0);
 }
 
 main().catch((err) => {
-  console.error("[worker] fatal:", err);
+  wlog("error", "worker_fatal", { err });
   process.exit(1);
 });

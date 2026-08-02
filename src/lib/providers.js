@@ -452,18 +452,48 @@ export async function llmStream(messages, options = {}) {
 // Media provider fallback order: KIE primary, Alibaba secondary.
 const FALLBACK_CHAIN = ["kie", "alibaba"];
 
+// Maps a ProviderConfig.name to the canonical adapter key it represents, or
+// null if it isn't a known media adapter (e.g. "OpenRouter"). Case-
+// insensitive substring match — production rows are seeded with display
+// casing ("KIE", "Alibaba" — scripts/seed-providers.mjs), never the
+// lowercase adapter key, so both getProviderActivity below AND
+// src/lib/ops-flags.js's setProviderDisabled classify a row through this
+// SAME function. That sharing is load-bearing: a lookup and a write must
+// never disagree on which row "is" kie/alibaba, or setProviderDisabled
+// could create a second row instead of updating the existing production one.
+export function classifyProviderConfigName(name) {
+  const n = (name || "").toLowerCase();
+  if (n.includes("alibaba") || n.includes("qwen") || n.includes("dashscope")) return "alibaba";
+  if (n.includes("kie")) return "kie";
+  return null;
+}
+
 // Reads ProviderConfig activity for media adapters only.
 // Returns null when no config rows exist (env-only mode → all providers eligible).
-async function getProviderActivity() {
+// Exported (Phase 7 Task 3) so src/lib/ops-flags.js's isProviderDisabled can
+// read back the EXACT SAME activity computation setProviderDisabled writes
+// into — the kill switch reuses this path rather than adding a second one.
+//
+// Deterministic under duplicate/conflicting rows for the same provider
+// (which should never exist going forward — setProviderDisabled matches and
+// updates existing rows rather than blind-upserting on the lowercase key —
+// but this is the read-side defense in depth for any duplicate that
+// predates that fix, or that some other code path creates): a provider is
+// "active" only when EVERY row that classifies to it says so. Any single
+// row with isActive:false wins, regardless of `rows` iteration order —
+// Postgres does not guarantee scan order without an explicit ORDER BY, and
+// an unrelated UPDATE to a row can change that order (MVCC creates a new
+// tuple version), so "last row in the loop wins" was never safe.
+export async function getProviderActivity() {
   try {
     const rows = await prisma.providerConfig.findMany({ select: { name: true, isActive: true } });
     if (!rows.length) return null;
     const activity = {};
     for (const row of rows) {
-      const n = (row.name || "").toLowerCase();
-      // Only media adapters participate in the fallback chain; unrelated configs (e.g. OpenRouter) are ignored here.
-      if (n.includes("alibaba") || n.includes("qwen") || n.includes("dashscope")) activity.alibaba = row.isActive;
-      else if (n.includes("kie")) activity.kie = row.isActive;
+      const key = classifyProviderConfigName(row.name);
+      if (!key) continue; // unrelated config (e.g. OpenRouter) — not part of the media fallback chain
+      if (row.isActive === false) activity[key] = false;
+      else if (activity[key] !== false) activity[key] = true;
     }
     return activity;
   } catch {
@@ -478,11 +508,27 @@ export async function resolveProviderWithFallback(modelId) {
   // Provider-native catalog endpoints are not portable across KIE and DashScope.
   // Keep legacy fallback behavior only for old provider-agnostic rows.
   const chain = catalogModel?.managedBySync ? [primary.name] : [primary.name, ...FALLBACK_CHAIN.filter((n) => n !== primary.name)];
-  return chain
+  const resolved = chain
     .filter((name) => !activity || activity[name] !== false)
     .map((name) => {
       const p = PROVIDERS[name];
       return p ? { ...p, name, apiKey: p.getKey() } : null;
     })
     .filter(Boolean);
+
+  // Phase 7 Task 3 — provider kill switch: this can ONLY be empty because
+  // of the activity filter above (resolveProvider always returns a real,
+  // directly-indexable PROVIDERS entry, so `chain` itself is never
+  // structurally empty) — i.e. every provider capable of serving this
+  // model has been disabled via src/lib/ops-flags.js's setProviderDisabled.
+  // Fail fast with a clear message instead of letting a caller hang, or
+  // silently proceed with an empty chain that was never going to submit
+  // anything.
+  if (resolved.length === 0) {
+    throw new Error(
+      `All providers for model "${modelId}" are currently disabled by an operator. Please try again once one is re-enabled.`
+    );
+  }
+
+  return resolved;
 }

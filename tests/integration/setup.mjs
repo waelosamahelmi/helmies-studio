@@ -16,15 +16,16 @@ import { randomUUID } from "node:crypto";
 export async function resetDb() {
   const { default: prisma } = await import("@/lib/prisma");
   // Order respects FKs; cascade handles the rest. StripeEvent,
-  // AnonRateLimit, and GenerationJob have no FK to User (all are standalone,
-  // key-addressed tables — an idempotency ledger, a hashed-IP rate-limit
-  // store, and the durable job queue, respectively), so they must be
-  // truncated explicitly — otherwise rows from a prior test run survive and
-  // collide with fixed keys/ids used by idempotency / rate-limit / job-claim
-  // tests (this exact gap bit Phase 2 Task 9 with StripeEvent before it was
-  // added here).
+  // AnonRateLimit, GenerationJob, FeatureFlag, and ProviderConfig have no FK
+  // to User (all are standalone, key-addressed tables — an idempotency
+  // ledger, a hashed-IP rate-limit store, the durable job queue, and (Phase
+  // 7 Task 3) the maintenance-mode flag / provider kill switch,
+  // respectively), so they must be truncated explicitly — otherwise rows
+  // from a prior test run survive and collide with fixed keys/ids used by
+  // idempotency / rate-limit / job-claim / ops-flags tests (this exact gap
+  // bit Phase 2 Task 9 with StripeEvent before it was added here).
   await prisma.$executeRawUnsafe(
-    `TRUNCATE "public"."User", "public"."StripeEvent", "public"."AnonRateLimit", "public"."GenerationJob" RESTART IDENTITY CASCADE`
+    `TRUNCATE "public"."User", "public"."StripeEvent", "public"."AnonRateLimit", "public"."GenerationJob", "public"."FeatureFlag", "public"."ProviderConfig" RESTART IDENTITY CASCADE`
   );
   return prisma;
 }
