@@ -335,7 +335,20 @@ describe("handleGenerationWebhook — success path, job-backed generation: exact
 
     expect(status).toBe(200);
     expect(response).toMatchObject({ success: true });
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("SETTLE FAILED"), expect.any(String));
+    // Phase 7 Task 1: the settle failure now goes through src/lib/log.js as
+    // one structured JSON line — event name + ids replace the old free-text
+    // "SETTLE FAILED" string, but the loud-log-and-swallow behavior itself
+    // is unchanged.
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const line = JSON.parse(errorSpy.mock.calls[0][0]);
+    expect(line).toMatchObject({
+      level: "error",
+      event: "generation_settle_failed",
+      userId: "u1",
+      generationId: "gen1",
+      amount: 5,
+    });
+    expect(line.err.message).toBe("DB connection lost");
     expect(prisma.generationJob.update).toHaveBeenCalledTimes(1); // job still terminated
     errorSpy.mockRestore();
   });

@@ -416,10 +416,19 @@ describe("runJob — terminal provider failure: exactly one release-or-refund", 
     const result = await expect(runJob(job, { workerId: "worker-1" })).resolves.toEqual({ outcome: "failed" });
 
     expect(refundCredits).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("RELEASE/REFUND FAILED"),
-      expect.any(String)
-    );
+    // Phase 7 Task 1: structured JSON line via src/lib/log.js replaces the
+    // old free-text "RELEASE/REFUND FAILED" console.error string — same
+    // loud-log-and-swallow behavior, new event name + ids.
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const line = JSON.parse(errorSpy.mock.calls[0][0]);
+    expect(line).toMatchObject({
+      level: "error",
+      event: "credit_release_refund_failed",
+      userId: "user1",
+      generationId: "gen1",
+      amount: 5,
+    });
+    expect(line.err.message).toBe("DB connection lost");
     errorSpy.mockRestore();
     return result;
   });
@@ -442,7 +451,18 @@ describe("runJob — settle failure is logged loudly, never masks a successful i
 
     expect(result).toEqual({ outcome: "succeeded" });
     expect(completeJob).toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("SETTLE FAILED"), expect.any(String));
+    // Phase 7 Task 1: structured JSON line via src/lib/log.js replaces the
+    // old free-text "SETTLE FAILED" console.error string.
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const line = JSON.parse(errorSpy.mock.calls[0][0]);
+    expect(line).toMatchObject({
+      level: "error",
+      event: "generation_settle_failed",
+      userId: "user1",
+      generationId: "gen1",
+      amount: 5,
+    });
+    expect(line.err.message).toBe("DB connection lost");
     errorSpy.mockRestore();
   });
 });

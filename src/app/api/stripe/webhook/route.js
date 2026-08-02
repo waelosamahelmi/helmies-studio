@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import prisma from "@/lib/prisma";
+import { log } from "@/lib/log";
 import { grantCredits } from "@/lib/wallet";
 
 let stripe;
@@ -58,7 +59,7 @@ export async function POST(req) {
     where: { stripeEventId },
   });
   if (existingEvent) {
-    console.log(`[webhook] Duplicate event ${stripeEventId}, already processed — skipping`);
+    log.info("stripe_webhook_duplicate_event", { stripeEventId, eventType: event.type });
     return NextResponse.json({ received: true });
   }
 
@@ -77,7 +78,7 @@ export async function POST(req) {
     try {
       prefetchedSubscription = await getStripe().subscriptions.retrieve(event.data.object.subscription);
     } catch (err) {
-      console.error(`[webhook] Failed to prefetch subscription for event ${stripeEventId}:`, err);
+      log.error("stripe_webhook_subscription_prefetch_failed", { stripeEventId, eventType: event.type, err });
       return NextResponse.json({ error: "Subscription prefetch failed" }, { status: 500 });
     }
   }
@@ -135,9 +136,12 @@ export async function POST(req) {
             const slug = session.metadata?.plan;
             const planRow = await planBySlugOrPrice(tx, slug, null);
             if (!planRow) {
-              console.error(
-                `[webhook] No SubscriptionPlan row found for slug "${slug}" — checkout session ${session.id} will grant 0 credits. Check the admin Plans configuration.`
-              );
+              log.error("stripe_webhook_plan_not_found", {
+                stripeEventId,
+                slug,
+                checkoutSessionId: session.id,
+                message: "checkout session will grant 0 credits — check the admin Plans configuration",
+              });
             }
             const credits = planRow?.credits || 0;
 
@@ -165,9 +169,13 @@ export async function POST(req) {
             const metaSlug = subscription.metadata?.plan;
             const planRow = await planBySlugOrPrice(tx, metaSlug, priceId);
             if (!planRow) {
-              console.error(
-                `[webhook] No SubscriptionPlan row found for slug "${metaSlug}" or price "${priceId}" — invoice ${invoice.id} will grant 0 credits. Check the admin Plans configuration.`
-              );
+              log.error("stripe_webhook_plan_not_found", {
+                stripeEventId,
+                slug: metaSlug,
+                priceId,
+                invoiceId: invoice.id,
+                message: "invoice will grant 0 credits — check the admin Plans configuration",
+              });
             }
             const credits = planRow?.credits || 0;
             const plan = metaSlug || planRow?.slug || "free";
@@ -223,10 +231,10 @@ export async function POST(req) {
     // processed this event (claim + grants committed together). Return 200
     // to acknowledge receipt — nothing here needs to run again.
     if (e?.code === "P2002" && e?.meta?.target?.includes?.("stripeEventId")) {
-      console.warn(`[webhook] Concurrent duplicate event ${stripeEventId} — acknowledged`);
+      log.warn("stripe_webhook_concurrent_duplicate", { stripeEventId, eventType: event.type });
       return NextResponse.json({ received: true });
     }
-    console.error(`[webhook] Error processing event ${stripeEventId}:`, e);
+    log.error("stripe_webhook_processing_failed", { stripeEventId, eventType: event.type, err: e });
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
