@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { apiFetch } from "@/lib/client-fetch";
+import { signInWithRetry } from "@/lib/sign-in";
 import { IcEye, IcEyeOff, IcChevronRight } from "@/components/studio/kit/Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -93,19 +94,21 @@ function Auth() {
         });
       }
 
-      const result = await signIn("credentials", {
-        email: email.trim(),
-        password,
-        redirect: false,
-      });
+      const result = await signInWithRetry({ email: email.trim(), password });
 
-      if (result?.error) {
-        setFormError(
-          register
-            ? "Your account was created but the sign-in did not go through. Try signing in now."
-            : "That email and password do not match an account.",
-        );
-        if (register) setMode("signin");
+      if (!result.ok) {
+        if (register) {
+          // The account exists either way — never blame credentials here.
+          setFormError("Your account was created but the sign-in did not go through. Try signing in now.");
+          setMode("signin");
+        } else if (result.kind === "credentials") {
+          setFormError("That email and password do not match an account.");
+        } else {
+          // Not a bad password (signInWithRetry already retried once) —
+          // most likely the cold-start CSRF race. Say so honestly instead
+          // of accusing the user of a wrong password.
+          setFormError("Something went wrong signing you in. Please try again.");
+        }
         return;
       }
 
