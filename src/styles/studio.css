@@ -185,7 +185,12 @@
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--tx-ghost);
+  /* Phase 5 Task 3 (a11y): --tx-ghost was 1.85:1 here (axe color-contrast,
+     serious) — these are real navigation group labels ("Direct"/"Make"/
+     "Perform"), not decoration. --tx-mute (fixed to 4.5:1+ in system.css)
+     instead of a --tx-ghost token change — see pages.css's .pg-auth__or
+     for why this is scoped per-selector rather than global. */
+  color: var(--tx-mute);
   text-align: center;
   padding: var(--s-3) 0 var(--s-1);
 }
@@ -489,7 +494,12 @@
   font-family: var(--ff-mono);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-  color: var(--tx-ghost);
+  /* Phase 5 Task 3 (a11y): --tx-ghost was 1.79:1 here (axe color-contrast,
+     serious) — a live character counter is actionable information, not
+     decoration. --tx-mute (fixed to 4.5:1+ in system.css) instead of a
+     --tx-ghost token change — see pages.css's .pg-auth__or for why this is
+     scoped per-selector rather than global. */
+  color: var(--tx-mute);
   margin-left: auto;
 }
 .st-brief__count.is-near { color: var(--caution); }

@@ -590,7 +590,13 @@
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--tx-ghost);
+  /* Phase 5 Task 3 (a11y): --tx-ghost was 1.8:1 here (axe color-contrast,
+     serious) — this word ("or") is real content separating two sign-in
+     paths, not decoration, so it needs to be legible. --tx-mute (fixed to
+     4.5:1+ in system.css) instead of a --tx-ghost token change, so every
+     OTHER --tx-ghost use (placeholders, decorative ticks/dots) keeps its
+     original, deliberately-subtle value. */
+  color: var(--tx-mute);
 }
 .pg-auth__or::before, .pg-auth__or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .pg-auth__legal { font-size: var(--t-micro); color: var(--tx-mute); text-align: center; line-height: 1.5; }

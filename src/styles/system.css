@@ -80,7 +80,13 @@
   /* Type colour */
   --tx:      #F2F2F6;
   --tx-dim:  #9A9AA8;
-  --tx-mute: #63636F;
+  /* Phase 5 Task 3 (a11y): was #63636F — 3.2-3.4:1 against --ink-000/--ink-100,
+     below WCAG AA's 4.5:1 for normal text (axe color-contrast, serious —
+     this token is the single most-reused "hint"/"mute" text color in the
+     app, so it was the dominant violation on nearly every page scanned).
+     #82828F clears 4.5:1 against every --ink-* tier (5.0-5.3:1), a modest
+     lightening rather than a redesign. */
+  --tx-mute: #82828F;
   --tx-ghost:#3E3E48;
 
   /* Structure — hairlines carry the architecture, not shadows */
@@ -371,14 +377,21 @@
 .hs-btn:active:not(:disabled) { transform: translateY(0.5px); }
 .hs-btn:disabled { opacity: 0.38; cursor: not-allowed; }
 
-/* Primary — the spend action. The only saturated fill in the interface. */
+/* Primary — the spend action. The only saturated fill in the interface.
+   Phase 5 Task 3 (a11y): white text on --filament was 3.7:1 (axe
+   color-contrast, serious — need 4.5:1). Uses --filament-deep (already
+   defined above, previously unused) instead of --filament for exactly this
+   pair — --filament itself is untouched everywhere else (glows, active
+   states, the meter fill), so nothing but this button's own fill/border
+   gets darker. Hover steps back up to the original --filament, keeping the
+   "brightens on hover" feel one tier down. */
 .hs-btn--primary {
-  background: var(--filament);
-  border-color: var(--filament);
+  background: var(--filament-deep);
+  border-color: var(--filament-deep);
   color: #fff;
   font-weight: 600;
 }
-.hs-btn--primary:hover:not(:disabled) { background: var(--filament-lit); border-color: var(--filament-lit); }
+.hs-btn--primary:hover:not(:disabled) { background: var(--filament); border-color: var(--filament); }
 .hs-btn--primary:disabled { background: var(--ink-300); border-color: var(--line); color: var(--tx-mute); opacity: 1; }
 
 .hs-btn--ghost { background: transparent; border-color: transparent; color: var(--tx-dim); }

@@ -53,6 +53,24 @@ function Portal({ children }) {
   return createPortal(children, document.body);
 }
 
+/* Phase 5 Task 3 (a11y): standard WAI-ARIA dialog behavior — whatever had
+   focus when the dialog opened (the trigger button, in every real caller
+   here) gets it back when the dialog closes, for ANY reason (Escape, the
+   scrim, the X button, drag-to-dismiss). Without this, closing a sheet left
+   focus on `document.body` — a keyboard user's next Tab press restarted
+   from the top of the page instead of picking back up where they were. */
+function useReturnFocus(open) {
+  const trigger = useRef(null);
+  useEffect(() => {
+    if (open) {
+      trigger.current = document.activeElement;
+    } else if (trigger.current) {
+      trigger.current.focus?.();
+      trigger.current = null;
+    }
+  }, [open]);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    SHEET — bottom sheet. Drag down or tap the scrim to dismiss.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -60,6 +78,7 @@ export function Sheet({ open, onClose, title, children, footer }) {
   const ref = useRef(null);
   useScrollLock(open);
   useDismiss(open, onClose, ref);
+  useReturnFocus(open);
 
   useEffect(() => {
     if (open) ref.current?.focus();
@@ -122,6 +141,7 @@ export function Modal({ open, onClose, title, children, footer, dismissable = tr
   const ref = useRef(null);
   useScrollLock(open);
   useDismiss(open, dismissable ? onClose : undefined, ref);
+  useReturnFocus(open);
 
   useEffect(() => { if (open) ref.current?.focus(); }, [open]);
 
