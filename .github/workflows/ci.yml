@@ -45,6 +45,70 @@ jobs:
         env:
           TEST_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
 
+  e2e:
+    runs-on: ubuntu-latest
+    services:
+      # Playwright's webServer entries (playwright.config.mjs) hardcode
+      # DATABASE_URL to postgresql://postgres:test@localhost:55432/test (the
+      # same disposable-container shape local dev uses, `helmies-test-pg`) —
+      # not read from ambient env — so this service's user/password/db and
+      # the 55432 host port below must match exactly, or the spawned `next
+      # start` / worker child processes simply can't connect.
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: postgres, POSTGRES_PASSWORD: test, POSTGRES_DB: test }
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:55432/test
+      - run: npx playwright install --with-deps chromium
+      # Mirrors playwright.config.mjs's webServerEnv (the app/worker
+      # webServer entries hardcode these same values regardless of this
+      # step's env, but setting them here keeps this job an accurate,
+      # self-documenting picture of what the webServer needs, and covers
+      # anything the config might one day read from ambient env instead).
+      # DATABASE_URL resolving to hostname "localhost" is also what lets
+      # scripts/worker.mjs's E2E_MOCK_PROVIDERS=1 (workerServerEnv) pass
+      # src/lib/providers.js's E2E_MOCK_PROVIDERS hostname lock — without
+      # it the worker would try to reach a real provider with no key and
+      # every generation job would hang/fail instead of using the fixture.
+      # NODE_ENV=production is scoped to ONLY this step (not job-level):
+      # setting it job-wide would make `npm ci` above silently skip every
+      # devDependency (@playwright/test included) — confirmed empirically
+      # before writing this job, see the Task 5 commit's evidence.
+      - run: npm run test:e2e
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:55432/test
+          TEST_DATABASE_URL: postgresql://postgres:test@localhost:55432/test
+          NEXTAUTH_URL: http://localhost:3399
+          NEXTAUTH_SECRET: e2e-test-secret-do-not-use-in-production-0000
+          GOOGLE_CLIENT_ID: e2e-dummy-google-client-id
+          GOOGLE_CLIENT_SECRET: e2e-dummy-google-client-secret
+          KIE_KEY: e2e-dummy-kie-key
+          WEBHOOK_SECRET: e2e-dummy-webhook-secret
+          OPENROUTER_KEY: ""
+          ALIBABA_KEY: ""
+          ALIBABA_WORKSPACE_ID: ""
+          STRIPE_SECRET_KEY: sk_test_e2e_dummy_0000000000000000000000
+          STRIPE_WEBHOOK_SECRET: whsec_e2e_dummy_0000000000000000000000
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_e2e_dummy_0000000000000000000000
+          NODE_ENV: production
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
   audit:
     runs-on: ubuntu-latest
     steps:
