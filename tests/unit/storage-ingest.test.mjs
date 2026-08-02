@@ -1,0 +1,147 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createHash } from "node:crypto";
+
+vi.mock("@/lib/storage/index", () => ({ getDriver: vi.fn() }));
+
+import { getDriver } from "@/lib/storage/index";
+import { ingestFromUrl, stripJpegExif, stripPngMetadata } from "@/lib/storage/ingest";
+
+function jpegWithExif(payloadText = "Exif\u0000\u0000FAKE-GPS-JUNK") {
+  const payload = Buffer.from(payloadText, "ascii");
+  const len = payload.length + 2; // APP1 length field includes itself, excludes the FF E1 marker
+  const lenBuf = Buffer.from([(len >> 8) & 0xff, len & 0xff]);
+  return Buffer.concat([
+    Buffer.from([0xff, 0xd8]), // SOI
+    Buffer.from([0xff, 0xe1]), // APP1 (EXIF)
+    lenBuf,
+    payload,
+    Buffer.from([0xff, 0xd9]), // EOI
+  ]);
+}
+
+function fakeFetchResponse({ ok = true, status = 200, buffer, contentType, contentLength }) {
+  return {
+    ok,
+    status,
+    headers: {
+      get: (name) => {
+        const n = name.toLowerCase();
+        if (n === "content-type") return contentType ?? null;
+        if (n === "content-length") return contentLength === undefined ? String(buffer.length) : contentLength;
+        return null;
+      },
+    },
+    arrayBuffer: async () => buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+  };
+}
+
+let putObjectMock;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  putObjectMock = vi.fn(async (key, buffer, contentType) => ({
+    key,
+    url: `/api/media/local/${key}`,
+  }));
+  getDriver.mockReturnValue({ putObject: putObjectMock });
+});
+
+describe("stripJpegExif / stripPngMetadata — moved verbatim, still pure functions", () => {
+  it("stripJpegExif removes the APP1/EXIF segment and its payload", () => {
+    const withExif = jpegWithExif();
+    const stripped = stripJpegExif(withExif);
+
+    expect(stripped.includes("FAKE-GPS-JUNK")).toBe(false);
+    // SOI + EOI survive, nothing else.
+    expect(stripped).toEqual(Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  });
+
+  it("stripJpegExif is a no-op on a non-JPEG buffer", () => {
+    const buf = Buffer.from("not a jpeg");
+    expect(stripJpegExif(buf)).toEqual(buf);
+  });
+
+  it("stripPngMetadata is a no-op on a non-PNG buffer", () => {
+    const buf = Buffer.from("not a png");
+    expect(stripPngMetadata(buf)).toEqual(buf);
+  });
+});
+
+describe("ingestFromUrl — download, strip, hash, store", () => {
+  it("strips EXIF from a JPEG before storing and the driver receives the stripped bytes", async () => {
+    const withExif = jpegWithExif();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(fakeFetchResponse({ buffer: withExif, contentType: "image/jpeg" }))
+    );
+
+    await ingestFromUrl("https://provider.example/out.jpg");
+
+    expect(putObjectMock).toHaveBeenCalledTimes(1);
+    const storedBuffer = putObjectMock.mock.calls[0][1];
+    expect(storedBuffer.includes("FAKE-GPS-JUNK")).toBe(false);
+    expect(storedBuffer).toEqual(Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+  });
+
+  it("returns a sha256 that matches the actually-stored (post-strip) bytes", async () => {
+    const withExif = jpegWithExif();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(fakeFetchResponse({ buffer: withExif, contentType: "image/jpeg" }))
+    );
+
+    const result = await ingestFromUrl("https://provider.example/out.jpg");
+
+    const storedBuffer = putObjectMock.mock.calls[0][1];
+    const expectedSha256 = createHash("sha256").update(storedBuffer).digest("hex");
+    expect(result.sha256).toBe(expectedSha256);
+    expect(result.bytes).toBe(storedBuffer.length);
+  });
+
+  it("builds the storage key as <sha256-prefix>-<uuid>.<ext> and returns the driver's url", async () => {
+    const plain = Buffer.from("plain non-image bytes");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(fakeFetchResponse({ buffer: plain, contentType: "video/mp4" }))
+    );
+
+    const result = await ingestFromUrl("https://provider.example/out.mp4");
+
+    const [key] = putObjectMock.mock.calls[0];
+    expect(key).toMatch(/^[0-9a-f]{16}-[0-9a-f]{8}\.mp4$/);
+    expect(result.key).toBe(key);
+    expect(result.url).toBe(`/api/media/local/${key}`);
+  });
+
+  it("a content-length mismatch throws and never reaches the driver", async () => {
+    const buffer = Buffer.from("short");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        fakeFetchResponse({ buffer, contentType: "image/png", contentLength: String(buffer.length + 100) })
+      )
+    );
+
+    await expect(ingestFromUrl("https://provider.example/truncated.png")).rejects.toThrow(/truncated/i);
+    expect(putObjectMock).not.toHaveBeenCalled();
+  });
+
+  it("throws when the fetch itself fails (non-ok response)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 502 }));
+
+    await expect(ingestFromUrl("https://provider.example/broken.png")).rejects.toThrow(/502/);
+    expect(putObjectMock).not.toHaveBeenCalled();
+  });
+
+  it("an explicit contentType option overrides the response's content-type header", async () => {
+    const buffer = Buffer.from("abc");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(fakeFetchResponse({ buffer, contentType: "application/octet-stream" }))
+    );
+
+    const result = await ingestFromUrl("https://provider.example/out", { contentType: "audio/wav" });
+
+    expect(result.key).toMatch(/\.wav$/);
+  });
+});

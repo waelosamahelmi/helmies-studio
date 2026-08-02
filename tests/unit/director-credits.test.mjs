@@ -76,8 +76,8 @@ vi.mock("@/lib/pricing-engine", () => ({
   estimateCredits: vi.fn(),
 }));
 
-vi.mock("@/lib/media-storage", () => ({
-  storeMedia: vi.fn(),
+vi.mock("@/lib/storage/ingest", () => ({
+  ingestFromUrl: vi.fn(),
 }));
 
 vi.mock("@/lib/video-assembly", () => ({
@@ -93,7 +93,7 @@ import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { debitCredits, creditUser } from "@/lib/session";
 import { generateImage, generateI2V, generateAudio } from "@/lib/generation";
 import { resolveProvider } from "@/lib/providers";
-import { storeMedia } from "@/lib/media-storage";
+import { ingestFromUrl } from "@/lib/storage/ingest";
 import { assembleVideos } from "@/lib/video-assembly";
 import { executeProductionPipeline, rerunShot, VALID_RERUN_TYPES } from "@/lib/director-executor";
 
@@ -116,7 +116,10 @@ beforeEach(() => {
   debitWallet.mockResolvedValue({});
   refundCredits.mockResolvedValue({});
   resolveProvider.mockResolvedValue("mock-provider");
-  storeMedia.mockImplementation(async (url) => url);
+  // ingestFromUrl's return shape is the richer { url, key, bytes, sha256 }
+  // (Phase 4B Task 4) — director-executor.js only uses .url; the pass-through
+  // mock mirrors storeMedia's old pass-through-the-url test double exactly.
+  ingestFromUrl.mockImplementation(async (url) => ({ url, key: "k", bytes: 1, sha256: "a".repeat(64) }));
   assembleVideos.mockResolvedValue("https://cdn.example/assembled.mp4");
   generateAudio.mockResolvedValue({ url: "https://cdn.example/audio.mp3" });
 });

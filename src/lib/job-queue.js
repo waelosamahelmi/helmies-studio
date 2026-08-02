@@ -227,3 +227,24 @@ export async function findTimedOutJobs() {
     },
   });
 }
+
+// Retention sweep (Phase 4B Task 4): terminal rows (succeeded/failed/dead)
+// are permanent history of a settled/refunded generation — no money or
+// state-machine implication follows from deleting one once it's old enough,
+// unlike every other function in this file. `updatedAt` (not `createdAt`) is
+// the cutoff basis — it's the moment the row LAST transitioned (into its
+// terminal state, in practice, since nothing updates a terminal row again),
+// so "older than N days" means "has been terminal for N days", not "was
+// created N days ago" (a long-retried job could be created long before it
+// finally lands). A `queued`/`running` row is NEVER a candidate regardless
+// of age — this only ever removes rows already in TERMINAL_STATUSES.
+export async function pruneTerminalJobs({ olderThanDays = 30 } = {}) {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000);
+  const result = await prisma.generationJob.deleteMany({
+    where: {
+      status: { in: TERMINAL_STATUSES },
+      updatedAt: { lt: cutoff },
+    },
+  });
+  return { deleted: result.count };
+}

@@ -62,7 +62,29 @@
 //      existing test below exercises).
 import prisma from "@/lib/prisma";
 import { refundCredits, settleReservation, releaseReservation } from "@/lib/wallet";
-import { downloadAllMedia, extractKieResults } from "@/lib/media-download";
+import { ingestFromUrl } from "@/lib/storage/ingest";
+import { extractKieResults } from "@/lib/media-download";
+
+// Ingest the provider's primary output through the unified ingest path
+// (Phase 4B Task 4). Mirrors src/lib/job-runner.js's ingestFirstOutput
+// exactly (same contract as the downloadAllMedia this replaced: null on no
+// outputs, never throws — falls back to the raw provider url on a
+// download/strip failure rather than turning a successful generation into a
+// 500 that would abort the transaction below and leave the row stuck
+// non-terminal). Only the first url is ingested — matches what's actually
+// used: outputUrl is a single field.
+async function ingestFirstOutput(urls) {
+  if (!urls || urls.length === 0) return null;
+  const url = urls[0];
+  if (typeof url !== "string" || url.startsWith("/api/media/local/")) return url ?? null;
+  try {
+    const ingested = await ingestFromUrl(url);
+    return ingested.url;
+  } catch (err) {
+    console.error(`[generation-webhook] ingestFromUrl failed for ${url}, falling back to the provider url:`, err.message);
+    return url;
+  }
+}
 
 export async function handleGenerationWebhook(body) {
   try {
@@ -141,7 +163,7 @@ export async function handleGenerationWebhook(body) {
       // downloads before its own conditional transition).
       let localUrl = null;
       if (urls && urls.length > 0) {
-        localUrl = await downloadAllMedia(urls);
+        localUrl = await ingestFirstOutput(urls);
       }
 
       await prisma.$transaction(async (tx) => {

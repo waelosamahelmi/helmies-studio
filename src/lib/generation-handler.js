@@ -7,7 +7,7 @@ import { expandPrompt, getNegativePrompt, shouldExpand } from "@/lib/prompt-expa
 import { applyMemoryToPrompt } from "@/lib/memory";
 import { validateGenerationOutput, logQualityGate } from "@/lib/quality-gate";
 import { authenticateApiKey } from "@/lib/api-key-auth";
-import { storeMedia } from "@/lib/media-storage";
+import { ingestFromUrl } from "@/lib/storage/ingest";
 import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
 import { quoteCatalogModel } from "@/lib/model-catalog";
 import {
@@ -249,7 +249,7 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       let storedUrl = outputUrl;
       if (outputUrl) {
         try {
-          storedUrl = await storeMedia(outputUrl);
+          ({ url: storedUrl } = await ingestFromUrl(outputUrl));
         } catch {
           storedUrl = `/api/media/proxy?url=${encodeURIComponent(outputUrl)}`;
         }

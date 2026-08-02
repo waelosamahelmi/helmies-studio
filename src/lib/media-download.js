@@ -1,88 +1,10 @@
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
-import crypto from "crypto";
-
-/**
- * Download a media file from a URL to local storage.
- * Returns the local path (/api/media/local/{filename}) or the original URL if download fails.
- */
-export async function downloadMedia(url) {
-  if (!url || typeof url !== "string") return null;
-
-  // Already a local URL
-  if (url.startsWith("/api/media/local/")) return url;
-
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!res.ok) return url; // Fall back to original URL
-
-    const contentType = res.headers.get("content-type") || "";
-    const buffer = Buffer.from(await res.arrayBuffer());
-
-    // Determine extension from content-type
-    const extMap = {
-      "image/jpeg": ".jpg",
-      "image/jpg": ".jpg",
-      "image/png": ".png",
-      "image/gif": ".gif",
-      "image/webp": ".webp",
-      "image/svg+xml": ".svg",
-      "video/mp4": ".mp4",
-      "video/webm": ".webm",
-      "video/quicktime": ".mov",
-      "audio/mpeg": ".mp3",
-      "audio/wav": ".wav",
-      "audio/ogg": ".ogg",
-      "audio/x-wav": ".wav",
-      "application/octet-stream": ".bin",
-    };
-
-    // Try to get extension from URL
-    let ext = extMap[contentType];
-    if (!ext) {
-      const urlPath = new URL(url).pathname;
-      const urlExt = path.extname(urlPath).toLowerCase();
-      ext = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".mp4", ".webm", ".mov", ".mp3", ".wav", ".ogg"].includes(urlExt) ? urlExt : ".bin";
-    }
-
-    // Generate unique filename
-    const filename = `${Date.now()}_${crypto.randomBytes(6).toString("hex")}${ext}`;
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    const filePath = path.join(uploadDir, filename);
-
-    // Ensure upload directory exists
-    await mkdir(uploadDir, { recursive: true });
-
-    // Write file
-    await writeFile(filePath, buffer);
-
-    // Return local API path
-    return `/api/media/local/${filename}`;
-  } catch (e) {
-    console.error("downloadMedia error:", e.message);
-    // Fall back to original URL if download fails
-    return url;
-  }
-}
-
-/**
- * Download all media URLs from a KIE resultJson or outputs array.
- * Returns the first downloaded local URL (for backward compat with outputUrl field).
- */
-export async function downloadAllMedia(urls) {
-  if (!urls || !Array.isArray(urls) || urls.length === 0) return null;
-
-  const downloaded = [];
-  for (const url of urls) {
-    const local = await downloadMedia(url);
-    if (local) downloaded.push(local);
-  }
-
-  return downloaded.length > 0 ? downloaded[0] : null;
-}
+// Phase 4B Task 4: the storage-related exports that used to live here
+// (downloadMedia, downloadAllMedia — Task 1's back-compat shims over
+// src/lib/storage/ingest.js's ingestFromUrl) were deleted once the last two
+// call sites (src/lib/generation-webhook.js, src/lib/job-runner.js) moved to
+// calling ingestFromUrl directly. extractKieResults is unrelated to storage
+// (pure KIE callback payload parsing) and stays — src/lib/generation-webhook.js
+// still imports it from here.
 
 /**
  * Parse KIE callback format and extract result URLs.

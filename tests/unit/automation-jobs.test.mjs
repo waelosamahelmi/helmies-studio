@@ -20,6 +20,7 @@ vi.mock("@/lib/job-queue", () => ({
   completeJob: vi.fn(),
   failJob: vi.fn(),
   findTimedOutJobs: vi.fn(),
+  pruneTerminalJobs: vi.fn(),
 }));
 
 vi.mock("@/lib/wallet", () => ({
@@ -36,12 +37,12 @@ vi.mock("@/lib/providers", () => ({
   getProvider: vi.fn(),
 }));
 
-vi.mock("@/lib/media-download", () => ({
-  downloadAllMedia: vi.fn(),
+vi.mock("@/lib/storage/ingest", () => ({
+  ingestFromUrl: vi.fn(),
 }));
 
 import prisma from "@/lib/prisma";
-import { failJob, findTimedOutJobs } from "@/lib/job-queue";
+import { failJob, findTimedOutJobs, pruneTerminalJobs } from "@/lib/job-queue";
 import { releaseReservation, refundCredits, sweepExpiredReservations } from "@/lib/wallet";
 import { sweepTimedOutJobs } from "@/lib/job-runner";
 import { runAutomation } from "@/lib/automation";
@@ -196,6 +197,7 @@ describe("runAutomation — jobs leg wiring (Task 7)", () => {
     prisma.generation.findUnique.mockResolvedValue(null);
     findTimedOutJobs.mockResolvedValue([]);
     sweepExpiredReservations.mockResolvedValue({ released: 0, settled: 0, skipped: 0 });
+    pruneTerminalJobs.mockResolvedValue({ deleted: 0 });
   });
 
   it("calls sweepTimedOutJobs and surfaces its result under `jobs`, alongside the existing three legs", async () => {

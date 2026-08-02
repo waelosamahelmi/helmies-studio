@@ -56,7 +56,13 @@ vi.mock("@/lib/quality-gate", () => ({
   validateGenerationOutput: vi.fn(async () => ({ valid: true })),
   logQualityGate: vi.fn(),
 }));
-vi.mock("@/lib/media-storage", () => ({ storeMedia: vi.fn(async (u) => u) }));
+vi.mock("@/lib/storage/ingest", () => ({
+  // ingestFromUrl's return shape is the richer { url, key, bytes, sha256 }
+  // (Phase 4B Task 4) — generation-handler.js only uses .url; this
+  // pass-through mock mirrors storeMedia's old pass-through-the-url test
+  // double exactly.
+  ingestFromUrl: vi.fn(async (u) => ({ url: u, key: "k", bytes: 1, sha256: "a".repeat(64) })),
+}));
 vi.mock("@/lib/prompt-engine", () => ({
   compilePrompt: vi.fn(async ({ rawPrompt }) => ({
     finalPrompt: rawPrompt,

@@ -2,7 +2,7 @@ import prisma from "@/lib/prisma";
 import { generateImage, generateI2I, generateVideo, generateI2V, generateAudio } from "@/lib/generation";
 import { resolveProvider, resolveProviderWithFallback, brandError, logProviderError } from "@/lib/providers";
 import { estimateCredits } from "@/lib/pricing-engine";
-import { storeMedia } from "@/lib/media-storage";
+import { ingestFromUrl } from "@/lib/storage/ingest";
 import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt } from "@/lib/director-planner";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
@@ -136,7 +136,7 @@ async function executeShotImage(shot, pipeline, brief) {
 
     if (imageUrl) {
       try {
-        storedUrl = await storeMedia(imageUrl);
+        ({ url: storedUrl } = await ingestFromUrl(imageUrl));
       } catch {
         storedUrl = `/api/media/proxy?url=${encodeURIComponent(imageUrl)}`;
       }
@@ -205,7 +205,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
 
     if (videoUrl) {
       try {
-        storedUrl = await storeMedia(videoUrl);
+        ({ url: storedUrl } = await ingestFromUrl(videoUrl));
       } catch {
         storedUrl = `/api/media/proxy?url=${encodeURIComponent(videoUrl)}`;
       }
@@ -262,7 +262,7 @@ async function executeShotAudio(shot, pipeline, brief) {
 
     if (audioUrl) {
       try {
-        storedUrl = await storeMedia(audioUrl);
+        ({ url: storedUrl } = await ingestFromUrl(audioUrl));
       } catch {
         storedUrl = `/api/media/proxy?url=${encodeURIComponent(audioUrl)}`;
       }
