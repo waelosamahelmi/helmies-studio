@@ -12,11 +12,17 @@
 // docs/runbook-backup.md for the timer text and the rehearsed restore proof.
 //
 // Runs under plain `node` (not bundled by Next), so every local import is a
-// RELATIVE path with an explicit ".js"/".mjs" extension and env vars are
-// loaded via "dotenv/config" explicitly — same convention as
-// scripts/worker.mjs and scripts/reconcile-credits.mjs (see worker.mjs's
+// RELATIVE path with an explicit ".js"/".mjs" extension — same convention
+// as scripts/worker.mjs and scripts/reconcile-credits.mjs (see worker.mjs's
 // header for the full rationale: Node has no knowledge of the app's "@/..."
-// bundler alias).
+// bundler alias). Env vars are loaded from a path relative to THIS SCRIPT
+// FILE (fileURLToPath(import.meta.url)), never process.cwd() — a bare
+// `import "dotenv/config"` is cwd-relative, so running this script from any
+// directory other than the repo root (e.g. `cd /root/backups/db && node
+// /root/helmies-studio/scripts/backup-db.mjs`) would silently see an empty
+// environment. restore-db.mjs shares this same fix for the identical
+// reason, but there it is safety-critical (a missing DATABASE_URL there
+// used to fail its production-host guard OPEN, not just fail to back up).
 //
 // SAFETY: reads DATABASE_URL straight from the environment, same as
 // scripts/reconcile-credits.mjs — on the production server that IS the
@@ -30,11 +36,14 @@
 // argv is visible to any other local user via `ps`/`/proc/<pid>/cmdline`;
 // env vars handed directly to a child process are not.
 
-import "dotenv/config";
+import { config as loadDotenv } from "dotenv";
 import { spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+loadDotenv({ path: path.join(__dirname, "..", ".env") });
 
 export const DEFAULT_BACKUP_DIR = "/root/backups/db";
 export const DEFAULT_RETENTION_DAYS = 14;
@@ -85,6 +94,19 @@ export function pgEnvFromUrl(urlStr) {
 
 // ── The actual dump (child process — not unit-tested directly; exercised by
 // the rehearsal in docs/runbook-backup.md against the real test container) ──
+//
+// Resolves only once BOTH the child process has closed AND the destination
+// WriteStream has actually finished flushing to disk — `child.on("close")`
+// alone does NOT guarantee that: it fires once the child's own stdio
+// descriptors close, which can race ahead of a piped WriteStream's buffered
+// writes landing on disk (more likely on a slow disk or a large dump). A
+// caller that trusted "close" alone could statSync() the file before the
+// last bytes were actually written, under-reporting its size — the
+// size===0 branch in backupDatabase() below would then delete a real,
+// merely-not-yet-fully-flushed dump. `out` also gets its own "error"
+// handler (e.g. ENOSPC/EACCES) — Node throws an uncaught exception for an
+// "error" event with no listener, which an earlier version of this
+// function left unhandled entirely.
 function runPgDump(env, destPath, { bin = process.env.PG_DUMP_BIN || "pg_dump" } = {}) {
   return new Promise((resolve, reject) => {
     // shell:true so a `.cmd`/`.bat` shim (e.g. a Windows dev box with no
@@ -97,16 +119,41 @@ function runPgDump(env, destPath, { bin = process.env.PG_DUMP_BIN || "pg_dump" }
       shell: true,
     });
     const out = createWriteStream(destPath);
-    child.stdout.pipe(out);
+
     let stderr = "";
+    let settled = false;
+    let childCode = null;
+    let childClosed = false;
+    let outFinished = false;
+
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    };
+    const maybeResolve = () => {
+      if (settled || !childClosed || !outFinished) return;
+      settled = true;
+      if (childCode === 0) resolve();
+      else reject(new Error(`pg_dump exited with code ${childCode}${stderr ? `: ${stderr.trim()}` : ""}`));
+    };
+
     child.stderr.on("data", (d) => {
       stderr += d.toString();
     });
-    child.on("error", reject);
+    child.on("error", fail);
+    out.on("error", fail);
     child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`pg_dump exited with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
+      childCode = code;
+      childClosed = true;
+      maybeResolve();
     });
+    out.on("finish", () => {
+      outFinished = true;
+      maybeResolve();
+    });
+
+    child.stdout.pipe(out);
   });
 }
 
