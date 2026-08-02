@@ -13,6 +13,12 @@ vi.mock("@/lib/providers", () => ({
   submitOnly: vi.fn(),
   pollProviderResult: vi.fn(),
   getProvider: vi.fn(),
+  // Real implementation kept (not mocked) — template-runner.js's
+  // enqueueStep uses this to normalize ModelPricing.providerName ("Alibaba")
+  // into the lowercase adapter key job-runner.js's own real getProvider
+  // indexes by; this test wants that normalization to actually happen, not
+  // be stubbed away.
+  resolveAdapterKey: (name) => (String(name || "").toLowerCase().includes("alibaba") ? "alibaba" : "kie"),
 }));
 
 vi.mock("@/lib/storage/ingest", () => ({

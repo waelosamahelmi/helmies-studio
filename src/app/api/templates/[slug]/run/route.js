@@ -16,7 +16,7 @@ export async function POST(req, { params }) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     verifyOrigin(req);
 
-    const { slug } = params;
+    const { slug } = await params;
     const body = await req.json().catch(() => ({}));
 
     const result = await startTemplateRun({ userId: user.id, slug, inputs: body?.inputs || {} });

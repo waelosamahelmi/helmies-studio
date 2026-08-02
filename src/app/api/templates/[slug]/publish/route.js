@@ -20,7 +20,7 @@ export async function POST(req, { params }) {
     await requireAdmin(req);
     verifyOrigin(req);
 
-    const { slug } = params;
+    const { slug } = await params;
     const template = await prisma.template.findUnique({ where: { slug } });
     if (!template) return NextResponse.json({ error: "Template not found" }, { status: 404 });
 

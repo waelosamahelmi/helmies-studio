@@ -1008,6 +1008,18 @@
     "notes": "GET with a side effect: calls createTemplatePurchase() (idempotent upsert) after verifying the Stripe session's metadata.userId matches the caller. Same GET-mutates-state pattern flagged on templates/[slug]/apply, though this one is more defensible as a post-Stripe-redirect landing endpoint than a directly client-triggerable action. Task 3 (final round): verifyOrigin wired on the GET handler itself, same rationale as templates/[slug]/apply — this GET has a real side effect (createTemplatePurchase)."
   },
   {
+    "path": "/api/templates/runs/[runId]",
+    "file": "src/app/api/templates/runs/[runId]/route.js",
+    "methods": [
+      "GET"
+    ],
+    "auth": "user",
+    "originCheck": false,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "Phase 6 Task 5. Read-only poll of a TemplateRun's status/per-step state, scoped to the caller (a run owned by someone else 404s the same as one that doesn't exist)."
+  },
+  {
     "path": "/api/templates",
     "file": "src/app/api/templates/route.js",
     "methods": [

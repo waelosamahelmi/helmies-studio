@@ -42,6 +42,7 @@ import { topoSort } from "./template-graph.js";
 import { reserveCredits, settleReservation } from "./wallet.js";
 import { enqueueJob } from "./job-queue.js";
 import { releaseOrRefund } from "./job-runner.js";
+import { resolveAdapterKey } from "./providers.js";
 
 const DEFAULT_WEBHOOK_URL = () =>
   `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
@@ -127,7 +128,19 @@ async function enqueueStep({ runId, userId, step, model, params }) {
     userId,
     idempotencyKey: `template-run-${runId}-${step.id}`,
     payload,
-    providerName: model.providerName,
+    // resolveAdapterKey normalizes ModelPricing.providerName (e.g. the
+    // Alibaba catalog's exact display casing "Alibaba" — see
+    // src/lib/alibaba-catalog.js) to the lowercase adapter key
+    // src/lib/providers.js's PROVIDERS map/getProvider actually indexes by
+    // ("alibaba"/"kie"). Passing the raw, unnormalized display name here
+    // (as an earlier version of this function did) makes getProvider's
+    // direct `PROVIDERS[name]` lookup miss and silently fall back to
+    // DEFAULT_PROVIDER ("kie") — the exact same normalization
+    // generate/async/route.js gets via resolveProvider(modelId)'s own
+    // internal resolveAdapterKey call; this is the cheaper direct call
+    // recommended for a caller (like this one) that already has the
+    // ModelPricing row in hand, per that function's own doc comment.
+    providerName: resolveAdapterKey(model.providerName),
     endpoint,
   });
 
