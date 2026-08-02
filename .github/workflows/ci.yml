@@ -70,7 +70,11 @@ jobs:
       - run: npx prisma migrate deploy
         env:
           DATABASE_URL: postgresql://postgres:test@localhost:55432/test
-      - run: npx playwright install --with-deps chromium
+      # Phase 8 Task B2 — the browser matrix (chromium, firefox, webkit;
+      # playwright.config.mjs's three projects all depend on the same
+      # "setup" project, so this one `npm run test:e2e` invocation runs
+      # every spec on all three engines without a build-matrix job).
+      - run: npx playwright install --with-deps chromium firefox webkit
       # Mirrors playwright.config.mjs's webServerEnv (the app/worker
       # webServer entries hardcode these same values regardless of this
       # step's env, but setting them here keeps this job an accurate,
