@@ -1,10 +1,18 @@
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
-import crypto from "crypto";
+// Back-compat shim (Phase 4B Task 1) for the storage-related exports.
+// downloadAllMedia's real per-url download now goes through
+// src/lib/storage/ingest.js's ingestFromUrl — this file preserves the OLD
+// downloadAllMedia return shape (the first successfully-downloaded local
+// url, or null) so the two pre-existing call sites
+// (src/lib/generation-webhook.js, src/lib/job-runner.js) need no change in
+// this task. extractKieResults is unrelated to storage (pure payload
+// parsing) and is untouched. Phase 4B Task 4 switches the two call sites to
+// ingestFromUrl directly and deletes downloadMedia/downloadAllMedia from
+// this file — extractKieResults stays.
+import { ingestFromUrl } from "./storage/ingest.js";
 
 /**
  * Download a media file from a URL to local storage.
- * Returns the local path (/api/media/local/{filename}) or the original URL if download fails.
+ * Returns the local url (/api/media/local/{filename}) or the original URL if download fails.
  */
 export async function downloadMedia(url) {
   if (!url || typeof url !== "string") return null;
@@ -13,54 +21,8 @@ export async function downloadMedia(url) {
   if (url.startsWith("/api/media/local/")) return url;
 
   try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(60000),
-    });
-
-    if (!res.ok) return url; // Fall back to original URL
-
-    const contentType = res.headers.get("content-type") || "";
-    const buffer = Buffer.from(await res.arrayBuffer());
-
-    // Determine extension from content-type
-    const extMap = {
-      "image/jpeg": ".jpg",
-      "image/jpg": ".jpg",
-      "image/png": ".png",
-      "image/gif": ".gif",
-      "image/webp": ".webp",
-      "image/svg+xml": ".svg",
-      "video/mp4": ".mp4",
-      "video/webm": ".webm",
-      "video/quicktime": ".mov",
-      "audio/mpeg": ".mp3",
-      "audio/wav": ".wav",
-      "audio/ogg": ".ogg",
-      "audio/x-wav": ".wav",
-      "application/octet-stream": ".bin",
-    };
-
-    // Try to get extension from URL
-    let ext = extMap[contentType];
-    if (!ext) {
-      const urlPath = new URL(url).pathname;
-      const urlExt = path.extname(urlPath).toLowerCase();
-      ext = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".mp4", ".webm", ".mov", ".mp3", ".wav", ".ogg"].includes(urlExt) ? urlExt : ".bin";
-    }
-
-    // Generate unique filename
-    const filename = `${Date.now()}_${crypto.randomBytes(6).toString("hex")}${ext}`;
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    const filePath = path.join(uploadDir, filename);
-
-    // Ensure upload directory exists
-    await mkdir(uploadDir, { recursive: true });
-
-    // Write file
-    await writeFile(filePath, buffer);
-
-    // Return local API path
-    return `/api/media/local/${filename}`;
+    const { url: storedUrl } = await ingestFromUrl(url);
+    return storedUrl;
   } catch (e) {
     console.error("downloadMedia error:", e.message);
     // Fall back to original URL if download fails

@@ -1,0 +1,31 @@
+// Storage driver selection (Phase 4B Task 1). One env var, STORAGE_DRIVER,
+// picks the active backend everywhere media is read or written —
+// storage/ingest.js, the serving route (src/app/api/media/local/[name]/route.js,
+// Task 3), and anything else that calls getDriver(). "local" (today's only
+// backend: public/media + public/uploads on disk) is the default so an
+// unset STORAGE_DRIVER changes nothing about current production behavior.
+//
+// Plain-node safe: reachable from scripts/worker.mjs via
+// src/lib/job-runner.js -> storage/ingest.js -> here (Task 4) — no "@/"
+// alias, no extensionless relative import.
+import * as localDriver from "./local-driver.js";
+
+// Driver contract every backend implements identically:
+//   putObject(key, buffer, contentType) -> { key, url }
+//   getObject(key)                      -> { buffer, contentType } | null
+//   deleteObject(key)                   -> boolean
+//   exists(key)                         -> boolean
+//   getSignedUrl(key, ttlSeconds)       -> string
+export function getDriver() {
+  const which = (process.env.STORAGE_DRIVER || "local").toLowerCase();
+  if (which === "local") return localDriver;
+  // The S3 driver lands in Phase 4B Task 2 and this branch grows a
+  // `if (which === "s3") return s3Driver;` case then — until it does,
+  // STORAGE_DRIVER=s3 is not yet a real option, so fail loudly rather than
+  // silently falling back to local (which would write/read the wrong place).
+  throw new Error(
+    `Unknown STORAGE_DRIVER "${which}" — only "local" is available until the S3 driver lands.`
+  );
+}
+
+export { localDriver };
