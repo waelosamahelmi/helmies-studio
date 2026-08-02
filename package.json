@@ -17,6 +17,7 @@
     "check:dead-code": "node scripts/dead-code.mjs",
     "check:env": "node scripts/check-env.mjs",
     "reconcile": "node scripts/reconcile-credits.mjs",
+    "adopt-legacy-generations": "node scripts/adopt-legacy-generations.mjs",
     "worker": "node scripts/worker.mjs"
   },
   "dependencies": {
