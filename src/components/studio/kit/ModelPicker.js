@@ -55,9 +55,10 @@ export default function ModelPicker({
 
     const needle = q.trim().toLowerCase();
     if (needle) {
-      out = out.filter((m) =>
-        `${m.displayName || m.name || m.id} ${m.provider || ""}`.toLowerCase().includes(needle),
-      );
+      // The catalog hides which upstream provider serves a model (URGENT
+      // fix — see model-catalog.js's serializeCatalogModel), so `provider`
+      // is never populated here anymore; search by name only.
+      out = out.filter((m) => `${m.displayName || m.name || m.id}`.toLowerCase().includes(needle));
     }
 
     if (sort === "cheap") {
@@ -152,7 +153,6 @@ export default function ModelPicker({
                 {m.credits ? `${m.credits} cr` : "—"}
               </span>
               <span className="st-model__meta">
-                <span>{m.provider || "—"}</span>
                 {spec.map((c) => <span key={c}>{c}</span>)}
               </span>
             </button>

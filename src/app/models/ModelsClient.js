@@ -44,7 +44,10 @@ function shape(row) {
   const model = {
     id,
     name: row.displayName || id,
-    provider: row.provider || "Unknown provider",
+    // The public catalog no longer exposes which upstream provider serves a
+    // model (URGENT fix — model-catalog.js's serializeCatalogModel strips
+    // providerName/provider for non-admin callers), so row.provider is
+    // always absent here now; nothing in this component should render it.
     description: row.description || "",
     capability: row.capability || row.modelType || "",
     modelType: row.modelType || "",
@@ -131,7 +134,6 @@ export default function ModelsClient() {
       return (
         m.name.toLowerCase().includes(q) ||
         m.id.toLowerCase().includes(q) ||
-        m.provider.toLowerCase().includes(q) ||
         m.capability.toLowerCase().includes(q)
       );
     });
@@ -165,13 +167,13 @@ export default function ModelsClient() {
       <div className="pg-filters">
         <div className="pg-search">
           <IcSearch />
-          <label className="hs-sr" htmlFor="cat-q">Search the catalog by model, provider or capability</label>
+          <label className="hs-sr" htmlFor="cat-q">Search the catalog by model or capability</label>
           <input
             id="cat-q"
             className="hs-input"
             type="search"
             value={query}
-            placeholder="Search model, provider or capability"
+            placeholder="Search model or capability"
             onChange={(e) => setQuery(e.target.value)}
             disabled={loading}
           />
@@ -254,7 +256,6 @@ export default function ModelsClient() {
               <div className="pg-cat__top">
                 <div>
                   <h3 className="pg-cat__name">{m.name}</h3>
-                  <p className="pg-cat__who">{m.provider}</p>
                 </div>
                 <span className="pg-cat__cr">
                   {m.credits === null ? "—" : `${m.credits} cr`}
@@ -287,8 +288,6 @@ export default function ModelsClient() {
                 {m.maxImages > 0 && <span className="hs-badge">{m.maxImages} refs</span>}
                 {m.maxOutputs > 1 && <span className="hs-badge">{m.maxOutputs}/run</span>}
               </div>
-
-              <p className="hs-mono hs-mute" style={{ fontSize: 10 }}>{m.id}</p>
             </Link>
           ))}
         </div>

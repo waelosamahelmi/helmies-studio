@@ -831,7 +831,7 @@ export default function WorkflowStudio({ onCreditsChanged }) {
                     <option value="">Engine default</option>
                     {stepModels.map((m) => (
                       <option key={m.id} value={m.id}>
-                        {m.displayName || m.name} — {m.provider}
+                        {m.displayName || m.name}
                       </option>
                     ))}
                   </select>

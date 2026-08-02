@@ -86,11 +86,185 @@ export function validateModelInput(schema, params = {}) {
   return errors;
 }
 
-function titleFromSlug(slug) {
-  return slug.split(/[\/-]/).filter(Boolean).map((part) => /^v?\d/.test(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+// ── modelType single source of truth (URGENT production fix) ──────────────
+// ModelPricing.modelType and ModelPricing.capability used to be computed
+// independently — kie-sync.js's own inferModelType(path) guessed a modelType
+// straight from the URL text, completely separately from the capability
+// inferKieModelFromUrl (below) derived from that SAME text, and the two
+// disagreed constantly (e.g. every Bytedance Seedance model landed with
+// capability="video" but modelType="image", because inferModelType's regex
+// list had no case for "seedance" and fell through to its "image" default).
+// Every place that wrote modelType now MUST go through this one function
+// instead of guessing its own.
+//
+// "image" and "video" ARE real, first-class capability values here, not a
+// broken fallback to paper over — a read-only preview of this mapping
+// against the actual production catalog (before the first version of this
+// fix shipped) found that treating them as unmapped/uncategorized would
+// have hidden 28 genuinely working models (14 image, 14 video) that KIE's
+// sync legitimately files under the coarse capability with no more specific
+// hyphenated direction available (modalitiesForCapability, below, already
+// had entries for both, independently confirming they're an intentional,
+// supported value, not an artifact of the bug this fix targets). A
+// capability with NO entry here at all (including null/undefined, and
+// anything else unrecognized, e.g. the sync's own last-resort "media")
+// still returns null — callers must treat that as UNCATEGORIZED (never
+// displayed to end users, see serializeCatalogModel/getCatalogModels in
+// model-catalog.js) UNLESS inferCapabilityFromRow (below) can recover a
+// real capability for it from data already on the row.
+export const CAPABILITY_TO_MODEL_TYPE = {
+  "text-to-image": "image",
+  "image-to-image": "i2i",
+  "text-to-video": "video",
+  "image-to-video": "i2v",
+  "video-to-video": "v2v",
+  "reference-to-video": "video",
+  "avatar-video": "lipsync",
+  "text-to-speech": "audio",
+  audio: "audio",
+  "image-upscale": "i2i",
+  "video-upscale": "v2v",
+  "background-removal": "i2i",
+  image: "image",
+  video: "video",
+};
+
+export const UNCATEGORIZED_MODEL_TYPE = "uncategorized";
+
+export function modelTypeForCapability(capability) {
+  if (!capability) return null;
+  return CAPABILITY_TO_MODEL_TYPE[capability] || null;
 }
 
-function inferCapability(path) {
+// ── Display names ───────────────────────────────────────────────────────────
+// KIE's sitemap gives us a URL slug, not a clean product name, so every KIE-
+// synced model's displayName was auto-titled from that slug. The naive
+// titleFromSlug this replaces treated "/" and "-" identically and never
+// re-joined split version numbers, which is how "bytedance/seedance-1-5-pro"
+// became "Bytedance Seedance 1 5 Pro" (leaking the upstream vendor AND
+// splitting "1.5" into two words) and "flux-2/flex-text-to-image" became
+// "Flux 2 Flex Text To Image" (redundantly repeating the capability the
+// model is already filed under). slugToTitle fixes both: it drops a leading
+// vendor/company folder segment (a small, explicit, extend-as-you-find-them
+// set — NOT a blanket drop, since plenty of folder segments are the actual
+// model brand, e.g. "wan/2-7-image-to-video" must keep "Wan"), re-joins
+// numeric run-ons into dotted version numbers, and strips a trailing phrase
+// that just repeats the model's own capability.
+const VENDOR_FOLDER_NAMES = new Set(["bytedance"]);
+
+// Worst-offender exact overrides, keyed by either the full modelId or just
+// its final path segment (so they still match whether or not a vendor
+// folder prefixes the real id). Add to this as more bad names turn up.
+export const DISPLAY_NAME_OVERRIDES = {
+  "generate-4-o-image": "GPT-4o Image",
+};
+
+const CAPABILITY_SUFFIX_WORDS = {
+  "text-to-image": ["text", "to", "image"],
+  "image-to-image": ["image", "to", "image"],
+  "text-to-video": ["text", "to", "video"],
+  "image-to-video": ["image", "to", "video"],
+  "video-to-video": ["video", "to", "video"],
+  "reference-to-video": ["reference", "to", "video"],
+  "text-to-speech": ["text", "to", "speech"],
+  "image-upscale": ["image", "upscale"],
+  "video-upscale": ["video", "upscale"],
+  "background-removal": ["background", "removal"],
+  "avatar-video": ["avatar", "video"],
+};
+
+function titleCaseToken(token) {
+  if (/^[\d.]+$/.test(token)) return token; // pure number / version ("1.5") — leave as-is
+  return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
+}
+
+export function slugToTitle(rawId, { capability } = {}) {
+  if (!rawId) return rawId;
+  const segments = String(rawId).split("/").filter(Boolean);
+  const basename = segments[segments.length - 1];
+
+  if (DISPLAY_NAME_OVERRIDES[rawId]) return DISPLAY_NAME_OVERRIDES[rawId];
+  if (DISPLAY_NAME_OVERRIDES[basename]) return DISPLAY_NAME_OVERRIDES[basename];
+
+  // Drop a leading vendor/company folder segment — it duplicates the
+  // upstream provider identity we deliberately hide elsewhere (see
+  // toPublicModelId) and was never part of the model's own name.
+  const kept = segments.length > 1 && VENDOR_FOLDER_NAMES.has(segments[0].toLowerCase())
+    ? segments.slice(1)
+    : segments;
+
+  let tokens = kept.join("-").split("-").filter(Boolean);
+
+  // Re-join tokens a hyphen split apart that read as one unit: "1","5" -> a
+  // dotted version "1.5"; "4","o" -> the compact suffix "4o"; "v2","1" -> a
+  // dotted "v2.1".
+  const merged = [];
+  for (const tok of tokens) {
+    const prev = merged[merged.length - 1];
+    if (/^\d+$/.test(tok) && prev && /^[\d.]+$/.test(prev)) {
+      merged[merged.length - 1] = `${prev}.${tok}`;
+    } else if (/^[a-z]$/i.test(tok) && prev && /^\d+$/.test(prev)) {
+      merged[merged.length - 1] = `${prev}${tok.toLowerCase()}`;
+    } else if (/^v\d+$/i.test(prev || "") && /^\d+$/.test(tok)) {
+      merged[merged.length - 1] = `${prev}.${tok}`;
+    } else {
+      merged.push(tok);
+    }
+  }
+  tokens = merged;
+
+  // Strip a trailing phrase that just repeats the capability this model is
+  // already categorized under (e.g. "... Text To Image" on an image model).
+  const suffixWords = capability && CAPABILITY_SUFFIX_WORDS[capability];
+  if (suffixWords && tokens.length > suffixWords.length) {
+    const tail = tokens.slice(-suffixWords.length).map((t) => t.toLowerCase());
+    if (tail.join(" ") === suffixWords.join(" ")) {
+      tokens = tokens.slice(0, -suffixWords.length);
+    }
+  }
+
+  return tokens.map(titleCaseToken).join(" ");
+}
+
+// ── Hiding the upstream provider from end users ────────────────────────────
+// The real modelId is the routing key (ModelPricing.modelId is what every
+// lookup — pricing, provider resolution, job dispatch — is keyed on), so it
+// can never change. Some of those real ids bake the upstream vendor straight
+// in as a namespacing prefix (Alibaba's sync writes "alibaba:qwen-image-max"
+// specifically so it can never collide with a KIE model of the same name).
+// toPublicModelId strips that prefix for anything the public catalog
+// response hands back to a browser; resolveModelPricingRow (below) is the
+// other half — it accepts either form back from a client and always
+// resolves to the real row, so stripping the prefix here never breaks
+// routing.
+export function toPublicModelId(modelId, providerName) {
+  if (!modelId || !providerName) return modelId;
+  const prefix = `${providerName}:`.toLowerCase();
+  return modelId.toLowerCase().startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
+}
+
+// Resolves a model id a client handed back to the real ModelPricing row.
+// Exact match is tried first — the overwhelming majority of calls (every
+// internal id, and every already-real id) resolve here with the exact same
+// query this replaced, so nothing already working changes. Only on a miss
+// do we look for a row whose REAL modelId ends with ":<candidateId>", which
+// is how a provider-prefixed real id (e.g. "alibaba:qwen-image-max") maps
+// back from the public form toPublicModelId hands out ("qwen-image-max").
+// `prisma` is passed in (not imported) so this stays a pure, dependency-free
+// module usable from every caller's own already-mocked-in-tests client.
+export async function resolveModelPricingRow(prisma, candidateId, selectOpt) {
+  if (!candidateId) return null;
+  const args = selectOpt ? { select: selectOpt } : {};
+  const exact = await prisma.modelPricing.findUnique({ where: { modelId: candidateId }, ...args });
+  if (exact) return exact;
+  try {
+    return await prisma.modelPricing.findFirst({ where: { modelId: { endsWith: `:${candidateId}` } }, ...args });
+  } catch {
+    return null;
+  }
+}
+
+export function inferCapability(path) {
   if (/text-to-image|text2image/.test(path)) return "text-to-image";
   if (/image-to-image|image-edit|edit-image|remix|character-edit/.test(path)) return "image-to-image";
   if (/image-to-video/.test(path)) return "image-to-video";
@@ -105,6 +279,61 @@ function inferCapability(path) {
   if (/image|imagen|seedream|flux|ideogram|qwen|recraft|gpt-image|nano-banana|z-image/.test(path)) return "image";
   if (/video|kling|wan|seedance|hailuo|pixverse|happyhorse|runway|veo/.test(path)) return "video";
   return "media";
+}
+
+// ── Recovering a capability the row never got, or got as something this
+// mapping doesn't recognize ("media") ──────────────────────────────────────
+// A null/unmapped capability must NOT be silently hidden if it can be
+// recovered from data already sitting on the row — hiding a genuinely
+// working model is a worse regression than the miscategorization bug this
+// whole fix targets (see the production preview numbers cited on
+// CAPABILITY_TO_MODEL_TYPE's header: 28 of the models that mapping alone
+// would have hidden were real image/video models using the coarse
+// capability). Tried in order, each strictly more speculative than the last:
+//
+//   1. outputModalities/inputModalities — a structured, reliable signal
+//      (what actually comes out of a generation is definitional, not a
+//      guess). Only trusted when unambiguous: a "video" output with BOTH
+//      "image" and "video" in its inputs could be either reference-to-video
+//      or video-to-video — modalitiesForCapability (above) gives both an
+//      identical-shaped signature, so that specific case is left alone
+//      rather than guessed.
+//   2. the SAME text-based inferCapability (above) already trusted to
+//      assign every OTHER synced model its capability in the first
+//      place — run against endpoint/providerModelId/modelId. This is not a
+//      new guess introduced to paper over missing data; it's the existing,
+//      already-relied-on mechanism, applied to a row that fell through it
+//      (e.g. added via some other path, or lost its capability to a
+//      migration/manual edit) without ever getting one.
+//
+// A row where both signals are absent or still ambiguous keeps returning
+// null — genuinely unidentifiable, not a recoverable gap.
+function inferCapabilityFromModalities(inputModalities, outputModalities) {
+  const out = new Set((Array.isArray(outputModalities) ? outputModalities : []).map(String));
+  const inp = new Set((Array.isArray(inputModalities) ? inputModalities : []).map(String));
+  if (out.size !== 1) return null;
+  const [outType] = out;
+  if (outType === "image") return inp.has("image") ? "image-to-image" : "text-to-image";
+  if (outType === "video") {
+    if (inp.has("image") && inp.has("video")) return null; // ambiguous: reference-to-video vs video-to-video
+    if (inp.has("video")) return "video-to-video";
+    if (inp.has("image")) return "image-to-video";
+    return "text-to-video";
+  }
+  if (outType === "audio") return "audio";
+  return null;
+}
+
+export function inferCapabilityFromRow(row) {
+  const fromModalities = inferCapabilityFromModalities(row?.inputModalities, row?.outputModalities);
+  if (fromModalities) return fromModalities;
+  const text = row?.endpoint || row?.providerModelId || row?.modelId;
+  if (!text) return null;
+  const guessed = inferCapability(String(text).toLowerCase());
+  // inferCapability's own last-resort fallback is literally "media" when
+  // it can't tell anything at all from the text either — that's the same
+  // "genuinely can't tell" signal as everywhere else, not a usable answer.
+  return guessed === "media" ? null : guessed;
 }
 
 function modalitiesForCapability(capability) {
@@ -142,7 +371,7 @@ export function inferKieModelFromUrl(url) {
     }
     const capability = inferCapability(modelId);
     const [inputModalities, outputModalities] = modalitiesForCapability(capability);
-    return { modelId, providerModelId: modelId, endpoint: modelId, displayName: titleFromSlug(modelId), capability, inputModalities, outputModalities, sourceUrl: url };
+    return { modelId, providerModelId: modelId, endpoint: modelId, displayName: slugToTitle(modelId, { capability }), capability, inputModalities, outputModalities, sourceUrl: url };
   }
   return null;
 }

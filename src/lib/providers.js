@@ -7,6 +7,7 @@
 // were changed from the alias form to resolve identically in both contexts.
 import prisma from "./prisma.js";
 import { formatAlibabaPayload, getAlibabaApiPath } from "./alibaba-provider-core.mjs";
+import { resolveModelPricingRow } from "./model-catalog-core.mjs";
 
 const BRANDED_ERRORS = {
   rate_limit: "Too many requests. Please wait a moment and try again.",
@@ -171,7 +172,11 @@ export function getActiveProviders() {
 
 export async function resolveProvider(modelId) {
   try {
-    const pricing = await prisma.modelPricing.findUnique({ where: { modelId } });
+    // resolveModelPricingRow tolerates the "public" (provider-prefix-
+    // stripped) id the catalog now hands out publicly — see its header
+    // comment in model-catalog-core.mjs — falling straight through to an
+    // exact match (this exact query, unchanged) for every already-real id.
+    const pricing = await resolveModelPricingRow(prisma, modelId);
     if (pricing?.providerName) {
       const name = resolveAdapterKey(pricing.providerName);
       const p = PROVIDERS[name];
@@ -504,7 +509,7 @@ export async function getProviderActivity() {
 export async function resolveProviderWithFallback(modelId) {
   const primary = await resolveProvider(modelId);
   const activity = await getProviderActivity();
-  const catalogModel = await prisma.modelPricing.findUnique({ where: { modelId }, select: { managedBySync: true } }).catch(() => null);
+  const catalogModel = await resolveModelPricingRow(prisma, modelId, { managedBySync: true }).catch(() => null);
   // Provider-native catalog endpoints are not portable across KIE and DashScope.
   // Keep legacy fallback behavior only for old provider-agnostic rows.
   const chain = catalogModel?.managedBySync ? [primary.name] : [primary.name, ...FALLBACK_CHAIN.filter((n) => n !== primary.name)];

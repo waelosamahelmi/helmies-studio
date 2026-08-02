@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { calculateProviderQuote, providerCostToCredits } from "@/lib/model-catalog-core.mjs";
+import { calculateProviderQuote, providerCostToCredits, resolveModelPricingRow } from "@/lib/model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
 const CREDIT_TO_EUR = 0.01;
@@ -24,7 +24,9 @@ async function resolveMarkup(providerName) {
 
 // ── Estimate credits for a task before execution ──
 export async function estimateCredits(tool, model, params = {}) {
-  const pricing = await prisma.modelPricing.findUnique({ where: { modelId: model } }).catch(() => null);
+  // Tolerant of the "public" (provider-prefix-stripped) id the catalog now
+  // hands back to clients — see resolveModelPricingRow's header.
+  const pricing = await resolveModelPricingRow(prisma, model).catch(() => null);
   if (pricing) {
     if (pricing.pricingRules) {
       try {
