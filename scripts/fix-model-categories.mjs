@@ -61,7 +61,7 @@ import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import prisma from "../src/lib/prisma.js";
-import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription, sanitizeDisplayName } from "../src/lib/model-catalog-core.mjs";
+import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription, sanitizeDisplayName, curatedSchemaEntry, schemaForModel } from "../src/lib/model-catalog-core.mjs";
 
 // Pure planning function — no DB access, so it's directly unit-testable
 // against plain row arrays (tests/unit/fix-model-categories.test.mjs).
@@ -70,6 +70,7 @@ export function planFixes(rows) {
   const displayNameFixes = [];
   const capabilityFixes = [];
   const descriptionFixes = [];
+  const schemaFixes = [];
   const needsAttention = [];
 
   for (const row of rows) {
@@ -166,12 +167,33 @@ export function planFixes(rows) {
         });
       }
     }
+
+    // EDITSv1 E1.2: rows synced before the curated-schema fix carry the
+    // generic `{ prompt }` audio schema, so the studios' schema-gated
+    // controls (style/title/instrumental/voice/stability…) never render
+    // for them. Rewrite the stored inputSchema for CURATED ids only —
+    // schemaForModel merges the curated fields over the generic default
+    // for the (possibly recovered) capability, exactly what a fresh sync
+    // would write. A model with no curated entry is NEVER touched (no
+    // invented parameters), which is also what keeps this idempotent: once
+    // the stored schema equals the curated merge, nothing is reported.
+    if (curatedSchemaEntry(row.modelId)) {
+      const expected = schemaForModel(row.modelId, capability || row.capability || "audio");
+      if (JSON.stringify(row.inputSchema ?? null) !== JSON.stringify(expected)) {
+        schemaFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          from: row.inputSchema ?? null,
+          to: expected,
+        });
+      }
+    }
   }
 
-  return { modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, needsAttention };
+  return { modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, needsAttention };
 }
 
-function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, needsAttention }, { apply }) {
+function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, needsAttention }, { apply }) {
   console.log("");
   if (capabilityFixes.length === 0) {
     console.log("capability: no null/unmapped rows were recoverable from modalities/endpoint.");
@@ -213,6 +235,17 @@ function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descript
   }
 
   console.log("");
+  if (schemaFixes.length === 0) {
+    console.log("inputSchema: every curated model's stored schema already matches its curated parameter set.");
+  } else {
+    console.log(`inputSchema: ${schemaFixes.length} curated row(s) ${apply ? "were" : "would be"} rewritten to their real parameter schema (curated fields over the generic default):`);
+    for (const f of schemaFixes) {
+      const fields = Object.keys(f.to?.fields || {}).join(", ");
+      console.log(`  ${f.modelId} (${f.providerName}): -> fields [${fields}]`);
+    }
+  }
+
+  console.log("");
   if (needsAttention.length === 0) {
     console.log("needs attention: none — every row's capability maps to a modelType (directly or via recovery).");
   } else {
@@ -233,6 +266,7 @@ export async function run({ apply, yes }) {
     select: {
       id: true, modelId: true, providerName: true, capability: true, modelType: true, displayName: true,
       description: true, inputModalities: true, outputModalities: true, endpoint: true, providerModelId: true,
+      inputSchema: true,
     },
   });
 
@@ -241,7 +275,7 @@ export async function run({ apply, yes }) {
   printPlan(plan, { apply });
 
   if (!apply) {
-    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), ${plan.displayNameFixes.length} displayName fix(es), and ${plan.descriptionFixes.length} description fix(es) above.`);
+    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), ${plan.displayNameFixes.length} displayName fix(es), ${plan.descriptionFixes.length} description fix(es), and ${plan.schemaFixes.length} inputSchema fix(es) above.`);
     return { ...plan, applied: 0 };
   }
 
@@ -250,6 +284,7 @@ export async function run({ apply, yes }) {
     ...plan.displayNameFixes.map((f) => f.modelId),
     ...plan.capabilityFixes.map((f) => f.modelId),
     ...plan.descriptionFixes.map((f) => f.modelId),
+    ...plan.schemaFixes.map((f) => f.modelId),
   ]);
 
   let applied = 0;
@@ -258,11 +293,13 @@ export async function run({ apply, yes }) {
     const nameFix = plan.displayNameFixes.find((f) => f.modelId === modelId);
     const capFix = plan.capabilityFixes.find((f) => f.modelId === modelId);
     const descFix = plan.descriptionFixes.find((f) => f.modelId === modelId);
+    const schemaFix = plan.schemaFixes.find((f) => f.modelId === modelId);
     const data = {};
     if (typeFix) data.modelType = typeFix.to;
     if (nameFix) data.displayName = nameFix.to;
     if (capFix) data.capability = capFix.to;
     if (descFix) data.description = descFix.to;
+    if (schemaFix) data.inputSchema = schemaFix.to;
     await prisma.modelPricing.update({ where: { modelId }, data });
     applied++;
   }
