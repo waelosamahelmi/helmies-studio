@@ -17,6 +17,7 @@ vi.mock("@/lib/providers", () => ({
   submitOnly: vi.fn(),
   pollProviderResult: vi.fn(),
   getProvider: vi.fn(),
+  brandForUser: (m) => m,
 }));
 
 import { submitOnly, pollProviderResult, getProvider } from "@/lib/providers";

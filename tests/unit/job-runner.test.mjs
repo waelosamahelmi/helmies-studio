@@ -22,6 +22,9 @@ vi.mock("@/lib/providers", () => ({
   submitOnly: vi.fn(),
   pollProviderResult: vi.fn(),
   getProvider: vi.fn(),
+  // Passthrough here — the real mapping is proven in error-branding.test.mjs;
+  // these tests assert it is CALLED on the user-visible write path.
+  brandForUser: vi.fn((m) => m),
 }));
 
 vi.mock("@/lib/storage/ingest", () => ({
@@ -31,7 +34,7 @@ vi.mock("@/lib/storage/ingest", () => ({
 import prisma from "@/lib/prisma";
 import { heartbeatJob, completeJob, failJob } from "@/lib/job-queue";
 import { settleReservation, releaseReservation, refundCredits } from "@/lib/wallet";
-import { submitOnly, pollProviderResult, getProvider } from "@/lib/providers";
+import { submitOnly, pollProviderResult, getProvider, brandForUser } from "@/lib/providers";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { runJob } from "@/lib/job-runner";
 
@@ -338,6 +341,23 @@ describe("runJob — terminal provider failure: exactly one release-or-refund", 
     expect(releaseReservation).toHaveBeenCalledTimes(1);
     expect(refundCredits).toHaveBeenCalledTimes(1);
     expect(refundCredits).toHaveBeenCalledWith("user1", 7, "gen1", "Generation failed");
+  });
+
+  it("passes the raw provider message through brandForUser before writing the user-visible Generation.error", async () => {
+    const job = makeJob();
+    const generation = makeGeneration();
+    prisma.generation.findUnique.mockResolvedValue(generation);
+    submitOnly.mockRejectedValue(new Error("400 Bad Request — invalid parameters"));
+    failJob.mockResolvedValue({ status: "dead", willRetry: false });
+    prisma.generation.updateMany.mockResolvedValue({ count: 1 });
+    releaseReservation.mockResolvedValue({ available: 10 });
+
+    await runJob(job, { workerId: "worker-1" });
+
+    // The raw message stays on the job row for operators…
+    expect(failJob).toHaveBeenCalledWith("job1", "400 Bad Request — invalid parameters", { retryable: false });
+    // …and the user-visible write goes through the branding gate.
+    expect(brandForUser).toHaveBeenCalledWith("400 Bad Request — invalid parameters");
   });
 
   it("falls back to refundCredits when releaseReservation throws the race-condition error", async () => {
