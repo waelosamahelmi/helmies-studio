@@ -10,7 +10,7 @@ import { ALIBABA_MEDIA_MODELS } from "./alibaba-catalog.js";
 import {
   calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput,
   modelTypeForCapability, UNCATEGORIZED_MODEL_TYPE, slugToTitle, toPublicModelId, resolveModelPricingRow,
-  inferCapabilityFromRow,
+  inferCapabilityFromRow, sanitizeCatalogDescription,
 } from "./model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
@@ -120,14 +120,23 @@ function resolveEffectiveCapability(model) {
   return inferCapabilityFromRow(model) || model.capability || null;
 }
 
-// isAdmin controls two things the public catalog must never leak (see
+// isAdmin controls three things the public catalog must never leak (see
 // toPublicModelId's header and the URGENT-fix task notes): the upstream
-// provider identity (providerName/provider — dropped entirely) and a
+// provider identity (providerName/provider — dropped entirely), a
 // provider-prefixed real id (e.g. Alibaba's "alibaba:qwen-image-max" —
 // stripped to "qwen-image-max"; resolveModelPricingRow below is what makes
-// that safe to hand back to a client — see its own header). The real id
-// is NEVER changed at rest; only what this function returns to a non-admin
-// caller differs.
+// that safe to hand back to a client — see its own header), and the SAME
+// provider identity when it's baked into the description text instead of a
+// structured field (measured production bug: kie-sync.js used to write
+// `${displayName} via the KIE Market API.` — 35 of 39 image-model
+// descriptions on live production named "KIE" in plain text even after
+// providerName was hidden). sanitizeCatalogDescription (model-catalog-
+// core.mjs) is applied live here so the 175+ rows already in the DB are
+// fixed without waiting for a re-sync/backfill; admin still sees the raw
+// stored text (it already sees providerName directly, so there's nothing
+// left to hide, and ops needs the unscrubbed text to know a sync still
+// needs fixing). The real id and the real description are NEVER changed at
+// rest; only what this function returns to a non-admin caller differs.
 export function serializeCatalogModel(model, { includeCosts = false, isAdmin = false } = {}) {
   // modelType is re-derived from capability HERE too, not just trusted from
   // whatever the DB column says — belt-and-suspenders against a row that
@@ -150,7 +159,7 @@ export function serializeCatalogModel(model, { includeCosts = false, isAdmin = f
     providerModelId: model.providerModelId || model.modelId,
     endpoint: model.endpoint || model.modelId,
     displayName: displayNameFor(model, capability),
-    description: model.description,
+    description: isAdmin ? model.description : sanitizeCatalogDescription(model.description),
     modelType: isUncategorized ? UNCATEGORIZED_MODEL_TYPE : effectiveType,
     capability,
     inputModalities: model.inputModalities || [],

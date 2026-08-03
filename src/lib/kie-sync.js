@@ -453,7 +453,16 @@ export async function syncKieModels() {
       providerModelId: model.providerModelId,
       endpoint: model.endpoint,
       displayName: model.displayName,
-      description: `${model.displayName} via the KIE Market API.`,
+      // No genuinely useful description text is available from the sitemap
+      // crawl — the old template (`${displayName} via the KIE Market
+      // API.`) just re-stated the display name and named the upstream
+      // provider (which must stay hidden from end users, same as
+      // providerName/the modelId prefix — see toPublicModelId's header).
+      // Consistent with alibaba-catalog.js's default when a model has no
+      // hand-authored description: prefer null over inventing marketing
+      // copy — the UI already has an empty-state for a missing description
+      // (src/app/models/ModelsClient.js renders it conditionally).
+      description: null,
       capability: model.capability,
       inputModalities: model.inputModalities,
       outputModalities: model.outputModalities,

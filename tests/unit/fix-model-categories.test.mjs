@@ -180,3 +180,60 @@ describe("run() — dry-run vs apply (mocked DB)", () => {
     expect(result.applied).toBe(3);
   });
 });
+
+// ── URGENT production fix: persistently rewrite descriptions that still
+// leak the upstream provider identity (measured bug: kie-sync.js used to
+// write `${displayName} via the KIE Market API.` for every synced row) —
+// this is the SAME sanitizeCatalogDescription the live public serializer
+// calls (model-catalog.js), so this script fixes the 175+ existing rows at
+// rest instead of relying on scrubbing happening only at read time.
+describe("run() — description backfill (dry-run / apply / idempotent second run)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const leakingRow = {
+    modelId: "widget-1", providerName: "KIE", modelType: "image", capability: "text-to-image",
+    displayName: "Widget 1", description: "Widget 1 via the KIE Market API.",
+  };
+
+  it("dry run reports the leaking description but writes nothing", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([leakingRow]);
+    const result = await run({ apply: false, yes: false });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.descriptionFixes).toEqual([
+      {
+        modelId: "widget-1",
+        providerName: "KIE",
+        from: "Widget 1 via the KIE Market API.",
+        to: "Widget 1 via the Market API.",
+      },
+    ]);
+  });
+
+  it("--apply --yes persistently rewrites the leaking description", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([leakingRow]);
+    const result = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).toHaveBeenCalledWith({
+      where: { modelId: "widget-1" },
+      data: { description: "Widget 1 via the Market API." },
+    });
+    expect(result.applied).toBe(1);
+  });
+
+  it("is idempotent: re-running against the already-fixed row writes nothing", async () => {
+    const fixedRow = { ...leakingRow, description: "Widget 1 via the Market API." };
+    prisma.modelPricing.findMany.mockResolvedValue([fixedRow]);
+    const result = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.descriptionFixes).toEqual([]);
+  });
+
+  it("does not flag a description with no provider token at all", () => {
+    const clean = { modelId: "flux-2", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Flux 2", description: "A fast, sharp text-to-image model." };
+    const { descriptionFixes } = planFixes([clean]);
+    expect(descriptionFixes).toEqual([]);
+  });
+});

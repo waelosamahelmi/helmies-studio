@@ -150,6 +150,42 @@ describe("serializeCatalogModel", () => {
     });
   });
 
+  // ── URGENT fix: hide provider identity baked into DESCRIPTION text ──────
+  // (measured production bug: kie-sync.js wrote `${displayName} via the KIE
+  // Market API.` — 35 of 39 live image-model descriptions plainly named
+  // "KIE" even though providerName was already dropped from this response)
+  describe("description — provider identity scrubbed from stored text (requirement 4)", () => {
+    it("strips a known provider token from a stored description for the public (non-admin) shape", () => {
+      const leaking = { ...row, description: "Foo via the KIE Market API." };
+      const pub = serializeCatalogModel(leaking);
+      expect(pub.description).not.toMatch(/kie/i);
+      expect(pub.description).toMatch(/Foo/);
+    });
+
+    it("does NOT strip 'Qwen' — it's a model family name, not an upstream provider", () => {
+      const leaking = { ...row, description: "Qwen Image Max via the KIE Market API." };
+      const pub = serializeCatalogModel(leaking);
+      expect(pub.description).toMatch(/Qwen/);
+      expect(pub.description).not.toMatch(/kie/i);
+    });
+
+    it("returns null instead of a mangled fragment when scrubbing leaves nothing meaningful", () => {
+      const leaking = { ...row, description: "via the KIE Market API." };
+      expect(serializeCatalogModel(leaking).description).toBeNull();
+    });
+
+    it("leaves a description with no provider token completely untouched", () => {
+      const clean = { ...row, description: "Renders crisp product photography from a text prompt." };
+      expect(serializeCatalogModel(clean).description).toBe(clean.description);
+    });
+
+    it("admin shape still sees the raw, unscrubbed description (admin already sees providerName directly)", () => {
+      const leaking = { ...row, description: "Foo via the KIE Market API." };
+      const admin = serializeCatalogModel(leaking, { isAdmin: true });
+      expect(admin.description).toBe("Foo via the KIE Market API.");
+    });
+  });
+
   // ── URGENT fix: display names ────────────────────────────────────────────
   describe("display names", () => {
     it("recomputes a KIE row's displayName from its slug (fixes stale mangled names live, no re-sync required)", () => {
