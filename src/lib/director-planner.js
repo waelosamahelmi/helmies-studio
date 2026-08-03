@@ -23,6 +23,10 @@ export class DirectorPlanError extends Error {
   }
 }
 
+// E4.2: the transitions a shot may cut into the next one with — consumed by
+// assembly (video-assembly.js). Anything else normalizes to a hard cut.
+export const VALID_SHOT_TRANSITIONS = ["cut", "fade", "dissolve"];
+
 // A plan is only usable downstream (estimateDirectorCost, validateShotPlan,
 // the route) if `shots` is a real, non-empty array of shot objects.
 export function isValidPlanShape(plan) {
@@ -285,6 +289,9 @@ You MUST output a single valid JSON object with this exact structure:
         "windows": []
       },
       "audio": null,
+      "transition": "cut|fade|dissolve — how this shot cuts INTO the next shot (applied at assembly)",
+      "dialogue": "the spoken line for this shot in quotes, or null when nobody speaks",
+      "audioCues": "sound design notes for this shot (e.g. rain on glass, distant sirens), or null",
       "continuity": ["character identity consistent with shot N-1", "outfit match", "environment match"],
       "continuityTracker": {
         "characterIdentity": "same person as previous shot — describe physically",
@@ -331,6 +338,7 @@ CRITICAL RULES:
 16. continuityTracker MUST be filled for every shot — it is explicit data, not LLM-guessed. For shot 0, use "first shot" / "establishing" where appropriate
 17. previousEndingFrame: shot N must visually start where shot N-1 ended (e.g. "starts on the close-up of the coffee cup, pulls back to reveal the cafe")
 18. Re-describe characters physically in continuityTracker.characterIdentity every shot — never assume the model remembers
+19. transition is per shot ("cut" unless a fade/dissolve serves the edit); dialogue and audioCues are null unless the shot genuinely calls for them
 
 OUTPUT ONLY VALID JSON — no markdown, no explanation outside the JSON object.`;
 }
@@ -447,7 +455,23 @@ function buildHeuristicDirectorPlan(brief) {
           windows: []
         },
         audio: brief.type === "music_video" ? null : undefined,
-        continuity: index > 0 ? [`Character consistent with shot ${index - 1}`, "Environment match", "Lighting continuity"] : ["Establishing shot — sets baseline"]
+        // E4.2: same shape the LLM contract emits — the heuristic path must
+        // never produce a structurally poorer plan than the LLM path.
+        transition: "cut",
+        dialogue: null,
+        audioCues: null,
+        continuity: index > 0 ? [`Character consistent with shot ${index - 1}`, "Environment match", "Lighting continuity"] : ["Establishing shot — sets baseline"],
+        continuityTracker: {
+          characterIdentity: brief.characters?.[0]?.description || "the performer — same person throughout",
+          outfit: index === 0 ? "establishing" : "same outfit as previous shot",
+          productIdentity: null,
+          environment: brief.concept?.slice(0, 100) || "same setting throughout",
+          lighting: "dramatic directional lighting, warm key, cool rim — consistent",
+          timeOfDay: "consistent",
+          screenDirection: "180-degree rule maintained",
+          previousEndingFrame: index === 0 ? "first shot" : `continues from shot ${index}`,
+          cameraLanguage: `${strat.camera.lens}, ${strat.camera.framing} vocabulary`,
+        }
       });
       runningTime += shotDuration;
       index++;
@@ -548,6 +572,14 @@ function normalizePlanFromLLM(parsed, preset, brief) {
         windows: shot.videoStrategy?.windows || []
       },
       audio: shot.audio || null,
+      // E4.2: per-shot editorial fields. `transition` is how this shot cuts
+      // INTO the next (consumed by assembly); unknown values fall back to a
+      // hard cut rather than surprising the editor later.
+      transition: VALID_SHOT_TRANSITIONS.includes(shot.transition) ? shot.transition : "cut",
+      dialogue: typeof shot.dialogue === "string" && shot.dialogue.trim() ? shot.dialogue : null,
+      audioCues: Array.isArray(shot.audioCues)
+        ? (shot.audioCues.filter(Boolean).join(", ") || null)
+        : (typeof shot.audioCues === "string" && shot.audioCues.trim() ? shot.audioCues : null),
       continuity: shot.continuity || [],
       continuityTracker: shot.continuityTracker || {
         characterIdentity: "not specified",

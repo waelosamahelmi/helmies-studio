@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Sheet, SpendMeter, Field, Chips, clock,
   IcFilm, IcSettings, IcRefresh, IcPlus, IcExternal, IcImage, IcVideo, IcClose, IcBolt,
+  IcBrush, IcCopy, IcTrash, IcChevronLeft, IcChevronRight,
 } from "@/components/studio/kit";
+import ShotEditor from "@/components/studio/director/ShotEditor";
 import { apiFetch } from "@/lib/client-fetch";
 import { PRODUCTION_TYPE_PRESETS } from "@/lib/director-constants";
 
@@ -146,6 +148,10 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
   const [busy, setBusy] = useState(null);       // "plan" | "execute" | null
   const [rerunning, setRerunning] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  /* Shot editor (E4.2) */
+  const [editingKey, setEditingKey] = useState(null);
+  const [savingPlan, setSavingPlan] = useState(false);
 
   const pollRef = useRef(null);
   const seq = useRef(0);
@@ -350,6 +356,117 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
     }
   }, [pipelineId, refresh, onCreditsChanged, loadBalance]);
 
+  /* ── Generate a single asset for a planned shot (E4.2) ────────────────── */
+  const generateAsset = useCallback(async (shotId, kind) => {
+    if (!pipelineId || !shotId) return;
+    setRerunning(`${shotId}:gen-${kind}`);
+    setError("");
+    try {
+      await apiFetch("/api/director/generate-shot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId: pipelineId, shotId, kind }),
+        timeout: 1800000,
+        retries: 0,
+      });
+      /* The status route reads the DirectorShot rows the executor just
+         wrote — one refresh renders the new asset on the card. */
+      await refresh(pipelineId).catch(() => {});
+      onCreditsChanged?.();
+      loadBalance();
+    } catch (e) {
+      setError(e?.message || `The shot's ${kind} could not be generated.`);
+    } finally {
+      setRerunning(null);
+    }
+  }, [pipelineId, refresh, onCreditsChanged, loadBalance]);
+
+  /* ── Edit the plan's shots (E4.2) — every mutation goes through PATCH,
+        so the cost on screen is always the server's recomputed number. ──── */
+  const patchShots = useCallback(async (nextShots) => {
+    if (!pipelineId) return false;
+    setSavingPlan(true);
+    setError("");
+    try {
+      const res = await apiFetch(`/api/director/plan/${encodeURIComponent(pipelineId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: { shots: nextShots } }),
+        retries: 0,
+      });
+      const data = await res.json();
+      if (data?.plan) setPlan(data.plan);
+      if (data?.costEstimate) setCostEstimate(data.costEstimate);
+      return true;
+    } catch (e) {
+      setError(e?.message || "The shot edit could not be saved.");
+      return false;
+    } finally {
+      setSavingPlan(false);
+    }
+  }, [pipelineId]);
+
+  const newShotId = () => `shot_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+
+  const saveShot = useCallback(async (draft) => {
+    const shots = (plan?.shots || []).map((s) => (s.id === draft.id ? draft : s));
+    const ok = await patchShots(shots);
+    if (ok) setEditingKey(null);
+  }, [plan, patchShots]);
+
+  const duplicateShot = useCallback((shotId) => {
+    const shots = plan?.shots || [];
+    const at = shots.findIndex((s) => s.id === shotId);
+    if (at < 0) return;
+    const copy = { ...JSON.parse(JSON.stringify(shots[at])), id: newShotId() };
+    const next = [...shots.slice(0, at + 1), copy, ...shots.slice(at + 1)];
+    patchShots(next);
+  }, [plan, patchShots]);
+
+  const deleteShot = useCallback((shotId) => {
+    const shots = plan?.shots || [];
+    if (shots.length <= 1) return;
+    patchShots(shots.filter((s) => s.id !== shotId));
+  }, [plan, patchShots]);
+
+  const moveShot = useCallback((shotId, dir) => {
+    const shots = [...(plan?.shots || [])];
+    const at = shots.findIndex((s) => s.id === shotId);
+    const to = at + dir;
+    if (at < 0 || to < 0 || to >= shots.length) return;
+    [shots[at], shots[to]] = [shots[to], shots[at]];
+    patchShots(shots);
+  }, [plan, patchShots]);
+
+  const appendShot = useCallback(() => {
+    const shots = plan?.shots || [];
+    patchShots([
+      ...shots,
+      {
+        id: newShotId(),
+        index: shots.length,
+        title: `Shot ${shots.length + 1}`,
+        durationSec: 5,
+        section: "verse",
+        narrativeRole: "",
+        sceneGoal: "",
+        subjects: [],
+        environment: "",
+        spatialSetup: "",
+        lighting: "",
+        mood: "",
+        camera: { framing: "medium shot", angle: "eye-level", lens: "35mm", movement: "static", intensity: "subtle" },
+        imageStrategy: { mode: "generate", prompt: "", references: [] },
+        videoStrategy: { mode: "t2v", prompt: "", keyframes: [], windows: [] },
+        audio: null,
+        transition: "cut",
+        dialogue: null,
+        audioCues: null,
+        continuity: [],
+      },
+    ]);
+  }, [plan, patchShots]);
+
   /* ── Load an earlier production ───────────────────────────────────────── */
   const load = useCallback(async (id) => {
     if (!id) return;
@@ -421,6 +538,7 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
         status: run?.status || (pipelineStatus === "planning" || !pipelineStatus ? "draft" : "queued"),
         imageUrl: run?.imageUrl || null,
         videoUrl: run?.videoUrl || null,
+        hasOutputs: !!(run?.imageUrl || run?.videoUrl),
         error: run?.error || null,
         cost: shotCost,
       };
@@ -441,6 +559,10 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
   const status = String(pipelineStatus || "").toLowerCase();
   const running = busy === "execute" || WORKING.has(status) || status === "queued";
   const finished = DONE.has(status) && !!plan;
+
+  /* Planned shots are editable until the pipeline runs or completes —
+     the PATCH route enforces the same rule server-side (409). */
+  const canEdit = !!plan && !!pipelineId && !running && !finished;
 
   const phase = !plan ? "brief" : finished ? "done" : running ? "running" : "plan";
 
@@ -516,6 +638,61 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
               <span className="st-shot__dur">{card.durationSec != null ? `${card.durationSec}s` : "—"}</span>
             </header>
 
+            {canEdit && card.id && (
+              <div className="st-shot__tools" role="toolbar" aria-label={`Edit shot ${card.no}`}>
+                <button
+                  type="button"
+                  className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                  data-tip="Edit this shot"
+                  aria-label={`Edit shot ${card.no}`}
+                  onClick={() => setEditingKey(card.id)}
+                  disabled={savingPlan}
+                >
+                  <IcBrush className="hs-icon-sm" />
+                </button>
+                <button
+                  type="button"
+                  className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                  data-tip="Duplicate this shot"
+                  aria-label={`Duplicate shot ${card.no}`}
+                  onClick={() => duplicateShot(card.id)}
+                  disabled={savingPlan}
+                >
+                  <IcCopy className="hs-icon-sm" />
+                </button>
+                <button
+                  type="button"
+                  className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                  data-tip="Move earlier"
+                  aria-label={`Move shot ${card.no} earlier`}
+                  onClick={() => moveShot(card.id, -1)}
+                  disabled={savingPlan || card.no === 1}
+                >
+                  <IcChevronLeft className="hs-icon-sm" />
+                </button>
+                <button
+                  type="button"
+                  className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                  data-tip="Move later"
+                  aria-label={`Move shot ${card.no} later`}
+                  onClick={() => moveShot(card.id, 1)}
+                  disabled={savingPlan || card.no === cards.length}
+                >
+                  <IcChevronRight className="hs-icon-sm" />
+                </button>
+                <button
+                  type="button"
+                  className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                  data-tip="Delete this shot"
+                  aria-label={`Delete shot ${card.no}`}
+                  onClick={() => deleteShot(card.id)}
+                  disabled={savingPlan || cards.length === 1}
+                >
+                  <IcTrash className="hs-icon-sm" />
+                </button>
+              </div>
+            )}
+
             <div className={`st-shot__frame${card.videoUrl || card.imageUrl ? "" : " is-empty"}`}>
               {card.videoUrl ? (
                 <video src={card.videoUrl} muted playsInline loop preload="metadata" />
@@ -543,7 +720,7 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
                 {card.cost != null ? `${credits(card.cost)} cr` : "—"}
               </span>
 
-              {pipelineId && card.id && (
+              {pipelineId && card.id && card.hasOutputs && (
                 <>
                   <button
                     type="button"
@@ -574,6 +751,34 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
                     disabled={!!rerunning || running}
                   >
                     {rerunning === `${card.id}:full` ? <span className="hs-spin" /> : <IcRefresh className="hs-icon-sm" />}
+                  </button>
+                </>
+              )}
+
+              {/* E4.2: per-shot generation BEFORE any full run — try one
+                  still or one clip without committing to the whole film.
+                  Debits exactly this shot's quoted cost server-side. */}
+              {pipelineId && card.id && !card.hasOutputs && canEdit && (
+                <>
+                  <button
+                    type="button"
+                    className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                    data-tip="Generate the still"
+                    aria-label={`Generate the still for shot ${card.no}`}
+                    onClick={() => generateAsset(card.id, "image")}
+                    disabled={!!rerunning || savingPlan}
+                  >
+                    {rerunning === `${card.id}:gen-image` ? <span className="hs-spin" /> : <IcImage className="hs-icon-sm" />}
+                  </button>
+                  <button
+                    type="button"
+                    className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"
+                    data-tip="Generate the motion"
+                    aria-label={`Generate the motion for shot ${card.no}`}
+                    onClick={() => generateAsset(card.id, "video")}
+                    disabled={!!rerunning || savingPlan}
+                  >
+                    {rerunning === `${card.id}:gen-video` ? <span className="hs-spin" /> : <IcVideo className="hs-icon-sm" />}
                   </button>
                 </>
               )}
@@ -625,6 +830,15 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
             sequence, so the affordance goes away rather than lying. */}
         {!plan && (
           <button type="button" className="st-shot st-shot--add" onClick={addShot}>
+            <IcPlus />
+            <span style={{ fontSize: "var(--t-tiny)" }}>Add a shot</span>
+          </button>
+        )}
+
+        {/* E4.2: a planned film can grow too — appends a template shot and
+            re-quotes through the PATCH route. */}
+        {canEdit && (
+          <button type="button" className="st-shot st-shot--add" onClick={appendShot} disabled={savingPlan}>
             <IcPlus />
             <span style={{ fontSize: "var(--t-tiny)" }}>Add a shot</span>
           </button>
@@ -710,6 +924,15 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
           </button>
         </div>
       </div>
+
+      <ShotEditor
+        open={!!editingKey}
+        shot={plan?.shots?.find((s) => s.id === editingKey) || null}
+        shotNumber={(plan?.shots?.findIndex((s) => s.id === editingKey) ?? -1) + 1 || null}
+        onClose={() => setEditingKey(null)}
+        onSave={saveShot}
+        saving={savingPlan}
+      />
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Production">
         <div className="hs-stack">

@@ -1851,3 +1851,14 @@ select.st-layer__role option {
   .st-canvas__notices { padding-inline: var(--s-3); }
   .st-canvas__result { margin-inline: var(--s-3); }
 }
+
+/* ── E4 director ── */
+/* Shot-card edit toolbar (E4.2): a thin strip of icon actions between the
+   slate and the frame, visible only while the plan is editable. */
+.st-shot__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 var(--s-2);
+}
+.st-shot__tools .hs-btn { flex: none; }

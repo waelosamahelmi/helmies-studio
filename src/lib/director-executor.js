@@ -66,6 +66,16 @@ function canTransition(from, to) {
   return (VALID_TRANSITIONS[from] || []).includes(to);
 }
 
+// Strip the resolved `_provider` adapter before persisting generation params.
+// It carries function values (Prisma 7 refuses to serialize them into a Json
+// column — every Generation write here crashed on it) AND the provider's API
+// key, which must never land in the database. Found by
+// tests/integration/director-generate-shot.int.test.mjs.
+function persistableParams(params) {
+  const { _provider, ...rest } = params || {};
+  return rest;
+}
+
 async function transitionPipeline(pipelineId, toState, metadata = {}) {
   const pipeline = await prisma.directorPipeline.findUnique({ where: { id: pipelineId } });
   if (!pipeline) throw new Error("Pipeline not found");
@@ -149,7 +159,7 @@ async function executeShotImage(shot, pipeline, brief) {
         tool: "image",
         model: brief.modelImage || "flux-dev",
         prompt: imagePrompt,
-        params,
+        params: persistableParams(params),
         outputUrl: storedUrl,
         status: "completed",
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.image || 2
@@ -217,7 +227,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
         tool: "video",
         model: modelRoute,
         prompt: videoPrompt,
-        params,
+        params: persistableParams(params),
         outputUrl: storedUrl,
         status: "completed",
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.video || 10
@@ -247,11 +257,14 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
 }
 
 async function executeShotAudio(shot, pipeline, brief) {
-  if (!shot.audio && brief.type !== "music_video") return { success: true, audioUrl: null };
+  // E4.2: `shot.dialogue` is the plan-shape field (the LLM contract keeps
+  // `audio` null, so the old shot.audio.dialogue read was unreachable in
+  // practice). A shot with dialogue always attempts audio.
+  if (!shot.audio && !shot.dialogue && brief.type !== "music_video") return { success: true, audioUrl: null };
 
   try {
     const audioParams = {
-      prompt: shot.audio?.dialogue || brief.concept || "Background music",
+      prompt: shot.dialogue || shot.audio?.dialogue || brief.concept || "Background music",
       duration: shot.durationSec || 5,
       _provider: await resolveProvider(brief.modelAudio || "suno-v4")
     };
@@ -274,7 +287,7 @@ async function executeShotAudio(shot, pipeline, brief) {
         tool: "audio",
         model: brief.modelAudio || "suno-v4",
         prompt: audioParams.prompt,
-        params: audioParams,
+        params: persistableParams(audioParams),
         outputUrl: storedUrl,
         status: "completed",
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.audio || 5
@@ -490,6 +503,121 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
       await transitionPipeline(pipelineId, PIPELINE_STATES.FAILED, { error: err.message });
     } catch (transitionErr) {
       console.error("[Director] Failed to mark crashed pipeline FAILED:", transitionErr.message);
+    }
+    throw err;
+  }
+}
+
+// ──────────────────────────────────────────────
+// Per-shot generation BEFORE full execution (E4.2)
+// ──────────────────────────────────────────────
+
+// The kinds a planned-but-unexecuted shot can generate on its own. Audio is
+// deliberately absent: pre-execution audio belongs to the full pipeline run
+// (music) or an audio rerun on an executed shot (dialogue).
+export const VALID_SHOT_ASSET_KINDS = ["image", "video"];
+
+// Pipeline statuses during which per-shot generation must not run — the
+// inline pipeline run owns the shots (and the money) while any of these is
+// current.
+const EXECUTING_STATUSES = new Set([
+  PIPELINE_STATES.QUEUED,
+  PIPELINE_STATES.GENERATING_IMAGES,
+  PIPELINE_STATES.GENERATING_VIDEOS,
+  PIPELINE_STATES.GENERATING_AUDIO,
+  PIPELINE_STATES.QUALITY_CHECK,
+  PIPELINE_STATES.ASSEMBLING,
+]);
+
+// Generate ONE asset (image or video) for ONE planned shot, before any full
+// execution. Money invariant: debits EXACTLY that shot's server-quoted cost
+// for that kind (pipeline.costEstimate.shotCosts — never a client number),
+// refunds on failure, and — unlike rerunShot, which requires an existing
+// DirectorShot row — creates the row when this is the shot's first work.
+export async function generateShotAsset(pipelineId, userId, shotId, kind) {
+  if (!VALID_SHOT_ASSET_KINDS.includes(kind)) {
+    throw new Error(`Invalid kind: ${kind}`);
+  }
+
+  const pipeline = await prisma.directorPipeline.findFirst({
+    where: { id: pipelineId, userId }
+  });
+  if (!pipeline) throw new Error("Pipeline not found");
+  if (EXECUTING_STATUSES.has(pipeline.status)) {
+    throw new Error("Pipeline is executing — wait for the run to finish before generating single shots");
+  }
+
+  const plan = pipeline.plan;
+  const brief = pipeline.brief || {};
+  const shot = plan?.shots?.find(s => s.id === shotId);
+  if (!shot) throw new Error("Shot not found in plan");
+
+  // Exactly this shot's quoted cost for this kind. Prefer the by-shotId
+  // entry (edits re-index shots, so identity beats position), then the
+  // positional entry, then the even-split fallback rerunShot also uses.
+  const costRow = pipeline.costEstimate?.shotCosts?.find?.(c => c.shotId === shotId)
+    || pipeline.costEstimate?.shotCosts?.[shot.index];
+  let cost = costRow?.costs?.[kind];
+  if (!cost) {
+    const totalShots = plan.shots?.length || 0;
+    cost = Math.ceil((pipeline.costEstimate?.totalCredits || 0) / Math.max(1, totalShots));
+  }
+
+  await debitWallet(userId, cost, `Director shot generate (${kind})`, `director:${pipelineId}:generate`);
+
+  // Keep the Generation-row bookkeeping accurate (same trick as
+  // executeProductionPipeline).
+  brief._shotCosts = pipeline.costEstimate?.shotCosts || [];
+
+  try {
+    const existing = await prisma.directorShot.findUnique({ where: { id: shotId } });
+
+    if (kind === "image") {
+      // executeShotImage upserts the DirectorShot row itself.
+      const imageResult = await executeShotImage(shot, pipeline, brief);
+      if (!imageResult.success) throw new Error(imageResult.error);
+      // executeShotImage leaves the shot in GENERATING_VIDEO (its pipeline
+      // meaning is "image done, video next") — a standalone image isn't
+      // "generating video", so settle the row into an honest resting state.
+      await prisma.directorShot.update({
+        where: { id: shotId },
+        data: { status: existing?.videoResult ? SHOT_STATES.COMPLETED : SHOT_STATES.DRAFT }
+      });
+      return { shotId, kind, imageUrl: imageResult.imageUrl, creditsUsed: cost };
+    }
+
+    // kind === "video": executeShotVideo only UPDATEs the DirectorShot row,
+    // so create it first when this is the shot's first generated asset.
+    if (!existing) {
+      await prisma.directorShot.create({
+        data: {
+          id: shot.id,
+          pipelineId: pipeline.id,
+          index: shot.index,
+          title: shot.title,
+          status: SHOT_STATES.DRAFT,
+          plan: shot,
+          imageResult: null,
+          videoResult: null,
+          audioResult: null
+        }
+      });
+    }
+    const imageUrl = existing?.imageResult?.url || null;
+    const videoResult = await executeShotVideo(shot, pipeline, brief, imageUrl);
+    if (!videoResult.success) throw new Error(videoResult.error);
+    return { shotId, kind, videoUrl: videoResult.videoUrl, imageUrl, creditsUsed: cost };
+  } catch (err) {
+    // Same refund discipline as rerunShot: the user must never stay billed
+    // for work that never happened, and a refund failure must never mask the
+    // original error.
+    try {
+      await refundCredits(userId, cost, `director:${pipelineId}:generate`, "Failed per-shot generation refund");
+    } catch (refundErr) {
+      console.error(
+        `[Director] GENERATE-SHOT REFUND FAILED — user is owed ${cost} credits. userId=${userId} pipelineId=${pipelineId} shotId=${shotId} kind=${kind}:`,
+        refundErr.message
+      );
     }
     throw err;
   }

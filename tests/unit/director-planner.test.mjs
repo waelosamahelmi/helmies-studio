@@ -202,6 +202,77 @@ describe("createProductionPlan — the sketched outline, characters and aspect r
   });
 });
 
+// E4.2: the shot shape gains per-shot `transition` (consumed by assembly),
+// `dialogue` (text -> TTS) and `audioCues` — in the LLM contract, the
+// normalizer, and the heuristic builder (which also previously omitted
+// continuityTracker entirely).
+describe("shot shape — transition, dialogue, audioCues", () => {
+  it("normalizes LLM-provided transition/dialogue/audioCues and defaults them to null/cut when absent", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify({
+      shots: [
+        {
+          id: "shot_a", title: "With extras", durationSec: 5,
+          transition: "dissolve", dialogue: '"Hold on."', audioCues: "rising wind, distant thunder",
+        },
+        { id: "shot_b", title: "Bare", durationSec: 5 },
+      ],
+      globalStyle: {}, estimatedDuration: 10, conceptSummary: "x",
+    }));
+
+    const result = await createProductionPlan(BRIEF, "u1");
+
+    expect(result.plan.shots[0].transition).toBe("dissolve");
+    expect(result.plan.shots[0].dialogue).toBe('"Hold on."');
+    expect(result.plan.shots[0].audioCues).toBe("rising wind, distant thunder");
+
+    expect(result.plan.shots[1].transition).toBe("cut");
+    expect(result.plan.shots[1].dialogue).toBeNull();
+    expect(result.plan.shots[1].audioCues).toBeNull();
+  });
+
+  it("rejects an unknown transition value back to the cut default", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify({
+      shots: [{ id: "shot_a", title: "x", durationSec: 5, transition: "star-wipe-deluxe" }],
+      globalStyle: {}, estimatedDuration: 5, conceptSummary: "x",
+    }));
+
+    const result = await createProductionPlan(BRIEF, "u1");
+
+    expect(result.plan.shots[0].transition).toBe("cut");
+  });
+
+  it("tells the LLM about the new fields in the system prompt contract", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify({
+      shots: [{ id: "shot_a", title: "x", durationSec: 5 }],
+      globalStyle: {}, estimatedDuration: 5, conceptSummary: "x",
+    }));
+
+    await createProductionPlan(BRIEF, "u1");
+
+    const systemPrompt = llmComplete.mock.calls[0][0].find((m) => m.role === "system").content;
+    expect(systemPrompt).toContain('"transition"');
+    expect(systemPrompt).toContain('"dialogue"');
+    expect(systemPrompt).toContain('"audioCues"');
+  });
+
+  it("the heuristic builder emits transition/dialogue/audioCues AND a filled continuityTracker", async () => {
+    // Both LLM attempts unparseable -> heuristic path.
+    llmComplete.mockResolvedValue("not json at all");
+
+    const result = await createProductionPlan(BRIEF, "u1");
+
+    for (const shot of result.plan.shots) {
+      expect(["cut", "fade", "dissolve"]).toContain(shot.transition);
+      expect(shot.dialogue).toBeNull();
+      expect(shot.audioCues).toBeNull();
+      expect(shot.continuityTracker).toBeTruthy();
+      expect(typeof shot.continuityTracker.characterIdentity).toBe("string");
+      expect(typeof shot.continuityTracker.previousEndingFrame).toBe("string");
+    }
+    expect(result.plan.shots[0].continuityTracker.previousEndingFrame).toBe("first shot");
+  });
+});
+
 // E4.1: updateProductionPlan existed but was called by nothing. Now that the
 // PATCH route uses it, its contract is load-bearing: it recomputes the cost
 // server-side from the edited shots, re-runs the shot validators, persists

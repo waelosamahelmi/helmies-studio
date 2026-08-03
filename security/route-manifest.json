@@ -559,6 +559,18 @@
     "notes": "Creates a DirectorPipeline row (confirmed). No rate limit on plan creation. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
+    "path": "/api/director/generate-shot",
+    "file": "src/app/api/director/generate-shot/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E4.2. Generates ONE asset (image|video) for ONE planned shot before full execution — creates the DirectorShot row when missing, debits EXACTLY that shot's server-quoted per-kind cost (pipeline.costEstimate.shotCosts) through the wallet ledger, refunds on failure, 409s while the pipeline is executing. Same no-rate-limit anomaly class as director/execute and director/rerun. verifyOrigin wired on POST (only method on this file)."
+  },
+  {
     "path": "/api/director/plan/[id]",
     "file": "src/app/api/director/plan/[id]/route.js",
     "methods": [
