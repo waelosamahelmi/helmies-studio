@@ -15,6 +15,7 @@ import ImageStudio from "@/components/studio/ImageStudio";
 import VideoStudio from "@/components/studio/VideoStudio";
 import DirectorStudio from "@/components/studio/DirectorStudio";
 import AudioStudio from "@/components/studio/AudioStudio";
+import AudioToolsStudio from "@/components/studio/AudioToolsStudio";
 import MusicStudio from "@/components/studio/MusicStudio";
 import LipSyncStudio from "@/components/studio/LipSyncStudio";
 import RecastStudio from "@/components/studio/RecastStudio";
@@ -44,6 +45,7 @@ const TOOL_COMPONENTS = {
   i2v: ImageToVideoStudio,
   director: DirectorStudio,
   audio: AudioStudio,
+  "audio-tools": AudioToolsStudio,
   music: MusicStudio,
   lipsync: LipSyncStudio,
   "body-swap": RecastStudio,

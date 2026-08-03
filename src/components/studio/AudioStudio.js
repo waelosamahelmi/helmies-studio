@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Brief, ModelPicker, Sheet,
+  Brief, ModelPicker, Sheet, Fault,
   Field, Group, Segmented, Chips, Slider, Dropzone, Specs,
   clock, mediaUrl,
   IcMic, IcPlay, IcPause, IcSettings, IcDownload, IcExternal, IcRefresh,
@@ -11,26 +11,27 @@ import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { matchesGroup } from "@/lib/capability-groups";
+import { audioKind } from "@/lib/model-catalog-core.mjs";
 
 /* ══════════════════════════════════════════════════════════════════════════
-   AUDIO — speech and sound design, on the .st-wave archetype
+   AUDIO — speech, dialogue, voice cloning and sound effects (.st-wave)
    ──────────────────────────────────────────────────────────────────────────
-   Music lives in its own tool. This one covers the two jobs where the source
-   of truth is a voice or an effect: read this text aloud, or make this sound.
+   Music lives in its own tool, and the clean/convert utilities live in
+   Audio Tools. This one covers the four jobs where the source of truth is a
+   voice or an effect.
 
-   Fixed in this rebuild:
-   · `hasVoice` / `hasStability` / `hasSimilarity` / `hasSpeed` gated the whole
-     TTS panel, and the live catalog never emits them (see model-catalog.js
-     `serializeCatalogModel` — the public shape is id, capability, credits,
-     schema, constraints… and no `has*` flag at all; provider cost basis is
-     omitted unless the caller passes `{ includeCosts: true }`). Every one of
-     those controls was dead. They are now gated on the model's own input
-     schema, which the catalog does emit, with "no schema" meaning "show it".
-   · `error` from useAsyncGeneration was computed and never rendered, so a
-     failed job just stopped with no explanation. It is rendered now.
-   · `elapsed` was unused. The transport row shows it while a job runs.
-   · The result was an <audio controls> with ten decorative bars beside it.
-     The waveform is now the real signal.
+   Fixed in the EDITSv1 rework:
+   · The pool split on `m.provider` — a field the public catalog NEVER emits
+     for non-admins — so the old "exclude Suno" branch was dead code and the
+     Sound segment showed composers, converters and cloners alike. Pools now
+     go through audioKind (model-catalog-core.mjs): tts / dialogue /
+     voice-clone / sfx, each segment listing only its own kind.
+   · Errors render through the kit's Stage error path (Fault) instead of a
+     bespoke banner, so this surface inherits every ErrorPanel upgrade.
+   · Controls stay gated on the model's own input schema — the only
+     capability signal the catalog emits — and E1.2's curated schemas mean
+     the ElevenLabs voice/stability/similarity/speed controls now genuinely
+     render for the models that accept them.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const BARS = 120;
@@ -299,19 +300,80 @@ const VOICES = [
   { id: "sam", label: "Sam", desc: "Neutral, unaccented, clean" },
 ];
 
-const SPEECH_EXAMPLES = [
-  "Welcome back. Let's pick up where we left off.",
-  "In 1911, the harbour froze for the first time in a century.",
-  "Three things changed this quarter, and only one of them mattered.",
-  "Press and hold to record. Release to send.",
-];
-
-const SOUND_EXAMPLES = [
-  "Heavy wooden door closing in a stone corridor, long tail",
-  "Rain on a car roof, distant traffic, no music",
-  "Single metallic impact, tuned low, short decay",
-  "Crowd murmur in a large hall, indistinct speech",
-];
+/* Four jobs, one archetype. `kind` is the audioKind value the segment pools
+   on; everything else is copy. */
+const MODES = {
+  speech: {
+    label: "Speech",
+    kind: "tts",
+    pickerLabel: "Voice model",
+    empty: "No text-to-speech models in the catalog yet.",
+    eyebrow: "Speech",
+    submitLabel: "Speak",
+    maxChars: 5000,
+    placeholder: "Write the script exactly as it should be read.",
+    emptyTitle: "Write the line to be spoken",
+    emptyBody: "Punctuation is direction: commas breathe, full stops land. Pick a voice on the left, then write the script below.",
+    examples: [
+      "Welcome back. Let's pick up where we left off.",
+      "In 1911, the harbour froze for the first time in a century.",
+      "Three things changed this quarter, and only one of them mattered.",
+      "Press and hold to record. Release to send.",
+    ],
+  },
+  dialogue: {
+    label: "Dialogue",
+    kind: "dialogue",
+    pickerLabel: "Dialogue model",
+    empty: "No dialogue models in the catalog yet.",
+    eyebrow: "Dialogue",
+    submitLabel: "Perform",
+    maxChars: 5000,
+    placeholder: "Write the exchange, one speaker per line: Anna: … / Ben: …",
+    emptyTitle: "Write the exchange",
+    emptyBody: "Name the speakers and write their lines — the model performs the scene, pauses and interruptions included.",
+    examples: [
+      "Anna: You're late. Ben: The bridge was up. Anna: The bridge is never up.",
+      "Host: Three minutes left. Guest: Then I'll talk fast.",
+      "Child: Is it far? Guide: Only until the light changes.",
+    ],
+  },
+  voice: {
+    label: "Voice cloning",
+    kind: "voice-clone",
+    pickerLabel: "Cloning model",
+    empty: "No voice cloning models in the catalog yet.",
+    eyebrow: "Voice cloning",
+    submitLabel: "Build voice",
+    maxChars: 2000,
+    placeholder: "Describe the voice to build — age, register, pace, mood.",
+    emptyTitle: "Describe the voice",
+    emptyBody: "Describe the voice you need, or attach a reference track for the model to learn from.",
+    examples: [
+      "Low, unhurried narrator, slight rasp, documentary calm",
+      "Bright announcer, quick pace, always on the edge of a smile",
+      "Soft-spoken guide, mid-register, long patient phrases",
+    ],
+  },
+  sfx: {
+    label: "Sound effects",
+    kind: "sfx",
+    pickerLabel: "Sound model",
+    empty: "No sound effect models in the catalog yet.",
+    eyebrow: "Sound effects",
+    submitLabel: "Render",
+    maxChars: 600,
+    placeholder: "Describe the sound: the object, the space, the tail.",
+    emptyTitle: "Describe the sound",
+    emptyBody: "Name the object, the space and the tail. \"Door closing in a stone corridor\" beats \"nice door sound\".",
+    examples: [
+      "Heavy wooden door closing in a stone corridor, long tail",
+      "Rain on a car roof, distant traffic, no music",
+      "Single metallic impact, tuned low, short decay",
+      "Crowd murmur in a large hall, indistinct speech",
+    ],
+  },
+};
 
 export default function AudioStudio({ initialModel, templateConfig, onCreditsChanged }) {
   const [mode, setMode] = useState("speech");
@@ -328,16 +390,12 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
   const { models, loading: loadingModels } = useModelCatalog({});
   const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
 
-  /* Capability filtering goes through the group map, then splits on the
-     scalar `capability` the catalog genuinely populates. Suno is the music
-     provider and has its own tool, so it is excluded here rather than shown
-     twice under a name that does not describe what it does. */
+  /* Pools go through the group map, then audioKind — the honest per-model
+     sub-kind (E1.1). The old code split on `m.provider`, which the public
+     catalog never emits, so its Suno exclusion was dead code. */
   const available = useMemo(() => {
-    const pool = (models || []).filter((m) => matchesGroup(m, "audio"));
-    if (mode === "speech") return pool.filter((m) => m.capability === "text-to-speech");
-    return pool.filter(
-      (m) => m.capability === "audio" && !String(m.provider || "").toLowerCase().includes("suno"),
-    );
+    const kind = MODES[mode].kind;
+    return (models || []).filter((m) => matchesGroup(m, "audio") && audioKind(m) === kind);
   }, [models, mode]);
 
   const model = available.find((m) => m.id === modelId) || available[0] || null;
@@ -351,7 +409,11 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
     if (templateConfig.prompt) setText(templateConfig.prompt);
     if (templateConfig.voice) setVoice(templateConfig.voice);
     if (templateConfig.model) setModelId(templateConfig.model);
-    if (templateConfig.mode) setMode(templateConfig.mode);
+    if (templateConfig.mode) {
+      /* Legacy templates say "sound" for what is now the sfx segment. */
+      const next = templateConfig.mode === "sound" ? "sfx" : templateConfig.mode;
+      if (MODES[next]) setMode(next);
+    }
   }, [templateConfig]);
 
   /* `durations` is always an array — [] when the model does not offer a
@@ -364,9 +426,11 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
     if (!durations.includes(duration)) setDuration(durations[0]);
   }, [durations, duration]);
 
-  const isSpeech = mode === "speech";
-  const wantsVoice = isSpeech && offers(model, "voice", "voice_id");
-  const wantsTone = isSpeech && offers(model, "stability", "similarity_boost", "speed");
+  const copy = MODES[mode];
+  const spoken = mode === "speech" || mode === "dialogue";
+  const wantsVoice = spoken && offers(model, "voice", "voice_id");
+  const wantsTone = mode === "speech" && offers(model, "stability", "similarity_boost", "speed");
+  const wantsSource = mode === "voice";
 
   /* Same params, same tool string, as the submit below — a mismatch would
      quote one price and charge another. */
@@ -406,10 +470,7 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
           label="Audio job"
           value={mode}
           onChange={setMode}
-          options={[
-            { value: "speech", label: "Speech" },
-            { value: "sound", label: "Sound design" },
-          ]}
+          options={Object.entries(MODES).map(([value, m]) => ({ value, label: m.label }))}
         />
       </Field>
 
@@ -418,12 +479,8 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
         value={model?.id}
         onSelect={setModelId}
         loading={loadingModels}
-        label={isSpeech ? "Voice model" : "Sound model"}
-        emptyHint={
-          isSpeech
-            ? "No text-to-speech models in the catalog yet."
-            : "No sound models in the catalog yet."
-        }
+        label={copy.pickerLabel}
+        emptyHint={copy.empty}
       />
 
       {wantsVoice && (
@@ -479,19 +536,19 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
         </Field>
       )}
 
-      {!isSpeech && (
-        <Field label="Source track" hint="Optional. Attach a file to isolate, clean or re-shape.">
+      {wantsSource && (
+        <Field label="Reference track" hint="Optional. The voice is learned from what you attach.">
           <Dropzone
             value={null}
             onChange={setSource}
             accept="audio/*"
-            label={source ? "Replace the source track" : "Drop an audio file or browse"}
+            label={source ? "Replace the reference track" : "Drop an audio file or browse"}
             hint="MP3 or WAV"
           />
           {source && (
             <div className="hs-row hs-row--between" style={{ marginTop: "var(--s-2)" }}>
               <span className="hs-hint" style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                {source.name || "Source track"}
+                {source.name || "Reference track"}
               </span>
               <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => setSource(null)}>
                 Remove
@@ -504,7 +561,7 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
       <Group label="This render">
         <Specs
           rows={[
-            { k: "Job", v: isSpeech ? "Speech" : "Sound" },
+            { k: "Job", v: copy.label },
             { k: "Model", v: model?.displayName || model?.name },
             { k: "Voice", v: wantsVoice ? (VOICES.find((v) => v.id === voice)?.label || "Model default") : null },
             { k: "Len", v: duration != null ? `${duration}s` : null },
@@ -522,17 +579,18 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
     duration != null ? `${duration}s` : null,
   ].filter(Boolean).join(" · ");
 
+  const failed = !!error && !generating && !url;
+
   const body = (
     <div className="st-wave__body">
-      {error && (
-        <p className="hs-notice hs-notice--fault" role="alert">
-          {error} Adjust the settings and run it again, or pick another model.
-        </p>
-      )}
+      {/* Errors go through the kit's Stage error path (Fault) — the same
+          surface every Workspace studio uses — so this tool inherits the
+          ErrorPanel upgrade (retry, error ids) the moment it lands. */}
+      {failed && <Fault error={error} onRetry={generate} />}
 
       <div className="hs-row hs-row--between">
         <span className="hs-eyebrow">
-          {generating ? "Rendering" : url ? "Generated" : isSpeech ? "Speech" : "Sound design"}
+          {generating ? "Rendering" : url ? "Generated" : copy.eyebrow}
         </span>
         <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
           {generating
@@ -586,17 +644,13 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
           </span>
         </div>
       ) : (
-        !generating && (
+        !generating && !failed && (
           <div className="hs-empty">
             <span className="hs-empty__mark"><IcMic /></span>
-            <h3>{isSpeech ? "Write the line to be spoken" : "Describe the sound"}</h3>
-            <p>
-              {isSpeech
-                ? "Punctuation is direction: commas breathe, full stops land. Pick a voice on the left, then write the script below."
-                : "Name the object, the space and the tail. \"Door closing in a stone corridor\" beats \"nice door sound\"."}
-            </p>
+            <h3>{copy.emptyTitle}</h3>
+            <p>{copy.emptyBody}</p>
             <div className="hs-chips" style={{ justifyContent: "center", marginTop: "var(--s-2)" }}>
-              {(isSpeech ? SPEECH_EXAMPLES : SOUND_EXAMPLES).map((e) => (
+              {copy.examples.map((e) => (
                 <button
                   key={e}
                   type="button"
@@ -640,13 +694,9 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
           balance={balance}
           affordable={affordable}
           shortfall={shortfall}
-          maxChars={isSpeech ? 5000 : 600}
-          submitLabel={isSpeech ? "Speak" : "Render"}
-          placeholder={
-            isSpeech
-              ? "Write the script exactly as it should be read."
-              : "Describe the sound: the object, the space, the tail."
-          }
+          maxChars={copy.maxChars}
+          submitLabel={copy.submitLabel}
+          placeholder={copy.placeholder}
         />
       </div>
 
