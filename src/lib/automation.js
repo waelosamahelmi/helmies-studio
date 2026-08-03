@@ -2,6 +2,8 @@ import prisma from "@/lib/prisma";
 import { adjustWalletTo, sweepExpiredReservations } from "@/lib/wallet";
 import { sweepTimedOutJobs } from "@/lib/job-runner";
 import { pruneTerminalJobs } from "@/lib/job-queue";
+import { collectMetrics } from "@/lib/metrics";
+import { evaluateAlerts, selectDueAlerts, deliverAlerts, recordAlertsFired } from "@/lib/alerts";
 
 const MODEL_FAILURE_THRESHOLD = 5;
 const MODEL_FAILURE_WINDOW_MINUTES = 30;
@@ -94,10 +96,32 @@ export async function autoSuspendAbusiveUsers() {
   return { suspended, checked: heavy.length };
 }
 
+// ── Evaluate + deliver threshold alerts (Phase 8 Task A2) ──
+// Reuses Phase 7's collectMetrics() directly — never re-queries — then
+// evaluateAlerts (pure) / filterDueAlerts (dedup against FeatureFlag) /
+// deliverAlerts (webhook or a logged no-op). Riding this leg on the
+// ALREADY-installed automation timer means alerting works even before a
+// server has the dedicated 5-minute /api/cron/alerts timer
+// (docs/runbook-ops.md) installed; the shared FeatureFlag dedup state means
+// running both timers together never double-delivers within one repeat
+// window.
+async function runAlertsLeg() {
+  const metrics = await collectMetrics();
+  const alerts = evaluateAlerts(metrics);
+  const due = await selectDueAlerts(alerts);
+  const delivery = await deliverAlerts(due);
+  // Dedup state is recorded ONLY on confirmed delivery — see
+  // recordAlertsFired's header in src/lib/alerts.js.
+  if (due.length > 0 && delivery.delivered) {
+    await recordAlertsFired(due);
+  }
+  return { evaluated: alerts.length, fired: due.length, delivery };
+}
+
 // ── Run all automation checks ──
 export async function runAutomation() {
   // Promise.allSettled — not Promise.all — so one leg throwing (e.g. a
-  // groupBy/query error) can never suppress the results of the other four.
+  // groupBy/query error) can never suppress the results of the other legs.
   // A single rejected leg is reported as { error } instead of aborting the
   // whole cron run. `jobs` (Phase 4A Task 7) is the fourth leg, added in the
   // SAME isolated style established for `reservations` — sweepTimedOutJobs
@@ -107,14 +131,17 @@ export async function runAutomation() {
   // (src/lib/job-queue.js) only deletes already-terminal, already-settled
   // GenerationJob history — no money/state-machine implication — but it
   // gets the identical Promise.allSettled isolation as every other leg so a
-  // slow/failing delete never blocks or masks the four legs that ARE money-
-  // or state-critical.
-  const [models, users, reservations, jobs, retention] = await Promise.allSettled([
+  // slow/failing delete never blocks or masks the legs that ARE money- or
+  // state-critical. `alerts` (Phase 8 Task A2) is the sixth leg: a stuck
+  // alert evaluation/delivery (e.g. ALERT_WEBHOOK_URL unreachable) must
+  // never block or mask the five legs that came before it.
+  const [models, users, reservations, jobs, retention, alerts] = await Promise.allSettled([
     autoDisableFailingModels(),
     autoSuspendAbusiveUsers(),
     sweepExpiredReservations(),
     sweepTimedOutJobs(),
     pruneTerminalJobs(),
+    runAlertsLeg(),
   ]);
 
   const settle = (outcome) =>
@@ -126,6 +153,7 @@ export async function runAutomation() {
     reservations: settle(reservations),
     jobs: settle(jobs),
     retention: settle(retention),
+    alerts: settle(alerts),
     timestamp: new Date().toISOString(),
   };
 }

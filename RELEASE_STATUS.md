@@ -9,6 +9,124 @@ only where I ran the command and read the output; everything I could not
 personally verify in this environment is BLOCKED, never PASS, per the
 explicit instruction this task was built around.
 
+## Phase 8 update — backups (Task A1) and alerting (Task A2)
+
+Compiled onward from `feat/phase8-ops` (branched from the Phase 7 state
+below). Two Gate B/F blockers this document previously listed are now closed
+with real, executed evidence — the rest are unchanged and stay BLOCKED for
+the exact reasons already on record.
+
+1. **Backup and restore, rehearsed for real (Gate B).** `scripts/backup-db.mjs`
+   (`pg_dump --format=custom`, retention pruning, never prints the
+   connection string) and `scripts/restore-db.mjs` (`--target` always
+   explicit, never defaults to `DATABASE_URL`, refuses without `--yes` or
+   against a production-looking host without `--allow-production`) exist
+   and were rehearsed against the disposable test container
+   (`postgresql://postgres:test@localhost:55432/test`) — never against
+   `.env`'s `DATABASE_URL`. Exact commands and before/after row counts are
+   in `docs/runbook-backup.md`.
+2. **Threshold alerting with webhook delivery and dedup (Gate F).**
+   `src/lib/alerts.js`'s `evaluateAlerts()` reuses Phase 7's
+   `collectMetrics()` directly; `deliverAlerts()` posts to
+   `ALERT_WEBHOOK_URL` when configured, a logged no-op otherwise;
+   `selectDueAlerts()`/`recordAlertsFired()` dedupe per alert key against
+   the existing `FeatureFlag` table. `GET /api/cron/alerts` (bearer
+   `CRON_SECRET`) and `runAutomation()`'s new 6th leg both wire this
+   together.
+
+### Code review follow-up (executed-proof round, same phase)
+
+An independent review executed adversarial tests against both A1 and A2 —
+not a read-through, actual exploit attempts against a stand-in database and
+a stubbed webhook — and found **three Critical** issues in
+`restore-db.mjs`'s production-host guard (each proven by actually
+destroying a stand-in database) plus **five Important** issues. All eight
+are fixed; re-verified with fresh executed evidence, not merely re-reading
+the code.
+
+**Criticals (restore-db.mjs's guard):**
+
+1. The guard was a bare hostname STRING compare. Proven bypass: production
+   addressed as `localhost`, target as `127.0.0.1` (same machine) — the
+   guard allowed it, `pg_restore` ran, 51 tables were overwritten in the
+   reviewer's stand-in. Fixed: `assertRestoreTargetAllowed` now resolves
+   both hosts to IP address sets — a manual legacy-IPv4 parser
+   (`parseLegacyIPv4`, exported) for `127.1`/`2130706433`/`0177.0.0.1`-style
+   forms (confirmed `dns.lookup` itself does NOT normalize these on this
+   platform) plus a real DNS lookup for genuine hostnames — and also
+   compares port and database name, so a same-host restore into a clearly
+   different (scratch) database doesn't force `--allow-production` for a
+   legitimate case.
+2. `.env` loading was `process.cwd()`-relative; with `DATABASE_URL` unset,
+   the guard silently skipped its check. Proven bypass: the identical
+   `--target` invocation that was refused from the repo root restored
+   successfully when run from a scratch directory — exactly what an
+   operator following this runbook's own restore recipe would hit (dumps
+   live in `/root/backups/db`, not the app directory). Fixed: both scripts
+   now load `.env` from a path relative to the script file itself
+   (`fileURLToPath(import.meta.url)`), never `process.cwd()`.
+3. The guard failed OPEN on a missing/empty/unparseable `DATABASE_URL`
+   ("can't tell what production is" was treated as "no conflict, proceed").
+   Fixed: now fails CLOSED — refuses unless `--allow-production` is passed
+   explicitly.
+
+All three were re-executed against the real script (not just unit tests)
+after the fix — every one of the bypass forms above, plus the
+cwd-independence scenario, is now REFUSED; the cases that must keep passing
+(a genuinely different host, a same-host different-database-name target,
+`--allow-production` itself) are still ALLOWED. The full table of inputs and
+results is in `docs/runbook-backup.md`'s "Security hardening" section.
+
+**Importants:**
+
+4. Alert dedup state was written BEFORE delivery was attempted — an
+   undelivered critical (webhook 500) was marked "fired" and suppressed for
+   the full 60-minute repeat window, reaching nobody. Fixed: `alerts.js`
+   now splits `selectDueAlerts` (read-only) from `recordAlertsFired`
+   (write-only), and callers (`GET /api/cron/alerts`, the automation leg)
+   call the latter ONLY after `deliverAlerts()` reports `delivered: true`.
+   Proven against real Postgres: a webhook 500 now leaves the same critical
+   alert due again on the very next call
+   (`tests/integration/alerts.int.test.mjs`).
+5. `deliverAlerts()`'s `fetch` had no timeout — a hanging webhook would
+   stall the entire `runAutomation()` cron response (including the
+   money-safety legs) indefinitely. Fixed: `AbortSignal.timeout(10_000)` on
+   the request.
+6. `alert_state:*` `FeatureFlag` rows were visible (and writable) via
+   `GET`/`POST /api/admin/flags` as if they were ordinary operator flags.
+   Fixed: `GET` now excludes the `alert_state:` prefix at the query level;
+   `POST` 400s if asked to write one.
+7. `restore-db.mjs` exited 0 regardless of `pg_restore`'s own exit code — a
+   partial restore (after `--clean --if-exists` already dropped objects)
+   printed row counts and reported success. Fixed and re-verified: a
+   deliberately truncated dump now produces exit code 1, matching
+   `pg_restore`'s.
+8. `backup-db.mjs` read the dump's byte size right after the child
+   process's `"close"` event, which does not guarantee the piped
+   `WriteStream` had finished flushing — a slow disk could under-report the
+   size, and the (now-incorrect) `size === 0` check would delete a real,
+   merely-not-yet-flushed dump; `WriteStream` also had no `"error"`
+   handler. Fixed: `runPgDump` now resolves only once BOTH the child has
+   closed AND the stream has emitted `"finish"`, and the stream's own
+   `"error"` is handled.
+
+The full rehearsal (seed → backup → drop/recreate → restore → verify) was
+re-run after all eight fixes, against the corrected scripts — fresh numbers
+are in `docs/runbook-backup.md`, not reused from before the fixes.
+
+**Full gate sequence re-run clean after the review fixes:** `npm run lint`
+(0 warnings), `npm run typecheck` (clean), `npx vitest run` → **659/659
+unit** (baseline 570 + 89 new: 45 backup-args, 36 alerts, 4
+api-admin-flags, plus automation-leg additions), `TEST_DATABASE_URL=
+postgresql://postgres:test@localhost:55432/test npx vitest run --config
+vitest.integration.config.mjs` → **90/90 integration** (baseline 85 + 5
+alerts, including the Important-1 undelivered-alert proof), `npm run build`
+(clean, `ƒ /api/cron/alerts` present in the route list).
+
+Neither task touched anything under `src/components/`, `src/app/templates/`,
+`tests/e2e/`, `playwright.config.mjs`, or `src/lib/template*` — Stream B's
+files, worked concurrently on `feat/phase8-product`.
+
 ## Code review follow-up (post-Task-6)
 
 An independent code review of this branch found one Critical (executable-
@@ -117,11 +235,11 @@ not a defect introduced by this phase's code (confirmed by isolating
 | Gate | Status | Why |
 |---|---|---|
 | A — Code health | **PASS** | Clean install, lint, typecheck, build, dead-code scan, and the dependency audit (at the exact severity level CI gates on) all ran clean; no secrets found in tracked files. |
-| B — Data and money | **BLOCKED** | The margin-floor gap (previously FAIL) is now fixed and verified with real command output — see below. The remaining gap is purely environmental: backup/restore has never been rehearsed (no backup mechanism exists at all) and live Stripe test-clock flows need a real Stripe test-mode account, neither available in this worktree. |
-| C — Security | **BLOCKED** | Everything testable here passes (route manifest, authz negative tests, upload/SSRF, log redaction — now recursive and covering every vector a code review found leaking, see below — admin audit trail). The one outstanding item — an authenticated ZAP scan against staging — needs infrastructure this environment doesn't have. |
-| D — Product | **BLOCKED** | Core-tool success/failure simulation, onboarding, job-resume, and cancellation/refund are verified. Templates A–L are Phase 6's concurrent scope and explicitly off-limits to this agent (`src/lib/templates*`, `src/app/templates/*`, etc.) — not verified here. |
-| E — Browser and accessibility | **BLOCKED** | axe finds zero serious/critical violations across the tested pages. Full browser/device matrix, 200%-zoom/mobile-keyboard checks, and VoiceOver/NVDA passes all need infrastructure (real devices/browsers, screen readers) this environment doesn't have. |
-| F — Operations | **BLOCKED** | Maintenance mode, provider kill switch, metrics dashboard, and the incident/ops runbooks are all implemented and verified by real tests. No paging/alerting integration exists (documented, thresholds only — the plan explicitly deferred this), and rollback/production-smoke-test rehearsals need a real deployed environment. |
+| B — Data and money | **BLOCKED** | The margin-floor gap (previously FAIL) is fixed and verified. **Backup/restore is now rehearsed for real** (Phase 8 Task A1, see above) and moves to PASS on its own row. The sole remaining blocker is live Stripe test-clock flows, which need a real Stripe test-mode account not available in this worktree — that alone keeps the gate BLOCKED. |
+| C — Security | **BLOCKED** | Everything testable here passes (route manifest — now also covering `/api/cron/alerts` — authz negative tests, upload/SSRF, log redaction, admin audit trail). The one outstanding item — an authenticated ZAP scan against staging — needs infrastructure this environment doesn't have. |
+| D — Product | **BLOCKED** | Core-tool success/failure simulation, onboarding, job-resume, and cancellation/refund are verified. Templates A–L are Phase 6/Stream B's concurrent scope and explicitly off-limits to this agent (`src/lib/templates*`, `src/app/templates/*`, etc.) — not verified here. |
+| E — Browser and accessibility | **BLOCKED** | axe finds zero serious/critical violations across the tested pages. Full browser/device matrix, 200%-zoom/mobile-keyboard checks, and VoiceOver/NVDA passes all need infrastructure (real devices/browsers, screen readers) this environment doesn't have — Stream B's concurrent scope (`feat/phase8-product`) addresses the browser matrix specifically; not re-verified here. |
+| F — Operations | **BLOCKED** | Maintenance mode, provider kill switch, metrics dashboard, and the incident/ops runbooks are all implemented and verified by real tests. **Threshold alerting with webhook delivery and dedup now exists and is proven end to end** (Phase 8 Task A2, see above) — that row moves to PASS. The gate stays BLOCKED on the two remaining items: rollback rehearsal and the production smoke test, both of which require a real deployed environment/deliberate production action this worktree cannot take. |
 
 **No public paid launch until Gates A–F pass** (contract §14) — they do not
 today. Every gate below is now either PASS or BLOCKED purely on
@@ -159,14 +277,17 @@ now closed (see Gate B below).
 | Stripe cases (simulated) | `npx vitest run tests/unit/stripe-webhook.test.mjs` + the integration Stripe tests above | Pass — checkout/topup/subscription/invoice-renewal/cancellation branches all exercised against a mocked Stripe SDK + real Postgres for the DB side. |
 | No client-controlled price | `npx vitest run tests/unit/generation-pricing-strict.test.mjs` | 12/12 pass — price is always resolved server-side from `ModelPricing`, never from the request body. |
 | **Margin floor enforced** | `npx vitest run tests/unit/pricing-engine.test.mjs tests/unit/api-admin-pricing.test.mjs tests/unit/api-admin-models.test.mjs tests/unit/api-admin-providers.test.mjs` | **PASS — fixed this review round.** `setModelPricing`/`setProviderMarkup` (`src/lib/pricing-engine.js`) now reject (never clamp) a `creditsCost` below the model's provider cost or a `markup` below `1.0`, reusing `CREDIT_TO_EUR` (no second constant). Enforced at all three write paths: `POST /api/admin/pricing`, `POST /api/admin/models` (partial-update, floored against the row's effective post-update cost), `POST /api/admin/providers` (upserts markup directly, same shared assertion). The review's exact quantified scenario (10s video, ~$0.75 provider cost, `creditsCost:5`) is a named test case and is rejected with a 400 naming the real minimum (75 credits); a markup of `0.5` is rejected the same way; a valid update at or above the floor still succeeds. 20 new tests total (14 in `pricing-engine.test.mjs`, 2 in the new `api-admin-pricing.test.mjs`, 4 in the new `api-admin-models.test.mjs`, 2 added to `api-admin-providers.test.mjs`). |
-| Backup and restore tested | `find . -iname "*backup*" -o -iname "*pg_dump*"` (scoped to `scripts/`, `docs/`) | **BLOCKED.** No backup mechanism (scheduled `pg_dump`, managed-Postgres snapshot, or otherwise) exists anywhere in this repo, `scripts/deploy.sh`, or `ecosystem.config.cjs`. There is nothing to rehearse a restore from. One-command instruction once a backup process exists: `pg_dump "$DATABASE_URL" -Fc -f backup.dump && dropdb restore_test && createdb restore_test && pg_restore -d restore_test backup.dump && psql restore_test -c 'select count(*) from "User"'` — run against a disposable restore target, never the production DB in place. |
+| Backup and restore tested | `docs/runbook-backup.md`'s rehearsal + "Security hardening" sections — exact commands, run for real against `helmies-test-pg` and re-run after a review found and fixed 3 executable Criticals in the production-host guard | **PASS (Phase 8 Task A1, re-verified after code review).** `scripts/backup-db.mjs`/`scripts/restore-db.mjs` were rehearsed against the disposable test container only, never `.env`'s `DATABASE_URL`: seeded 3 recognizable marker `User` rows, backed up (105,487 bytes, via the corrected stream-flush-safe `runPgDump`), **dropped and recreated the database from scratch** (confirmed zero tables), restored, and confirmed all 3 marker rows plus the full table totals came back exactly, alongside `_prisma_migrations` (10 rows) proving the full schema round-tripped. **The production-host guard itself was adversarially re-tested**: `127.0.0.1` vs `localhost`, `127.1`, `2130706433` (decimal), `0177.0.0.1` (octal), and a trailing-dot FQDN are all now REFUSED (previously all bypassed a bare string compare); an empty or unparseable `DATABASE_URL` now fails CLOSED (previously failed open); the guard's `.env` load is cwd-independent (confirmed identical behavior running from the repo root vs. an unrelated directory with `DATABASE_URL` unset in the shell); a genuinely different host, a same-host different-database target, and `--allow-production` itself all remain correctly ALLOWED. A corrupted/partial dump now makes `restore-db.mjs` exit non-zero (previously always exited 0). 45 unit tests cover the pure filename/pruning/guard/legacy-IPv4/DNS logic (`tests/unit/backup-args.test.mjs`). |
 | Live Stripe test-clock flows | — | **BLOCKED.** Requires a real Stripe test-mode account and `stripe trigger`/test-clock API access, not available in this worktree. One-command instruction: `stripe trigger checkout.session.completed --add checkout_session:metadata.userId=<test-user-id>` against a configured Stripe CLI pointed at the app's `/api/stripe/webhook`, then confirm the matching `CreditLedger` row. |
 
-Gate B moves from **FAIL** to **BLOCKED**: the one concrete, verified code
-defect (the margin floor) is now fixed and proven with real test output.
-What remains is purely environmental — backup/restore and live Stripe
-test-clocks both need infrastructure this worktree doesn't have — not
-something more code changes here can close.
+Gate B stays **BLOCKED**, not PASS: the margin-floor defect is fixed, and
+backup/restore — the other concrete gap this document previously flagged —
+is now genuinely rehearsed and proven (Phase 8 Task A1, immediately above).
+The **sole remaining blocker is live Stripe test-clock flows**, which need a
+real Stripe test-mode account this worktree does not have — that is
+infrastructure, not a code defect, and is why this gate cannot move to PASS
+from an implementer's worktree at all; it needs the owner's Stripe
+credentials.
 
 ---
 
@@ -217,7 +338,7 @@ something more code changes here can close.
 | **Maintenance mode — verified with a test, not by inspection** | `npx playwright test tests/e2e/admin-ops.spec.mjs --workers=1` (test: "toggling maintenance ON requires typed confirmation, then /studio 503s; toggling OFF restores it") | **PASS.** The test: opens Admin → Operator controls, requires typing `MAINTENANCE` + a reason before the confirm button enables, confirms, then a **fresh unauthenticated browser context** gets a real `503` from `GET /studio`; toggles back off (no confirmation gate on that direction) and a second fresh context confirms `/studio` no longer 503s. The ON window is wrapped in `try/finally` so a failed assertion can never leave maintenance stuck on for other concurrently-running specs. |
 | **Maintenance mode never blocks money-critical paths — verified with a test** | `npx vitest run tests/unit/ops-flags.test.mjs` (12 middleware-specific test cases) | **PASS.** Directly asserts, with a real `middleware()` invocation and a mocked `/api/health` response of `maintenance: true`, that `POST /api/webhooks/generation-complete`, `POST /api/stripe/webhook`, `POST /api/cron/automation`, `POST /api/admin/ops`, and `GET /api/health` itself all still reach `NextResponse.next()` (never a 503), while a normal state-changing route (`POST /api/assets`) and `/studio` correctly do 503. |
 | Incident runbook | `docs/runbook-ops.md`, `docs/incident-response.md` (this phase) | Written — maintenance mode, provider kill switch, worker-down/stuck-job/reconciliation-drift triage, the automation cron's role as the money safety net, severity levels, who to page (currently: no one, automatically — documented honestly), and the first five commands for a SEV-1. |
-| **Alerts working (paging)** | — | **BLOCKED / not built this phase, by design.** No paging/alerting integration exists. Numeric thresholds for the contract's full alert list are documented in `docs/runbook-ops.md`'s "Alert thresholds" section, explicitly marked per-item as "implemented as a metric" (5 of 9) vs. "documented only" (4 of 9, including backup failure and auth failure spike, neither of which has anything to threshold yet). One-command instruction once a paging target exists: wire `GET /api/admin/metrics` into a scheduled check (cron + a small script comparing against the documented thresholds) that calls the paging provider's webhook on breach — no such script exists yet. |
+| **Alerts working (paging)** | `TEST_DATABASE_URL=postgresql://postgres:test@localhost:55432/test npx vitest run --config vitest.integration.config.mjs tests/integration/alerts.int.test.mjs` + `npx vitest run tests/unit/alerts.test.mjs tests/unit/automation.test.mjs tests/unit/api-admin-flags.test.mjs` | **PASS (Phase 8 Task A2, re-verified after code review).** `src/lib/alerts.js`'s `evaluateAlerts()` (reusing Phase 7's `collectMetrics()` directly, never re-querying) implements 6 real, data-backed rules plus a 7th (Stripe webhook failures) that is real and unit-tested but cannot fire against production data yet (documented honestly, see `docs/runbook-ops.md`). `deliverAlerts()` posts to `ALERT_WEBHOOK_URL` with a 10s `AbortSignal.timeout` (fixed: a hanging webhook used to stall `runAutomation()`'s entire response, including the money-safety legs), logs a warning no-op when unset. Dedup is split into `selectDueAlerts()` (read-only) and `recordAlertsFired()` (write-only, called ONLY after a confirmed delivery — fixed: it used to write before delivery was attempted, so an undelivered critical was suppressed for the full 60-minute window; re-proven against real Postgres that a webhook 500 now leaves the alert due again immediately). `GET /api/cron/alerts` and `runAutomation()`'s 6th leg both wire this together. `alert_state:*` `FeatureFlag` rows are now excluded from `GET /api/admin/flags` and rejected by its `POST` (fixed: they used to appear as editable operator flags). 36 alert unit tests + 5 integration tests + automation-leg tests + 4 admin-flags tests, all passing. |
 | **Rollback tested** | — | **BLOCKED.** Would require a real deploy + intentional rollback rehearsal against the production server; not performed in this environment. One-command instruction: on the server, `git reset --hard <previous-sha> && npx prisma generate && npm run build && pm2 startOrReload ecosystem.config.cjs --update-env`, then confirm `/api/admin/metrics` and `/api/health` respond correctly post-rollback. |
 | **Production smoke test checklist completed** | `docs/release-checklist.md` (written this phase) | The checklist itself is written and matches CI exactly, plus a manual post-deploy section (metrics reachable, maintenance mode off, worker not crash-looping). **Running it against real production is BLOCKED** — no deploy was performed as part of this phase. One-command instruction: `scripts/deploy.sh` via the documented `plink` invocation, followed by the "Pre-deploy (manual today)" section's four checks in `docs/release-checklist.md`. |
 
@@ -253,15 +374,19 @@ something more code changes here can close.
 
 ## Every blocker, in one place
 
+Two rows this table previously listed — **backup/restore never rehearsed**
+and **paging/alerting integration** — are resolved as of Phase 8 Tasks A1
+and A2 (see the addendum near the top of this document) and have been
+removed from the list below. Everything remaining here is unchanged and
+still genuinely needs the stated infrastructure/owner action.
+
 | Blocker | Gate | One-command instruction |
 |---|---|---|
-| Backup/restore never rehearsed | B | `pg_dump "$DATABASE_URL" -Fc -f backup.dump && pg_restore -d restore_test backup.dump` against a disposable restore target, once a backup process exists at all. |
 | Live Stripe test-clock flows | B | `stripe trigger checkout.session.completed --add checkout_session:metadata.userId=<id>` against a real Stripe CLI + test-mode account. |
 | ZAP authenticated scan | C | `docker run -t owasp/zap2docker-stable zap-full-scan.py -t https://staging.helmies.fi -r zap-report.html` against a real staging deployment. |
-| Templates A–L test-run proof | D | Owned by Phase 6, concurrent branch — out of this phase's scope by explicit instruction. |
-| Full browser/device matrix | E | `npx playwright test --project=firefox --project=webkit` (config addition needed) plus BrowserStack/Sauce Labs or physical devices for real mobile coverage. |
+| Templates A–L test-run proof | D | Owned by Phase 6 / Stream B, concurrent branch (`feat/phase8-product`) — out of this agent's scope by explicit instruction. |
+| Full browser/device matrix | E | `npx playwright test --project=firefox --project=webkit` (config addition needed) plus BrowserStack/Sauce Labs or physical devices for real mobile coverage — Stream B's concurrent `feat/phase8-product` Task B2 addresses the config addition; not re-verified from this agent. |
 | Mobile keyboard / overflow / 200% zoom | E | No script exists; manual testing on a real device/browser at 200% zoom. |
 | VoiceOver / NVDA passes | E | Manual pass, no command — a human operator on macOS (VoiceOver) and Windows+NVDA walking the core journeys. |
-| Paging/alerting integration | F | No script exists; a scheduled job comparing `GET /api/admin/metrics` against `docs/runbook-ops.md`'s documented thresholds, calling a paging webhook on breach — not built this phase (explicitly deferred per the Phase 7 plan's self-review). |
-| Rollback rehearsal | F | `git reset --hard <previous-sha> && npx prisma generate && npm run build && pm2 startOrReload ecosystem.config.cjs --update-env` on the real server. |
+| Rollback rehearsal | F | `git reset --hard <previous-sha> && npx prisma generate && npm run build && pm2 startOrReload ecosystem.config.cjs --update-env` on the real server — requires taking production down deliberately; the owner should schedule it. |
 | Production smoke test | F | `scripts/deploy.sh` (via the documented `plink` SSH invocation) followed by `docs/release-checklist.md`'s manual post-deploy section. |

@@ -27,6 +27,16 @@ if ((process.env.STORAGE_DRIVER || "local").toLowerCase() === "s3") {
   REQUIRED.push("S3_ENDPOINT", "S3_REGION", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY");
 }
 
+// Deliberately NOT in REQUIRED (same precedent as CRON_SECRET above, which
+// also isn't force-required despite gating /api/cron/automation): Phase 8's
+// ALERT_WEBHOOK_URL/ALERT_REPEAT_MINUTES (src/lib/alerts.js) and A1's
+// BACKUP_DIR/BACKUP_RETENTION_DAYS (scripts/backup-db.mjs) all have safe,
+// documented fallback behavior when unset — alerting still evaluates every
+// rule and logs an honest "not configured" warning instead of delivering,
+// and the backup script falls back to /root/backups/db / 14 days. Forcing
+// them into REQUIRED would fail `npm run check:env` on every environment
+// that hasn't (yet, or ever, by choice) wired up a webhook target.
+
 const missing = REQUIRED.filter((name) => !process.env[name]);
 const example = readFileSync(new URL("../.env.example", import.meta.url), "utf8");
 const undocumented = REQUIRED.filter((name) => !example.includes(name));

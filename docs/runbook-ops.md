@@ -189,25 +189,62 @@ while the timer is restored, and `oldestQueuedAgeSec` /
 `reconciliation.drifted` on the Metrics screen are the two numbers that will
 visibly worsen if it stays missing.
 
-## Alert thresholds
+## Alert thresholds and delivery (Phase 8 Task A2)
 
-The contract (`01_HELMIES_STUDIO_PRODUCTION_EXCELLENCE_AND_QA.md` §10.2)
-names an alert list. **No paging/alerting system is configured** — nothing
-here pages anyone automatically today (see `docs/incident-response.md`).
-"Implemented as a metric" below means the number is real and available via
-`GET /api/admin/metrics` or the Metrics screen for a human to check;
-"documented only" means there is no metric surfacing it at all yet — checking
-it requires a manual query or log grep.
+`src/lib/alerts.js` evaluates the rules below against Phase 7's
+`collectMetrics()` (reused directly — this module never re-queries) and
+delivers them: `GET /api/cron/alerts` (bearer `CRON_SECRET`, identical
+pattern to `/api/cron/automation`) evaluates + delivers on demand, and
+`runAutomation()` (`src/lib/automation.js`) also runs the same
+evaluate-deliver sequence as its 6th leg, so alerting rides the
+already-installed automation timer even before a server has the dedicated
+alerts timer below installed — both share the same `FeatureFlag`-backed
+dedup state, so running both together never double-delivers within one
+repeat window.
+
+**Delivery:** set `ALERT_WEBHOOK_URL` to any endpoint that accepts a POSTed
+JSON body — a Slack or Discord incoming webhook URL both work directly, or
+point it at a generic HTTP endpoint of your own:
+
+```bash
+# .env
+ALERT_WEBHOOK_URL="https://hooks.slack.com/services/T000/B000/xxxxxxxx"
+ALERT_REPEAT_MINUTES="60"   # optional, default 60 — see dedup below
+```
+
+With `ALERT_WEBHOOK_URL` unset, every rule still evaluates and the route/leg
+still runs — delivery is a no-op that logs a `alerts_webhook_not_configured`
+warning (via `src/lib/log.js`) instead of silently pretending an alert
+reached anyone. The posted payload is `{ ts, count, alerts: [{ key,
+severity, title, detail, value, threshold }] }` — never secrets, never
+prompt text.
+
+**Deduplication:** an alert with the same `key` will not re-fire more often
+than `ALERT_REPEAT_MINUTES` (default 60). State is a `FeatureFlag` row keyed
+`alert_state:<key>` (no new model — the same table maintenance mode and the
+provider kill switch already use) holding `{ lastFiredAt }`; each evaluate-
+and-deliver pass checks and updates it per alert key independently.
+
+"Implemented as an alert rule" below means `evaluateAlerts()`
+(`tests/unit/alerts.test.mjs`) genuinely fires/suppresses it at the stated
+threshold, end to end proven against real Postgres + a stubbed webhook in
+`tests/integration/alerts.int.test.mjs`. "Documented only" / "not
+implemented" mean exactly what they said before this phase — a rule that
+cannot be built from data the codebase actually persists is not faked into
+existence just because a rule list asked for it.
 
 | Alert | Threshold | Status |
 |---|---|---|
-| Payment webhook failures | > 0 `stripe_webhook_processing_failed` log lines (`src/app/api/stripe/webhook/route.js`, via `src/lib/log.js`) in any 15-minute window | **Documented only.** `webhooks.stripeEventsProcessed` (metrics) counts *successful* claims only — a failing webhook never reaches that counter, so a spike in failures currently only shows up as elevated 4xx/5xx responses in server logs, not as a metric. |
-| Settlement mismatch | `reconciliation.drifted > 0` (any drift at all — the wallet invariant is exact, not a tolerance band) | **Implemented as a metric.** `GET /api/admin/metrics` → `reconciliation.{walletsChecked,drifted}`, reusing `src/lib/reconciliation.js`'s `reconcileAll()` directly. |
-| Provider cost spike | Daily provider cost (`Σ Generation.providerCost`) more than 2× the trailing 7-day daily average | **Documented only.** `GET /api/admin/analytics` reports lifetime/30-day provider cost totals but has no rolling-average comparison; `GET /api/admin/metrics`'s `providers[]` reports attempt/failure counts, not cost. Spike detection today means pulling the numbers from `/api/admin/analytics` by hand and eyeballing the trend. |
-| Queue backlog | `jobs.oldestQueuedAgeSec > 300` (5 minutes) | **Implemented as a metric.** The worker-liveness signal this phase was built around; `MetricsPanel.js` visually flags it past this threshold. Not a hard outage signal by itself — comfortably above `job-queue.js`'s own 5-minute default lease, so it should stay near zero/null under a live worker. |
-| Error-rate spike | `generations.successRate < 80` over a 24-hour window with `generations.total >= 20` (the sample-size floor avoids alerting on 1-of-3 noise) | **Implemented as a metric.** `GET /api/admin/metrics` → `generations.{total,succeeded,failed,successRate}`. |
-| Auth failure spike | N/A today — no threshold defined | **Not implemented at all.** NextAuth's credentials flow does not currently write an `AuditLog` row (or any other record) on a failed sign-in attempt — there is nothing to threshold yet. This is a real gap: closing it means adding a failure-path log/audit call in `src/lib/auth.js`'s credentials provider, out of scope for this phase. |
-| Backup failure | N/A today — no threshold defined | **Not implemented at all.** No backup mechanism (scheduled `pg_dump`, managed-Postgres snapshot, or otherwise) exists anywhere in this repo or its deploy scripts (`scripts/deploy.sh`, `ecosystem.config.cjs`) as of this phase — see `docs/data-retention.md` and `RELEASE_STATUS.md` Gate B. There is nothing running to fail, and therefore nothing to alert on, until a backup process is actually stood up. |
+| Worker liveness | `jobs.oldestQueuedAgeSec > 900` (15 min) → **critical** | **Implemented as an alert rule** (`worker_liveness`). |
+| Queue backlog | `jobs.oldestQueuedAgeSec > 300` (5 min) → **warn** | **Implemented as an alert rule** (`queue_backlog`) — the same pre-existing threshold this table named before Task A2, now an executable rule (and still separately visible on `MetricsPanel.js`). An earlier, lower-severity warning on the exact same signal `worker_liveness` escalates to critical from — both can fire together with independent dedup keys. |
+| Job dead-letter rate | dead / (queued+running+dead) `> 20%`, with a `>= 5` job sample floor → **warn** | **Implemented as an alert rule** (`job_dead_letter_rate`). |
+| Error-rate spike | `generations.successRate < 80` with `generations.total >= 20` (the sample-size floor avoids alerting on 1-of-3 noise) → **warn** | **Implemented as an alert rule** (`generation_failure_rate`) — same threshold this table named before Task A2. |
+| Settlement mismatch | `reconciliation.drifted > 0` (any drift at all — the wallet invariant is exact, not a tolerance band) → **critical** | **Implemented as an alert rule** (`wallet_reconciliation_drift`) — same threshold this table named before Task A2, `reconcileAll()` reused directly, no reimplementation. |
+| Provider failure > success | per-provider `failures > (attempts - failures)`, with a `>= 5` attempt floor → **warn** | **Implemented as an alert rule** (`provider_failure_rate:<name>`), keyed and deduped per provider. |
+| Payment webhook failures | > 0 Stripe webhook events failed in the window → **critical** | **Rule exists, cannot fire against real data yet.** `evaluateAlerts()` reads `webhooks.stripeEventsFailed` and is fully tested against a synthetic metrics object (`tests/unit/alerts.test.mjs`), but `collectMetrics()` (Phase 7, unmodified by this task) has no such field to populate — `src/app/api/stripe/webhook/route.js`'s `StripeEvent` claim row is created INSIDE the same transaction that fails and rolls back on error, so a failed webhook is only ever logged (`stripe_webhook_processing_failed`), never persisted. There is structurally no database row to count today. Closing this for real needs a change to how webhook failures are recorded (a new column/table, or a log-aggregation query), out of scope here — this is the same gap this table already named before Task A2, not silently upgraded to "implemented". |
+| Provider cost spike | Daily provider cost (`Σ Generation.providerCost`) more than 2× the trailing 7-day daily average | **Documented only**, unchanged by this task. `GET /api/admin/analytics` reports lifetime/30-day provider cost totals but has no rolling-average comparison; `GET /api/admin/metrics`'s `providers[]` reports attempt/failure counts, not cost. |
+| Auth failure spike | N/A today — no threshold defined | **Not implemented at all**, unchanged by this task. NextAuth's credentials flow does not currently write an `AuditLog` row (or any other record) on a failed sign-in attempt — there is nothing to threshold yet. |
+| Backup failure | Non-zero exit from `scripts/backup-db.mjs` (Phase 8 Task A1) | **Backup mechanism now exists** (`docs/runbook-backup.md`) but is surfaced via `systemctl status`/`journalctl` only, same as any other systemd service failure — no alert rule reads it (a script's own exit code isn't a `collectMetrics()` field). Not implemented as an alert rule. |
 
 Two more from the contract's full alert list, for completeness (not called
 out by name in the Phase 7 brief, included here so the alert-list coverage is
@@ -215,11 +252,57 @@ honest about all 11, not just 7):
 
 | Alert | Threshold | Status |
 |---|---|---|
-| Abnormal free-credit usage | `autoSuspendAbusiveUsers`'s own threshold: 100+ generations by one non-admin user in 60 minutes | **Implemented as automated action, not a metric.** `src/lib/automation.js` already zeroes the wallet automatically (via the cron timer above) and writes an `AuditLog` row (`action: "auto_suspend_user"`) — there's no separate "alert" surface, the system just acts. Query `AuditLog` for that action to see how often it's firing. |
+| Abnormal free-credit usage | `autoSuspendAbusiveUsers`'s own threshold: 100+ generations by one non-admin user in 60 minutes | **Implemented as automated action, not an alert.** `src/lib/automation.js` already zeroes the wallet automatically (via the cron timer above) and writes an `AuditLog` row (`action: "auto_suspend_user"`) — there's no separate "alert" surface, the system just acts. Query `AuditLog` for that action to see how often it's firing. |
 | Object storage failure | N/A — no threshold defined | **Documented only.** `src/lib/storage/ingest.js`'s ingest failures fall back to the raw provider URL rather than failing the generation (see `job-runner.js`'s `ingestFirstOutput` header) — a storage outage degrades gracefully today but isn't counted anywhere. |
 
 `Database saturation` and `CSP reports` (also in the contract's full list)
-have no metric or threshold defined at all in this phase and aren't
-mentioned in the Phase 7 brief's alert list — flagged here only so this table
-doesn't imply silent coverage. Both require infrastructure (connection-pool
-metrics, a CSP `report-uri` collector) not built yet.
+have no metric or threshold defined at all and aren't mentioned in the
+Phase 7 brief's alert list — flagged here only so this table doesn't imply
+silent coverage. Both require infrastructure (connection-pool metrics, a CSP
+`report-uri` collector) not built yet.
+
+## Systemd timer for the alerts cron (5-minute cadence) — text only; **the controller installs these on the server**, not this task
+
+`GET /api/cron/alerts` is a plain HTTP endpoint (bearer `CRON_SECRET`), so
+the timer just curls it — no `node` invocation needed here, unlike the
+backup script (`docs/runbook-backup.md`).
+
+`/etc/systemd/system/helmies-alerts.service`:
+
+```ini
+[Unit]
+Description=Helmies Studio threshold alert evaluation
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/curl -sf -H "Authorization: Bearer ${CRON_SECRET}" https://studio.helmies.fi/api/cron/alerts
+EnvironmentFile=/root/helmies-studio/.env
+```
+
+`/etc/systemd/system/helmies-alerts.timer`:
+
+```ini
+[Unit]
+Description=Run helmies-alerts.service every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable --now helmies-alerts.timer
+systemctl list-timers | grep helmies-alerts   # confirm it's scheduled
+```
+
+This timer is **additive**, not a replacement for the automation timer
+(`docs/runbook-ops.md`'s "automation systemd timer" section) — the
+automation cron already runs the identical evaluate-deliver sequence as its
+6th leg, so alerting works even before this timer is installed on a given
+server. Installing this one just tightens the cadence to 5 minutes
+independent of whatever interval the automation timer runs at.
