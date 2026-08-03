@@ -10,7 +10,7 @@ import { ALIBABA_MEDIA_MODELS } from "./alibaba-catalog.js";
 import {
   calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput,
   modelTypeForCapability, UNCATEGORIZED_MODEL_TYPE, slugToTitle, toPublicModelId, resolveModelPricingRow,
-  inferCapabilityFromRow, sanitizeCatalogDescription,
+  inferCapabilityFromRow, sanitizeCatalogDescription, sanitizeDisplayName,
 } from "./model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
@@ -42,7 +42,14 @@ function toDbData(model, markup = DEFAULT_MARKUP) {
     providerName: "Alibaba",
     providerModelId: model.providerModelId,
     endpoint: model.endpoint,
-    displayName: model.displayName,
+    // Belt-and-suspenders at the write site itself (not just the read-time
+    // serializer below): alibaba-catalog.js's displayName is hand-authored
+    // per model() call, so nothing stops a future entry from accidentally
+    // baking "Alibaba:" straight into it the way two live audio rows
+    // (qwen3-tts-flash, qwen3-tts-instruct-flash) already did. Scrubbing it
+    // here too means a fresh syncAlibabaModels() run can never reintroduce
+    // the leak, even before the serializer's own fix ever runs.
+    displayName: sanitizeDisplayName(model.displayName, "Alibaba"),
     description: model.description,
     capability: model.capability,
     inputModalities: model.inputModalities,
@@ -153,12 +160,25 @@ export function serializeCatalogModel(model, { includeCosts = false, isAdmin = f
   const effectiveType = modelTypeForCapability(capability);
   const isUncategorized = effectiveType === null;
   const publicId = isAdmin ? model.modelId : toPublicModelId(model.modelId, model.providerName);
+  // Same "hide the upstream provider" requirement as publicId/description
+  // above, applied to the human-readable name: a hand-authored displayName
+  // (Alibaba's) can bake a "<providerName>:" prefix straight into the name
+  // itself (measured production bug: qwen3-tts-flash / qwen3-tts-instruct-
+  // flash reported as "Alibaba:qwen3 TTS Flash" / "Alibaba:qwen3 TTS
+  // Instruct Flash" — every other mode already reported zero such leaks).
+  // sanitizeDisplayName (model-catalog-core.mjs) is applied live here, same
+  // as sanitizeCatalogDescription below, so the already-live rows are fixed
+  // without waiting for a re-sync/backfill; admin keeps seeing the raw
+  // provider-qualified name (it already sees providerName directly, so
+  // there's nothing left to hide).
+  const rawDisplayName = displayNameFor(model, capability);
+  const displayName = isAdmin ? rawDisplayName : sanitizeDisplayName(rawDisplayName, model.providerName);
   const base = {
     id: publicId,
     modelId: publicId,
     providerModelId: model.providerModelId || model.modelId,
     endpoint: model.endpoint || model.modelId,
-    displayName: displayNameFor(model, capability),
+    displayName,
     description: isAdmin ? model.description : sanitizeCatalogDescription(model.description),
     modelType: isUncategorized ? UNCATEGORIZED_MODEL_TYPE : effectiveType,
     capability,

@@ -1,6 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription } from "@/lib/model-catalog-core.mjs";
+import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription, sanitizeDisplayName } from "@/lib/model-catalog-core.mjs";
 import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
 
 test("quotes a fixed per-image model with output count", () => {
@@ -118,4 +118,39 @@ test("sanitizeCatalogDescription leaves a description with no provider token com
 test("sanitizeCatalogDescription returns null for null/empty input", () => {
   assert.equal(sanitizeCatalogDescription(null), null);
   assert.equal(sanitizeCatalogDescription(""), null);
+});
+
+// ── URGENT production fix: hide upstream provider identity baked into
+// DISPLAYNAME, not just the id/description (measured bug: two live Alibaba
+// audio rows — qwen3-tts-flash, qwen3-tts-instruct-flash — reported
+// displayName "Alibaba:qwen3 TTS Flash" / "Alibaba:qwen3 TTS Instruct
+// Flash" even though the public catalog already strips the same
+// "alibaba:" prefix from the id) ────────────────────────────────────────
+test("sanitizeDisplayName strips a leading '<providerName>:' prefix and re-cases the remainder via the same acronym/title-case machinery as slugToTitle", () => {
+  assert.equal(sanitizeDisplayName("Alibaba:qwen3 TTS Flash", "Alibaba"), "Qwen3 TTS Flash");
+  assert.equal(sanitizeDisplayName("Alibaba:qwen3 TTS Instruct Flash", "Alibaba"), "Qwen3 TTS Instruct Flash");
+});
+
+test("sanitizeDisplayName leaves a displayName with no provider prefix completely unchanged", () => {
+  assert.equal(sanitizeDisplayName("Qwen Image Max", "Alibaba"), "Qwen Image Max");
+  assert.equal(sanitizeDisplayName("Seedance 1.5 Pro", "KIE"), "Seedance 1.5 Pro");
+  assert.equal(sanitizeDisplayName("GPT-4o Image", "KIE"), "GPT-4o Image");
+  assert.equal(sanitizeDisplayName("Generate AI Video", "KIE"), "Generate AI Video");
+});
+
+test("sanitizeDisplayName does NOT strip 'Qwen' when it isn't a leading '<providerName>:' prefix — it's a model family name, not an upstream provider tag", () => {
+  // "Qwen" here is just the first word of the name, not "Alibaba:" — only
+  // an exact leading "<providerName>:" match is ever stripped.
+  assert.equal(sanitizeDisplayName("Qwen Image Max", "Alibaba"), "Qwen Image Max");
+  assert.equal(sanitizeDisplayName("Qwen:Image Max", "Qwen"), "Image Max"); // would only strip if providerName itself were "Qwen"
+});
+
+test("sanitizeDisplayName is case-insensitive when matching the provider prefix", () => {
+  assert.equal(sanitizeDisplayName("alibaba:qwen3 tts flash", "Alibaba"), "Qwen3 TTS Flash");
+});
+
+test("sanitizeDisplayName returns the input unchanged for null/empty displayName or providerName", () => {
+  assert.equal(sanitizeDisplayName(null, "Alibaba"), null);
+  assert.equal(sanitizeDisplayName("Qwen Image Max", null), "Qwen Image Max");
+  assert.equal(sanitizeDisplayName("", "Alibaba"), "");
 });

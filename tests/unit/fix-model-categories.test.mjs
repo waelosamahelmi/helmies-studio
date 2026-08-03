@@ -120,11 +120,39 @@ describe("planFixes", () => {
     ]);
   });
 
+  // ── URGENT production fix: persistently rewrite an Alibaba (or any
+  // non-KIE) displayName still leaking a "<providerName>:" prefix (measured
+  // bug: two live audio rows persisted as "Alibaba:qwen3 TTS Flash" /
+  // "Alibaba:qwen3 TTS Instruct Flash") — this is a DIFFERENT bug than the
+  // KIE-slug-staleness fix above (a leaked prefix, not a mangled slug) and
+  // uses the SAME sanitizeDisplayName the live public serializer already
+  // calls (model-catalog-core.mjs), so both agree on what counts as a leak.
+  it("rewrites an Alibaba displayName that still leaks a '<providerName>:' prefix, fixing casing via the shared sanitizeDisplayName", () => {
+    const rows = [
+      { modelId: "alibaba:qwen3-tts-flash", providerName: "Alibaba", modelType: "audio", capability: "text-to-speech", displayName: "Alibaba:qwen3 TTS Flash" },
+      { modelId: "alibaba:qwen3-tts-instruct-flash", providerName: "Alibaba", modelType: "audio", capability: "text-to-speech", displayName: "Alibaba:qwen3 TTS Instruct Flash" },
+    ];
+    const { displayNameFixes } = planFixes(rows);
+    expect(displayNameFixes).toEqual([
+      { modelId: "alibaba:qwen3-tts-flash", providerName: "Alibaba", from: "Alibaba:qwen3 TTS Flash", to: "Qwen3 TTS Flash" },
+      { modelId: "alibaba:qwen3-tts-instruct-flash", providerName: "Alibaba", from: "Alibaba:qwen3 TTS Instruct Flash", to: "Qwen3 TTS Instruct Flash" },
+    ]);
+  });
+
+  it("does not flag an Alibaba displayName with no provider-prefix leak", () => {
+    const rows = [
+      { modelId: "alibaba:qwen-image-max", providerName: "Alibaba", modelType: "image", capability: "text-to-image", displayName: "Qwen Image Max" },
+    ];
+    const { displayNameFixes } = planFixes(rows);
+    expect(displayNameFixes).toEqual([]);
+  });
+
   it("is idempotent: re-planning against already-fixed rows reports nothing", () => {
     const fixedRows = [
       { modelId: "seedance-1-5-pro", providerName: "KIE", modelType: "video", capability: "video", displayName: "Seedance 1.5 Pro" },
       { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "video", capability: "reference-to-video", displayName: "Wan 2.7 R2v" },
       { modelId: "mystery-image-1", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Mystery Image 1", inputModalities: ["text"], outputModalities: ["image"] },
+      { modelId: "alibaba:qwen3-tts-flash", providerName: "Alibaba", modelType: "audio", capability: "text-to-speech", displayName: "Qwen3 TTS Flash" },
     ];
     const { modelTypeFixes, displayNameFixes, capabilityFixes } = planFixes(fixedRows);
     expect(modelTypeFixes).toEqual([]);
@@ -178,6 +206,63 @@ describe("run() — dry-run vs apply (mocked DB)", () => {
       expect.objectContaining({ where: { modelId: "flux-2" } })
     );
     expect(result.applied).toBe(3);
+  });
+});
+
+// ── URGENT production fix: persistently rewrite a displayName that still
+// leaks a "<providerName>:" prefix (measured bug: two live Alibaba audio
+// rows — qwen3-tts-flash, qwen3-tts-instruct-flash — persisted as
+// "Alibaba:qwen3 TTS Flash" / "Alibaba:qwen3 TTS Instruct Flash") — this is
+// the SAME sanitizeDisplayName the live public serializer calls
+// (model-catalog.js), so this script fixes both rows at rest instead of
+// relying on scrubbing happening only at read time.
+describe("run() — displayName provider-prefix backfill (dry-run / apply / idempotent second run)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const flashRow = {
+    modelId: "alibaba:qwen3-tts-flash", providerName: "Alibaba", modelType: "audio", capability: "text-to-speech",
+    displayName: "Alibaba:qwen3 TTS Flash",
+  };
+  const instructRow = {
+    modelId: "alibaba:qwen3-tts-instruct-flash", providerName: "Alibaba", modelType: "audio", capability: "text-to-speech",
+    displayName: "Alibaba:qwen3 TTS Instruct Flash",
+  };
+
+  it("dry run reports both leaking displayNames but writes nothing", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([flashRow, instructRow]);
+    const result = await run({ apply: false, yes: false });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.displayNameFixes).toEqual([
+      { modelId: "alibaba:qwen3-tts-flash", providerName: "Alibaba", from: "Alibaba:qwen3 TTS Flash", to: "Qwen3 TTS Flash" },
+      { modelId: "alibaba:qwen3-tts-instruct-flash", providerName: "Alibaba", from: "Alibaba:qwen3 TTS Instruct Flash", to: "Qwen3 TTS Instruct Flash" },
+    ]);
+  });
+
+  it("--apply --yes fixes both rows", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([flashRow, instructRow]);
+    const result = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).toHaveBeenCalledWith({
+      where: { modelId: "alibaba:qwen3-tts-flash" },
+      data: { displayName: "Qwen3 TTS Flash" },
+    });
+    expect(prisma.modelPricing.update).toHaveBeenCalledWith({
+      where: { modelId: "alibaba:qwen3-tts-instruct-flash" },
+      data: { displayName: "Qwen3 TTS Instruct Flash" },
+    });
+    expect(result.applied).toBe(2);
+  });
+
+  it("is idempotent: a second run against the already-fixed rows writes nothing", async () => {
+    const fixedFlash = { ...flashRow, displayName: "Qwen3 TTS Flash" };
+    const fixedInstruct = { ...instructRow, displayName: "Qwen3 TTS Instruct Flash" };
+    prisma.modelPricing.findMany.mockResolvedValue([fixedFlash, fixedInstruct]);
+    const result = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.displayNameFixes).toEqual([]);
   });
 });
 
