@@ -433,19 +433,20 @@ export const TEMPLATE_SEEDS = [
     safetyNotes: [
       "Every output must be clearly labeled virtual staging — never presented as a photograph of an actually furnished property. Prompts explicitly instruct the model not to alter the room's fixed structure or architecture.",
     ],
-    // MINOR-8 (found in review): step1 fundamentally needs a REAL photo of
-    // the user's own empty room to do anything meaningful — the
-    // images_list value below is a placeholder sample URL, not a real
-    // image, and Task 5's library UI has no per-step input-editing form
-    // (TemplateRunPanel.js runs the graph's own baked defaults as-is). A
-    // real user clicking "Use template" today would virtually stage a
-    // nonexistent placeholder image, not their own room — i.e. this
-    // template cannot succeed for a real user yet. Left unpublished (draft)
-    // until either a per-step input-editing UI ships or this graph is
-    // reworked to not require a user photo — never auto-published just
-    // because canPublish's structural/pricing gate happens to pass.
-    blockedReason:
-      "step1 (image-to-image virtual staging) requires a real user-supplied room photo; Task 5's library UI has no per-step input-editing form yet, so every real run would stage the placeholder sample URL instead of the user's own room.",
+    // MINOR-8 (found in review) — UNBLOCKED (Phase 8 Task B1): step1
+    // fundamentally needs a REAL photo of the user's own empty room, and the
+    // images_list value below is only a placeholder sample URL for
+    // canPublish's own quote check. That used to mean a real user clicking
+    // "Use template" would stage the placeholder instead of their own room,
+    // because there was no way to override a step's input from the UI. Task
+    // B1 shipped exactly that — TemplateRunPanel.js now renders a per-step
+    // input form (src/components/templates/StepInputsForm.js) built from
+    // each step's live model schema, and an image/array-typed field (like
+    // this step's images_list) always starts EMPTY rather than pre-filled
+    // with the graph's own sample URL, so a real run only ever stages a
+    // photo the user actually uploaded through POST /api/upload. No longer
+    // marked non-publishable — publishable defaults to true again now that
+    // the blocking reason is resolved.
     steps: [
       {
         id: "step1",

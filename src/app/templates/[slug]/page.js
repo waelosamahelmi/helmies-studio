@@ -10,6 +10,8 @@ import { getTemplateBySlug, listTemplates, getPublishedVersion } from "@/lib/tem
 import { auth } from "@/lib/auth";
 import { getTool } from "@/components/studio/kit/tools";
 import { IcInfo, IcLayers } from "@/components/studio/kit/Icons";
+import { getCatalogModel } from "@/lib/model-catalog";
+import { topoSort } from "@/lib/template-graph";
 
 const SITE = process.env.NEXTAUTH_URL || "https://studio.helmies.fi";
 
@@ -71,6 +73,93 @@ async function canViewUnpublished() {
   return session?.user?.role === "admin";
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   PER-STEP INPUT DESCRIPTORS (Phase 8 Task B1)
+   ──────────────────────────────────────────────────────────────────────────
+   The quote/run APIs (Phase 6) already accept a caller-supplied
+   `inputs[stepId][field]` override per step — this just builds what the
+   client-side form (StepInputsForm) needs to RENDER a control for each
+   field, server-side, from each step's live ModelPricing.inputSchema (never
+   a stale copy baked into the graph's own JSON).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// A field's baked graph value is "wired" (resolved automatically at run time
+// from an earlier step's own output — see src/lib/template-graph.js's
+// `$stepN.output` convention) rather than something a user should ever
+// edit. Detected structurally (the placeholder can be the whole value or
+// embedded inside a longer string/array/object) rather than by field name,
+// so it works for any field a graph happens to chain, not just the common
+// image_url/video_url case.
+function isWiredValue(value) {
+  if (value == null) return false;
+  try {
+    return JSON.stringify(value).includes("$step");
+  } catch {
+    return false;
+  }
+}
+
+// An "upload" field (format:"uri" — image_url/video_url/audio_url — or an
+// array field like images_list) gets a Dropzone control and, deliberately,
+// NO pre-filled default: every one of the twelve seed templates that has a
+// field like this only carries a placeholder sample URL in its baked
+// `inputs` (see template-seeds.js's own header comment on
+// `graph.sampleInputs`) so canPublish can quote it — pre-filling the control
+// with that placeholder would look like a real upload already happened. A
+// real run should only ever carry a URL the caller's own browser uploaded
+// through POST /api/upload.
+function isUploadField(field) {
+  return field?.type === "array" || field?.format === "uri";
+}
+
+// buildStepInputs(graph) -> [{ stepId, tool, modelId, fields: [...] }], one
+// entry per step IN EXECUTION ORDER (topoSort — a graph's own `steps` array
+// order is a convention, not a guarantee), each field being a schema field
+// the caller may legitimately override, excluding whatever's already wired
+// from an earlier step.
+async function buildStepInputs(graph) {
+  let order;
+  try {
+    order = topoSort(graph);
+  } catch {
+    return [];
+  }
+  const stepById = new Map((graph?.steps || []).map((s) => [s.id, s]));
+
+  const out = [];
+  for (const stepId of order) {
+    const step = stepById.get(stepId);
+    if (!step) continue;
+    const model = await getCatalogModel(step.modelId).catch(() => null);
+    const schemaFields = model?.schema?.fields || {};
+
+    const fields = [];
+    for (const [name, field] of Object.entries(schemaFields)) {
+      const baked = step.inputs ? step.inputs[name] : undefined;
+      if (isWiredValue(baked)) continue; // resolved automatically — never a user control
+
+      const upload = isUploadField(field);
+      fields.push({
+        name,
+        type: field.type || "string",
+        required: !!field.required,
+        enum: field.enum || null,
+        format: field.format || null,
+        minimum: field.minimum ?? null,
+        maximum: field.maximum ?? null,
+        minLength: field.minLength ?? null,
+        maxLength: field.maxLength ?? null,
+        maxItems: field.maxItems ?? null,
+        minItems: field.minItems ?? null,
+        default: upload ? null : baked ?? null,
+      });
+    }
+
+    out.push({ stepId, tool: step.tool, modelId: step.modelId, fields });
+  }
+  return out;
+}
+
 export async function generateMetadata({ params }) {
   const { slug } = await params;
   const t = await readTemplate(slug).catch(() => null);
@@ -124,6 +213,7 @@ export default async function TemplateDetailPage({ params, searchParams }) {
   // TemplateRunPanel — running it costs credits directly, there is nothing
   // to "unlock" first.
   const publishedVersion = await getPublishedVersion(t.id).catch(() => null);
+  const stepInputs = publishedVersion ? await buildStepInputs(publishedVersion.graph || {}) : [];
 
   const tool = getTool(t.toolType);
   const ToolIcon = tool.icon;
@@ -239,7 +329,7 @@ export default async function TemplateDetailPage({ params, searchParams }) {
                   // any run) and the run itself are the whole story.
                   <div className="hs-card hs-stack">
                     <span className="hs-label">What it costs</span>
-                    <TemplateRunPanel slug={t.slug} />
+                    <TemplateRunPanel slug={t.slug} stepInputs={stepInputs} />
                   </div>
                 ) : (
                   <div className="hs-card hs-stack">

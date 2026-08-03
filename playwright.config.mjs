@@ -115,6 +115,26 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
     },
+    // Phase 8 Task B2 — the browser matrix. Both reuse the SAME "setup"
+    // project (one seed, one set of storageState files under
+    // playwright/.auth/ — see auth.setup.mjs) rather than each re-seeding
+    // their own copy: the seeded fixtures (Task 1) are read-only baseline
+    // data every project shares, and storageState is just cookies, which
+    // are valid for any browser engine hitting the same app origin.
+    {
+      name: "firefox",
+      testDir: "./tests/e2e",
+      testMatch: /.*\.spec\.mjs$/,
+      use: { ...devices["Desktop Firefox"] },
+      dependencies: ["setup"],
+    },
+    {
+      name: "webkit",
+      testDir: "./tests/e2e",
+      testMatch: /.*\.spec\.mjs$/,
+      use: { ...devices["Desktop Safari"] },
+      dependencies: ["setup"],
+    },
   ],
 
   webServer: [

@@ -10,6 +10,39 @@ Phase 5's "prove it works for a real user in a real browser" layer, on top
 of (not instead of) the unit (`npm test`) and integration
 (`npm run test:integration`) suites.
 
+## The browser matrix (Phase 8 Task B2)
+
+Every spec runs on three Playwright projects — `chromium`, `firefox`,
+`webkit` — all defined in `playwright.config.mjs` and all depending on the
+same `setup` project (one seed, one set of `storageState` cookie files;
+cookies are valid for any engine hitting the same app origin, so there is no
+reason to seed three times). `npm run test:e2e` with no `--project` flag
+runs the full suite on all three; `npx playwright test --project=firefox`
+(or `chromium`/`webkit`) runs just one, useful when iterating on a single
+engine's failure.
+
+First run on a machine that has never used Playwright's Firefox/WebKit
+builds needs `npx playwright install firefox webkit` (or `--with-deps` on
+Linux, matching the chromium install below) before `npm run test:e2e` will
+find those two engines.
+
+As of the Task B2 baseline recorded below, all 30 specs pass identically on
+all three engines — no per-browser skip, no browser-specific test-only
+workaround was needed. If a *future* spec needs one:
+
+- **A real cross-browser product bug** (e.g. a CSS property Firefox/WebKit
+  render differently, a keyboard-event quirk WebKit doesn't fire the same
+  way) gets fixed in the **product** — the whole point of running the
+  matrix is to catch these before a real Firefox/Safari user does.
+- **A test artifact** (a Chromium-only selector, a timing assumption that
+  happens to hold on one engine's event loop but not another's) gets fixed
+  in the **test**, and the fix should say so in a comment — never silently
+  loosen an assertion to paper over a real difference.
+- **Skipping a browser entirely** for a spec (`test.skip(({ browserName })
+  => browserName === "webkit", "reason")`) is a last resort and must be
+  justified in the spec's own comment and in whatever report describes the
+  change — an unexplained skip defeats the purpose of the matrix.
+
 ## Running locally
 
 1. Start the disposable test Postgres container (same one integration tests
@@ -153,6 +186,10 @@ request (and on push to `main`): a `postgres:16` service container shaped
 to match `playwright.config.mjs`'s hardcoded
 `postgresql://postgres:test@localhost:55432/test` exactly (same
 user/password/db, same `55432` host port), `npx prisma migrate deploy`
-against it, `npx playwright install --with-deps chromium`, then `npm run
-test:e2e`. On failure, the `playwright-report/` HTML report is uploaded as
-a build artifact (see "The HTML report" above for how to use it).
+against it, `npx playwright install --with-deps chromium firefox webkit`,
+then `npm run test:e2e` — one job, all three engines, since
+`playwright.config.mjs` runs every project by default when no `--project`
+flag is given. On failure, the `playwright-report/` HTML report is uploaded
+as a build artifact (see "The HTML report" above for how to use it) — the
+report groups failures by project, so a webkit-only failure is easy to tell
+apart from a genuine cross-browser one.
