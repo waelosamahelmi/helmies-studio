@@ -322,3 +322,71 @@ describe("run() — description backfill (dry-run / apply / idempotent second ru
     expect(descriptionFixes).toEqual([]);
   });
 });
+
+// ── EDITSv1 E1.2: curated schema backfill ──────────────────────────────────
+// The rows already in the DB were synced with defaultSchemaForCapability's
+// generic `{ prompt }` audio schema, so the studios' schema-gated controls
+// (style, title, instrumental, voice, stability…) never render for them.
+// The backfill rewrites the stored inputSchema for CURATED ids only — a
+// model without a curated entry is never touched (no invented parameters).
+describe("run() — curated schema backfill (dry-run / apply / idempotent second run)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const staleMusicRow = {
+    modelId: "generate-music", providerName: "KIE", modelType: "audio", capability: "audio",
+    displayName: "Generate Music",
+    inputSchema: { fields: { prompt: { type: "string", required: true, maxLength: 5000 } } },
+  };
+  const nonCuratedAudioRow = {
+    modelId: "generate-lyrics", providerName: "KIE", modelType: "audio", capability: "audio",
+    displayName: "Generate Lyrics",
+    inputSchema: { fields: { prompt: { type: "string", required: true, maxLength: 5000 } } },
+  };
+
+  it("planFixes flags a curated id whose stored schema is still the generic default, and leaves non-curated rows alone", () => {
+    const { schemaFixes } = planFixes([staleMusicRow, nonCuratedAudioRow]);
+    expect(schemaFixes).toHaveLength(1);
+    expect(schemaFixes[0].modelId).toBe("generate-music");
+    expect(schemaFixes[0].to.fields.style).toMatchObject({ type: "string" });
+    expect(schemaFixes[0].to.fields.instrumental).toMatchObject({ type: "boolean" });
+    expect(schemaFixes[0].to.fields.duration).toMatchObject({ type: "number", enum: [30, 60, 120, 180, 240] });
+    // The generic prompt field survives the merge.
+    expect(schemaFixes[0].to.fields.prompt).toBeTruthy();
+  });
+
+  it("dry run reports the schema fix but writes nothing", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([staleMusicRow, nonCuratedAudioRow]);
+    const result = await run({ apply: false, yes: false });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.schemaFixes).toHaveLength(1);
+  });
+
+  it("--apply --yes writes the curated schema for the stale row only", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([staleMusicRow, nonCuratedAudioRow]);
+    const result = await run({ apply: true, yes: true });
+    expect(result.applied).toBe(1);
+    const call = prisma.modelPricing.update.mock.calls.find(([args]) => args.where.modelId === "generate-music");
+    expect(call).toBeTruthy();
+    expect(call[0].data.inputSchema.fields.vocal_gender).toMatchObject({ enum: ["m", "f"] });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { modelId: "generate-lyrics" } }),
+    );
+  });
+
+  it("is idempotent: a second run against the already-backfilled row writes nothing", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([staleMusicRow]);
+    const first = await run({ apply: true, yes: true });
+    expect(first.applied).toBe(1);
+    const [{ data }] = prisma.modelPricing.update.mock.calls[0];
+
+    vi.clearAllMocks();
+    prisma.modelPricing.findMany.mockResolvedValue([{ ...staleMusicRow, inputSchema: data.inputSchema }]);
+    const second = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(second.applied).toBe(0);
+    expect(second.schemaFixes).toEqual([]);
+  });
+});

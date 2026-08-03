@@ -29,9 +29,17 @@ export const TOOLS = [
   { id: "image",        label: "Image",      icon: IcImage,     group: "make", dock: true,
     title: "Image",
     blurb: "Generate or transform a still with a precise brief." },
-  { id: "video",        label: "Video",      icon: IcVideo,     group: "make", dock: true,
-    title: "Video",
-    blurb: "Generate motion from text, a still, or existing footage." },
+  // Text→video and image→video are separate tools (EDITSv1 E1.3): they have
+  // different requirements (i2v cannot run without a source image), largely
+  // disjoint model pools, and burying the split in an in-component toggle
+  // hid the second job entirely. Both mount VideoStudio with a fixed mode;
+  // /studio/video keeps working (text mode) for old links.
+  { id: "video",        label: "Text to Video", icon: IcVideo,  group: "make", dock: true,
+    title: "Text to Video",
+    blurb: "Generate motion from a written brief." },
+  { id: "i2v",          label: "Image to Video", icon: IcVideo, group: "make",
+    title: "Image to Video",
+    blurb: "Animate a still — your image becomes the first frame." },
   { id: "canvas",       label: "Canvas",     icon: IcLayers,    group: "make",
     title: "Canvas",
     blurb: "Compose layers, mask regions, and direct the edit visually." },
@@ -40,7 +48,7 @@ export const TOOLS = [
     blurb: "Direct the camera: lens, movement, and light." },
   { id: "audio",        label: "Audio",      icon: IcMusic,     group: "make",
     title: "Audio",
-    blurb: "Generate speech and sound design." },
+    blurb: "Speech, dialogue, voice cloning, and sound effects." },
   { id: "music",        label: "Music",      icon: IcMusic,     group: "make",
     title: "Music",
     blurb: "Compose a track from a description or a reference." },
@@ -69,6 +77,9 @@ export const TOOLS = [
   { id: "clipping",     label: "Clipping",   icon: IcScissors,  group: "edit",
     title: "Clipping",
     blurb: "Find the moments worth keeping and cut them out." },
+  { id: "audio-tools",  label: "Audio Tools", icon: IcMusic,    group: "edit",
+    title: "Audio Tools",
+    blurb: "Isolate, clean, convert, and reshape existing audio." },
   { id: "marketing",    label: "Marketing",  icon: IcMegaphone, group: "edit",
     title: "Marketing",
     blurb: "Produce campaign deliverables from a single brief." },

@@ -14,8 +14,15 @@
  */
 
 import prisma from "@/lib/prisma";
-import { defaultSchemaForCapability, inferKieModelFromUrl, modelTypeForCapability, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
+import { CURATED_SCHEMAS, inferKieModelFromUrl, modelTypeForCapability, schemaForModel, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
 import { calculateCredits } from "@/lib/pricing-engine";
+
+// Curated per-model parameter schemas (EDITSv1 E1.2). The data physically
+// lives in model-catalog-core.mjs because the persistent backfill
+// (scripts/fix-model-categories.mjs) runs under plain node where this
+// file's "@/lib/..." imports can't resolve — re-exported here so sync-side
+// callers and tests keep one import site.
+export { CURATED_SCHEMAS };
 
 const KIE_SITEMAP_URL = "https://docs.kie.ai/sitemap.xml";
 const MARKUP = 2.5;
@@ -363,7 +370,10 @@ export async function fetchKieModels() {
         capability,
         inputModalities: inferred?.inputModalities || ["text"],
         outputModalities: inferred?.outputModalities || [type === "audio" ? "audio" : type.includes("v") || type === "video" || type === "lipsync" ? "video" : "image"],
-        inputSchema: defaultSchemaForCapability(capability),
+        // Curated fields (a model's REAL parameters, see CURATED_SCHEMAS in
+        // model-catalog-core.mjs) merged over the generic default for its
+        // capability; non-curated models get exactly the default.
+        inputSchema: schemaForModel(modelId, capability),
         docsUrl: url,
       });
     }

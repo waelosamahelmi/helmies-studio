@@ -12,14 +12,24 @@ const TOOLS = {
     keywords: ["AI image generator", "Flux AI", "Midjourney", "text to image", "image generation", "AI art"],
   },
   video: {
-    title: "AI Video Generator",
-    description: "Create videos from text, images, or existing footage with Sora 2, Kling, Veo & other leading AI video models.",
+    title: "AI Text to Video Generator",
+    description: "Create videos from a written brief with Sora 2, Kling, Veo & other leading AI video models.",
     keywords: ["AI video generator", "Sora 2", "Kling AI", "Veo 3", "text to video", "AI video"],
   },
+  i2v: {
+    title: "AI Image to Video Generator",
+    description: "Animate a still image into motion — your image becomes the first frame. Kling, Veo, Wan & 20+ image-to-video models.",
+    keywords: ["AI image to video", "animate image", "image to video generator", "still to video"],
+  },
   audio: {
-    title: "AI Audio & Music Generator",
-    description: "Generate music, voice, and sound effects with Suno, MusicGen & more. One subscription, no filters.",
-    keywords: ["AI music generator", "AI voice", "AI sound effects", "audio generation"],
+    title: "AI Audio Generator — Speech, Dialogue & SFX",
+    description: "Generate speech, multi-speaker dialogue, cloned voices, and sound effects with leading AI audio models.",
+    keywords: ["AI voice generator", "AI text to speech", "AI dialogue", "voice cloning", "AI sound effects"],
+  },
+  "audio-tools": {
+    title: "AI Audio Tools",
+    description: "Isolate vocals, clean tracks, convert formats, and reshape existing audio with AI utilities.",
+    keywords: ["AI audio tools", "vocal isolation", "audio cleanup", "audio converter", "stem separation"],
   },
   cinema: {
     title: "AI Cinema Studio",

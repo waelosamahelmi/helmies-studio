@@ -1,6 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription, sanitizeDisplayName } from "@/lib/model-catalog-core.mjs";
+import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription, sanitizeDisplayName, audioKind } from "@/lib/model-catalog-core.mjs";
 import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
 
 test("quotes a fixed per-image model with output count", () => {
@@ -153,4 +153,63 @@ test("sanitizeDisplayName returns the input unchanged for null/empty displayName
   assert.equal(sanitizeDisplayName(null, "Alibaba"), null);
   assert.equal(sanitizeDisplayName("Qwen Image Max", null), "Qwen Image Max");
   assert.equal(sanitizeDisplayName("", "Alibaba"), "");
+});
+
+// ── EDITSv1 E1.1: audio subcategorization ─────────────────────────────────
+// Every KIE audio utility lands in the DB as the coarse capability "audio"
+// (and every speech model as "text-to-speech"), which is far too coarse for
+// honest studio pools: "convert-to-wav" is not a composer and
+// "generate-music" is not a sound effect. audioKind() infers the honest
+// sub-kind from id/endpoint tokens (capability alone as fallback). The
+// token precedence below is load-bearing — each case here pins one rule.
+
+test("audioKind: dialogue tokens win over the tts capability fallback", () => {
+  assert.equal(audioKind({ capability: "text-to-speech", modelId: "elevenlabs-text-to-dialogue-v3" }), "dialogue");
+});
+
+test("audioKind: plain TTS ids are tts", () => {
+  assert.equal(audioKind({ capability: "text-to-speech", modelId: "elevenlabs-text-to-speech-turbo-2.5" }), "tts");
+  assert.equal(audioKind({ capability: "text-to-speech", modelId: "gemini-3-1-flash-tts" }), "tts");
+  // No id token at all — the text-to-speech capability itself means tts.
+  assert.equal(audioKind({ capability: "text-to-speech", modelId: "some-new-speech-model" }), "tts");
+});
+
+test("audioKind: voice-generate/persona beat the tts capability (suno-voice-generate is a voice cloner, not a reader)", () => {
+  assert.equal(audioKind({ capability: "text-to-speech", modelId: "suno-voice-generate" }), "voice-clone");
+  assert.equal(audioKind({ capability: "audio", modelId: "generate-persona" }), "voice-clone");
+});
+
+test("audioKind: sound-effect ids are sfx", () => {
+  assert.equal(audioKind({ capability: "audio", modelId: "generate-sounds" }), "sfx");
+});
+
+test("audioKind: enhancement tokens (isolation, boost, separation) beat the music tokens", () => {
+  assert.equal(audioKind({ capability: "audio", modelId: "audio-isolation" }), "enhancement");
+  assert.equal(audioKind({ capability: "audio", modelId: "elevenlabs-audio-isolation" }), "enhancement");
+  // "boost-music-style" contains "music" — the enhancement rule must run first.
+  assert.equal(audioKind({ capability: "audio", modelId: "boost-music-style" }), "enhancement");
+  assert.equal(audioKind({ capability: "audio", modelId: "separate-vocals" }), "enhancement");
+});
+
+test("audioKind: conversion ids (wav, midi) are conversion", () => {
+  assert.equal(audioKind({ capability: "audio", modelId: "convert-to-wav" }), "conversion");
+  assert.equal(audioKind({ capability: "audio", modelId: "generate-midi" }), "conversion");
+});
+
+test("audioKind: the Suno composition family is music", () => {
+  for (const id of ["generate-music", "extend-music", "add-instrumental", "add-vocals", "cover-suno", "upload-and-cover-audio", "replace-section", "generate-mashup", "suno-v5"]) {
+    assert.equal(audioKind({ capability: "audio", modelId: id }), "music", `${id} should be music`);
+  }
+});
+
+test("audioKind: anything else with capability audio is utility", () => {
+  assert.equal(audioKind({ capability: "audio", modelId: "generate-lyrics" }), "utility");
+  assert.equal(audioKind({ capability: "audio", modelId: "create-music-video" }), "utility");
+  assert.equal(audioKind({ capability: "audio", modelId: "upload-and-extend-audio" }), "utility");
+});
+
+test("audioKind: reads the endpoint when the id itself carries no token, and returns null outside the audio family", () => {
+  assert.equal(audioKind({ capability: "audio", modelId: "acme-model", endpoint: "generate-music" }), "music");
+  assert.equal(audioKind({ capability: "text-to-video", modelId: "generate-music" }), null);
+  assert.equal(audioKind(null), null);
 });

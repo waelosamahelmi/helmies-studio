@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Brief, ModelPicker, Sheet,
+  Brief, ModelPicker, Sheet, Fault,
   Field, Group, Chips, Toggle, Segmented, Specs,
   clock, mediaUrl,
   IcMusic, IcPlay, IcPause, IcSettings, IcDownload, IcExternal, IcRefresh,
@@ -11,6 +11,7 @@ import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { matchesGroup } from "@/lib/capability-groups";
+import { audioKind } from "@/lib/model-catalog-core.mjs";
 
 /* ══════════════════════════════════════════════════════════════════════════
    MUSIC — composition, on the .st-wave archetype
@@ -276,6 +277,9 @@ function offers(model, ...fields) {
   return fields.some((f) => !!declared[f]);
 }
 
+/* 14 genres. The chips write the model's `style` string — the label says
+   Genre because that is what these are; mood and tempo are appended to the
+   same string below. */
 const STYLES = [
   "cinematic", "orchestral", "ambient", "lo-fi", "synthwave", "electronic",
   "house", "trap", "hip-hop", "rock", "jazz", "classical", "folk", "pop",
@@ -294,21 +298,24 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
   const [modelId, setModelId] = useState(initialModel || null);
   const [brief, setBrief] = useState("");
   const [style, setStyle] = useState([]);
+  const [mood, setMood] = useState("");
+  const [tempo, setTempo] = useState("");
   const [title, setTitle] = useState("");
   const [negativeTags, setNegativeTags] = useState("");
   const [instrumental, setInstrumental] = useState(false);
-  const [vocalGender, setVocalGender] = useState("female");
+  const [vocalGender, setVocalGender] = useState("f");
   const [duration, setDuration] = useState(60);
   const [sheet, setSheet] = useState(false);
 
   const { models, loading: loadingModels } = useModelCatalog({});
   const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
 
-  /* Composition models: the audio group minus the speech capability. Filtering
-     on `capability` is the only reliable route — the DB's modelType values are
-     fragmented, which is why capability-groups.js exists. */
+  /* Composition models ONLY (EDITSv1 E1.4): audioKind === "music". The old
+     filter took the whole coarse-"audio" capability, so converters,
+     isolators and lyric generators all showed up as "composers" — those
+     live in Audio Tools now. */
   const available = useMemo(
-    () => (models || []).filter((m) => matchesGroup(m, "audio") && m.capability === "audio"),
+    () => (models || []).filter((m) => matchesGroup(m, "audio") && audioKind(m) === "music"),
     [models],
   );
 
@@ -343,7 +350,16 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
   const wantsVocals = offers(model, "instrumental", "vocal_gender");
   const wantsNegative = offers(model, "negative_tags");
 
-  const styleText = style.join(", ");
+  /* Genre chips + free-text mood + tempo all feed the model's ONE `style`
+     string — Suno takes descriptive prompt text, not a tempo parameter, so
+     the tempo control is honestly a prompt hint ("at N BPM"), never an
+     invented API field. */
+  const styleText = useMemo(() => {
+    const parts = [...style];
+    if (mood.trim()) parts.push(mood.trim());
+    if (tempo.trim()) parts.push(`at ${tempo.trim().replace(/\s*bpm$/i, "")} BPM`);
+    return parts.join(", ");
+  }, [style, mood, tempo]);
 
   /* Identical tool string and params on both sides of the quote. */
   const costParams = useMemo(
@@ -361,12 +377,14 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
   const shownPeaks = peaks || (playLength ? placeholderPeaks(playLength) : null);
   const progress = playLength > 0 ? Math.min(1, current / playLength) : 0;
 
+  const vocalWord = vocalGender === "m" ? "male" : "female";
+
   const suggestedTitle = useMemo(() => {
     if (title.trim()) return title.trim();
     const head = style.slice(0, 2).join(" ");
-    const tail = instrumental ? "instrumental" : `${vocalGender} vocal`;
+    const tail = instrumental ? "instrumental" : `${vocalWord} vocal`;
     return head ? `${head} — ${tail}` : "";
-  }, [title, style, instrumental, vocalGender]);
+  }, [title, style, instrumental, vocalWord]);
 
   const toggleStyle = useCallback((tag) => {
     setStyle((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -401,15 +419,44 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
       />
 
       {wantsStyle && (
-        <Field label="Style" hint="Stack a few. Order does not matter.">
+        <Field label="Genre" hint="Stack a few. Order does not matter.">
           <Chips
-            label="Style"
+            label="Genre"
             scroll
             options={STYLES.map((s) => ({ value: s, label: s }))}
             value={style}
             onChange={toggleStyle}
             compare={(selected, tag) => Array.isArray(selected) && selected.includes(tag)}
           />
+        </Field>
+      )}
+
+      {wantsStyle && (
+        <Field label="Mood" hint="Free text, added to the style brief.">
+          {(id) => (
+            <input
+              id={id}
+              className="hs-input"
+              value={mood}
+              onChange={(e) => setMood(e.target.value)}
+              placeholder="melancholic, triumphant, late-night…"
+            />
+          )}
+        </Field>
+      )}
+
+      {wantsStyle && (
+        <Field label="Tempo" hint="A prompt hint — written into the style text as “at N BPM”, not a hard parameter.">
+          {(id) => (
+            <input
+              id={id}
+              className="hs-input"
+              inputMode="numeric"
+              value={tempo}
+              onChange={(e) => setTempo(e.target.value)}
+              placeholder="e.g. 96"
+            />
+          )}
         </Field>
       )}
 
@@ -427,8 +474,8 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
               value={vocalGender}
               onChange={setVocalGender}
               options={[
-                { value: "female", label: "Female" },
-                { value: "male", label: "Male" },
+                { value: "f", label: "Female" },
+                { value: "m", label: "Male" },
               ]}
             />
           )}
@@ -485,7 +532,7 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
             { k: "Model", v: model?.displayName || model?.name },
             { k: "Len", v: `${duration}s` },
             { k: "Style", v: styleText || "Unset" },
-            { k: "Voice", v: wantsVocals ? (instrumental ? "Instrumental" : `${vocalGender} vocal`) : null },
+            { k: "Voice", v: wantsVocals ? (instrumental ? "Instrumental" : `${vocalWord} vocal`) : null },
             { k: "Title", v: suggestedTitle || null },
           ]}
         />
@@ -500,13 +547,13 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
     instrumental ? "instrumental" : styleText || null,
   ].filter(Boolean).join(" · ");
 
+  const failed = !!error && !generating && !url;
+
   const body = (
     <div className="st-wave__body">
-      {error && (
-        <p className="hs-notice hs-notice--fault" role="alert">
-          {error} Change the style or the length and run it again, or pick another composer.
-        </p>
-      )}
+      {/* Errors go through the kit's Stage error path (Fault) — this surface
+          inherits the ErrorPanel upgrade (retry, error ids) at merge. */}
+      {failed && <Fault error={error} onRetry={generate} />}
 
       <div className="hs-row hs-row--between">
         <span className="hs-eyebrow">
@@ -564,7 +611,7 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
           </span>
         </div>
       ) : (
-        !generating && (
+        !generating && !failed && (
           <div className="hs-empty">
             <span className="hs-empty__mark"><IcMusic /></span>
             <h3>Describe the track</h3>

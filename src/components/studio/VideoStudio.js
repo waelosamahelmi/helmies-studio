@@ -69,8 +69,15 @@ const MODE_COPY = {
   },
 };
 
-export default function VideoStudio({ initialModel, templateConfig, onCreditsChanged }) {
-  const [mode, setMode] = useState("ttv");
+export default function VideoStudio({ initialModel, templateConfig, onCreditsChanged, fixedMode }) {
+  /* EDITSv1 E1.3: the tool registry mounts this studio twice — "video"
+     (fixedMode="ttv") and "i2v" (fixedMode="i2v") — so the mode is a
+     property of the TOOL, not an in-component toggle. When fixedMode is
+     set the Segmented below disappears and template/state mode changes are
+     ignored. v2v lives in Video Edit. Without fixedMode (no known mount
+     today) the old switchable behavior remains. */
+  const [modeState, setModeState] = useState("ttv");
+  const mode = fixedMode || modeState;
   const [modelId, setModelId] = useState(initialModel || null);
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("16:9");
@@ -109,8 +116,8 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
     if (templateConfig.duration) setDuration(Number(templateConfig.duration));
     if (templateConfig.camera_motion) setMove(templateConfig.camera_motion);
     if (templateConfig.model) setModelId(templateConfig.model);
-    if (templateConfig.mode) setMode(templateConfig.mode);
-  }, [templateConfig]);
+    if (templateConfig.mode && !fixedMode) setModeState(templateConfig.mode);
+  }, [templateConfig, fixedMode]);
 
   const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
   const resolutions = model?.resolutions?.length ? model.resolutions : NONE;
@@ -174,14 +181,16 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
   /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
     <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
-      <Field label="Source">
-        <Segmented
-          label="Generation mode"
-          value={mode}
-          onChange={setMode}
-          options={Object.entries(MODE_COPY).map(([value, m]) => ({ value, label: m.label }))}
-        />
-      </Field>
+      {!fixedMode && (
+        <Field label="Source">
+          <Segmented
+            label="Generation mode"
+            value={mode}
+            onChange={setModeState}
+            options={Object.entries(MODE_COPY).map(([value, m]) => ({ value, label: m.label }))}
+          />
+        </Field>
+      )}
 
       {needsImage && (
         <Field

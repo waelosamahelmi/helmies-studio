@@ -349,6 +349,55 @@ export async function resolveModelPricingRow(prisma, candidateId, selectOpt) {
   }
 }
 
+// ── Audio subcategorization (EDITSv1 E1.1) ─────────────────────────────────
+// The sync files EVERY audio utility under the coarse capability "audio"
+// (and every speech model under "text-to-speech") — far too coarse for
+// honest studio pools: "convert-to-wav" is not a composer, "generate-music"
+// is not a sound effect, and the old AudioStudio filter that tried to
+// separate them read `m.provider`, a field the public catalog never emits
+// (dead code by construction). audioKind() is the replacement: the honest
+// sub-kind, inferred from id/endpoint TOKENS first (a model's own name is
+// the most specific signal we have), then the capability as fallback.
+//
+// ORDER MATTERS — each rule is checked before the ones after it:
+//   dialogue     "text-to-dialogue-v3" would otherwise match the tts rule
+//   tts          plain speech readers
+//   voice-clone  "suno-voice-generate" carries capability text-to-speech but
+//                is a voice cloner, not a reader — its id token must win
+//                over the capability fallback
+//   sfx          sound effects
+//   enhancement  "boost-music-style" contains "music" — isolation/boost/
+//                separation must be classified before the music family
+//   conversion   format/notation converters
+//   music        the Suno composition family
+//   utility      anything else that is still genuinely audio
+// A model outside the audio family (or no model at all) returns null.
+const AUDIO_KIND_RULES = [
+  ["dialogue", /text-to-dialogue|dialogue/],
+  ["tts", /text-to-speech|tts/],
+  ["voice-clone", /voice-generate|voice-clone|persona/],
+  ["sfx", /generate-sounds|sound-effect|sfx/],
+  ["enhancement", /audio-isolation|boost-music|separate-vocals|enhance/],
+  ["conversion", /convert-to-wav|to-wav|convert|generate-midi/],
+  ["music", /generate-music|extend-music|add-instrumental|add-vocals|cover|mashup|replace-section|suno/],
+];
+
+export const AUDIO_KINDS = ["tts", "dialogue", "voice-clone", "music", "sfx", "enhancement", "conversion", "utility"];
+
+export function audioKind(model) {
+  const capability = model?.capability;
+  if (capability !== "audio" && capability !== "text-to-speech") return null;
+  const text = [model?.modelId, model?.id, model?.endpoint]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  for (const [kind, re] of AUDIO_KIND_RULES) {
+    if (re.test(text)) return kind;
+  }
+  // No id/endpoint token — the capability itself is the only signal left.
+  return capability === "text-to-speech" ? "tts" : "utility";
+}
+
 export function inferCapability(path) {
   if (/text-to-image|text2image/.test(path)) return "text-to-image";
   if (/image-to-image|image-edit|edit-image|remix|character-edit/.test(path)) return "image-to-image";
@@ -475,4 +524,85 @@ export function defaultSchemaForCapability(capability) {
     fields.num_images = { type: "number", required: false, minimum: 1, maximum: 4 };
   }
   return { fields };
+}
+
+// ── Curated per-model schemas (EDITSv1 E1.2) ───────────────────────────────
+// defaultSchemaForCapability (above) gives audio the generic `{ prompt }`
+// and nothing else — so every studio control that is honestly gated on the
+// model's own schema fields (the only capability signal the public catalog
+// emits) never rendered for the Suno music family or the ElevenLabs voices.
+// This map carries each known family's REAL parameters, ported from the
+// hand-maintained flags in src/lib/models.js's AUDIO_MODELS entries
+// (hasStyle/hasTitle/hasInstrumental/hasVocalGender/hasNegativeTags for
+// Suno; hasVoice/hasStability/hasSimilarity/hasSpeed for ElevenLabs TTS;
+// hasVoice alone for the v3 dialogue model). It must NEVER invent a
+// parameter the upstream API doesn't accept — extending it means reading
+// the provider docs first.
+//
+// The map lives HERE (not in kie-sync.js, which re-exports it) because the
+// persistent backfill (scripts/fix-model-categories.mjs) runs under plain
+// node, where kie-sync.js's "@/lib/..." alias imports cannot resolve; this
+// module is dependency-free by design.
+const SUNO_MUSIC_FIELDS = {
+  style: { type: "string", required: false, maxLength: 1000 },
+  title: { type: "string", required: false, maxLength: 100 },
+  instrumental: { type: "boolean", required: false },
+  vocal_gender: { type: "string", required: false, enum: ["m", "f"] },
+  negative_tags: { type: "string", required: false, maxLength: 500 },
+  duration: { type: "number", required: false, enum: [30, 60, 120, 180, 240] },
+};
+
+const ELEVENLABS_TTS_FIELDS = {
+  voice: { type: "string", required: false },
+  stability: { type: "number", required: false, minimum: 0, maximum: 1 },
+  similarity_boost: { type: "number", required: false, minimum: 0, maximum: 1 },
+  speed: { type: "number", required: false, minimum: 0.7, maximum: 1.2 },
+};
+
+export const CURATED_SCHEMAS = {
+  // Suno composition family — the generate/extend flows accept the full
+  // custom-mode parameter set.
+  "generate-music": { fields: SUNO_MUSIC_FIELDS },
+  "extend-music": { fields: SUNO_MUSIC_FIELDS },
+  // Legacy Suno version-pinned ids (static-list era) — same generate flow,
+  // same parameters; harmless if a given id never exists as a DB row.
+  "suno-v5.5": { fields: SUNO_MUSIC_FIELDS },
+  "suno-v5": { fields: SUNO_MUSIC_FIELDS },
+  "suno-v4.5-plus": { fields: SUNO_MUSIC_FIELDS },
+  "suno-v4.5": { fields: SUNO_MUSIC_FIELDS },
+  "suno-v4.5-all": { fields: SUNO_MUSIC_FIELDS },
+  "suno-v4": { fields: SUNO_MUSIC_FIELDS },
+  // ElevenLabs speech.
+  "elevenlabs-text-to-speech-turbo-2.5": { fields: ELEVENLABS_TTS_FIELDS },
+  "elevenlabs-text-to-speech-multilingual-v2": { fields: ELEVENLABS_TTS_FIELDS },
+  // The v3 dialogue model only takes a voice (models.js: hasVoice, nothing
+  // else) — no stability/similarity/speed.
+  "elevenlabs-text-to-dialogue-v3": { fields: { voice: { type: "string", required: false } } },
+};
+
+// The DB id and the curated key can spell the same model differently — a
+// sitemap-derived id keeps its vendor folder and hyphenated version
+// ("elevenlabs/text-to-speech-turbo-2-5") while the curated key uses the
+// canonical dotted form ("elevenlabs-text-to-speech-turbo-2.5"). Normalize
+// deterministically instead of duplicating every key: exact match first,
+// then "/"→"-", then hyphenated digit runs re-dotted ("2-5" → "2.5").
+export function curatedSchemaEntry(modelId) {
+  if (!modelId) return null;
+  const raw = String(modelId).toLowerCase();
+  const slashless = raw.replace(/\//g, "-");
+  const dotted = slashless.replace(/(\d)-(\d)/g, "$1.$2");
+  return CURATED_SCHEMAS[raw] || CURATED_SCHEMAS[slashless] || CURATED_SCHEMAS[dotted] || null;
+}
+
+// The one schema builder every writer (sync + backfill) goes through:
+// curated fields spread OVER the generic default for the capability, so a
+// curated model keeps prompt/etc. and gains its real parameters, and a
+// non-curated model gets exactly the default it always got. Video models
+// keep the generic enums (KIE's documented common set) unless a curated
+// entry says otherwise — no fictional per-model claims.
+export function schemaForModel(modelId, capability) {
+  const base = defaultSchemaForCapability(capability);
+  const curated = curatedSchemaEntry(modelId);
+  if (!curated) return base;
+  return { fields: { ...base.fields, ...curated.fields } };
 }
