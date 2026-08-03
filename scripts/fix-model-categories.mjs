@@ -58,7 +58,7 @@ import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import prisma from "../src/lib/prisma.js";
-import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE } from "../src/lib/model-catalog-core.mjs";
+import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription } from "../src/lib/model-catalog-core.mjs";
 
 // Pure planning function — no DB access, so it's directly unit-testable
 // against plain row arrays (tests/unit/fix-model-categories.test.mjs).
@@ -66,6 +66,7 @@ export function planFixes(rows) {
   const modelTypeFixes = [];
   const displayNameFixes = [];
   const capabilityFixes = [];
+  const descriptionFixes = [];
   const needsAttention = [];
 
   for (const row of rows) {
@@ -122,12 +123,33 @@ export function planFixes(rows) {
         });
       }
     }
+
+    // Persistently rewrite a description that still leaks the upstream
+    // provider identity (measured production bug: kie-sync.js used to write
+    // `${displayName} via the KIE Market API.` for every synced row — see
+    // sanitizeCatalogDescription's header in model-catalog-core.mjs, the
+    // SAME function the live public serializer calls, so both agree on
+    // what a "provider token" is and what's too degenerate to keep). Only a
+    // description that actually changes is reported/written — a row with no
+    // provider token in its description (or none at all) is left alone,
+    // which is also what makes a second run a no-op.
+    if (row.description) {
+      const cleaned = sanitizeCatalogDescription(row.description);
+      if (cleaned !== row.description) {
+        descriptionFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          from: row.description,
+          to: cleaned,
+        });
+      }
+    }
   }
 
-  return { modelTypeFixes, displayNameFixes, capabilityFixes, needsAttention };
+  return { modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, needsAttention };
 }
 
-function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, needsAttention }, { apply }) {
+function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, needsAttention }, { apply }) {
   console.log("");
   if (capabilityFixes.length === 0) {
     console.log("capability: no null/unmapped rows were recoverable from modalities/endpoint.");
@@ -159,6 +181,16 @@ function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, needsAtt
   }
 
   console.log("");
+  if (descriptionFixes.length === 0) {
+    console.log("description: no provider-identity-leaking descriptions found.");
+  } else {
+    console.log(`description: ${descriptionFixes.length} row(s) ${apply ? "were" : "would be"} rewritten to remove the upstream provider identity:`);
+    for (const f of descriptionFixes) {
+      console.log(`  ${f.modelId} (${f.providerName}): ${JSON.stringify(f.from)} -> ${JSON.stringify(f.to)}`);
+    }
+  }
+
+  console.log("");
   if (needsAttention.length === 0) {
     console.log("needs attention: none — every row's capability maps to a modelType (directly or via recovery).");
   } else {
@@ -178,7 +210,7 @@ export async function run({ apply, yes }) {
   const rows = await prisma.modelPricing.findMany({
     select: {
       id: true, modelId: true, providerName: true, capability: true, modelType: true, displayName: true,
-      inputModalities: true, outputModalities: true, endpoint: true, providerModelId: true,
+      description: true, inputModalities: true, outputModalities: true, endpoint: true, providerModelId: true,
     },
   });
 
@@ -187,7 +219,7 @@ export async function run({ apply, yes }) {
   printPlan(plan, { apply });
 
   if (!apply) {
-    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), and ${plan.displayNameFixes.length} displayName fix(es) above.`);
+    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), ${plan.displayNameFixes.length} displayName fix(es), and ${plan.descriptionFixes.length} description fix(es) above.`);
     return { ...plan, applied: 0 };
   }
 
@@ -195,6 +227,7 @@ export async function run({ apply, yes }) {
     ...plan.modelTypeFixes.map((f) => f.modelId),
     ...plan.displayNameFixes.map((f) => f.modelId),
     ...plan.capabilityFixes.map((f) => f.modelId),
+    ...plan.descriptionFixes.map((f) => f.modelId),
   ]);
 
   let applied = 0;
@@ -202,10 +235,12 @@ export async function run({ apply, yes }) {
     const typeFix = plan.modelTypeFixes.find((f) => f.modelId === modelId);
     const nameFix = plan.displayNameFixes.find((f) => f.modelId === modelId);
     const capFix = plan.capabilityFixes.find((f) => f.modelId === modelId);
+    const descFix = plan.descriptionFixes.find((f) => f.modelId === modelId);
     const data = {};
     if (typeFix) data.modelType = typeFix.to;
     if (nameFix) data.displayName = nameFix.to;
     if (capFix) data.capability = capFix.to;
+    if (descFix) data.description = descFix.to;
     await prisma.modelPricing.update({ where: { modelId }, data });
     applied++;
   }

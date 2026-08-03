@@ -173,8 +173,16 @@ const CAPABILITY_SUFFIX_WORDS = {
   "avatar-video": ["avatar", "video"],
 };
 
+// Known initialisms that naive title-casing gets wrong — "ai" -> "Ai",
+// "4k" -> "4k" (digits are already "uppercase" so charAt(0).toUpperCase()
+// is a no-op, and the rest lowercases the letter), etc. Keyed lowercase;
+// extend as more turn up in the live catalog.
+const ACRONYM_TOKENS = { ai: "AI", hd: "HD", "4k": "4K", "3d": "3D", tts: "TTS", sfx: "SFX" };
+
 function titleCaseToken(token) {
   if (/^[\d.]+$/.test(token)) return token; // pure number / version ("1.5") — leave as-is
+  const acronym = ACRONYM_TOKENS[token.toLowerCase()];
+  if (acronym) return acronym;
   return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
 }
 
@@ -241,6 +249,57 @@ export function toPublicModelId(modelId, providerName) {
   if (!modelId || !providerName) return modelId;
   const prefix = `${providerName}:`.toLowerCase();
   return modelId.toLowerCase().startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
+}
+
+// ── Hiding upstream provider identity baked into DESCRIPTION text ─────────
+// toPublicModelId (above) and serializeCatalogModel's provider/providerName
+// dropping (model-catalog.js) hide the upstream vendor from every
+// structured field — but kie-sync.js used to write it straight into the one
+// field every end user actually reads: `${displayName} via the KIE Market
+// API.`. This is the single point both the public catalog serializer (live,
+// for the 175+ rows already in the DB) and the fix-model-categories.mjs
+// backfill (persistent, for the same rows) share, so "what counts as a
+// provider token" and "what counts as too mangled to show" is defined
+// exactly once.
+//
+// "Qwen" is deliberately NOT here — it's a model FAMILY name (Alibaba's
+// Qwen-Image line), not an upstream vendor identity, and stripping it would
+// blank out the model's own name for no privacy benefit.
+const PROVIDER_IDENTITY_TOKENS = ["KIE", "Alibaba", "DashScope", "WaveSpeed", "OpenRouter"];
+
+// Purely connective words that describe nothing on their own once the
+// provider token next to them is gone — "Foo via the KIE Market API." ->
+// "Foo via the Market API." still describes Foo, but "via the KIE Market
+// API." with no subject at all -> "via the Market API." is 100% filler. A
+// result made up ENTIRELY of these words (post-scrub) is degenerate.
+const DESCRIPTION_FILLER_WORDS = new Set([
+  "via", "the", "by", "from", "using", "powered", "platform", "market", "api", "a", "an", "of", "on", "with",
+]);
+
+export function sanitizeCatalogDescription(description) {
+  if (!description) return null;
+  const original = String(description);
+  let text = original;
+  let matched = false;
+  for (const token of PROVIDER_IDENTITY_TOKENS) {
+    const re = new RegExp(`\\b${token}\\b`, "gi");
+    if (re.test(text)) matched = true;
+    text = text.replace(re, "");
+  }
+  // Nothing to scrub — return the original untouched (no risk of mangling
+  // legitimate text that never named a provider in the first place).
+  if (!matched) return original;
+
+  // Collapse whitespace/punctuation left behind by a removed token (e.g.
+  // "Foo  Market" -> "Foo Market", "Foo ." -> "Foo.").
+  text = text.replace(/\s+/g, " ").replace(/\s+([.,;:])/g, "$1").trim();
+  if (!text) return null;
+
+  const words = text.toLowerCase().match(/[a-z0-9]+/g) || [];
+  const meaningful = words.filter((w) => !DESCRIPTION_FILLER_WORDS.has(w));
+  if (meaningful.length === 0) return null;
+
+  return text;
 }
 
 // Resolves a model id a client handed back to the real ModelPricing row.

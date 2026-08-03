@@ -1,6 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl } from "@/lib/model-catalog-core.mjs";
+import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription } from "@/lib/model-catalog-core.mjs";
 import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
 
 test("quotes a fixed per-image model with output count", () => {
@@ -80,4 +80,42 @@ test("formats Alibaba native model payloads", () => {
 test("routes Alibaba media models to their DashScope service", () => {
   assert.match(getAlibabaApiPath("wan2.7-t2v"), /video-generation/);
   assert.match(getAlibabaApiPath("qwen-image-2.0-pro"), /text2image/);
+});
+
+// ── URGENT production fix: hide upstream provider identity baked into
+// description TEXT, not just structured fields (measured bug: 35 of 39
+// live image-model descriptions plainly named "KIE" even though
+// providerName was already hidden from the public catalog response) ──────
+test("sanitizeCatalogDescription strips a known provider token and keeps the rest of the sentence", () => {
+  const cleaned = sanitizeCatalogDescription("Nano Banana Pro via the KIE Market API.");
+  assert.doesNotMatch(cleaned, /kie/i);
+  assert.match(cleaned, /Nano Banana Pro/);
+});
+
+test("sanitizeCatalogDescription does NOT strip 'Qwen' — it's a model family, not an upstream provider", () => {
+  assert.equal(
+    sanitizeCatalogDescription("Qwen Image Max via the KIE Market API."),
+    "Qwen Image Max via the Market API.",
+  );
+});
+
+test("sanitizeCatalogDescription is case-insensitive and matches whole-word provider tokens (Alibaba, DashScope, WaveSpeed, OpenRouter)", () => {
+  assert.doesNotMatch(sanitizeCatalogDescription("Routed via alibaba's DashScope backend."), /alibaba/i);
+  assert.doesNotMatch(sanitizeCatalogDescription("Served through WaveSpeed and OpenRouter."), /wavespeed|openrouter/i);
+});
+
+test("sanitizeCatalogDescription returns null for a description that becomes degenerate (only filler words) after scrubbing", () => {
+  // No subject at all once "KIE" is removed — "via the Market API." is
+  // pure connective filler, not a real description of anything.
+  assert.equal(sanitizeCatalogDescription("via the KIE Market API."), null);
+});
+
+test("sanitizeCatalogDescription leaves a description with no provider token completely unchanged", () => {
+  const original = "4K generation, editing, brand-color control, text rendering, and up to nine references.";
+  assert.equal(sanitizeCatalogDescription(original), original);
+});
+
+test("sanitizeCatalogDescription returns null for null/empty input", () => {
+  assert.equal(sanitizeCatalogDescription(null), null);
+  assert.equal(sanitizeCatalogDescription(""), null);
 });

@@ -39,6 +39,20 @@ describe("slugToTitle", () => {
     expect(slugToTitle("")).toBe("");
     expect(slugToTitle(null)).toBeNull();
   });
+
+  // ── Acronym/initialism handling — measured live bug: "Generate Ai Video"
+  // (naive per-token titlecasing lowercases everything after the first
+  // letter, so "ai" -> "Ai" instead of "AI") ────────────────────────────────
+  it('titlecases the "ai" token as the initialism "AI", not "Ai" ("generate-ai-video" -> "Generate AI Video")', () => {
+    expect(slugToTitle("generate-ai-video")).toBe("Generate AI Video");
+  });
+
+  it("titlecases other known initialisms (4K, HD, 3D, TTS, SFX) correctly", () => {
+    expect(slugToTitle("upscale-4k-hd")).toBe("Upscale 4K HD");
+    expect(slugToTitle("model-3d-preview")).toBe("Model 3D Preview");
+    expect(slugToTitle("gemini-flash-tts")).toBe("Gemini Flash TTS");
+    expect(slugToTitle("add-sfx-track")).toBe("Add SFX Track");
+  });
 });
 
 describe("toPublicModelId — hides the upstream provider baked into a real modelId", () => {
