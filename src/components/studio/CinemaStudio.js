@@ -79,7 +79,7 @@ export default function CinemaStudio({ initialModel, templateConfig, onCreditsCh
   const [resolution, setResolution] = useState("2K");
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   const available = useMemo(
     () => (models || []).filter((m) => matchesGroup(m, "tti")),
@@ -298,6 +298,8 @@ export default function CinemaStudio({ initialModel, templateConfig, onCreditsCh
           settings={`${String(resolution).toUpperCase()} · ${ratio}`}
           onCancel={cancel}
           onRetry={generate}
+          onEditSettings={reset}
+          note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
           onNew={reset}
           idle={idle}
         />

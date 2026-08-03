@@ -32,7 +32,7 @@ export default function ImageStudio({ initialModel, templateConfig, onCreditsCha
   const [reference, setReference] = useState(null);
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   /* Filter on the catalog's `capability` field. The previous build tested
      `!model.durations`, but the catalog always emits an array — and `![]` is
@@ -231,6 +231,8 @@ export default function ImageStudio({ initialModel, templateConfig, onCreditsCha
           settings={`${String(resolution).toUpperCase()} · ${ratio}`}
           onCancel={cancel}
           onRetry={generate}
+          onEditSettings={reset}
+          note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
           onNew={reset}
           idle={idle}
         />

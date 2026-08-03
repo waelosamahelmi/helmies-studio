@@ -72,7 +72,7 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
   const [prompt, setPrompt] = useState("");
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   /* An advert is a video job; reference-capable models are the useful ones,
      so they sort first rather than being the only ones shown. */
@@ -284,6 +284,8 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
           settings={`${chosenFormat.label} · ${ratio} · ${duration}s`}
           onCancel={cancel}
           onRetry={generate}
+          onEditSettings={reset}
+          note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
           onNew={reset}
           idle={idle}
         />

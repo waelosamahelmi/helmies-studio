@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { IcDownload, IcRefresh, IcCopy, IcCheck, IcExternal, IcClose, IcAlert } from "./Icons";
+import { IcDownload, IcRefresh, IcCopy, IcCheck, IcExternal, IcClose } from "./Icons";
+import ErrorPanel from "./ErrorPanel";
 
 /* ══════════════════════════════════════════════════════════════════════════
    STAGE — where the work is shown
@@ -61,7 +62,7 @@ const STEP_OF = {
   quality_check: 2, finalizing: 2, downloading: 2, finishing: 2,
 };
 
-export function Rendering({ stage, elapsed, ratio = "16:9", model, settings, onCancel }) {
+export function Rendering({ stage, elapsed, ratio = "16:9", model, settings, note, onCancel }) {
   const t = useElapsed(true, elapsed ?? 0);
   const now = STEP_OF[String(stage || "").toLowerCase()] ?? 1;
   const [w, h] = String(ratio).split(":").map(Number);
@@ -91,6 +92,7 @@ export function Rendering({ stage, elapsed, ratio = "16:9", model, settings, onC
               </span>
             ))}
           </div>
+          {note && <span className="hs-hint" role="status">{note}</span>}
         </div>
 
         {onCancel && (
@@ -218,24 +220,11 @@ export function Idle({ icon, title, description, examples = [], onExample, child
 }
 
 /* ── Fault ─────────────────────────────────────────────────────────────── */
-export function Fault({ error, onRetry }) {
-  const msg = typeof error === "string" ? error : error?.message || "The generation did not complete.";
-  return (
-    <div className="st-stage">
-      <div className="hs-empty">
-        <span className="hs-empty__mark" style={{ color: "var(--fault)", borderColor: "rgba(255,90,90,.3)" }}>
-          <IcAlert />
-        </span>
-        <h3>Generation failed</h3>
-        <p>{msg}</p>
-        {onRetry && (
-          <button type="button" className="hs-btn hs-btn--outline" onClick={onRetry} style={{ marginTop: "var(--s-2)" }}>
-            <IcRefresh className="hs-icon-sm" /> Try again
-          </button>
-        )}
-      </div>
-    </div>
-  );
+/* Backward-compatible wrapper: 10 studios pass `error` as a string or an
+   ApiError. All rendering now lives in ErrorPanel (title, explanation,
+   validation details, Retry, Edit settings, internal error id). */
+export function Fault({ error, onRetry, onEditSettings }) {
+  return <ErrorPanel error={error} title={typeof error === "string" ? "Generation failed" : undefined} onRetry={onRetry} onEditSettings={onEditSettings} />;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -251,18 +240,20 @@ export default function Stage({
   model,
   settings,
   ratio,
+  note,
   onCancel,
   onRetry,
+  onEditSettings,
   onNew,
   onDownload,
   actions,
   idle,
 }) {
   if (generating) {
-    return <Rendering stage={stage} elapsed={elapsed} ratio={ratio} model={model} settings={settings} onCancel={onCancel} />;
+    return <Rendering stage={stage} elapsed={elapsed} ratio={ratio} model={model} settings={settings} note={note} onCancel={onCancel} />;
   }
   if (error && !result) {
-    return <Fault error={error} onRetry={onRetry} />;
+    return <Fault error={error} onRetry={onRetry} onEditSettings={onEditSettings} />;
   }
   if (result) {
     return <Result result={result} model={model} settings={settings} onNew={onNew} onDownload={onDownload} actions={actions} />;

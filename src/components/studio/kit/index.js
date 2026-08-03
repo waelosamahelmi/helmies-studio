@@ -11,6 +11,7 @@ export { default as Brief } from "./Brief";
 export { default as ModelPicker } from "./ModelPicker";
 
 export { default as Stage, Rendering, Result, Idle, Fault, Readout, mediaUrl, clock } from "./Stage";
+export { default as ErrorPanel } from "./ErrorPanel";
 export { SpendMeter, CostTag } from "./Spend";
 export { Sheet, Modal, Confirm } from "./Sheet";
 

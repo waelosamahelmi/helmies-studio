@@ -7,6 +7,15 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
     this.data = data;
+    // Lift the uniform error-envelope fields (src/lib/api-error.js) so UI
+    // components can render title/errorId/details without digging into data.
+    if (data && typeof data === "object") {
+      this.code = data.code;
+      this.title = data.title;
+      this.errorId = data.errorId;
+      this.retryable = data.retryable;
+      this.details = data.details;
+    }
   }
 }
 

@@ -116,7 +116,12 @@ test("a failed generation reports failure and refunds the balance", async ({ pag
   await submitButton(page).click();
 
   await expect(page.getByRole("heading", { name: "Generation failed" })).toBeVisible({ timeout: 30000 });
-  await expect(page.locator(".st-stage .hs-empty p")).toHaveText("E2E forced provider failure");
+  // E2.2: raw provider text no longer reaches users — job-runner passes
+  // Generation.error through brandForUser, and the seam's marker message
+  // matches no known category, so the user sees the branded generic message
+  // and never the provider's own words.
+  await expect(page.locator(".st-stage .hs-empty p").first()).toHaveText("An unexpected error occurred. Please try again.");
+  await expect(page.locator(".st-stage")).not.toContainText("E2E forced provider failure");
 
   // The credits badge only refreshes immediately on a SUCCESSFUL result
   // (ImageStudio's onCreditsChanged effect watches `result`, not `error`) —
