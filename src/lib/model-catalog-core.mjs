@@ -349,6 +349,55 @@ export async function resolveModelPricingRow(prisma, candidateId, selectOpt) {
   }
 }
 
+// ── Audio subcategorization (EDITSv1 E1.1) ─────────────────────────────────
+// The sync files EVERY audio utility under the coarse capability "audio"
+// (and every speech model under "text-to-speech") — far too coarse for
+// honest studio pools: "convert-to-wav" is not a composer, "generate-music"
+// is not a sound effect, and the old AudioStudio filter that tried to
+// separate them read `m.provider`, a field the public catalog never emits
+// (dead code by construction). audioKind() is the replacement: the honest
+// sub-kind, inferred from id/endpoint TOKENS first (a model's own name is
+// the most specific signal we have), then the capability as fallback.
+//
+// ORDER MATTERS — each rule is checked before the ones after it:
+//   dialogue     "text-to-dialogue-v3" would otherwise match the tts rule
+//   tts          plain speech readers
+//   voice-clone  "suno-voice-generate" carries capability text-to-speech but
+//                is a voice cloner, not a reader — its id token must win
+//                over the capability fallback
+//   sfx          sound effects
+//   enhancement  "boost-music-style" contains "music" — isolation/boost/
+//                separation must be classified before the music family
+//   conversion   format/notation converters
+//   music        the Suno composition family
+//   utility      anything else that is still genuinely audio
+// A model outside the audio family (or no model at all) returns null.
+const AUDIO_KIND_RULES = [
+  ["dialogue", /text-to-dialogue|dialogue/],
+  ["tts", /text-to-speech|tts/],
+  ["voice-clone", /voice-generate|voice-clone|persona/],
+  ["sfx", /generate-sounds|sound-effect|sfx/],
+  ["enhancement", /audio-isolation|boost-music|separate-vocals|enhance/],
+  ["conversion", /convert-to-wav|to-wav|convert|generate-midi/],
+  ["music", /generate-music|extend-music|add-instrumental|add-vocals|cover|mashup|replace-section|suno/],
+];
+
+export const AUDIO_KINDS = ["tts", "dialogue", "voice-clone", "music", "sfx", "enhancement", "conversion", "utility"];
+
+export function audioKind(model) {
+  const capability = model?.capability;
+  if (capability !== "audio" && capability !== "text-to-speech") return null;
+  const text = [model?.modelId, model?.id, model?.endpoint]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  for (const [kind, re] of AUDIO_KIND_RULES) {
+    if (re.test(text)) return kind;
+  }
+  // No id/endpoint token — the capability itself is the only signal left.
+  return capability === "text-to-speech" ? "tts" : "utility";
+}
+
 export function inferCapability(path) {
   if (/text-to-image|text2image/.test(path)) return "text-to-image";
   if (/image-to-image|image-edit|edit-image|remix|character-edit/.test(path)) return "image-to-image";
