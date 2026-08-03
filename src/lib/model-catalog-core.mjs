@@ -251,6 +251,32 @@ export function toPublicModelId(modelId, providerName) {
   return modelId.toLowerCase().startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
 }
 
+// ── Hiding the upstream provider identity baked into DISPLAYNAME ──────────
+// toPublicModelId (above) strips a "<providerName>:" prefix from the real
+// id; a hand-authored displayName can bake the exact same prefix into the
+// human-readable name instead (measured production bug: two Alibaba audio
+// rows — qwen3-tts-flash and qwen3-tts-instruct-flash — shipped as
+// "Alibaba:qwen3 TTS Flash" / "Alibaba:qwen3 TTS Instruct Flash" while every
+// other mode (image 39, video 58, i2v 23) already reported zero such
+// leaks). Stripping the prefix alone would leave the remainder's casing
+// exactly as hand-typed ("qwen3 TTS Flash", lowercase "q") — so this re-runs
+// every remaining word through the SAME titleCaseToken/ACRONYM_TOKENS
+// machinery slugToTitle (above) already uses, not a second casing
+// implementation, so "qwen3" -> "Qwen3" and "TTS" (already in
+// ACRONYM_TOKENS) stays "TTS". Only a genuine LEADING "<providerName>:" is
+// ever touched, mirroring toPublicModelId's own "prefix only" contract —
+// "Qwen" (or any other word) appearing anywhere else in a name, not
+// immediately after the provider and a colon, is never stripped.
+export function sanitizeDisplayName(displayName, providerName) {
+  if (!displayName || !providerName) return displayName;
+  const prefix = `${providerName}:`.toLowerCase();
+  const trimmed = String(displayName).trim();
+  if (!trimmed.toLowerCase().startsWith(prefix)) return displayName;
+  const rest = trimmed.slice(prefix.length).trim();
+  if (!rest) return displayName;
+  return rest.split(/\s+/).map(titleCaseToken).join(" ");
+}
+
 // ── Hiding upstream provider identity baked into DESCRIPTION text ─────────
 // toPublicModelId (above) and serializeCatalogModel's provider/providerName
 // dropping (model-catalog.js) hide the upstream vendor from every

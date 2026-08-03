@@ -203,6 +203,44 @@ describe("serializeCatalogModel", () => {
       };
       expect(serializeCatalogModel(alibabaRow).displayName).toBe("Qwen Image Max");
     });
+
+    // ── URGENT production fix: measured on live production — two Alibaba
+    // audio rows (qwen3-tts-flash, qwen3-tts-instruct-flash) reported
+    // displayName "Alibaba:qwen3 TTS Flash" / "Alibaba:qwen3 TTS Instruct
+    // Flash" even though the public catalog already strips the same
+    // "alibaba:" prefix from the id — every other mode (image 39, video
+    // 58, i2v 23) already reported zero such leaks.
+    describe("displayName provider-prefix leak (measured production bug)", () => {
+      const leakingTtsRow = {
+        modelId: "alibaba:qwen3-tts-flash", displayName: "Alibaba:qwen3 TTS Flash", providerName: "Alibaba",
+        capability: "text-to-speech", creditsCost: 5,
+      };
+
+      it("strips the leaked '<providerName>:' prefix and fixes casing for the public (non-admin) shape", () => {
+        const pub = serializeCatalogModel(leakingTtsRow);
+        expect(pub.displayName).toBe("Qwen3 TTS Flash");
+      });
+
+      it("strips the same leak for the instruct variant", () => {
+        const instructRow = { ...leakingTtsRow, modelId: "alibaba:qwen3-tts-instruct-flash", displayName: "Alibaba:qwen3 TTS Instruct Flash" };
+        expect(serializeCatalogModel(instructRow).displayName).toBe("Qwen3 TTS Instruct Flash");
+      });
+
+      it("admin shape keeps seeing the raw, provider-qualified displayName unchanged", () => {
+        const admin = serializeCatalogModel(leakingTtsRow, { isAdmin: true });
+        expect(admin.displayName).toBe("Alibaba:qwen3 TTS Flash");
+      });
+
+      it("a displayName with no provider prefix is left completely untouched", () => {
+        const clean = { ...leakingTtsRow, displayName: "Qwen Image Max" };
+        expect(serializeCatalogModel(clean).displayName).toBe("Qwen Image Max");
+      });
+
+      it("does not strip 'Qwen' when it's just the model family name, not a leading provider-colon prefix", () => {
+        const noColon = { ...leakingTtsRow, displayName: "Qwen3 TTS Flash" };
+        expect(serializeCatalogModel(noColon).displayName).toBe("Qwen3 TTS Flash");
+      });
+    });
   });
 });
 

@@ -33,10 +33,13 @@
 // Dry-run by default: reports every row whose modelType disagrees with its
 // (possibly recovered) capability, every capability this recovers, every
 // stale KIE displayName (the "Bytedance Seedance 1 5 Pro" / "Generate 4 O
-// Image" class of bug), and every row that's STILL null/unmapped after
-// recovery is attempted — those are NEVER auto-fixed with a guess; they're
-// written/kept as UNCATEGORIZED and reported as needing a human to assign a
-// real capability at the sync source.
+// Image" class of bug), every OTHER provider's displayName still leaking a
+// "<providerName>:" prefix (the "Alibaba:qwen3 TTS Flash" class of bug —
+// see sanitizeDisplayName in model-catalog-core.mjs), and every row that's
+// STILL null/unmapped after recovery is attempted — those are NEVER
+// auto-fixed with a guess; they're written/kept as UNCATEGORIZED and
+// reported as needing a human to assign a real capability at the sync
+// source.
 //
 // `--apply --yes` writes the recomputed modelType/displayName/capability
 // for every row this can safely fix. Idempotent: run it again right after
@@ -58,7 +61,7 @@ import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import prisma from "../src/lib/prisma.js";
-import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription } from "../src/lib/model-catalog-core.mjs";
+import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription, sanitizeDisplayName } from "../src/lib/model-catalog-core.mjs";
 
 // Pure planning function — no DB access, so it's directly unit-testable
 // against plain row arrays (tests/unit/fix-model-categories.test.mjs).
@@ -110,8 +113,17 @@ export function planFixes(rows) {
 
     // KIE's displayName is always auto-derived from its docs-URL slug (no
     // admin path ever writes a custom one — see model-catalog.js's
-    // displayNameFor), so recomputing it is always safe there. Alibaba's is
-    // hand-authored in alibaba-catalog.js and must never be touched here.
+    // displayNameFor), so recomputing it wholesale is always safe there.
+    // Every other provider's displayName is hand-authored and never
+    // rewritten wholesale here — but IS checked for the narrower,
+    // provider-agnostic "<providerName>:" prefix leak (measured production
+    // bug: two Alibaba audio rows persisted as "Alibaba:qwen3 TTS Flash" /
+    // "Alibaba:qwen3 TTS Instruct Flash"), using the exact same
+    // sanitizeDisplayName the live public serializer already calls
+    // (model-catalog-core.mjs), so both agree on what counts as a leaked
+    // prefix and how the remainder gets re-cased. Idempotent: once fixed,
+    // the remainder no longer starts with "<providerName>:" so a second
+    // pass reports nothing.
     if (row.providerName === "KIE") {
       const correctName = slugToTitle(row.modelId, { capability });
       if (correctName && correctName !== row.displayName) {
@@ -120,6 +132,16 @@ export function planFixes(rows) {
           providerName: row.providerName,
           from: row.displayName ?? null,
           to: correctName,
+        });
+      }
+    } else {
+      const sanitized = sanitizeDisplayName(row.displayName, row.providerName);
+      if (sanitized && sanitized !== row.displayName) {
+        displayNameFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          from: row.displayName ?? null,
+          to: sanitized,
         });
       }
     }
@@ -172,11 +194,11 @@ function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descript
 
   console.log("");
   if (displayNameFixes.length === 0) {
-    console.log("displayName: no stale KIE-derived names found.");
+    console.log("displayName: no stale KIE-derived names or provider-prefix leaks found.");
   } else {
-    console.log(`displayName: ${displayNameFixes.length} KIE row(s) ${apply ? "were" : "would be"} renamed:`);
+    console.log(`displayName: ${displayNameFixes.length} row(s) ${apply ? "were" : "would be"} renamed:`);
     for (const f of displayNameFixes) {
-      console.log(`  ${f.modelId}: ${JSON.stringify(f.from)} -> ${JSON.stringify(f.to)}`);
+      console.log(`  ${f.modelId} (${f.providerName}): ${JSON.stringify(f.from)} -> ${JSON.stringify(f.to)}`);
     }
   }
 
