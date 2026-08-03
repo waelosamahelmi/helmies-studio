@@ -31,10 +31,17 @@ import BrandKitStudio from "@/components/studio/BrandKitStudio";
 import MemoryStudio from "@/components/studio/MemoryStudio";
 import AssetLibraryStudio from "@/components/studio/AssetLibraryStudio";
 
+/* EDITSv1 E1.3: text→video and image→video are separate tools with a fixed
+   mode each — module-scope wrappers keep a stable component identity across
+   renders (an inline arrow here would remount the studio on every render). */
+const TextToVideoStudio = (props) => <VideoStudio {...props} fixedMode="ttv" />;
+const ImageToVideoStudio = (props) => <VideoStudio {...props} fixedMode="i2v" />;
+
 const TOOL_COMPONENTS = {
   orchestrator: OrchestratorStudio,
   image: ImageStudio,
-  video: VideoStudio,
+  video: TextToVideoStudio,
+  i2v: ImageToVideoStudio,
   director: DirectorStudio,
   audio: AudioStudio,
   music: MusicStudio,

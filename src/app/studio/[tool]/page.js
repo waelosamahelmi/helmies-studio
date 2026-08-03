@@ -12,9 +12,14 @@ const TOOLS = {
     keywords: ["AI image generator", "Flux AI", "Midjourney", "text to image", "image generation", "AI art"],
   },
   video: {
-    title: "AI Video Generator",
-    description: "Create videos from text, images, or existing footage with Sora 2, Kling, Veo & other leading AI video models.",
+    title: "AI Text to Video Generator",
+    description: "Create videos from a written brief with Sora 2, Kling, Veo & other leading AI video models.",
     keywords: ["AI video generator", "Sora 2", "Kling AI", "Veo 3", "text to video", "AI video"],
+  },
+  i2v: {
+    title: "AI Image to Video Generator",
+    description: "Animate a still image into motion — your image becomes the first frame. Kling, Veo, Wan & 20+ image-to-video models.",
+    keywords: ["AI image to video", "animate image", "image to video generator", "still to video"],
   },
   audio: {
     title: "AI Audio & Music Generator",
