@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
+import { parseQuestionBlock, stripQuestionBlock } from "@/lib/agent-chat";
 import {
   Brief, SpendMeter, Group, Specs,
   IcSpark, IcFlow, IcCheck, IcAlert, IcChevron, IcExternal,
 } from "@/components/studio/kit";
+import Markdown from "@/components/studio/agent/Markdown";
+import QuestionCard from "@/components/studio/agent/QuestionCard";
+import ThinkingCard from "@/components/studio/agent/ThinkingCard";
 
 /* ══════════════════════════════════════════════════════════════════════════
    ORCHESTRATOR — .st-talk
@@ -407,8 +411,10 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   }, []);
 
   /* ── Chat — streams, costs nothing ───────────────────────────────────── */
-  const send = useCallback(async () => {
-    const text = input.trim();
+  /* `textOverride` lets a QuestionCard answer go out as a normal user
+     message without touching the composer's draft. */
+  const send = useCallback(async (textOverride) => {
+    const text = (typeof textOverride === "string" ? textOverride : input).trim();
     if (!text || busy) return;
 
     const history = [
@@ -421,7 +427,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
     const askId = nextId();
     const replyId = nextId();
-    setInput("");
+    if (typeof textOverride !== "string") setInput("");
     setError("");
     setAtBottom(true);
     setMessages((prev) => [
@@ -465,6 +471,13 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     }
   }, [input, busy, messages, patch]);
 
+  /* Answering the agent's question sends the choice as the next message */
+  const answerQuestion = useCallback((message, answer) => {
+    if (busy) return;
+    patch(message.id, { answered: answer });
+    send(answer);
+  }, [busy, patch, send]);
+
   /* ── Plan — one JSON quote, no credits spent ─────────────────────────── */
   const propose = useCallback(async () => {
     const text = input.trim();
@@ -478,7 +491,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     setMessages((prev) => [
       ...prev,
       { id: askId, role: "user", text },
-      { id: replyId, role: "agent", text: "Working out the steps and what they cost…" },
+      { id: replyId, role: "agent", text: "", thinking: "costing" },
     ]);
     setBusy("plan");
 
@@ -500,6 +513,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
       patch(replyId, {
         text: data.summary || `Here is a ${steps.length}-step production. Check the total, then approve it.`,
+        thinking: false,
         request: text,
         plan: {
           steps,
@@ -691,20 +705,46 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
           ) : (
             messages.map((message) => {
               const mine = message.role === "user";
+              /* The agent's prose is markdown; a trailing ```question block
+                 becomes a QuestionCard (the LAST block wins — same parser
+                 the server persists with). */
+              const question = !mine && message.text ? parseQuestionBlock(message.text) : null;
+              const prose = question ? stripQuestionBlock(message.text) : message.text;
+              const showThinking =
+                !mine && !message.text && !message.plan && !message.run &&
+                (message.thinking || busy === "chat");
               return (
                 <article key={message.id} className={`st-msg st-msg--${mine ? "user" : "agent"}`}>
                   <span className="st-msg__who" aria-hidden="true">{mine ? "YOU" : "HS"}</span>
                   <div className="st-msg__body">
                     <span className="hs-sr">{mine ? "You said" : "The orchestrator said"}</span>
 
-                    {message.text && (
+                    {mine && message.text && (
                       <div className="st-msg__text">
                         {message.text.split(/\n{2,}/).map((para, i) => <p key={i}>{para}</p>)}
                       </div>
                     )}
 
-                    {!message.text && !mine && busy === "chat" && (
-                      <p className="hs-hint">Thinking…</p>
+                    {!mine && prose && <Markdown>{prose}</Markdown>}
+
+                    {question && (
+                      <QuestionCard
+                        question={question}
+                        answered={message.answered}
+                        disabled={!!busy}
+                        onAnswer={(answer) => answerQuestion(message, answer)}
+                      />
+                    )}
+
+                    {showThinking && (
+                      <ThinkingCard
+                        stage={message.thinking === "costing" ? "costing" : "thinking"}
+                        considerations={
+                          message.thinking === "costing"
+                            ? ["Breaking the brief into steps", "Choosing a model for each step", "Quoting each step's price"]
+                            : ["Reading the conversation", "Drafting a reply"]
+                        }
+                      />
                     )}
 
                     {message.plan && (
@@ -759,6 +799,8 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
           value={input}
           onChange={setInput}
           onSubmit={send}
+          enterSends
+          glow={!!busy}
           /* Only the two streaming calls can be stopped mid-flight; the plan
              request is a single round trip, so no false stop button. */
           onCancel={busy === "chat" || busy === "run" ? stop : undefined}

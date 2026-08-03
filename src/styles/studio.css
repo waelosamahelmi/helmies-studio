@@ -1970,3 +1970,166 @@ select.st-layer__role option {
   .st-clip { flex-wrap: wrap; }
   .st-clip__thumb { width: 72px; }
 }
+/* ── E3 agent surface ── */
+/* EDITSv1 Phase E3 — everything below belongs to the agent (Orchestrator)
+   surface: the working-state glow, markdown typography inside chat
+   bubbles, question cards, the thinking card, per-step progress and asset
+   review cards, and the session rail. Appended under this marker only. */
+
+/* The filament glow — a breathing box-shadow on the brand accent. Used by
+   the thinking card and the input dock while the agent is busy. */
+@keyframes hs-glow-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px var(--filament-a24), 0 0 12px 0 var(--filament-a24); }
+  50%      { box-shadow: 0 0 0 1px var(--filament-a40), 0 0 22px 2px var(--filament-a24); }
+}
+.hs-glow {
+  border-radius: var(--r-lg);
+  animation: hs-glow-breathe 2.4s var(--ease) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hs-glow { animation: none; box-shadow: 0 0 0 1px var(--filament-a24), 0 0 12px 0 var(--filament-a24); }
+}
+
+/* Markdown inside a chat bubble — stays within .st-msg__text's voice */
+.st-md :is(ul, ol) { margin: var(--s-2) 0 var(--s-2) var(--s-5); display: flex; flex-direction: column; gap: var(--s-1); }
+.st-md li { line-height: 1.55; }
+.st-md a { color: var(--filament-lit); text-decoration: underline; text-underline-offset: 2px; }
+.st-md strong { color: var(--tx); font-weight: 700; }
+.st-md code {
+  font-family: var(--ff-mono);
+  font-size: 0.85em;
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--fill-02);
+  border: 1px solid var(--line);
+}
+.st-md .st-md__code {
+  margin: var(--s-2) 0;
+  padding: var(--s-3);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--ink-050);
+  overflow-x: auto;
+  font-size: var(--t-tiny);
+  line-height: 1.6;
+}
+.st-md .st-md__code code { padding: 0; border: 0; background: none; }
+.st-md .st-md__heading { font-weight: 700; color: var(--tx); margin-top: var(--s-3); }
+.st-md blockquote {
+  margin: var(--s-2) 0;
+  padding: var(--s-1) var(--s-3);
+  border-left: 2px solid var(--line-accent);
+  color: var(--tx-dim);
+}
+.st-md .st-md__tablewrap { overflow-x: auto; margin: var(--s-2) 0; }
+.st-md table { border-collapse: collapse; font-size: var(--t-tiny); }
+.st-md :is(th, td) { border: 1px solid var(--line); padding: var(--s-1) var(--s-2); text-align: left; }
+.st-md th { background: var(--fill-01); color: var(--tx-dim); }
+
+/* Question card — the agent's single question per turn */
+.st-question {
+  display: flex; flex-direction: column; gap: var(--s-3);
+  padding: var(--s-4);
+  border: 1px solid var(--line-accent);
+  border-radius: var(--r-lg);
+  background: var(--filament-a08);
+}
+.st-question__q { font-size: var(--t-base); font-weight: 600; color: var(--tx); line-height: 1.5; }
+.st-question__opts { gap: var(--s-2); }
+.st-question__custom { display: flex; gap: var(--s-2); align-items: center; }
+.st-question__custom .hs-input { flex: 1; min-width: 0; }
+.st-question__answered {
+  display: inline-flex; align-items: center; gap: var(--s-2);
+  font-size: var(--t-sm); color: var(--signal);
+}
+
+/* Thinking card — the agent's visible working state */
+.st-thinking {
+  display: flex; flex-direction: column; gap: var(--s-2);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line-accent);
+  border-radius: var(--r-lg);
+  background: var(--ink-100);
+  max-width: 420px;
+}
+.st-thinking__head { display: flex; align-items: center; gap: var(--s-3); }
+.st-thinking__stage { font-size: var(--t-sm); font-weight: 600; color: var(--tx); }
+.st-thinking__clock { margin-left: auto; font-size: 10px; color: var(--tx-mute); font-variant-numeric: tabular-nums; }
+.st-thinking__more summary {
+  cursor: pointer;
+  font-size: var(--t-micro);
+  color: var(--tx-mute);
+  letter-spacing: 0.02em;
+}
+.st-thinking__more ul {
+  margin: var(--s-2) 0 0 var(--s-4);
+  display: flex; flex-direction: column; gap: var(--s-1);
+  font-size: var(--t-tiny);
+  color: var(--tx-dim);
+}
+
+/* Step progress card — one plan step executing (review mode + auto mode) */
+.st-stepcard {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--ink-100);
+}
+.st-stepcard.is-running { border-color: var(--line-accent); }
+.st-stepcard.is-failed { border-color: var(--fault); background: var(--fault-a12); }
+.st-stepcard.is-done { border-color: var(--line); }
+.st-stepcard__body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+.st-stepcard__agent { font-size: var(--t-sm); font-weight: 600; color: var(--tx); }
+.st-stepcard__task { font-size: var(--t-tiny); color: var(--tx-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-stepcard__meta { display: flex; align-items: center; gap: var(--s-2); flex: none; font-family: var(--ff-mono); font-size: 10px; color: var(--tx-mute); font-variant-numeric: tabular-nums; }
+
+/* Asset review card — a produced asset awaiting Accept / Regenerate / Edit */
+.st-asset {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--ink-100);
+  overflow: hidden;
+}
+.st-asset__preview { background: var(--ink-000); display: grid; place-items: center; }
+.st-asset__preview :is(img, video) { display: block; width: 100%; max-height: 320px; object-fit: contain; }
+.st-asset__preview audio { width: 100%; padding: var(--s-4); }
+.st-asset__acts {
+  display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap;
+  padding: var(--s-3) var(--s-4);
+  border-top: 1px solid var(--line);
+  background: var(--fill-01);
+}
+.st-asset__text {
+  margin: 0; padding: var(--s-3) var(--s-4);
+  max-height: 220px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word;
+  font-size: var(--t-tiny); color: var(--tx-dim);
+}
+
+/* Plan approval — per-step editing rows inside the plan card */
+.st-planedit { display: flex; flex-direction: column; gap: var(--s-2); padding: var(--s-2) var(--s-4) var(--s-3); border-bottom: 1px solid var(--line); }
+.st-planedit__row { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.st-planedit__row .hs-label { margin: 0; }
+.st-plan__mode { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); }
+
+/* Session rail entries */
+.st-sessions { display: flex; flex-direction: column; gap: var(--s-1); }
+.st-sessions__item {
+  display: flex; align-items: baseline; gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--tx-dim);
+  font-size: var(--t-tiny);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--d-fast) var(--ease), border-color var(--d-fast) var(--ease);
+}
+.st-sessions__item:hover { background: var(--fill-02); }
+.st-sessions__item.is-active { border-color: var(--line-accent); background: var(--filament-a08); color: var(--tx); }
+.st-sessions__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-sessions__time { flex: none; font-family: var(--ff-mono); font-size: 9px; color: var(--tx-ghost); }

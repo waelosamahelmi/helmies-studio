@@ -40,6 +40,13 @@ export default function Brief({
   submitLabel = "Generate",
   meterLabel = "Cost",
   autoFocus = false,
+
+  /** Chat-style input: plain Enter sends, Shift+Enter inserts a newline.
+      Generation studios keep the Ctrl/Cmd+Enter-only default. */
+  enterSends = false,
+
+  /** Animated working-state border (agent surface, while busy). */
+  glow = false,
 }) {
   const ref = useRef(null);
 
@@ -66,6 +73,13 @@ export default function Brief({
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
       submit();
+      return;
+    }
+    // Plain Enter sends only when the surface opts in; Shift+Enter always
+    // falls through to the textarea's default newline.
+    if (enterSends && e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      submit();
     }
   };
 
@@ -75,7 +89,7 @@ export default function Brief({
   };
 
   return (
-    <div className="st-dock-prompt">
+    <div className={`st-dock-prompt${glow ? " hs-glow" : ""}`}>
       <div className="st-brief">
         <textarea
           ref={ref}
