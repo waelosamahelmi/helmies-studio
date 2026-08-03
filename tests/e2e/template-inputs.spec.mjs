@@ -37,6 +37,23 @@ const PNG_BASE64 =
 async function ensureInputModel(prisma) {
   const data = {
     modelType: "image",
+    // Main moved since this branch was cut (PR #16, model-catalog.js's
+    // serializeCatalogModel/getCatalogModel): modelType is now RE-DERIVED
+    // live from `capability` via modelTypeForCapability
+    // (src/lib/model-catalog-core.mjs's CAPABILITY_TO_MODEL_TYPE) for every
+    // non-admin caller — a row with no capability, and whose `endpoint`
+    // text doesn't match inferCapabilityFromRow's own text-based fallback
+    // either (this fixture's "e2e-input-endpoint" contains neither "image"
+    // nor "video"), resolves to no capability at all and getCatalogModel
+    // returns null for it. page.js's buildStepInputs (Task B1) calls
+    // getCatalogModel to build the per-step field descriptors
+    // StepInputsForm renders from — a null model means zero fields, so the
+    // image upload control this test asserts on never renders. `capability:
+    // "image"` maps directly to `modelType: "image"` (CAPABILITY_TO_MODEL_TYPE.image
+    // === "image"), matching the modelType already declared above, so this
+    // row resolves through the FIRST (non-inferred) branch of
+    // resolveEffectiveCapability with no dependency on endpoint text at all.
+    capability: "image",
     providerName: "kie",
     endpoint: "e2e-input-endpoint",
     displayName: "E2E Input Model",
