@@ -2,8 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Central authz module: correct 401 (unauthenticated) vs 403 (authenticated
 // non-admin), and no internal error messages leaking to the client on
-// unrelated failures — only a generic "Internal error" 500, with the real
-// error console.error'd server-side for operators to see.
+// unrelated failures — only a generic 500, with the real error logged
+// server-side (structured, with an errorId) for operators to see.
+// Task E2.1: authzResponse now emits the uniform error envelope
+// (src/lib/api-error.js) — `error` stays the same string it always was;
+// code/title/errorId/retryable/details are additive.
 
 vi.mock("@/lib/session", () => ({ getCurrentUser: vi.fn() }));
 vi.mock("@/lib/prisma", () => ({
@@ -79,33 +82,41 @@ describe("requireAdminUser", () => {
 });
 
 describe("authzResponse", () => {
-  it("maps AuthzError(401) to a 401 response with the public message", async () => {
+  it("maps AuthzError(401) to a 401 envelope with the public message", async () => {
     const res = authzResponse(new AuthzError(401, "Unauthorized"));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body).toEqual({ error: "Unauthorized" });
+    expect(body).toMatchObject({ error: "Unauthorized", code: "unauthorized", retryable: false });
+    expect(typeof body.title).toBe("string");
+    expect(body.errorId).toMatch(/^[0-9a-f-]{8}$/);
   });
 
-  it("maps AuthzError(403) to a 403 response with the public message", async () => {
+  it("maps AuthzError(403) to a 403 envelope with the public message", async () => {
     const res = authzResponse(new AuthzError(403, "Forbidden"));
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body).toEqual({ error: "Forbidden" });
+    expect(body).toMatchObject({ error: "Forbidden", code: "forbidden" });
+    expect(body.errorId).toMatch(/^[0-9a-f-]{8}$/);
   });
 
-  it("maps any other error to a generic 500 'Internal error' and never leaks e.message", async () => {
+  it("maps any other error to a generic 500 envelope and never leaks e.message", async () => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const dbError = new Error("db exploded: connection string contains password=hunter2");
+    const dbError = new Error("db exploded: connection string has a bad host");
 
     const res = authzResponse(dbError);
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body).toEqual({ error: "Internal error" });
-    expect(JSON.stringify(body)).not.toContain("hunter2");
+    expect(body).toMatchObject({ code: "internal" });
+    expect(typeof body.error).toBe("string");
     expect(JSON.stringify(body)).not.toContain("db exploded");
 
-    // The real error is still surfaced server-side for operators.
-    expect(errSpy).toHaveBeenCalledWith(dbError);
+    // The real error is still surfaced server-side for operators — now as a
+    // structured log line (src/lib/log.js) carrying the SAME errorId the
+    // client sees, so a support ticket can be matched to the cause.
+    expect(errSpy).toHaveBeenCalledTimes(1);
+    const line = errSpy.mock.calls[0][0];
+    expect(String(line)).toContain(body.errorId);
+    expect(String(line)).toContain("db exploded");
   });
 });

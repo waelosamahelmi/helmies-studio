@@ -106,6 +106,7 @@ describe("verifyOrigin", () => {
     const res = authzResponse(caught);
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body).toEqual({ error: "Cross-origin request rejected" });
+    expect(body).toMatchObject({ error: "Cross-origin request rejected", code: "forbidden" });
+    expect(body.errorId).toMatch(/^[0-9a-f-]{8}$/);
   });
 });

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getCurrentUserWithCredits } from "@/lib/session";
 import { AuthzError, authzResponse } from "@/lib/authz";
+import { apiError } from "@/lib/api-error";
 import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { reserveCredits, releaseReservation, getWallet } from "@/lib/wallet";
@@ -61,7 +62,7 @@ export async function POST(req) {
   let body = null;
   try {
     const user = await getCurrentUserWithCredits();
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user) return apiError({ code: "unauthorized" });
     // This route authenticates via session cookie only (no authenticateApiKey
     // branch — see the route-manifest note), so the origin check always
     // applies here; it is never conditional on the auth method the way the
@@ -70,13 +71,13 @@ export async function POST(req) {
 
     const rl = await checkRateLimit(user.id, "/api/generate/async");
     if (!rl.allowed) {
-      return NextResponse.json({ error: "Rate limited", retryAfter: rl.retryAfter }, { status: 429 });
+      return apiError({ code: "rate_limited", extra: { retryAfter: rl.retryAfter } });
     }
 
     body = await req.json();
     const { tool, model, prompt, ...params } = body;
 
-    if (!model) return NextResponse.json({ error: "Model required" }, { status: 400 });
+    if (!model) return apiError({ code: "bad_request", message: "Model required" });
 
     const provider = await resolveProvider(model);
 
@@ -90,13 +91,13 @@ export async function POST(req) {
     // planning/preview estimate only and must never be used to actually bill
     // a generation (that was the async-route half of this hole).
     if (!dbPricing || dbPricing.isActive === false || dbPricing.isDeprecated) {
-      return NextResponse.json({ error: "Model not priced", model }, { status: 422 });
+      return apiError({ code: "model_not_priced", extra: { model } });
     }
     let cost = dbPricing.creditsCost;
     let providerCost = dbPricing.providerCost || 0;
     if (dbPricing.pricingRules) {
       const quote = await quoteCatalogModel(model, { ...params, prompt: prompt || "" });
-      if (!quote.valid) return NextResponse.json({ error: "Invalid model parameters", details: quote.errors }, { status: 422 });
+      if (!quote.valid) return apiError({ code: "invalid_params", details: quote.errors });
       cost = quote.credits;
       providerCost = quote.providerCost;
     }
@@ -144,7 +145,7 @@ export async function POST(req) {
     }
 
     if (wallet.available < cost) {
-      return NextResponse.json({ error: "Insufficient credits", credits: wallet.available, cost }, { status: 402 });
+      return apiError({ code: "insufficient_credits", extra: { credits: wallet.available, cost } });
     }
 
     let finalPrompt = prompt || "";
@@ -211,7 +212,11 @@ export async function POST(req) {
         where: { id: generation.id },
         data: { status: "failed", error: reserveErr.message },
       });
-      return NextResponse.json({ error: reserveErr.message, credits: wallet.available, cost }, { status: 402 });
+      return apiError({
+        code: "insufficient_credits",
+        cause: reserveErr,
+        extra: { credits: wallet.available, cost },
+      });
     }
 
     // Money-flow change (Task 5): this route no longer calls the provider
@@ -240,7 +245,11 @@ export async function POST(req) {
         where: { id: generation.id },
         data: { status: "failed", error: enqueueErr.message },
       }).catch(() => {});
-      return NextResponse.json({ error: enqueueErr.message }, { status: 500 });
+      return apiError({
+        code: "internal",
+        cause: enqueueErr,
+        context: { route: "generate/async", phase: "enqueue", generationId: generation.id },
+      });
     }
 
     // Race: enqueueJob's own idempotencyKey unique-constraint fallback
@@ -283,7 +292,13 @@ export async function POST(req) {
     });
   } catch (e) {
     if (e instanceof AuthzError) return authzResponse(e);
-    console.error("[generate/async] ERROR", { tool: body?.tool, model: body?.model, message: e.message, stack: e.stack?.split("\n").slice(0, 3).join(" | ") });
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    // The raw e.message never reaches the client (it used to leak here) —
+    // apiError logs the full cause server-side keyed by the same errorId
+    // the user sees.
+    return apiError({
+      code: "internal",
+      cause: e,
+      context: { route: "generate/async", tool: body?.tool, model: body?.model },
+    });
   }
 }

@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
+import { apiError } from "@/lib/api-error";
 
 // Central authorization module. Every admin/protected route should throw
 // through here (via requireUser/requireAdminUser) and catch with
@@ -35,12 +35,18 @@ export async function requireAdminUser(req) {
 }
 
 // Turn a caught error into a Response. AuthzErrors surface their status and
-// public message as-is; anything else is logged server-side and reduced to
-// a generic 500 so internal details never reach the client.
+// public message as-is; anything else is logged server-side (with an
+// errorId, via apiError → log.error) and reduced to a generic 500 so
+// internal details never reach the client. Both paths emit the uniform
+// error envelope (Task E2.1) — `error` stays the same string it always was;
+// code/title/errorId/retryable are additive.
 export function authzResponse(e) {
   if (e instanceof AuthzError) {
-    return NextResponse.json({ error: e.publicMessage }, { status: e.status });
+    return apiError({
+      status: e.status,
+      code: e.status === 401 ? "unauthorized" : e.status === 404 ? "not_found" : "forbidden",
+      message: e.publicMessage,
+    });
   }
-  console.error(e);
-  return NextResponse.json({ error: "Internal error" }, { status: 500 });
+  return apiError({ status: 500, code: "internal", cause: e });
 }

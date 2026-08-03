@@ -38,7 +38,7 @@ describe("POST /api/director/rerun — rerunType validation", () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body).toEqual({ error: "Invalid rerunType" });
+    expect(body).toMatchObject({ error: "Invalid rerunType", code: "bad_request" });
     expect(rerunShot).not.toHaveBeenCalled();
   });
 
@@ -91,7 +91,8 @@ describe("POST /api/director/rerun — business errors reach the user", () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body).toEqual({ error: "Internal error" });
+    expect(body).toMatchObject({ code: "internal" });
+    expect(typeof body.error).toBe("string");
     errSpy.mockRestore();
   });
 });

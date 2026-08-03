@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUserWithCredits } from "@/lib/session";
+import { apiError } from "@/lib/api-error";
 
 // Phase 4A Task 6: additive-only job fields. Generation.status stays
 // pending/processing/completed/failed (the client contract in
 // src/components/studio/useAsyncGeneration.js polls on THOSE values) — the
 // JOB carries its own queued/running/succeeded/failed/dead vocabulary
-// separately, exposed here as jobStatus/attempts/queuedAt, null for a
-// generation with no GenerationJob row (legacy, or a sync-route generation).
+// separately, exposed here as jobStatus/attempts/queuedAt (+ maxAttempts,
+// Task E2.2 — the client's "Retrying (attempt N of M)…" note needs the
+// denominator), null for a generation with no GenerationJob row (legacy, or
+// a sync-route generation).
 function withJobFields(gen, job) {
   return {
     ...gen,
     jobStatus: job?.status ?? null,
     attempts: job?.attempts ?? null,
+    maxAttempts: job?.maxAttempts ?? null,
     queuedAt: job?.createdAt ?? null,
   };
 }
@@ -21,7 +25,7 @@ export async function GET(req) {
   try {
     const user = await getCurrentUserWithCredits();
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError({ code: "unauthorized" });
     }
 
     const { searchParams } = new URL(req.url);
@@ -34,11 +38,11 @@ export async function GET(req) {
         where: { id, userId: user.id },
         select: { id: true, status: true, outputUrl: true, error: true, creditsUsed: true, createdAt: true, model: true, prompt: true },
       });
-      if (!gen) return NextResponse.json({ error: "Not found" }, { status: 404 });
+      if (!gen) return apiError({ code: "not_found", message: "Not found" });
 
       const job = await prisma.generationJob.findUnique({
         where: { generationId: id },
-        select: { status: true, attempts: true, createdAt: true },
+        select: { status: true, attempts: true, maxAttempts: true, createdAt: true },
       }).catch(() => null);
 
       return NextResponse.json(withJobFields(gen, job));
@@ -56,7 +60,7 @@ export async function GET(req) {
     const jobs = generations.length
       ? await prisma.generationJob.findMany({
           where: { generationId: { in: generations.map((g) => g.id) } },
-          select: { generationId: true, status: true, attempts: true, createdAt: true },
+          select: { generationId: true, status: true, attempts: true, maxAttempts: true, createdAt: true },
         }).catch(() => [])
       : [];
     const jobByGenerationId = new Map(jobs.map((j) => [j.generationId, j]));
@@ -66,6 +70,6 @@ export async function GET(req) {
 
     return NextResponse.json({ generations: generationsWithJobs, total, hasMore: offset + limit < total });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return apiError({ code: "internal", cause: e, context: { route: "generations/status" } });
   }
 }

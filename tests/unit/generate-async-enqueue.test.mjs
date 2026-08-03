@@ -203,12 +203,46 @@ describe("POST /api/generate/async — enqueues a durable job (Task 5)", () => {
 
     expect(res.status).toBe(500);
     const json = await res.json();
-    expect(json.error).toBe("DB write failed");
+    // Task E2.1: the raw internal message must never reach the client — the
+    // envelope carries a generic message + errorId instead, and the cause is
+    // logged server-side.
+    expect(json).toMatchObject({ code: "internal" });
+    expect(typeof json.error).toBe("string");
+    expect(json.error).not.toContain("DB write failed");
+    expect(json.errorId).toMatch(/^[0-9a-f-]{8}$/);
     expect(releaseReservation).toHaveBeenCalledWith("u1", "gen1");
     expect(prisma.generation.update).toHaveBeenCalledWith({
       where: { id: "gen1" },
       data: { status: "failed", error: "DB write failed" },
     });
+  });
+
+  // Task E2.1 — the uniform error envelope is ADDITIVE: 402 keeps its
+  // credits/cost fields, 429 keeps retryAfter, and every error body carries
+  // code/title/errorId/retryable alongside the same string `error`.
+  it("402s with an insufficient_credits envelope that keeps credits and cost", async () => {
+    getWallet.mockResolvedValue({ available: 3 });
+
+    const res = await POST(jsonReq({ tool: "image", model: "m1", prompt: "a cat" }));
+
+    expect(res.status).toBe(402);
+    const json = await res.json();
+    expect(json).toMatchObject({ code: "insufficient_credits", credits: 3, cost: 10 });
+    expect(json.error).toBe("This generation needs 10 credits but you have 3.");
+    expect(typeof json.title).toBe("string");
+    expect(json.errorId).toMatch(/^[0-9a-f-]{8}$/);
+    expect(reserveCredits).not.toHaveBeenCalled();
+  });
+
+  it("429s with a rate_limited envelope that keeps retryAfter", async () => {
+    checkRateLimit.mockResolvedValue({ allowed: false, retryAfter: 42 });
+
+    const res = await POST(jsonReq({ tool: "image", model: "m1", prompt: "a cat" }));
+
+    expect(res.status).toBe(429);
+    const json = await res.json();
+    expect(json).toMatchObject({ code: "rate_limited", retryAfter: 42, retryable: true });
+    expect(json.errorId).toMatch(/^[0-9a-f-]{8}$/);
   });
 
   it("loses a concurrent duplicate race inside enqueueJob itself — releases its own reservation and returns the winner's job", async () => {

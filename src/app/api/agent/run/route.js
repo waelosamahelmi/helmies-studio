@@ -4,15 +4,16 @@ import { executeAgentRun, executeAgentRunStream, planTask } from "@/lib/agents";
 import { checkRateLimit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
+import { apiError } from "@/lib/api-error";
 
 export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user) return apiError({ code: "unauthorized" });
     verifyOrigin(req);
 
     const rl = await checkRateLimit(user.id, "/api/agent");
-    if (!rl.allowed) return NextResponse.json({ error: "Rate limited", retryAfter: rl.retryAfter }, { status: 429 });
+    if (!rl.allowed) return apiError({ code: "rate_limited", extra: { retryAfter: rl.retryAfter } });
 
     const body = await req.json();
 
@@ -22,7 +23,7 @@ export async function POST(req) {
     const context = body.context || (body.plan ? { precomputedPlan: body.plan } : {});
 
     if (!message && !body.plan) {
-      return NextResponse.json({ error: "Message or plan required" }, { status: 400 });
+      return apiError({ code: "bad_request", message: "Message or plan required" });
     }
 
     if (shouldStream) {
@@ -37,14 +38,22 @@ export async function POST(req) {
         });
       }
       if (result.error) {
-        return NextResponse.json({ error: result.error, creditsNeeded: result.creditsNeeded, creditsAvailable: result.creditsAvailable }, { status: 402 });
+        return apiError({
+          code: "insufficient_credits",
+          message: result.error,
+          extra: { creditsNeeded: result.creditsNeeded, creditsAvailable: result.creditsAvailable },
+        });
       }
       return NextResponse.json(result);
     }
 
     const result = await executeAgentRun(user.id, message, context);
     if (result.error) {
-      return NextResponse.json({ error: result.error, creditsNeeded: result.creditsNeeded, creditsAvailable: result.creditsAvailable }, { status: 402 });
+      return apiError({
+        code: "insufficient_credits",
+        message: result.error,
+        extra: { creditsNeeded: result.creditsNeeded, creditsAvailable: result.creditsAvailable },
+      });
     }
     return NextResponse.json(result);
   } catch (e) {

@@ -31,7 +31,7 @@ describe("GET /api/generations/status?id=... — additive job keys", () => {
       createdAt: new Date("2026-08-01T00:00:00Z"), model: "m1", prompt: "x",
     });
     const jobCreatedAt = new Date("2026-08-01T00:00:01Z");
-    prisma.generationJob.findUnique.mockResolvedValue({ status: "running", attempts: 2, createdAt: jobCreatedAt });
+    prisma.generationJob.findUnique.mockResolvedValue({ status: "running", attempts: 2, maxAttempts: 3, createdAt: jobCreatedAt });
 
     const res = await GET(req("?id=gen1"));
     expect(res.status).toBe(200);
@@ -39,12 +39,12 @@ describe("GET /api/generations/status?id=... — additive job keys", () => {
 
     expect(json).toMatchObject({
       id: "gen1", status: "pending", creditsUsed: 5, // existing keys unchanged in type/value
-      jobStatus: "running", attempts: 2,
+      jobStatus: "running", attempts: 2, maxAttempts: 3,
     });
     expect(new Date(json.queuedAt).toISOString()).toBe(jobCreatedAt.toISOString());
     expect(prisma.generationJob.findUnique).toHaveBeenCalledWith({
       where: { generationId: "gen1" },
-      select: { status: true, attempts: true, createdAt: true },
+      select: { status: true, attempts: true, maxAttempts: true, createdAt: true },
     });
   });
 
@@ -60,6 +60,7 @@ describe("GET /api/generations/status?id=... — additive job keys", () => {
 
     expect(json.jobStatus).toBeNull();
     expect(json.attempts).toBeNull();
+    expect(json.maxAttempts).toBeNull();
     expect(json.queuedAt).toBeNull();
     // No existing key disappeared or changed type.
     expect(json.status).toBe("completed");

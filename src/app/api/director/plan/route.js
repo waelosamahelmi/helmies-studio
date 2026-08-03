@@ -3,11 +3,12 @@ import { getCurrentUser } from "@/lib/session";
 import { createProductionPlan, DirectorPlanError } from "@/lib/director-planner";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
+import { apiError } from "@/lib/api-error";
 
 export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user) return apiError({ code: "unauthorized" });
     verifyOrigin(req);
 
     const body = await req.json();
@@ -39,7 +40,17 @@ export async function POST(req) {
     }, { status: 201 });
   } catch (e) {
     if (e instanceof DirectorPlanError) {
-      return NextResponse.json({ error: e.message, errorId: e.errorId }, { status: e.status });
+      // Same 422 + string error + errorId contract as before the envelope —
+      // the errorId minted inside the planner (already console.error'd
+      // there next to the real cause) is the one the user sees.
+      return apiError({
+        status: e.status,
+        code: "internal",
+        title: "Planning failed",
+        message: e.message,
+        errorId: e.errorId,
+        retryable: true,
+      });
     }
     return authzResponse(e);
   }

@@ -1,20 +1,20 @@
-import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
 import { llmComplete, brandError } from "@/lib/providers";
+import { apiError } from "@/lib/api-error";
 
 export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
-    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user) return apiError({ code: "unauthorized" });
 
     const rl = await checkRateLimit(user.id, "/api/agent");
-    if (!rl.allowed) return NextResponse.json({ error: "Rate limited" }, { status: 429 });
+    if (!rl.allowed) return apiError({ code: "rate_limited", extra: { retryAfter: rl.retryAfter } });
 
     const body = await req.json().catch(() => ({}));
     const { messages, model } = body;
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return NextResponse.json({ error: "Messages required" }, { status: 400 });
+      return apiError({ code: "bad_request", message: "Messages required" });
     }
 
     const selectedModel = model || process.env.LLM_MODEL || "deepseek/deepseek-v4-flash";
@@ -66,7 +66,15 @@ Do NOT output JSON. Respond in plain text as a helpful assistant.`;
 
     if (!streamRes.ok) {
       const txt = await streamRes.text().catch(() => "");
-      return NextResponse.json({ error: brandError(txt) }, { status: 500 });
+      // brandError keeps the message provider-name-free; the raw upstream
+      // text goes only to the server-side log.
+      return apiError({
+        status: 500,
+        code: "internal",
+        message: brandError(txt),
+        cause: new Error(txt || `Upstream LLM responded ${streamRes.status}`),
+        context: { route: "agent/chat", upstreamStatus: streamRes.status },
+      });
     }
 
     const encoder = new TextEncoder();
@@ -132,6 +140,6 @@ Do NOT output JSON. Respond in plain text as a helpful assistant.`;
       headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
     });
   } catch (e) {
-    return NextResponse.json({ error: e?.message || "Chat failed" }, { status: 500 });
+    return apiError({ code: "internal", cause: e, context: { route: "agent/chat" } });
   }
 }

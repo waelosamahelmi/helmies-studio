@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
 import { llmComplete, resolveProvider } from "@/lib/providers";
 import { estimateCredits } from "@/lib/pricing-engine";
 import prisma from "@/lib/prisma";
+import { newErrorId } from "@/lib/api-error";
 import { SECTION_VISUAL_STRATEGY, PRODUCTION_TYPE_PRESETS } from "@/lib/director-constants";
 
 export { SECTION_VISUAL_STRATEGY, PRODUCTION_TYPE_PRESETS };
@@ -9,13 +9,17 @@ export { SECTION_VISUAL_STRATEGY, PRODUCTION_TYPE_PRESETS };
 // Thrown when neither the LLM nor the heuristic builder can produce a plan
 // with an iterable, non-empty `shots` array. Callers (the API route) must
 // surface this as a 422 with the public message + errorId — never let it
-// fall through to a generic 500.
+// fall through to a generic 500. Task E2.1: the errorId now comes from the
+// shared src/lib/api-error.js helper (same 8-char shape as before), and the
+// route renders this through apiError() — public behavior (422 + string
+// error + errorId) unchanged.
 export class DirectorPlanError extends Error {
-  constructor(publicMessage, errorId) {
+  constructor(publicMessage, errorId = newErrorId()) {
     super(publicMessage);
     this.name = "DirectorPlanError";
     this.status = 422;
     this.errorId = errorId;
+    this.retryable = true;
   }
 }
 
@@ -632,7 +636,7 @@ export async function createProductionPlan(brief, userId) {
   }
 
   if (!isValidPlanShape(plan)) {
-    const errorId = randomUUID().slice(0, 8);
+    const errorId = newErrorId();
     console.error(`[DirectorPlanner] [${errorId}] Could not produce a valid production plan for brief type "${brief?.type}":`, lastError);
     throw new DirectorPlanError(
       "We couldn't generate a production plan for this brief. Please try again in a moment, or simplify the request.",

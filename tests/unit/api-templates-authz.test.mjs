@@ -48,7 +48,7 @@ describe("POST /api/templates — central authz", () => {
 
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body).toEqual({ error: "Unauthorized" });
+    expect(body).toMatchObject({ error: "Unauthorized", code: "unauthorized" });
   });
 
   it("403 Forbidden when authenticated but not an admin", async () => {
@@ -58,7 +58,7 @@ describe("POST /api/templates — central authz", () => {
 
     expect(res.status).toBe(403);
     const body = await res.json();
-    expect(body).toEqual({ error: "Forbidden" });
+    expect(body).toMatchObject({ error: "Forbidden", code: "forbidden" });
   });
 
   it("500 'Internal error' on a generic throw, never leaking e.message", async () => {
@@ -69,7 +69,8 @@ describe("POST /api/templates — central authz", () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body).toEqual({ error: "Internal error" });
+    expect(body).toMatchObject({ code: "internal" });
+    expect(JSON.stringify(body)).not.toContain("db exploded");
   });
 });
 
@@ -83,7 +84,7 @@ describe("PUT /api/templates/[slug] — central authz + P2025 preserved", () => 
     const res = await PUT(req(), ctx);
 
     expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "Unauthorized" });
+    expect(await res.json()).toMatchObject({ error: "Unauthorized", code: "unauthorized" });
   });
 
   it("403 Forbidden when authenticated but not an admin", async () => {
@@ -92,7 +93,7 @@ describe("PUT /api/templates/[slug] — central authz + P2025 preserved", () => 
     const res = await PUT(req(), ctx);
 
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "Forbidden" });
+    expect(await res.json()).toMatchObject({ error: "Forbidden", code: "forbidden" });
   });
 
   it("404 'Template not found' when prisma throws P2025", async () => {
@@ -114,7 +115,7 @@ describe("PUT /api/templates/[slug] — central authz + P2025 preserved", () => 
     const res = await PUT(req(), ctx);
 
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "Internal error" });
+    expect(await res.json()).toMatchObject({ code: "internal" });
   });
 });
 
@@ -128,7 +129,7 @@ describe("DELETE /api/templates/[slug] — central authz + P2025 preserved", () 
     const res = await DELETE(req(), ctx);
 
     expect(res.status).toBe(401);
-    expect(await res.json()).toEqual({ error: "Unauthorized" });
+    expect(await res.json()).toMatchObject({ error: "Unauthorized", code: "unauthorized" });
   });
 
   it("403 Forbidden when authenticated but not an admin", async () => {
@@ -137,7 +138,7 @@ describe("DELETE /api/templates/[slug] — central authz + P2025 preserved", () 
     const res = await DELETE(req(), ctx);
 
     expect(res.status).toBe(403);
-    expect(await res.json()).toEqual({ error: "Forbidden" });
+    expect(await res.json()).toMatchObject({ error: "Forbidden", code: "forbidden" });
   });
 
   it("404 'Template not found' when prisma throws P2025", async () => {
@@ -159,6 +160,6 @@ describe("DELETE /api/templates/[slug] — central authz + P2025 preserved", () 
     const res = await DELETE(req(), ctx);
 
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "Internal error" });
+    expect(await res.json()).toMatchObject({ code: "internal" });
   });
 });

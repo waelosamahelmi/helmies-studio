@@ -55,7 +55,8 @@ describe("POST /api/workflows/[id]/run — business errors reach the user", () =
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body).toEqual({ error: "Internal error" });
+    expect(body).toMatchObject({ code: "internal" });
+    expect(typeof body.error).toBe("string");
     errSpy.mockRestore();
   });
 });

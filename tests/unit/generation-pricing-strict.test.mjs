@@ -188,7 +188,7 @@ describe("async generation path (/api/generate/async) — strict model pricing",
   it("400s when body.model is missing", async () => {
     const res = await postAsync(asyncReq({ tool: "image", endpoint: "nano-banana-pro", prompt: "x" }));
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "Model required" });
+    expect(await res.json()).toMatchObject({ error: "Model required", code: "bad_request" });
     expect(prisma.modelPricing.findUnique).not.toHaveBeenCalled();
   });
 
@@ -196,7 +196,7 @@ describe("async generation path (/api/generate/async) — strict model pricing",
     prisma.modelPricing.findUnique.mockResolvedValue(null);
     const res = await postAsync(asyncReq({ tool: "image", model: "nano-banana-pro", prompt: "x" }));
     expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ error: "Model not priced", model: "nano-banana-pro" });
+    expect(await res.json()).toMatchObject({ code: "model_not_priced", model: "nano-banana-pro" });
     expect(reserveCredits).not.toHaveBeenCalled();
   });
 
@@ -206,7 +206,7 @@ describe("async generation path (/api/generate/async) — strict model pricing",
     });
     const res = await postAsync(asyncReq({ tool: "image", model: "m1", prompt: "x" }));
     expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ error: "Model not priced", model: "m1" });
+    expect(await res.json()).toMatchObject({ code: "model_not_priced", model: "m1" });
   });
 
   it("422s when the ModelPricing row is deprecated", async () => {
@@ -215,7 +215,7 @@ describe("async generation path (/api/generate/async) — strict model pricing",
     });
     const res = await postAsync(asyncReq({ tool: "image", model: "m1", prompt: "x" }));
     expect(res.status).toBe(422);
-    expect(await res.json()).toEqual({ error: "Model not priced", model: "m1" });
+    expect(await res.json()).toMatchObject({ code: "model_not_priced", model: "m1" });
   });
 
   it("happy path: bills the ModelPricing row's creditsCost", async () => {
