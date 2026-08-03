@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Sheet, SpendMeter, Field, Chips, clock,
+  Sheet, SpendMeter, Field, Chips, Dropzone, clock,
   IcFilm, IcSettings, IcRefresh, IcPlus, IcExternal, IcImage, IcVideo, IcClose, IcBolt,
   IcBrush, IcCopy, IcTrash, IcChevronLeft, IcChevronRight,
 } from "@/components/studio/kit";
@@ -130,6 +130,9 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
   const [duration, setDuration] = useState(PRODUCTION_TYPE_PRESETS.music_video.defaultDuration);
   const [style, setStyle] = useState("");
   const [mood, setMood] = useState("");
+  /* E4.3: named cast — {key, name, description, referenceUrl} — sent to the
+     planner and anchored to real images by the executor. */
+  const [characters, setCharacters] = useState([]);
 
   /* Board */
   const [outline, setOutline] = useState([]);   // shots the user sketches first
@@ -220,6 +223,14 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
       if (p.brief.title) setTitle(p.brief.title);
       if (p.brief.concept) setConcept(p.brief.concept);
       if (p.brief.type && PRODUCTION_TYPE_PRESETS[p.brief.type]) setType(p.brief.type);
+      if (Array.isArray(p.brief.characters)) {
+        setCharacters(p.brief.characters.map((c, i) => ({
+          key: `c${i}`,
+          name: c?.name || "",
+          description: c?.description || "",
+          referenceUrl: c?.referenceUrl || null,
+        })));
+      }
     }
     return p;
   }, []);
@@ -257,6 +268,13 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
         body: JSON.stringify({
           concept, title, type, platform, duration, style, mood,
           shots: outline.map((s, i) => ({ index: i, title: s.title, description: s.line })),
+          characters: characters
+            .filter((c) => c.name.trim() || c.description.trim())
+            .map(({ name, description, referenceUrl }) => ({
+              name: name.trim(),
+              description: description.trim(),
+              ...(referenceUrl ? { referenceUrl } : {}),
+            })),
         }),
         timeout: 180000,
         retries: 0,
@@ -279,7 +297,7 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
     } finally {
       if (seq.current === run) setBusy(null);
     }
-  }, [concept, title, type, platform, duration, style, mood, outline, loadRecent]);
+  }, [concept, title, type, platform, duration, style, mood, outline, characters, loadRecent]);
 
   /* ── Execute the pipeline ─────────────────────────────────────────────── */
   const execute = useCallback(async () => {
@@ -987,6 +1005,56 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
                 placeholder="Restless, cold, hopeful at the end"
               />
             )}
+          </Field>
+
+          <Field
+            label="Characters"
+            hint="Name your cast, describe them, and add a reference image if you have one — the director keeps each character consistent across shots."
+          >
+            <div className="hs-stack" style={{ gap: "var(--s-3)" }}>
+              {characters.map((c, i) => (
+                <div key={c.key} className="st-character">
+                  <div style={{ display: "flex", gap: "var(--s-2)" }}>
+                    <input
+                      className="hs-input"
+                      value={c.name}
+                      onChange={(e) => setCharacters((prev) => prev.map((x) => (x.key === c.key ? { ...x, name: e.target.value } : x)))}
+                      placeholder="Name"
+                      aria-label={`Character ${i + 1} name`}
+                    />
+                    <button
+                      type="button"
+                      className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
+                      onClick={() => setCharacters((prev) => prev.filter((x) => x.key !== c.key))}
+                      aria-label={`Remove character ${i + 1}`}
+                    >
+                      <IcClose className="hs-icon-sm" />
+                    </button>
+                  </div>
+                  <textarea
+                    className="hs-input hs-textarea"
+                    style={{ minHeight: 48 }}
+                    value={c.description}
+                    onChange={(e) => setCharacters((prev) => prev.map((x) => (x.key === c.key ? { ...x, description: e.target.value } : x)))}
+                    placeholder="Physical description — build, hair, outfit"
+                    aria-label={`Character ${i + 1} description`}
+                  />
+                  <Dropzone
+                    value={c.referenceUrl ? { url: c.referenceUrl, name: c.name || "Reference" } : null}
+                    onChange={(f) => setCharacters((prev) => prev.map((x) => (x.key === c.key ? { ...x, referenceUrl: f?.url || null } : x)))}
+                    accept="image/*"
+                    label="Reference image (optional)"
+                  />
+                </div>
+              ))}
+              <button
+                type="button"
+                className="hs-btn hs-btn--sm"
+                onClick={() => setCharacters((prev) => [...prev, { key: `c${Date.now()}${prev.length}`, name: "", description: "", referenceUrl: null }])}
+              >
+                <IcPlus className="hs-icon-sm" /> Add character
+              </button>
+            </div>
           </Field>
 
           {recent.length > 0 && (

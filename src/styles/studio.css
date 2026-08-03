@@ -1862,3 +1862,14 @@ select.st-layer__role option {
   padding: 0 var(--s-2);
 }
 .st-shot__tools .hs-btn { flex: none; }
+
+/* Character rows in the production settings sheet (E4.3). */
+.st-character {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-100);
+}

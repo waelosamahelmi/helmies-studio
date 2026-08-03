@@ -240,15 +240,36 @@ export function validateShotPlan(shot) {
   };
 }
 
+// E4.3: token-safe identifier for a character name, mirroring
+// director-executor.js's characterSlug (a deliberate 2-line duplicate — the
+// executor already imports from this module, so importing back would create
+// a cycle). "$CHARACTER_<slug>" in imageStrategy.references is resolved by
+// the executor to the character's uploaded reference image, or to the
+// rolling reference seeded by the first completed shot containing them.
+function characterToken(name) {
+  const slug = String(name || "").trim().replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug ? `$CHARACTER_${slug}` : null;
+}
+
 // ──────────────────────────────────────────────
 // LLM System Prompt for Director Orchestrator
 // ──────────────────────────────────────────────
-function buildSystemPrompt(productionType, sectionStrategy) {
+function buildSystemPrompt(productionType, sectionStrategy, characters = []) {
   const strategyDesc = Object.entries(sectionStrategy)
     .map(([section, strat]) =>
       `  ${section}: ${strat.camera.framing}, ${strat.camera.angle}, ${strat.camera.lens}, ${strat.camera.movement} (${strat.camera.intensity} intensity). ${strat.notes}`
     )
     .join("\n");
+
+  const cast = (characters || []).filter((c) => c?.name && characterToken(c.name));
+  const referencesContract = cast.length
+    ? `"references": ["$CHARACTER_<name> tokens for the characters in this shot — e.g. ${characterToken(cast[0].name)}"]`
+    : `"references": []`;
+  const castRules = cast.length
+    ? `\nCHARACTER TOKENS (image-anchored consistency):\n${cast
+        .map((c) => `  ${characterToken(c.name)} — "${c.name}": ${c.description || "no description"}`)
+        .join("\n")}\nInclude each character's token in imageStrategy.references for EVERY shot that character appears in. Tokens resolve to real reference images at generation time. Still re-describe the character physically in the prompt text — the token anchors identity, the words anchor the pose.`
+    : "";
 
   return `You are Helmies Studio's Director Agent. You create detailed multi-shot video production plans.
 
@@ -279,7 +300,7 @@ You MUST output a single valid JSON object with this exact structure:
       "imageStrategy": {
         "mode": "generate",
         "prompt": "Static image description — NO action verbs, NO meta-language, present tense, physical descriptions only",
-        "references": []
+        ${referencesContract}
       },
       "videoStrategy": {
         "mode": "t2v",
@@ -318,7 +339,7 @@ You MUST output a single valid JSON object with this exact structure:
 
 SECTION-BASED CAMERA STRATEGY (apply these defaults per section):
 ${strategyDesc}
-
+${castRules}
 CRITICAL RULES:
 1. Every shot is independent — re-describe all characters, environment, and lighting in every shot
 2. NO character names in prompts — use physical descriptors ("the woman in red", "the guitarist")
@@ -445,7 +466,12 @@ function buildHeuristicDirectorPlan(brief) {
         imageStrategy: {
           mode: "generate",
           prompt: `${strat.camera.framing} of ${brief.characters?.[0]?.description || "the subject"}, ${strat.notes.toLowerCase()}, ${strat.camera.angle}, ${strat.camera.lens}`,
-          references: brief.references || []
+          // E4.3: named characters ride along as $CHARACTER_<name> tokens —
+          // the executor anchors them to an uploaded or rolling reference.
+          references: [
+            ...(brief.references || []),
+            ...(brief.characters || []).map((c) => characterToken(c?.name)).filter(Boolean),
+          ]
         },
         videoStrategy: {
           mode: "t2v",
@@ -639,7 +665,7 @@ export async function createProductionPlan(brief, userId) {
   let lastError = null;
 
   if (hasLLM) {
-    const systemPrompt = buildSystemPrompt(preset.label, sectionStrategy);
+    const systemPrompt = buildSystemPrompt(preset.label, sectionStrategy, brief.characters);
     const userPrompt = buildUserPrompt(brief);
 
     let parsed = null;

@@ -202,6 +202,54 @@ describe("createProductionPlan — the sketched outline, characters and aspect r
   });
 });
 
+// E4.3: character consistency is image-anchored, not just prompt text. With
+// named characters in the brief, the LLM contract switches from a
+// hard-coded `"references": []` to $CHARACTER_<name> tokens the executor
+// resolves to real images (upload or rolling reference), and the heuristic
+// builder emits the same tokens.
+describe("character reference tokens in the planner", () => {
+  const VALID_PLAN = {
+    shots: [{ id: "shot_000", title: "x", durationSec: 5 }],
+    globalStyle: {}, estimatedDuration: 5, conceptSummary: "x",
+  };
+
+  it("with characters, the system prompt teaches the $CHARACTER_<name> token and lists the cast", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify(VALID_PLAN));
+
+    await createProductionPlan({
+      ...BRIEF,
+      characters: [{ name: "The Night Courier", description: "a wiry rider in a scuffed helmet" }],
+    }, "u1");
+
+    const systemPrompt = llmComplete.mock.calls[0][0].find((m) => m.role === "system").content;
+    expect(systemPrompt).toContain("$CHARACTER_The_Night_Courier");
+    expect(systemPrompt).toContain("a wiry rider in a scuffed helmet");
+  });
+
+  it("without characters, the contract keeps the empty references array", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify(VALID_PLAN));
+
+    await createProductionPlan(BRIEF, "u1");
+
+    const systemPrompt = llmComplete.mock.calls[0][0].find((m) => m.role === "system").content;
+    expect(systemPrompt).toContain('"references": []');
+    expect(systemPrompt).not.toContain("$CHARACTER_");
+  });
+
+  it("the heuristic builder emits the character token in every shot's image references", async () => {
+    llmComplete.mockResolvedValue("not json at all"); // -> heuristic path
+
+    const result = await createProductionPlan({
+      ...BRIEF,
+      characters: [{ name: "Mara", description: "a woman in a red trench coat" }],
+    }, "u1");
+
+    for (const shot of result.plan.shots) {
+      expect(shot.imageStrategy.references).toContain("$CHARACTER_Mara");
+    }
+  });
+});
+
 // E4.2: the shot shape gains per-shot `transition` (consumed by assembly),
 // `dialogue` (text -> TTS) and `audioCues` — in the LLM contract, the
 // normalizer, and the heuristic builder (which also previously omitted

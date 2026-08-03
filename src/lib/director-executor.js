@@ -96,6 +96,82 @@ async function transitionPipeline(pipelineId, toState, metadata = {}) {
 }
 
 // ──────────────────────────────────────────────
+// Character reference threading (E4.3)
+// ──────────────────────────────────────────────
+
+// Token-safe identifier for a character name: "The Night Courier" →
+// "The_Night_Courier". Mirrors the $CHARACTER_<name> tokens the planner's
+// LLM contract and heuristic builder emit (director-planner.js keeps its own
+// copy of this 2-liner rather than importing across the executor/planner
+// boundary — the two files already import in the other direction).
+export function characterSlug(name) {
+  return String(name || "").trim().replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+const CHARACTER_TOKEN_PREFIX = "$CHARACTER_";
+
+// Resolve a shot's imageStrategy.references. $CHARACTER_<name> tokens become
+// real image URLs — the character's uploaded reference first, then the
+// pipeline's rolling reference (the first completed shot image that
+// contained the character). Tokens with no image yet are returned as
+// `pending`: the caller seeds the rolling reference from this shot's own
+// completed image. Plain URLs pass through untouched.
+export function resolveCharacterReferences(refs, characters = [], rollingRefs = {}) {
+  const urls = [];
+  const pending = [];
+  for (const ref of refs || []) {
+    if (typeof ref !== "string" || !ref) continue;
+    if (!ref.startsWith(CHARACTER_TOKEN_PREFIX)) {
+      urls.push(ref);
+      continue;
+    }
+    // Token may carry a trailing annotation ("$CHARACTER_Mara — ...") — the
+    // name is everything up to the first whitespace.
+    const raw = ref.slice(CHARACTER_TOKEN_PREFIX.length).split(/\s/)[0];
+    const slug = characterSlug(raw);
+    if (!slug) continue;
+    const match = (characters || []).find(
+      (c) => characterSlug(c?.name).toLowerCase() === slug.toLowerCase()
+    );
+    const rolling =
+      rollingRefs[slug] ??
+      rollingRefs[characterSlug(match?.name)] ??
+      Object.entries(rollingRefs || {}).find(([k]) => k.toLowerCase() === slug.toLowerCase())?.[1];
+    const url = match?.referenceUrl || rolling;
+    if (url) {
+      urls.push(url);
+    } else {
+      pending.push(characterSlug(match?.name) || slug);
+    }
+  }
+  return { urls, pending };
+}
+
+// Store this shot's completed image as the rolling reference for each
+// still-unreferenced character it contained — SET ONCE: the first completed
+// image wins; later shots only ever read it.
+async function seedRollingCharacterRefs(pipelineId, slugs, url) {
+  if (!slugs?.length || !url) return;
+  const row = await prisma.directorPipeline.findUnique({ where: { id: pipelineId } });
+  if (!row) return;
+  const current = row.stateMetadata?.characterRefs || {};
+  const additions = {};
+  for (const slug of slugs) {
+    if (!current[slug]) additions[slug] = url;
+  }
+  if (!Object.keys(additions).length) return;
+  await prisma.directorPipeline.update({
+    where: { id: pipelineId },
+    data: {
+      stateMetadata: {
+        ...(row.stateMetadata || {}),
+        characterRefs: { ...current, ...additions },
+      },
+    },
+  });
+}
+
+// ──────────────────────────────────────────────
 // Shot Execution
 // ──────────────────────────────────────────────
 
@@ -121,7 +197,27 @@ async function executeShotImage(shot, pipeline, brief) {
 
   try {
     const imagePrompt = shot.imageStrategy?.prompt || "";
-    const refs = shot.imageStrategy?.references || [];
+    const rawRefs = shot.imageStrategy?.references || [];
+
+    // E4.3: $CHARACTER_<name> tokens → real image URLs (upload first, then
+    // the pipeline's rolling reference). The rolling refs are re-read fresh
+    // from the DB when tokens are present — during a full pipeline run the
+    // `pipeline` object was fetched once up front, and an earlier shot in
+    // this same run may have just seeded a reference.
+    let refs = rawRefs;
+    let pendingCharacters = [];
+    if (rawRefs.some((r) => typeof r === "string" && r.startsWith(CHARACTER_TOKEN_PREFIX))) {
+      let rollingRefs = pipeline.stateMetadata?.characterRefs || {};
+      try {
+        const fresh = await prisma.directorPipeline.findUnique({ where: { id: pipeline.id } });
+        rollingRefs = fresh?.stateMetadata?.characterRefs || rollingRefs;
+      } catch { /* fall back to the snapshot */ }
+      ({ urls: refs, pending: pendingCharacters } = resolveCharacterReferences(
+        rawRefs,
+        brief.characters || [],
+        rollingRefs
+      ));
+    }
 
     // Build generation params
     const params = {
@@ -174,6 +270,17 @@ async function executeShotImage(shot, pipeline, brief) {
         status: SHOT_STATES.GENERATING_VIDEO
       }
     });
+
+    // E4.3: this completed image becomes the rolling reference for any
+    // character in the shot that had none yet — later shots anchor to it.
+    if (pendingCharacters.length) {
+      try {
+        await seedRollingCharacterRefs(pipeline.id, pendingCharacters, storedUrl);
+      } catch (seedErr) {
+        // Never fail a successful shot over reference bookkeeping.
+        console.error(`[Director] Rolling character ref write failed for ${pipeline.id}:`, seedErr.message);
+      }
+    }
 
     return { success: true, imageUrl: storedUrl };
   } catch (err) {
