@@ -13,6 +13,7 @@ vi.mock("@/lib/providers", () => ({
   submitOnly: vi.fn(),
   pollProviderResult: vi.fn(),
   getProvider: vi.fn(),
+  brandForUser: (m) => m,
   // Real implementation kept (not mocked) — template-runner.js's
   // enqueueStep uses this to normalize ModelPricing.providerName ("Alibaba")
   // into the lowercase adapter key job-runner.js's own real getProvider

@@ -84,7 +84,7 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
   const [speed, setSpeed] = useState("0.5");
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   /* v2v covers video-to-video and video-upscale; some rows carry an explicit
      "video-edit" capability that is not in any group yet. */
@@ -257,6 +257,8 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
           settings={[copy.label, ratio, duration ? `${duration}s` : null].filter(Boolean).join(" · ")}
           onCancel={cancel}
           onRetry={generate}
+          onEditSettings={reset}
+          note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
           onNew={reset}
           idle={idle}
         />

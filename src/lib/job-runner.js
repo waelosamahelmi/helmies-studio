@@ -66,7 +66,7 @@ import prisma from "./prisma.js";
 import { log } from "./log.js";
 import { heartbeatJob, completeJob, failJob, findTimedOutJobs } from "./job-queue.js";
 import { settleReservation, releaseReservation, refundCredits } from "./wallet.js";
-import { submitOnly, pollProviderResult, getProvider } from "./providers.js";
+import { submitOnly, pollProviderResult, getProvider, brandForUser } from "./providers.js";
 import { ingestFromUrl } from "./storage/ingest.js";
 // Phase 6 Task 3: a job whose payload carries `templateRunId` belongs to a
 // TemplateRun step, not a standalone generation — src/lib/template-runner.js
@@ -238,7 +238,10 @@ async function handleFailure(job, generation, err) {
   // exhausting maxAttempts. Mark the generation failed and resolve credits,
   // but only if we're the one who actually wins the transition (rule 4 —
   // the webhook may already have terminalized this generation).
-  const won = await tryTransitionGeneration(generation.id, { status: "failed", error: message });
+  // Generation.error is user-visible in the studio — store the branded,
+  // provider-name-free form. The raw message stays on the job row
+  // (failJob above) for operators.
+  const won = await tryTransitionGeneration(generation.id, { status: "failed", error: brandForUser(message) });
   if (won) {
     // Phase 6 Task 3: a template-run step's own Generation never holds its
     // own reservation — advanceTemplateRun owns the run's ONE reservation

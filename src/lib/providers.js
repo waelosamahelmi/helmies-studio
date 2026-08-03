@@ -23,13 +23,23 @@ const BRANDED_ERRORS = {
 export function brandError(providerError) {
   const lower = (providerError || "").toLowerCase();
   if (lower.includes("rate") || lower.includes("429")) return BRANDED_ERRORS.rate_limit;
-  if (lower.includes("api key") || lower.includes("unauthorized") || lower.includes("401")) return BRANDED_ERRORS.invalid_api_key;
+  if (lower.includes("api key") || lower.includes("api_key") || lower.includes("apikey") || lower.includes("unauthorized") || lower.includes("401")) return BRANDED_ERRORS.invalid_api_key;
   if (lower.includes("not found") || lower.includes("404")) return BRANDED_ERRORS.model_not_found;
   if (lower.includes("timeout") || lower.includes("timed out")) return BRANDED_ERRORS.timeout;
   if (lower.includes("content") || lower.includes("filter") || lower.includes("safety")) return BRANDED_ERRORS.content_filter;
   if (lower.includes("balance") || lower.includes("credit") || lower.includes("insufficient")) return BRANDED_ERRORS.insufficient_balance;
   if (lower.includes("500") || lower.includes("502") || lower.includes("503") || lower.includes("server")) return BRANDED_ERRORS.server_error;
   return BRANDED_ERRORS.unknown;
+}
+
+// Idempotent user-facing branding: a message that is already one of the
+// branded strings passes through unchanged (re-running brandError on it
+// would downgrade it to "unknown").
+const BRANDED_VALUES = new Set(Object.values(BRANDED_ERRORS));
+export function brandForUser(message) {
+  const msg = message || "";
+  if (BRANDED_VALUES.has(msg)) return msg;
+  return brandError(msg);
 }
 
 export async function logProviderError(provider, endpoint, originalError, userId) {

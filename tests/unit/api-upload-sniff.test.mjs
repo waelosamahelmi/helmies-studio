@@ -46,7 +46,7 @@ describe("POST /api/upload — byte-level content verification", () => {
     const res = await POST(uploadRequest(htmlPayload, { type: "image/png" }));
 
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "File content does not match its declared type" });
+    expect(await res.json()).toMatchObject({ error: "File content does not match its declared type", code: "bad_request" });
     expect(writeFile).not.toHaveBeenCalled();
     expect(prisma.asset.create).not.toHaveBeenCalled();
   });

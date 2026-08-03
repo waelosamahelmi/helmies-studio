@@ -328,7 +328,7 @@ export default function LipSyncStudio({ initialModel, templateConfig, onCreditsC
   const [sheet, setSheet] = useState(false);
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   const available = useMemo(
     () => (models || []).filter((m) => matchesGroup(m, "lipsync")),
@@ -545,6 +545,8 @@ export default function LipSyncStudio({ initialModel, templateConfig, onCreditsC
             ratio="16:9"
             onCancel={cancel}
             onRetry={generate}
+            onEditSettings={reset}
+            note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
             onNew={startOver}
           />
         </div>

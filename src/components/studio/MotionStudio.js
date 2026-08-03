@@ -63,7 +63,7 @@ export default function MotionStudio({ initialModel, templateConfig, onCreditsCh
   const [requestId, setRequestId] = useState("");
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   /* Motion is a text-to-video job. Prefer models that name themselves for it,
      but never hide the rest — a silent fallback to "whatever was first" is
@@ -231,6 +231,8 @@ export default function MotionStudio({ initialModel, templateConfig, onCreditsCh
           settings={`${ratio} · ${duration}s`}
           onCancel={cancel}
           onRetry={generate}
+          onEditSettings={reset}
+          note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
           onNew={reset}
           idle={idle}
         />

@@ -329,7 +329,7 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
   const [sheet, setSheet] = useState(false);
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   /* Avatar models carry the `avatar-video` capability, which lives in the
      lipsync group; a few video-to-video models are also avatar-capable. Both
@@ -559,6 +559,8 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
             settings={`${seconds}s · ${ratio}`}
             onCancel={cancel}
             onRetry={generate}
+            onEditSettings={reset}
+            note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
             onNew={startOver}
           />
         </div>

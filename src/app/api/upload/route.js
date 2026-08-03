@@ -8,6 +8,7 @@ import prisma from "@/lib/prisma";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import { sniffMatchesMime } from "@/lib/upload-sniff";
+import { apiError } from "@/lib/api-error";
 
 // Strict MIME → extension allowlist. The stored extension is derived from the
 // declared MIME type only — never from the attacker-controlled filename — so a
@@ -31,47 +32,47 @@ export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError({ code: "unauthorized" });
     }
     verifyOrigin(req);
 
     const rl = await checkRateLimit(user.id, "/api/upload");
     if (!rl.allowed) {
-      return NextResponse.json({ error: "Rate limited", retryAfter: rl.retryAfter }, { status: 429 });
+      return apiError({ code: "rate_limited", extra: { retryAfter: rl.retryAfter } });
     }
 
     const formData = await req.formData();
     const file = formData.get("file");
     if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+      return apiError({ code: "bad_request", message: "No file provided" });
     }
 
     const mimeType = (file.type || "").toLowerCase().split(";")[0].trim();
     const ext = ALLOWED_TYPES[mimeType];
     if (!ext) {
-      return NextResponse.json({ error: "Unsupported file type" }, { status: 415 });
+      return apiError({ status: 415, code: "unsupported_setting", message: "Unsupported file type" });
     }
 
     // Reject on the declared size before buffering when the platform gives it.
     if (typeof file.size === "number" && file.size > MAX_BYTES) {
-      return NextResponse.json({ error: "File too large (max 100MB)" }, { status: 413 });
+      return apiError({ status: 413, code: "bad_request", message: "File too large (max 100MB)" });
     }
 
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
 
     if (buffer.length > MAX_BYTES) {
-      return NextResponse.json({ error: "File too large (max 100MB)" }, { status: 413 });
+      return apiError({ status: 413, code: "bad_request", message: "File too large (max 100MB)" });
     }
 
     // Byte-level verification: the declared MIME must match the actual
     // content, not just an attacker-supplied Content-Type. Sniffs the same
     // buffer already read above — no extra I/O.
     if (!sniffMatchesMime(buffer, mimeType)) {
-      return NextResponse.json(
-        { error: "File content does not match its declared type" },
-        { status: 400 },
-      );
+      return apiError({
+        code: "bad_request",
+        message: "File content does not match its declared type",
+      });
     }
 
     const name = `${crypto.randomUUID()}${ext}`;

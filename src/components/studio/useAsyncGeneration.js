@@ -36,6 +36,7 @@ export function useAsyncGeneration() {
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [stage, setStage] = useState(null);
+  const [retryInfo, setRetryInfo] = useState(null); // { attempts, maxAttempts } while the job is on a retry lap
 
   const timer = useRef(null);
   const poll = useRef(null);
@@ -66,6 +67,7 @@ export function useAsyncGeneration() {
     setError("");
     setElapsed(0);
     setStage(null);
+    setRetryInfo(null);
   }, [clearAll]);
 
   /** Stop watching this job. The provider keeps working; the row stays in
@@ -85,6 +87,7 @@ export function useAsyncGeneration() {
     setResult(null);
     setElapsed(0);
     setStage("submitting");
+    setRetryInfo(null);
 
     timer.current = setInterval(() => {
       if (mine()) setElapsed((e) => e + 1);
@@ -151,6 +154,14 @@ export function useAsyncGeneration() {
           }
 
           setStage(s.status || "rendering");
+          /* The status API exposes the durable job's retry lap: a job that
+             failed retryably goes back to "queued" with attempts > 0. Surface
+             it so the user sees "retrying", not an undifferentiated spinner. */
+          if (s.attempts > 0 && s.jobStatus === "queued") {
+            setRetryInfo({ attempts: s.attempts, maxAttempts: 3 });
+          } else {
+            setRetryInfo(null);
+          }
           poll.current = setTimeout(tick, POLL_MS);
         } catch (e) {
           if (!mine()) return;
@@ -176,12 +187,15 @@ export function useAsyncGeneration() {
       poll.current = setTimeout(tick, POLL_MS);
     } catch (e) {
       if (!mine()) return;
-      setError(e?.message || "Could not start the generation.");
+      /* Keep the full ApiError when we have one — it carries the uniform
+         envelope (title, errorId, details) that ErrorPanel renders. Plain
+         network errors stay strings. */
+      setError(e && typeof e === "object" && e.status ? e : e?.message || "Could not start the generation.");
       finish();
     }
   }, [clearAll, finish, notifyGeneration]);
 
-  return { loading, result, error, elapsed, stage, submit, cancel, reset };
+  return { loading, result, error, elapsed, stage, retryInfo, submit, cancel, reset };
 }
 
 export default useAsyncGeneration;
