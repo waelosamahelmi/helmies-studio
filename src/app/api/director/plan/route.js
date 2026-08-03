@@ -21,6 +21,20 @@ export async function POST(req) {
       platform: body.platform || "youtube",
       type: body.type || "short_form",
       shots: body.shots || [],
+      // E4.1/E4.3: the planner has always supported characters, aspectRatio
+      // and references (buildUserPrompt reads all three) — the route just
+      // never forwarded them, so they silently vanished.
+      characters: Array.isArray(body.characters)
+        ? body.characters
+            .filter((c) => c && typeof c === "object")
+            .map((c) => ({
+              name: String(c.name || "").slice(0, 80),
+              description: String(c.description || "").slice(0, 500),
+              ...(c.referenceUrl ? { referenceUrl: String(c.referenceUrl).slice(0, 2000) } : {}),
+            }))
+        : [],
+      aspectRatio: body.aspectRatio || undefined,
+      references: Array.isArray(body.references) ? body.references : [],
       model: body.model,
     };
 

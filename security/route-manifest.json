@@ -559,6 +559,19 @@
     "notes": "Creates a DirectorPipeline row (confirmed). No rate limit on plan creation. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
+    "path": "/api/director/plan/[id]",
+    "file": "src/app/api/director/plan/[id]/route.js",
+    "methods": [
+      "GET",
+      "PATCH"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E4.1. GET returns the stored DirectorPipeline plan (caller-scoped, 404 on other users'). PATCH edits the plan via updateProductionPlan — cost estimate and shot validation are recomputed SERVER-SIDE from the edited shots (client can never set its own price), and edits are refused (409) while the pipeline is executing/completed. verifyOrigin wired on PATCH (GET read-only, unchecked)."
+  },
+  {
     "path": "/api/director/rerun",
     "file": "src/app/api/director/rerun/route.js",
     "methods": [

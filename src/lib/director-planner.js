@@ -366,6 +366,17 @@ function buildUserPrompt(brief) {
     parts.push(`\nREFERENCE IMAGES: ${brief.references.length} reference(s) provided — use as visual ground truth for consistent character, lighting, and aesthetic`);
   }
 
+  // E4.1: the user's pre-plan sketched outline. The plan route has always
+  // sent `shots`, but nothing here ever read it — the sketch silently never
+  // reached the LLM. It is a binding constraint, not a suggestion.
+  if (brief.shots?.length) {
+    parts.push(`\nUSER'S SHOT OUTLINE (follow this structure — keep the order, expand each sketch into a full shot):`);
+    for (const s of brief.shots) {
+      const title = s.title || `Shot ${(s.index ?? 0) + 1}`;
+      parts.push(`  ${(s.index ?? 0) + 1}. ${title}${s.description ? ` — ${s.description}` : ""}`);
+    }
+  }
+
   if (brief.sections?.length) {
     parts.push(`\nSONG STRUCTURE / SCENE BREAKDOWN:`);
     for (const s of brief.sections) {
@@ -709,13 +720,30 @@ export async function updateProductionPlan(pipelineId, userId, updates) {
     shots: updates.shots || currentPlan.shots
   };
 
+  if (!isValidPlanShape(newPlan)) {
+    throw new Error("Cannot edit plan: the edited plan has no shots");
+  }
+
+  // Re-index after edits so reorder/duplicate/delete keep index === position —
+  // the executor and cost estimator both key shotCosts by shot.index.
+  newPlan.shots = newPlan.shots.map((shot, i) => ({ ...shot, index: i }));
+
   const costEstimate = await estimateDirectorCost(newPlan, pipeline.brief || {});
+
+  // E4.1: re-run the shot validators on every edit — edited prompts get the
+  // same 11-policy validation a fresh plan gets, and the stored
+  // validationResults never go stale relative to the stored plan.
+  const validationResults = newPlan.shots.map(shot => ({
+    shotId: shot.id,
+    ...validateShotPlan(shot)
+  }));
 
   await prisma.directorPipeline.update({
     where: { id: pipelineId },
     data: {
       plan: newPlan,
-      costEstimate
+      costEstimate,
+      validationResults
     }
   });
 
@@ -723,6 +751,7 @@ export async function updateProductionPlan(pipelineId, userId, updates) {
     pipelineId,
     plan: newPlan,
     costEstimate,
+    validation: { allValid: validationResults.every(r => r.valid), results: validationResults },
     status: pipeline.status
   };
 }
