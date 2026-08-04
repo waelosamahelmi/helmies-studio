@@ -1395,6 +1395,11 @@
   height: 100%;
   min-height: 0;
 }
+/* The `display: none` here loses to the plain `.st-talk__side` rule below
+   (same specificity, later in the file). It is restated — and explained —
+   in this file's "E7 mobile" block at the end, which is where it actually
+   takes effect. Left in place so the intent still reads with the layout it
+   belongs to. */
 @media (max-width: 1024px) { .st-talk { grid-template-columns: 1fr; } .st-talk__side { display: none; } }
 
 .st-talk__main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -2424,4 +2429,25 @@ select.st-layer__role option {
   }
   /* Five labelled buttons do not fit one 393px row. */
   .st-shot__tools, .st-shot__foot { flex-wrap: wrap; }
+}
+
+/* ── The agent's side pane gets a way back (E7.3) ──────────────────────────
+   Two bugs, one fix. First, `.st-talk__side { display: none }` inside the
+   `@media (max-width: 1024px)` block further up this file NEVER APPLIED:
+   the plain `.st-talk__side { display: flex }` rule below it has the same
+   0-1-0 specificity and comes later, so it won. What actually happened on a
+   phone was worse than the intended hiding — the pane rendered, stacked
+   underneath the conversation, inside a work area with `overflow: hidden`
+   and nothing to scroll it with. The balance, the Clear control, the latest
+   plan's summary and the produced-outputs list were all there and all
+   unreachable.
+
+   Repeating the rule here — after every declaration it has to beat — hides
+   it for real, and `.st-panel-tabs--talk` opens it as a Sheet instead. The
+   modifier exists because `.st-panel-tabs` itself only appears below 900px,
+   while this pane disappears at 1024px: without it, a tablet between those
+   two widths would lose the pane and gain nothing. */
+@media (max-width: 1024px) {
+  .st-talk__side { display: none; }
+  .st-panel-tabs--talk { display: flex; }
 }
