@@ -10,6 +10,7 @@ import { resetDb, createUserWithWallet } from "./setup.mjs";
 
 let prisma;
 let generateShotAsset;
+let shotRowId;
 
 const SHOT = {
   id: "int_shot_1",
@@ -40,11 +41,34 @@ async function createPipeline(userId) {
   });
 }
 
+// Same shape as createPipeline, but with an overridable plan-local shot id
+// and title — used by the shotRowId collision regression below, where two
+// SEPARATE pipelines each plan a shot with the identical plan-local id
+// (mirroring "shot_000", which every heuristic-planned production uses for
+// its first shot in production).
+async function createPipelineWithShot(userId, { shotId, title }) {
+  const shot = { ...SHOT, id: shotId };
+  return prisma.directorPipeline.create({
+    data: {
+      userId,
+      title,
+      type: "commercial",
+      status: "planning",
+      plan: { shots: [shot], globalStyle: {} },
+      brief: { type: "commercial", aspectRatio: "16:9" },
+      costEstimate: {
+        totalCredits: 20,
+        shotCosts: [{ shotId, shotIndex: 0, costs: { image: 3, video: 11, audio: 0 }, total: 14 }],
+      },
+    },
+  });
+}
+
 beforeAll(async () => {
   // Must be set BEFORE src/lib/providers.js is first imported — its mock
   // gate is computed at module load.
   vi.stubEnv("E2E_MOCK_PROVIDERS", "1");
-  ({ generateShotAsset } = await import("@/lib/director-executor"));
+  ({ generateShotAsset, shotRowId } = await import("@/lib/director-executor"));
 });
 
 beforeEach(async () => {
@@ -65,8 +89,9 @@ describe("generateShotAsset — real DB, mocked provider", () => {
     const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
     expect(wallet.available).toBe(97); // exactly the quoted image cost
 
-    const shotRow = await prisma.directorShot.findUnique({ where: { id: SHOT.id } });
+    const shotRow = await prisma.directorShot.findUnique({ where: { id: shotRowId(pipeline.id, SHOT.id) } });
     expect(shotRow).toBeTruthy();
+    expect(shotRow.pipelineId).toBe(pipeline.id);
     expect(shotRow.imageResult?.url).toBeTruthy();
 
     const generations = await prisma.generation.findMany({ where: { userId: user.id } });
@@ -91,5 +116,60 @@ describe("generateShotAsset — real DB, mocked provider", () => {
 
     const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
     expect(wallet.available).toBe(1);
+  });
+});
+
+// Regression for the DirectorShot row-id collision bug: `DirectorShot.id`
+// used to be written as the bare PLAN-LOCAL shot id ("shot_000", "shot_001",
+// …), which is IDENTICAL across every pipeline ever planned. A second
+// pipeline generating its own "shot_000" therefore upserted straight into
+// the FIRST pipeline's row — matched on id, took the `update` branch — and
+// silently repointed that row's data at the new pipeline's generation while
+// leaving `pipelineId` unchanged, so the first production's own status poll
+// still resolved to a row whose imageResult a completely different
+// pipeline (even a different user's) had just clobbered, and the second
+// production's status poll saw zero shots. Confirmed by execution against
+// this exact test DB before the fix (see director-executor.js's shotRowId
+// doc comment). shotRowId(pipelineId, shotId) closes it by namespacing the
+// row id, while the plan-local id keeps working as the client-facing
+// identifier (asserted here via generateShotAsset's own shotId param).
+describe("generateShotAsset — DirectorShot row id collision across pipelines (shotRowId regression)", () => {
+  it("two different pipelines each generating their own shot_000 produce two distinct rows, neither overwriting the other", async () => {
+    const userA = await createUserWithWallet(100);
+    const userB = await createUserWithWallet(100);
+    const pipelineA = await createPipelineWithShot(userA.id, { shotId: "shot_000", title: "Production A" });
+    const pipelineB = await createPipelineWithShot(userB.id, { shotId: "shot_000", title: "Production B" });
+
+    const resultA = await generateShotAsset(pipelineA.id, userA.id, "shot_000", "image");
+    const resultB = await generateShotAsset(pipelineB.id, userB.id, "shot_000", "image");
+
+    expect(resultA.imageUrl).toBeTruthy();
+    expect(resultB.imageUrl).toBeTruthy();
+
+    // Two rows exist in total — not one clobbered into the other.
+    const allShotRows = await prisma.directorShot.findMany();
+    expect(allShotRows).toHaveLength(2);
+
+    const rowA = await prisma.directorShot.findUnique({ where: { id: shotRowId(pipelineA.id, "shot_000") } });
+    const rowB = await prisma.directorShot.findUnique({ where: { id: shotRowId(pipelineB.id, "shot_000") } });
+    expect(rowA).toBeTruthy();
+    expect(rowB).toBeTruthy();
+    expect(rowA.id).not.toBe(rowB.id);
+    expect(rowA.pipelineId).toBe(pipelineA.id);
+    expect(rowB.pipelineId).toBe(pipelineB.id);
+
+    // The exact status-route query (findMany by pipelineId) sees ONLY its
+    // own pipeline's shot, carrying that pipeline's own generated image —
+    // this is precisely the query that used to return shots:[] for the
+    // second pipeline while the first pipeline's row silently held the
+    // second pipeline's overwritten data.
+    const shotsForA = await prisma.directorShot.findMany({ where: { pipelineId: pipelineA.id } });
+    const shotsForB = await prisma.directorShot.findMany({ where: { pipelineId: pipelineB.id } });
+    expect(shotsForA).toHaveLength(1);
+    expect(shotsForB).toHaveLength(1);
+    expect(shotsForA[0].imageResult?.url).toBe(resultA.imageUrl);
+    expect(shotsForB[0].imageResult?.url).toBe(resultB.imageUrl);
+    expect(shotsForA[0].plan?.id).toBe("shot_000");
+    expect(shotsForB[0].plan?.id).toBe("shot_000");
   });
 });

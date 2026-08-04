@@ -42,6 +42,13 @@ export async function GET(req) {
           updatedAt: pipeline.updatedAt,
           shots: shots.map((s) => ({
             id: s.id,
+            // DirectorShot.id is now namespaced to its pipeline
+            // (director-executor.js's shotRowId) so rows never collide
+            // across pipelines — but the client keeps mapping shots by the
+            // PLAN-LOCAL id ("shot_000", …) it sent to generate-shot/rerun
+            // (see DirectorStudio.js's readRun/runIndex/cards). `s.plan` is
+            // the shot's plan snapshot, so its `.id` is that plan-local id.
+            shotId: s.plan?.id ?? null,
             index: s.index,
             title: s.title,
             status: s.status,

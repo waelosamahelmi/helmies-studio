@@ -66,6 +66,23 @@ function canTransition(from, to) {
   return (VALID_TRANSITIONS[from] || []).includes(to);
 }
 
+// DirectorShot.id is a plain, no-default `String @id` — the executor always
+// supplies it explicitly. Plan-local shot ids ("shot_000", "shot_001", …)
+// are IDENTICAL across every pipeline ever planned, so writing the bare shot
+// id as the row id let one pipeline's upsert match — and silently overwrite
+// — a DIFFERENT pipeline's row (even a different user's). Namespacing the
+// row id to its pipeline closes the collision while the plan-local id keeps
+// working as the client-facing identifier (the client only ever sends the
+// plan-local shot id to /api/director/rerun and /api/director/generate-shot).
+// Guarded: a falsy pipelineId or shotId here means a caller lost track of
+// which pipeline/shot it's addressing — exactly how this bug class starts —
+// so fail loudly instead of silently building a garbage row id.
+export function shotRowId(pipelineId, shotId) {
+  if (!pipelineId) throw new Error("shotRowId: pipelineId is required");
+  if (!shotId) throw new Error("shotRowId: shotId is required");
+  return `${pipelineId}::${shotId}`;
+}
+
 // Strip the resolved `_provider` adapter before persisting generation params.
 // It carries function values (Prisma 7 refuses to serialize them into a Json
 // column — every Generation write here crashed on it) AND the provider's API
@@ -176,10 +193,11 @@ async function seedRollingCharacterRefs(pipelineId, slugs, url) {
 // ──────────────────────────────────────────────
 
 async function executeShotImage(shot, pipeline, brief) {
+  const rowId = shotRowId(pipeline.id, shot.id);
   const shotRecord = await prisma.directorShot.upsert({
-    where: { id: shot.id },
+    where: { id: rowId },
     create: {
-      id: shot.id,
+      id: rowId,
       pipelineId: pipeline.id,
       index: shot.index,
       title: shot.title,
@@ -264,7 +282,7 @@ async function executeShotImage(shot, pipeline, brief) {
 
     // Update shot record
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: rowId },
       data: {
         imageResult: { url: storedUrl, rawUrl: imageUrl, prompt: imagePrompt },
         status: SHOT_STATES.GENERATING_VIDEO
@@ -286,7 +304,7 @@ async function executeShotImage(shot, pipeline, brief) {
   } catch (err) {
     console.error(`[Director] Shot ${shot.id} image failed:`, err.message);
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: rowId },
       data: {
         status: SHOT_STATES.FAILED,
         error: err.message
@@ -297,6 +315,7 @@ async function executeShotImage(shot, pipeline, brief) {
 }
 
 async function executeShotVideo(shot, pipeline, brief, imageUrl) {
+  const rowId = shotRowId(pipeline.id, shot.id);
   try {
     const videoPrompt = shot.videoStrategy?.prompt || "";
     const modelRoute = shot.videoStrategy?.modelRoute || brief.modelVideo || "wan-2.6";
@@ -342,7 +361,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
     });
 
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: rowId },
       data: {
         videoResult: { url: storedUrl, rawUrl: videoUrl, prompt: videoPrompt, modelRoute },
         status: SHOT_STATES.COMPLETED
@@ -353,7 +372,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
   } catch (err) {
     console.error(`[Director] Shot ${shot.id} video failed:`, err.message);
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: rowId },
       data: {
         status: SHOT_STATES.FAILED,
         error: err.message
@@ -402,7 +421,7 @@ async function executeShotAudio(shot, pipeline, brief) {
     });
 
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: shotRowId(pipeline.id, shot.id) },
       data: {
         audioResult: { url: storedUrl, rawUrl: audioUrl }
       }
@@ -493,7 +512,7 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
 
     for (const shot of shots) {
       // Check if already completed
-      const existing = await prisma.directorShot.findUnique({ where: { id: shot.id } });
+      const existing = await prisma.directorShot.findUnique({ where: { id: shotRowId(pipelineId, shot.id) } });
       if (existing?.status === SHOT_STATES.COMPLETED && !options.rerunAll) {
         results.push({ shotId: shot.id, status: "skipped", alreadyCompleted: true });
         continue;
@@ -687,8 +706,10 @@ export async function generateShotAsset(pipelineId, userId, shotId, kind) {
   // executeProductionPipeline).
   brief._shotCosts = pipeline.costEstimate?.shotCosts || [];
 
+  const rowId = shotRowId(pipeline.id, shot.id);
+
   try {
-    const existing = await prisma.directorShot.findUnique({ where: { id: shotId } });
+    const existing = await prisma.directorShot.findUnique({ where: { id: rowId } });
 
     if (kind === "image") {
       // executeShotImage upserts the DirectorShot row itself.
@@ -698,7 +719,7 @@ export async function generateShotAsset(pipelineId, userId, shotId, kind) {
       // meaning is "image done, video next") — a standalone image isn't
       // "generating video", so settle the row into an honest resting state.
       await prisma.directorShot.update({
-        where: { id: shotId },
+        where: { id: rowId },
         data: { status: existing?.videoResult ? SHOT_STATES.COMPLETED : SHOT_STATES.DRAFT }
       });
       return { shotId, kind, imageUrl: imageResult.imageUrl, creditsUsed: cost };
@@ -709,7 +730,7 @@ export async function generateShotAsset(pipelineId, userId, shotId, kind) {
     if (!existing) {
       await prisma.directorShot.create({
         data: {
-          id: shot.id,
+          id: rowId,
           pipelineId: pipeline.id,
           index: shot.index,
           title: shot.title,
@@ -776,7 +797,7 @@ export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") 
   if (!shot) throw new Error("Shot not found in plan");
 
   // Get existing shot record
-  const shotRecord = await prisma.directorShot.findUnique({ where: { id: shotId } });
+  const shotRecord = await prisma.directorShot.findUnique({ where: { id: shotRowId(pipelineId, shotId) } });
   if (!shotRecord) throw new Error("Shot record not found");
 
   // Charge before regenerating — a rerun is new work on top of what the
@@ -890,6 +911,9 @@ export async function getPipelineStatus(pipelineId, userId) {
     assembledUrl: pipeline.assembledUrl,
     shots: shots.map(s => ({
       id: s.id,
+      // Row id is namespaced (shotRowId) — expose the plan-local id too, the
+      // same shape the HTTP status route returns (see its comment).
+      shotId: s.plan?.id ?? null,
       index: s.index,
       title: s.title,
       status: s.status,

@@ -18,6 +18,21 @@ import { loginThroughForm } from "./fixtures/login.mjs";
 const execFileAsync = promisify(execFile);
 const MEDIA_DIR = join(process.cwd(), "public", "media");
 
+// Local copy of src/lib/director-executor.js's shotRowId — Playwright Test's
+// loader mis-transpiles src/lib/*.js (see fixtures/db.mjs's header), so this
+// spec seeds DirectorShot rows directly via its own prisma client rather than
+// importing the executor. DirectorShot.id is namespaced to its pipeline
+// (`${pipelineId}::${shotId}`) so two pipelines' identically-numbered shots
+// never collide; seeding rows in that same shape keeps this fixture honest
+// about the real row format even though nothing in this spec's own flow
+// (status/timeline-chat routes only ever query DirectorShot by pipelineId,
+// never by row id) currently depends on it.
+function shotRowId(pipelineId, shotId) {
+  if (!pipelineId) throw new Error("shotRowId: pipelineId is required");
+  if (!shotId) throw new Error("shotRowId: shotId is required");
+  return `${pipelineId}::${shotId}`;
+}
+
 const CLIPS = [
   { name: "e2e-tl-red.mp4", color: "red", title: "Red" },
   { name: "e2e-tl-green.mp4", color: "green", title: "Green" },
@@ -73,7 +88,7 @@ async function seedCompletedPipeline(prisma, userId) {
   for (const [i, shot] of shots.entries()) {
     await prisma.directorShot.create({
       data: {
-        id: shot.id,
+        id: shotRowId(pipeline.id, shot.id),
         pipelineId: pipeline.id,
         index: shot.index,
         title: shot.title,
@@ -110,6 +125,9 @@ test("rearrange, trim, chat-remove and re-assemble produce a fresh cut", async (
 
   await page.goto("/studio/director");
   await expect(visible(page.locator(".st-app"))).toBeVisible();
+  // Settle past React 19's streaming-duplicate window before interacting
+  // (see fixtures/studio-actions.mjs and director-editor.spec.mjs).
+  await expect(visible(page.locator(".st-credits"))).toContainText(/\d/, { timeout: 15000 });
 
   // Open the seeded production from "Earlier productions".
   await visible(page.getByRole("button", { name: "Production", exact: true })).click();
@@ -184,6 +202,7 @@ test("an invalid chat instruction surfaces the envelope error and changes nothin
 
   await page.goto("/studio/director");
   await expect(visible(page.locator(".st-app"))).toBeVisible();
+  await expect(visible(page.locator(".st-credits"))).toContainText(/\d/, { timeout: 15000 });
   await visible(page.getByRole("button", { name: "Production", exact: true })).click();
   await visible(page.getByRole("button", { name: /Timeline Production/ })).click();
   await expect(clipRows(page)).toHaveCount(3, { timeout: 15000 });

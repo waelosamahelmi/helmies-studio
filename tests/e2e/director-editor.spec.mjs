@@ -37,9 +37,20 @@ async function readCreditsBadge(page) {
 async function buildHeuristicPlan(page) {
   await page.goto("/studio/director");
   await expect(visible(page.locator(".st-app"))).toBeVisible();
+  // Settle past React 19's streaming-duplicate window (see
+  // fixtures/studio-actions.mjs — interacting with the doomed copy silently
+  // drops its state updates, observed here on firefox/webkit as the fill
+  // never reaching React and the button staying disabled). The credits badge
+  // showing real digits means data arrived on the SURVIVING copy.
+  await expect(visible(page.locator(".st-credits"))).toContainText(/\d/, { timeout: 15000 });
+
   const brief = visible(page.getByLabel("Production concept"));
   await brief.fill("A neon-lit night drive through an empty city, rain on the windshield.");
-  await visible(page.getByRole("button", { name: /Build shot plan/ })).click();
+  await expect(brief).toHaveValue(/neon-lit night drive/);
+
+  const build = visible(page.getByRole("button", { name: /Build shot plan/ }));
+  await expect(build).toBeEnabled({ timeout: 10000 });
+  await build.click();
   // The heuristic music-video preset yields 8 planned shots.
   await expect(shotCards(page)).toHaveCount(8, { timeout: 30000 });
 }

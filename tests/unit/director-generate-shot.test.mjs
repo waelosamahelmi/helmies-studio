@@ -74,7 +74,7 @@ import { debitWallet, refundCredits } from "@/lib/wallet";
 import { generateImage, generateVideo, generateI2V, generateAudio } from "@/lib/generation";
 import { resolveProvider } from "@/lib/providers";
 import { ingestFromUrl } from "@/lib/storage/ingest";
-import { generateShotAsset, rerunShot } from "@/lib/director-executor";
+import { generateShotAsset, rerunShot, shotRowId } from "@/lib/director-executor";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -152,21 +152,21 @@ describe("generateShotAsset — per-shot money invariant", () => {
 });
 
 describe("generateShotAsset — creates the DirectorShot row when missing", () => {
-  it("image: creates/updates the row via the existing upsert path", async () => {
+  it("image: creates/updates the row via the existing upsert path, keyed by the namespaced row id", async () => {
     await generateShotAsset("p1", "u1", "s1", "image");
 
     expect(prisma.directorShot.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "s1" } })
+      expect.objectContaining({ where: { id: shotRowId("p1", "s1") } })
     );
   });
 
-  it("video with no existing row: creates the row first, then generates via T2V", async () => {
+  it("video with no existing row: creates the row first (namespaced id), then generates via T2V", async () => {
     prisma.directorShot.findUnique.mockResolvedValue(null);
 
     await generateShotAsset("p1", "u1", "s1", "video");
 
     expect(prisma.directorShot.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ id: "s1", pipelineId: "p1" }) })
+      expect.objectContaining({ data: expect.objectContaining({ id: shotRowId("p1", "s1"), pipelineId: "p1" }) })
     );
     expect(generateVideo).toHaveBeenCalledTimes(1);
     expect(generateI2V).not.toHaveBeenCalled();
