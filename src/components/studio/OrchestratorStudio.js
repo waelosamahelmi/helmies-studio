@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
 import { parseQuestionBlock, stripQuestionBlock } from "@/lib/agent-chat";
 import {
-  Brief, SpendMeter, Group, Specs,
+  Brief, SpendMeter, Group, Specs, Confirm,
   IcSpark, IcFlow, IcCheck, IcAlert, IcChevron, IcExternal,
 } from "@/components/studio/kit";
+import SessionList from "@/components/studio/agent/SessionList";
 import Markdown from "@/components/studio/agent/Markdown";
 import QuestionCard from "@/components/studio/agent/QuestionCard";
 import ThinkingCard from "@/components/studio/agent/ThinkingCard";
@@ -303,6 +304,101 @@ function Outputs({ items }) {
   );
 }
 
+/* ── Resume: rebuild the feed from a session's stored messages (E3.6) ──────
+   The server persists every turn (E3.1/E3.2): user/assistant text and
+   question turns as markdown, plan/run/outputs as JSON. This maps them back
+   onto the exact message shapes the live feed renders, so a resumed session
+   looks like it never left. */
+function parseStoredJson(content) {
+  try { return JSON.parse(content); } catch { return null; }
+}
+
+function feedFromStored(stored, nextId) {
+  const out = [];
+  const hasRunAfter = (idx) => stored.slice(idx + 1).some((m) => m.kind === "run" || m.kind === "outputs");
+  const nextUserAfter = (idx) => stored.slice(idx + 1).find((m) => m.role === "user");
+
+  stored.forEach((m, idx) => {
+    const id = nextId();
+    if (m.role === "user") {
+      out.push({ id, role: "user", text: m.content });
+      return;
+    }
+    if (m.kind === "text" || m.kind === "question") {
+      /* A question that was followed by a user turn shows as answered; the
+         LAST question in the feed stays answerable. */
+      const answered = m.kind === "question" ? nextUserAfter(idx)?.content : undefined;
+      out.push({ id, role: "agent", text: m.content, answered });
+      return;
+    }
+    if (m.kind === "plan") {
+      const plan = parseStoredJson(m.content);
+      if (!plan?.steps?.length) return;
+      const prevUser = [...stored.slice(0, idx)].reverse().find((x) => x.role === "user");
+      out.push({
+        id, role: "agent",
+        text: plan.summary || "",
+        plan,
+        request: prevUser?.content || "",
+        decision: hasRunAfter(idx) ? "approved" : undefined,
+      });
+      return;
+    }
+    if (m.kind === "run") {
+      const data = parseStoredJson(m.content);
+      if (!data) return;
+      if (typeof data.stepIndex === "number") {
+        /* A single reviewed step (from /api/agent/step). */
+        out.push({
+          id, role: "agent", text: "",
+          review: {
+            items: [{
+              n: data.stepIndex + 1,
+              agent: data.agent,
+              task: data.task,
+              status: data.status === "completed" ? "done" : "failed",
+              credits: typeof data.creditsUsed === "number" ? data.creditsUsed : null,
+              error: data.error || "",
+              ...(typeof data.output === "string" ? { output: data.output } : {}),
+              prompt: "",
+              kind: data.agent,
+            }],
+            awaiting: null,
+            done: true,
+          },
+        });
+      } else {
+        out.push({
+          id, role: "agent",
+          text: data.status === "done"
+            ? (data.summary || "The production finished.")
+            : "The production stopped before it finished.",
+          run: {
+            status: data.status === "done" ? "done" : "failed",
+            creditsUsed: typeof data.creditsUsed === "number" ? data.creditsUsed : undefined,
+            error: data.status === "done" ? "" : data.error || "",
+            steps: (data.stepResults || []).map((r) => ({
+              n: r.step,
+              agent: r.agent,
+              task: r.task || "",
+              status: r.status === "completed" ? "done" : r.status === "failed" ? "failed" : "pending",
+              error: r.error || "",
+            })),
+            outputs: [],
+          },
+        });
+      }
+      return;
+    }
+    if (m.kind === "outputs") {
+      const data = parseStoredJson(m.content);
+      if (data?.assembled) out.push({ id, role: "agent", text: "", assembled: data.assembled });
+    }
+  });
+
+  return out;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════ */
 export default function OrchestratorStudio({ templateConfig, onCreditsChanged }) {
   const [messages, setMessages] = useState([]);
@@ -313,15 +409,29 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   const [atBottom, setAtBottom] = useState(true);
   const [sessionId, setSessionId] = useState(null);
   const [mode, setMode] = useState("review");     // "review" | "auto" (execution mode)
+  const [sessions, setSessions] = useState([]);   // the rail: newest active sessions
+  const [confirmSwitch, setConfirmSwitch] = useState(null); // { id: string|null } while busy
 
   const feedRef = useRef(null);
   const abortRef = useRef(null);
   const sessionRef = useRef(null);
+  const needsTitleRef = useRef(false); // auto-title once, from the first user message
   const idRef = useRef(0);
   const nextId = () => (idRef.current += 1);
 
   /* Model catalog for the plan's per-step model editing */
   const { models: catalogModels, loading: catalogLoading } = useModelCatalog({});
+
+  /* ── Sessions rail (E3.6) ────────────────────────────────────────────── */
+  const loadSessions = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/agent/sessions", { retries: 0 });
+      const data = await res.json();
+      setSessions(Array.isArray(data?.sessions) ? data.sessions : []);
+    } catch { /* the rail just stays empty */ }
+  }, []);
+
+  useEffect(() => { loadSessions(); }, [loadSessions]);
 
   /* ── Session: created implicitly on the first message (E3.1/E3.4) ────── */
   const ensureSession = useCallback(async () => {
@@ -337,11 +447,91 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       if (data?.session?.id) {
         sessionRef.current = data.session.id;
         setSessionId(data.session.id);
+        needsTitleRef.current = true;
+        loadSessions();
         return data.session.id;
       }
     } catch { /* chat still works without persistence */ }
     return null;
-  }, []);
+  }, [loadSessions]);
+
+  /* Auto-title the session ONCE from the first user message (60 chars). */
+  const autoTitle = useCallback(async (text) => {
+    const sid = sessionRef.current;
+    if (!sid || !needsTitleRef.current || !text) return;
+    needsTitleRef.current = false;
+    try {
+      await apiFetch(`/api/agent/sessions/${sid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: text.slice(0, 60) }),
+        retries: 0,
+      });
+      loadSessions();
+    } catch {
+      needsTitleRef.current = true; // try again on the next message
+    }
+  }, [loadSessions]);
+
+  /* Resume: load a stored session and re-render its full feed. */
+  const resumeSession = useCallback(async (id) => {
+    try {
+      const res = await apiFetch(`/api/agent/sessions/${id}`, { retries: 0 });
+      const data = await res.json();
+      abortRef.current?.abort();
+      sessionRef.current = id;
+      setSessionId(id);
+      needsTitleRef.current = (data?.session?.title || "New session") === "New session";
+      setMode(data?.session?.settings?.autoComplete ? "auto" : "review");
+      setMessages(feedFromStored(Array.isArray(data?.messages) ? data.messages : [], nextId));
+      setError("");
+      setBusy("");
+      setAtBottom(true);
+      loadSessions();
+    } catch (err) {
+      setError(err?.message || "Could not load that session.");
+    }
+  }, [loadSessions]);
+
+  /* New session: create + switch to an empty feed. */
+  const startNewSession = useCallback(async () => {
+    abortRef.current?.abort();
+    sessionRef.current = null;
+    setSessionId(null);
+    needsTitleRef.current = false;
+    setMessages([]);
+    setMode("review");
+    setError("");
+    setBusy("");
+    setAtBottom(true);
+    try {
+      const res = await apiFetch("/api/agent/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        retries: 0,
+      });
+      const data = await res.json();
+      if (data?.session?.id) {
+        sessionRef.current = data.session.id;
+        setSessionId(data.session.id);
+        needsTitleRef.current = true;
+        loadSessions();
+      }
+    } catch { /* the next message will create one implicitly */ }
+  }, [loadSessions]);
+
+  /* In-flight work blocks switching behind a confirm dialog. */
+  const handleSelectSession = useCallback((id) => {
+    if (id === sessionRef.current) return;
+    if (busy) { setConfirmSwitch({ id }); return; }
+    resumeSession(id);
+  }, [busy, resumeSession]);
+
+  const handleNewSession = useCallback(() => {
+    if (busy) { setConfirmSwitch({ id: null }); return; }
+    startNewSession();
+  }, [busy, startNewSession]);
 
   /* Execution mode is persisted onto the session's settings so
      "don't ask again" survives resume. */
@@ -453,6 +643,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
     try {
       const sid = await ensureSession();
+      autoTitle(text);
       const { res, json } = await openStream("/api/agent/chat", { messages: history, sessionId: sid }, ctrl.signal);
 
       if (json) {
@@ -481,7 +672,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       if (abortRef.current === ctrl) abortRef.current = null;
       setBusy("");
     }
-  }, [input, busy, messages, patch, ensureSession]);
+  }, [input, busy, messages, patch, ensureSession, autoTitle]);
 
   /* Answering the agent's question sends the choice as the next message */
   const answerQuestion = useCallback((message, answer) => {
@@ -511,6 +702,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
     try {
       const sid = await ensureSession();
+      autoTitle(text);
       /* `stream: false` is required — the route streams SSE by default and the
          previous build called .json() on that stream, so no plan ever landed. */
       const res = await apiFetch("/api/agent/plan", {
@@ -545,7 +737,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     } finally {
       setBusy("");
     }
-  }, [input, busy, patch, loadBalance, ensureSession]);
+  }, [input, busy, patch, loadBalance, ensureSession, autoTitle]);
 
   /* ══ Review-mode execution (EDITSv1 E3.5) ══════════════════════════════
      The client walks the approved plan one /api/agent/step call at a time.
@@ -1148,6 +1340,9 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
                     ) : (
                       message.run?.outputs?.length > 0 && <Outputs items={message.run.outputs} />
                     )}
+
+                    {/* A resumed session's stored outputs message (E3.6) */}
+                    {message.assembled && <AssetGrid assembled={message.assembled} />}
                   </div>
                 </article>
               );
@@ -1217,6 +1412,13 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
       <aside className="st-talk__side" aria-label="Session context">
         <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
+          <SessionList
+            sessions={sessions}
+            activeId={sessionId}
+            onSelect={handleSelectSession}
+            onNew={handleNewSession}
+          />
+
           <Group
             label="Credits"
             right={
@@ -1277,6 +1479,22 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
           </Group>
         </div>
       </aside>
+
+      {/* Switching sessions mid-run needs a conscious choice (E3.6). */}
+      <Confirm
+        open={!!confirmSwitch}
+        onClose={() => setConfirmSwitch(null)}
+        onConfirm={() => {
+          const target = confirmSwitch;
+          if (!target) return;
+          if (target.id) resumeSession(target.id);
+          else startNewSession();
+        }}
+        title="Leave this run?"
+        body="Work is still in progress. Switching sessions stops watching it here — steps that already ran stay charged and saved."
+        confirmLabel="Switch"
+        danger={false}
+      />
     </div>
   );
 }
