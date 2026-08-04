@@ -4,6 +4,7 @@ import { getCurrentUserWithCredits } from "@/lib/session";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
+import { redeemPromo, stripeCouponFor } from "@/lib/promos";
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -35,7 +36,7 @@ export async function POST(req) {
     }
     verifyOrigin(req);
 
-    const { plan, yearly } = await req.json();
+    const { plan, yearly, promoCode } = await req.json();
 
     // The admin Plans editor writes SubscriptionPlan rows — those rows are
     // now the sole source of truth for which Stripe price a checkout
@@ -80,13 +81,42 @@ export async function POST(req) {
       update: { stripeCustomerId: customerId, plan, status: "pending" },
     });
 
+    // ── Promo code (EDITSv1 E8.4) ──────────────────────────────────────
+    // Same shape as the top-up route: our rules decide, then Stripe is told
+    // exactly what discount to apply via a coupon. `allow_promotion_codes`
+    // would hand eligibility to Stripe, which knows nothing about
+    // first-time-customer-only, per-user limits or our global cap — see
+    // stripeCouponFor's header for the full argument.
+    //
+    // No margin-floor check here: a subscription's price is not a claim on
+    // a fixed number of credits the way a credit pack's is, so there is no
+    // face value to floor against. Stripe's own minimum still applies, and
+    // it enforces it on the invoice.
+    let discountCoupon = null;
+    let promoCodeId = null;
+
+    if (typeof promoCode === "string" && promoCode.trim()) {
+      const claim = await redeemPromo(promoCode, user.id);
+      if (!claim.valid) {
+        return NextResponse.json({ error: claim.message, reason: claim.reason }, { status: 422 });
+      }
+      if (claim.promo.type !== "credits") {
+        discountCoupon = await stripeCouponFor(claim.promo, stripe);
+      }
+      promoCodeId = claim.promo.id;
+    }
+
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
+      ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
       success_url: `${process.env.NEXTAUTH_URL}/studio?upgrade=success`,
       cancel_url: `${process.env.NEXTAUTH_URL}/pricing?upgrade=cancelled`,
-      metadata: { userId: user.id, plan, yearly: yearly ? "1" : "0" },
+      metadata: {
+        userId: user.id, plan, yearly: yearly ? "1" : "0",
+        ...(promoCodeId ? { promoCodeId } : {}),
+      },
       subscription_data: { metadata: { userId: user.id, plan, yearly: yearly ? "1" : "0" } },
     });
 

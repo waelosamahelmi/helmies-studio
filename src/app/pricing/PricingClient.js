@@ -24,6 +24,7 @@ import { apiFetch } from "@/lib/client-fetch";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
 import { SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
 import { IcCheck, IcChevron } from "@/components/studio/kit/Icons";
+import PromoField from "@/components/PromoField";
 
 const int = (n) => n.toLocaleString("en-US");
 const rate = (eur, credits) => (credits > 0 ? `€${(eur / credits).toFixed(4)}` : "—");
@@ -74,6 +75,10 @@ export default function PricingPlans() {
   const [yearly, setYearly] = useState(false);
   const [busy, setBusy] = useState(null);
   const [fault, setFault] = useState(null);
+  // EDITSv1 E8.4: a validated DISCOUNT code, held so it can ride along with
+  // the checkout request. A credit-grant code is applied server-side the
+  // moment it validates and never reaches checkout, so it is not held here.
+  const [promo, setPromo] = useState(null);
 
   // Pre-fetch/loading fallback only — replaced by the live GET below as soon
   // as it resolves, so the packs section never renders empty.
@@ -110,7 +115,10 @@ export default function PricingPlans() {
       const res = await apiFetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        // The code is a hint, not an instruction: the route re-validates it
+        // and recomputes the price from the database before Stripe is told
+        // anything.
+        body: JSON.stringify(promo?.code ? { ...body, promoCode: promo.code } : body),
         retries: 0,
       });
       const data = await res.json();
@@ -245,6 +253,15 @@ export default function PricingPlans() {
             A single payment for a fixed number of credits. No renewal, no plan.
             Buying a pack does not unlock plan-included templates.
           </p>
+        </div>
+
+        {/* EDITSv1 E8.4: the field a promo code had nowhere to go into. A
+            credit-grant code lands in the balance immediately; a discount
+            code is previewed here and applied at checkout. */}
+        <div style={{ marginBottom: "var(--s-6)" }}>
+          <PromoField
+            onApplied={(data) => setPromo(data.granted ? null : data)}
+          />
         </div>
 
         <div className="pg-packs">

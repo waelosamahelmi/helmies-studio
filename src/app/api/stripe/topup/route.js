@@ -4,6 +4,13 @@ import { getCurrentUserWithCredits } from "@/lib/session";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
+import {
+  assertChargeAboveStripeMinimum,
+  assertPackDiscountAboveMarginFloor,
+  discountFor,
+  redeemPromo,
+  stripeCouponFor,
+} from "@/lib/promos";
 
 let stripe;
 function getStripe() {
@@ -42,7 +49,7 @@ export async function POST(req) {
     }
     verifyOrigin(req);
 
-    const { packId } = await req.json();
+    const { packId, promoCode } = await req.json();
     let pack = packId ? await prisma.creditPack.findUnique({ where: { id: packId } }) : null;
     if (!pack) {
       // A tab left open across a deploy still sends the old static ids
@@ -83,6 +90,53 @@ export async function POST(req) {
       });
     }
 
+    // ── Promo code (EDITSv1 E8.4) ──────────────────────────────────────
+    // The price is recomputed here from the CreditPack row; nothing the
+    // client sends can change what it is billed. If a code is supplied it
+    // is re-validated server-side (the preview from /api/promos/redeem is
+    // advisory only) and claimed, so maxUses and maxUsesPerUser are
+    // enforced at the moment the customer commits to paying.
+    //
+    // TRADE-OFF, deliberate: claiming at session creation means an
+    // abandoned Stripe Checkout consumes a single-use code. The alternative
+    // — recording the redemption only when the webhook confirms payment —
+    // leaves a window in which one customer can open several sessions and
+    // pay through more than one of them with a code capped at one use. A
+    // burned code the owner can re-issue is the cheaper failure of the two.
+    let discountCoupon = null;
+    let promoCodeId = null;
+
+    if (typeof promoCode === "string" && promoCode.trim()) {
+      const claim = await redeemPromo(promoCode, user.id);
+      if (!claim.valid) {
+        return NextResponse.json({ error: claim.message, reason: claim.reason }, { status: 422 });
+      }
+
+      // A credit-grant code has already landed in the wallet through the
+      // ledger — there is nothing to discount, so checkout proceeds at the
+      // pack's full price.
+      if (claim.promo.type !== "credits") {
+        const { chargeCents } = discountFor(pack.price, claim.promo);
+
+        // Both money guards, before Stripe is told anything. A charge under
+        // Stripe's minimum is a checkout that fails at the till, and a pack
+        // sold for less than the euros its credits are redeemable for is a
+        // guaranteed loss on every redemption.
+        try {
+          assertChargeAboveStripeMinimum(chargeCents);
+          assertPackDiscountAboveMarginFloor(pack, chargeCents);
+        } catch {
+          return NextResponse.json(
+            { error: "That code can't be applied to this pack.", reason: "not_applicable" },
+            { status: 422 },
+          );
+        }
+
+        discountCoupon = await stripeCouponFor(claim.promo, getStripe());
+      }
+      promoCodeId = claim.promo.id;
+    }
+
     const session = await getStripe().checkout.sessions.create({
       customer: customerId,
       mode: "payment",
@@ -96,9 +150,15 @@ export async function POST(req) {
           quantity: 1,
         },
       ],
+      ...(discountCoupon ? { discounts: [{ coupon: discountCoupon }] } : {}),
       success_url: `${process.env.NEXTAUTH_URL}/studio?topup=success`,
       cancel_url: `${process.env.NEXTAUTH_URL}/pricing?topup=cancelled`,
-      metadata: { userId: user.id, credits: pack.credits, type: "credit_topup" },
+      metadata: {
+        userId: user.id,
+        credits: pack.credits,
+        type: "credit_topup",
+        ...(promoCodeId ? { promoCodeId } : {}),
+      },
     });
 
     return NextResponse.json({ url: session.url });

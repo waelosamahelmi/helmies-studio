@@ -38,6 +38,7 @@ model User {
   agentSessions AgentSession[]
 
   announcementDismissals AnnouncementDismissal[]
+  promoRedemptions       PromoRedemption[]
 
   @@schema("public")
 }
@@ -768,9 +769,9 @@ model Project {
 model PromoCode {
   id             String    @id @default(cuid())
   code           String    @unique
-  type           String    @default("percentage")
+  type           String    @default("percentage") // percentage | fixed | credits
   value          Float
-  eligibility    String    @default("all")
+  eligibility    String    @default("all") // all | new | existing
   maxUses        Int?
   maxUsesPerUser Int       @default(1)
   currentUses    Int       @default(0)
@@ -778,9 +779,35 @@ model PromoCode {
   expiresAt      DateTime?
   description    String?
   isActive       Boolean   @default(true)
+  // EDITSv1 E8.4: the Stripe coupon this code applies at checkout. Created
+  // on first use and cached here, so one promo means one coupon in Stripe
+  // rather than a fresh one per customer.
+  stripeCouponId String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  redemptions PromoRedemption[]
+
+  @@schema("public")
+}
+
+// EDITSv1 E8.4. Without this table `maxUsesPerUser` could not be enforced
+// at all — there was no record of who had redeemed what, and `currentUses`
+// was never incremented by anything either.
+//
+// The compound unique is the enforcement mechanism, not a nicety: it makes
+// "one redemption per user" true by construction, so a double-submitted
+// form loses the race in Postgres instead of granting twice.
+model PromoRedemption {
+  id          String    @id @default(cuid())
+  promoCodeId String
+  userId      String
+  redeemedAt  DateTime  @default(now())
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([promoCodeId, userId])
+  @@index([userId])
   @@schema("public")
 }
 

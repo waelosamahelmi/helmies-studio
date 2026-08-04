@@ -999,6 +999,18 @@
     "notes": "Static hardcoded model list; not a real upstream call."
   },
   {
+    "path": "/api/promos/redeem",
+    "file": "src/app/api/promos/redeem/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E8.4: the endpoint a customer's promo code previously had nowhere to go to — PromoCode was a full admin CRUD screen over a table nothing read, with no redemption path, no input field and currentUses never incremented. State-changing because a credit-grant code is redeemed here: credits land via wallet.js's grantCredits (ledger row and all — never a direct balance write), with the PromoRedemption row and the currentUses increment in the SAME transaction, so a double-submit cannot grant twice. Discount codes are only previewed here and record nothing; they are claimed at checkout. Rate-limited per USER (not IP) via checkAnonLimit, 20 attempts / 10min — the threat is guessing at the code space and the account is the axis that identifies the guesser. rateLimit is 'none' here because that field tracks checkRateLimit/RATE_LIMITS keys only, per the auth/register precedent."
+  },
+  {
     "path": "/api/prompt/compile",
     "file": "src/app/api/prompt/compile/route.js",
     "methods": [
