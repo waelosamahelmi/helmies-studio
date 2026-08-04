@@ -2451,3 +2451,69 @@ select.st-layer__role option {
   .st-talk__side { display: none; }
   .st-panel-tabs--talk { display: flex; }
 }
+
+/* ── Reordering with a finger (E7.4) ───────────────────────────────────────
+   HTML5 drag-and-drop fires NOTHING on touch. Three surfaces shipped with a
+   reorder that only existed as a drag: the canvas layer stack
+   (`draggable` rows), the workflow step chain (`draggable` cards), and the
+   Director timeline (`draggable` <li>). The workflow cards gained explicit
+   move buttons in this task; the canvas and the timeline already had them
+   and they were simply too small to hit — 20x20 for a layer's move pair,
+   22x22 for its visibility toggle. On a phone those buttons ARE the
+   reorder, so they get the full 44px.
+
+   `.st-layer` becomes a two-row grid at the same time: a 44px eye plus a
+   34px thumbnail plus a name plus two 44px buttons does not fit 393px, and
+   an actions row that overflows is the same bug in a different shape. */
+@media (pointer: coarse) {
+  .st-layer {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas: "eye thumb body" "acts acts acts";
+    row-gap: var(--s-1);
+  }
+  .st-layer > .st-layer__eye { grid-area: eye; }
+  .st-layer > .st-layer__thumb { grid-area: thumb; }
+  .st-layer > .st-layer__body { grid-area: body; }
+  .st-layer > .st-layer__acts { grid-area: acts; justify-content: flex-end; gap: var(--s-2); }
+  .st-layer__eye { width: 44px; height: 44px; }
+  .st-layer__act { width: 44px; height: 44px; }
+  .st-layer__act svg { width: 16px; height: 16px; }
+  .st-layer__role { min-height: 24px; }
+
+  /* Clip trim grips are drawn as a 2px line inside a 7px box. The line
+     stays 2px (it is centred background art, not the box); the box that
+     receives the pointer grows to 44px so a fingertip can actually catch
+     it. `.st-range` is `position: relative`, so the negative offsets keep
+     the grip centred on the edge it drags. */
+  .st-range__grip { width: 44px; }
+  .st-range__grip--l { left: -22px; }
+  .st-range__grip--r { right: -22px; }
+}
+
+/* ── The canvas had no canvas (E7.4) ───────────────────────────────────────
+   Measured at 393x851: `.st-canvas__surface` was 0px tall. The archetype is
+   a grid of `auto auto 1fr auto` — context bar, tool row, surface, prompt
+   dock — and the context bar is a `flex-wrap: wrap` row carrying two number
+   fields, a preset select, six background swatches, a document-name input
+   and four buttons. At this width it wrapped to roughly six lines, and
+   between it and the composer there was nothing left for the `1fr` row, so
+   the surface (which sets `min-height: 0`) collapsed to nothing. Drawing,
+   placing, masking — the entire tool — was unusable on a phone, and the
+   layer list this task is about had no way to acquire a layer in the first
+   place.
+
+   The context bar becomes one horizontally-scrolling row, exactly the
+   treatment `.st-canvas__tools` already gets at this breakpoint, and the
+   surface gets a floor so it can never be squeezed out again. */
+@media (max-width: 640px) {
+  .st-canvas { grid-template-rows: auto auto minmax(200px, 1fr) auto; }
+  .st-canvas__topbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .st-canvas__topbar::-webkit-scrollbar { display: none; }
+  .st-canvas__topbar > * { flex: none; }
+  .st-canvas__surface { min-height: 200px; }
+}

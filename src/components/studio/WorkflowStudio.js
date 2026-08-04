@@ -756,11 +756,14 @@ export default function WorkflowStudio({ onCreditsChanged }) {
                     dragging={false}
                     busy={busy || (regenAt != null)}
                     canRerun={!!current?.id && !dirty}
+                    first={i === 0}
+                    last={i === steps.length - 1}
                     onOpen={() => setEditing(s.key)}
                     onRename={(name) => changeStep(s.key, { name })}
                     onDuplicate={() => duplicateStep(s.key)}
                     onRemove={() => removeStep(s.key)}
                     onRerun={() => regenerate(i)}
+                    onMove={(delta) => moveStep(s.key, delta)}
                     onDragStart={onNodeDragStart}
                     onDragEnd={onDragEnd}
                   />

@@ -1882,15 +1882,27 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
         {/* Empty state */}
         {layers.length === 0 && (
           <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none", padding: "var(--s-6)" }}>
+            {/* EDITSv1 E7.4: the card itself is `pointerEvents: none`. It
+                used to be `auto` with a `stopPropagation` on pointerdown,
+                which on a phone made the tool impossible to start using at
+                all — the centred card covers essentially the whole surface
+                at 393px, so every attempt to draw the FIRST layer was
+                swallowed by the very message telling you to draw one. Only
+                the example chips take pointer events now; a drag that
+                begins on the card's prose reaches the surface underneath
+                and draws, which is what the prose is asking for. */}
             <div
               className="hs-empty"
-              style={{ background: "rgba(8,8,12,0.78)", borderRadius: "var(--r-lg)", padding: "var(--s-6)", pointerEvents: "auto", maxWidth: 440 }}
-              onPointerDown={(e) => e.stopPropagation()}
+              style={{ background: "rgba(8,8,12,0.78)", borderRadius: "var(--r-lg)", padding: "var(--s-6)", pointerEvents: "none", maxWidth: 440 }}
             >
               <span className="hs-empty__mark"><IcLayers /></span>
               <h3>Compose, then generate</h3>
               <p>Drop images on the surface, draw a region, or set a headline. Give every layer a role and the model is told what each one is for.</p>
-              <div className="hs-chips" style={{ justifyContent: "center", marginTop: "var(--s-2)" }}>
+              <div
+                className="hs-chips"
+                style={{ justifyContent: "center", marginTop: "var(--s-2)", pointerEvents: "auto" }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
                 {EXAMPLES.map((e) => (
                   <button
                     key={e}

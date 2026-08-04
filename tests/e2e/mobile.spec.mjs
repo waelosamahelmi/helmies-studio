@@ -385,3 +385,174 @@ test("Director's per-shot buttons say what they do on touch", async ({ page }) =
   await expectNoHorizontalScroll(page, "/studio/director (planned)");
   await expectTapTargets(page, "/studio/director (planned)");
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   E7.4 — every reorder that was drag-only has a touch path
+   ──────────────────────────────────────────────────────────────────────────
+   HTML5 drag-and-drop does not fire on touch at all: no dragstart, no drop,
+   nothing. Three surfaces shipped with a reorder that only existed as a
+   drag — the canvas layer stack, the workflow step chain, and the Director
+   timeline's clip list. Each test below performs the reorder with `tap()`
+   on a real touch device and asserts the order actually changed.
+   ══════════════════════════════════════════════════════════════════════════ */
+test.describe("mobile — reordering works by touch", () => {
+  test.use({ storageState: USER_AUTH_FILE });
+
+  test("canvas layers can be restacked with a finger", async ({ page }) => {
+    await stubProviders(page);
+    await page.goto("/studio/canvas");
+    await settleApp(page);
+    await expect(visible(page.locator(".st-canvas"))).toBeVisible({ timeout: 20000 });
+
+    // Draw two shapes so there is a stack to reorder. Both are created by
+    // dragging on the surface, which is pointer-event driven and therefore
+    // already touch-capable — it is the LAYER LIST that was not.
+    // The drawing surface is the `1fr` row of the .st-canvas grid, between a
+    // context bar that wraps hard at this width and the prompt dock. A `1fr`
+    // row with `min-height: 0` is free to collapse to nothing when the auto
+    // rows around it grow, which would leave the tool with no canvas at all.
+    const surface = page.locator(".st-canvas__surface");
+    await expect(surface).toHaveCount(1, { timeout: 20000 });
+    const box = await surface.boundingBox();
+    expect(
+      box?.height ?? 0,
+      `the canvas drawing surface is ${Math.round(box?.height ?? 0)}px tall at 393px — there is nothing to draw on`,
+    ).toBeGreaterThan(160);
+    // Fractions of the surface, not fixed pixels: how tall it ends up is
+    // exactly what this task changed, and a hard-coded y would silently walk
+    // off the bottom.
+    const draw = async (toolName, from, to) => {
+      await visible(page.getByRole("button", { name: new RegExp(`^${toolName}`) })).tap();
+      await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * to[0], box.y + box.height * to[1], { steps: 8 });
+      await page.mouse.up();
+    };
+    await draw("Rectangle", [0.12, 0.15], [0.45, 0.45]);
+    await draw("Ellipse", [0.55, 0.5], [0.9, 0.85]);
+
+    // The stack lives in a Sheet below 1024px (.st-canvas__layers-btn).
+    await visible(page.getByRole("button", { name: "Layers", exact: true })).tap();
+    const sheet = page.getByRole("dialog", { name: "Layers" });
+    await expect(sheet).toBeVisible();
+
+    const rows = sheet.locator(".st-layer .st-layer__name");
+    await expect(rows).toHaveCount(2, { timeout: 15000 });
+    const before = await rows.allTextContents();
+
+    // Reorder by touch. This is the whole point: there is no drag path on a
+    // phone, so if these buttons are not tappable the stack cannot be
+    // changed at all.
+    await sheet.getByRole("button", { name: `Move ${before[0]} up` }).tap();
+    await expect.poll(() => rows.allTextContents(), { timeout: 10000 }).toEqual([before[1], before[0]]);
+
+    await sheet.getByRole("button", { name: `Move ${before[0]} down` }).tap();
+    await expect.poll(() => rows.allTextContents(), { timeout: 10000 }).toEqual(before);
+  });
+
+  test("workflow steps can be reordered with a finger, without opening the editor", async ({ page }) => {
+    await stubProviders(page);
+    await page.goto("/studio/workflows");
+    await settleApp(page);
+    await expect(visible(page.locator(".st-credits"))).toContainText(/\d|—/, { timeout: 15000 });
+
+    await visible(page.getByRole("button", { name: "Add step: Image", exact: true })).tap();
+    await visible(page.getByRole("button", { name: "Add step: Export", exact: true })).tap();
+    await expect(visible(page.locator(".st-node"))).toHaveCount(2, { timeout: 15000 });
+    await expect(visible(page.getByLabel("Step 1 name"))).toHaveValue("Image");
+
+    // The card's own move controls — the Earlier/Later pair buried in the
+    // Configure sheet is a path, but it is not a REORDER affordance, and on
+    // a phone the drag handle does nothing whatsoever.
+    await visible(page.getByRole("button", { name: "Move step 1 later" })).tap();
+    await expect(visible(page.getByLabel("Step 1 name"))).toHaveValue("Export");
+    await expect(visible(page.getByLabel("Step 2 name"))).toHaveValue("Image");
+
+    await visible(page.getByRole("button", { name: "Move step 2 earlier" })).tap();
+    await expect(visible(page.getByLabel("Step 1 name"))).toHaveValue("Image");
+  });
+});
+
+test("Director timeline clips can be rearranged and trimmed with a finger", async ({ page }) => {
+  await stubProviders(page);
+
+  let user;
+  let title;
+  await withTestDb(async (prisma) => {
+    user = await createIsolatedUser(prisma, { credits: 200, label: "mobtl" });
+    title = `Mobile Timeline ${Date.now().toString(36)}`;
+    const shots = ["Red", "Green", "Blue"].map((name, i) => ({
+      id: `mtl_${Date.now().toString(36)}_${i}`,
+      index: i,
+      title: name,
+      durationSec: 2,
+      section: "verse",
+      transition: "cut",
+      imageStrategy: { mode: "generate", prompt: "static", references: [] },
+      videoStrategy: { mode: "t2v", prompt: "motion" },
+    }));
+    const pipeline = await prisma.directorPipeline.create({
+      data: {
+        userId: user.id,
+        title,
+        type: "commercial",
+        status: "completed",
+        plan: { shots, globalStyle: {} },
+        brief: { type: "commercial", title },
+        costEstimate: {
+          totalCredits: 30,
+          shotCosts: shots.map((s) => ({ shotId: s.id, shotIndex: s.index, costs: { image: 2, video: 8, audio: 0 }, total: 10 })),
+        },
+      },
+    });
+    for (const shot of shots) {
+      await prisma.directorShot.create({
+        data: {
+          id: `${pipeline.id}::${shot.id}`,
+          pipelineId: pipeline.id,
+          index: shot.index,
+          title: shot.title,
+          status: "completed",
+          plan: shot,
+          videoResult: { url: `/api/media/local/e2e-mobile-${shot.index}.mp4` },
+        },
+      });
+    }
+  });
+  await loginThroughForm(page, user);
+
+  await page.goto("/studio/director");
+  await settleApp(page);
+  await expect(visible(page.locator(".st-credits"))).toContainText(/\d/, { timeout: 15000 });
+
+  await visible(page.getByRole("button", { name: "Production", exact: true })).tap();
+  await visible(page.getByRole("button", { name: new RegExp(title) })).tap();
+
+  const clips = visible(page.locator("li.st-clip"));
+  await expect(clips).toHaveCount(3, { timeout: 20000 });
+  await expect(clips.first()).toContainText("Red");
+
+  // <li class="st-clip"> is `draggable` and that is the only reorder the
+  // desktop offers — on touch it never fires.
+  await visible(page.getByRole("button", { name: "Move clip 1 later" })).tap();
+  await expect(clips.first()).toContainText("Green");
+  await expect(clips.nth(1)).toContainText("Red");
+
+  // Trim handles: the numeric field is the reliable path, and the range
+  // slider beside it has to be big enough to actually grab.
+  await visible(page.getByLabel("Clip 1 out point in seconds")).fill("1.5");
+  await expect(visible(page.getByLabel("Clip 1 out point in seconds"))).toHaveValue("1.5");
+
+  const sliderTooSmall = await page.evaluate(() => {
+    const out = [];
+    for (const el of document.querySelectorAll('.st-clip input[type="range"]')) {
+      const r = el.getBoundingClientRect();
+      if (r.height < 44) out.push(`${el.getAttribute("aria-label")} is ${Math.round(r.height)}px tall`);
+    }
+    return out;
+  });
+  expect(sliderTooSmall, `trim sliders below a 44px grab area: ${sliderTooSmall.join(", ")}`).toEqual([]);
+
+  await expectNoHorizontalScroll(page, "/studio/director (timeline)");
+  await expectTapTargets(page, "/studio/director (timeline)");
+});

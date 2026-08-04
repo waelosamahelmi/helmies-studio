@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  IcRefresh, IcTrash, IcCopy, IcSettings, IcMenu,
+  IcRefresh, IcTrash, IcCopy, IcSettings, IcMenu, IcChevronLeft, IcChevronRight,
 } from "@/components/studio/kit";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -33,11 +33,14 @@ export default function StepNode({
   dragging,
   busy,
   canRerun,
+  first,           // no earlier neighbour
+  last,            // no later neighbour
   onOpen,
   onRename,
   onDuplicate,
   onRemove,
   onRerun,
+  onMove,          // (delta) — the touch/keyboard path for reordering
   onDragStart,
   onDragEnd,
 }) {
@@ -122,6 +125,34 @@ export default function StepNode({
           aria-label={`Configure step ${n}`}
         >
           <IcSettings className="hs-icon-sm" /> Configure
+        </button>
+
+        {/* EDITSv1 E7.4: the grip above is HTML5 drag-and-drop, which does
+            not fire on touch at all — no dragstart, no drop. Without these
+            the chain could not be reordered on a phone by any means. The
+            Earlier/Later pair inside the Configure sheet is a path, but it
+            is two taps behind a dialog and reads as an editor action rather
+            than a reorder, so the card carries its own. */}
+        <button
+          type="button"
+          className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
+          onClick={() => onMove?.(-1)}
+          disabled={!!busy || !!first}
+          aria-label={`Move step ${n} earlier`}
+          title="Move this step earlier"
+        >
+          <IcChevronLeft className="hs-icon-sm" />
+        </button>
+
+        <button
+          type="button"
+          className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
+          onClick={() => onMove?.(1)}
+          disabled={!!busy || !!last}
+          aria-label={`Move step ${n} later`}
+          title="Move this step later"
+        >
+          <IcChevronRight className="hs-icon-sm" />
         </button>
 
         {canRerun && (
