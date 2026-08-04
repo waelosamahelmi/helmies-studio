@@ -1,6 +1,7 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription, sanitizeDisplayName, audioKind } from "@/lib/model-catalog-core.mjs";
+import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription, sanitizeDisplayName, audioKind, inferCapability } from "@/lib/model-catalog-core.mjs";
+import { CAPABILITY_GROUPS, matchesGroup } from "@/lib/capability-groups";
 import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
 
 test("quotes a fixed per-image model with output count", () => {
@@ -59,6 +60,78 @@ test("infers non-LLM KIE capabilities from official documentation URLs", () => {
   assert.equal(video.capability, "image-to-video");
   assert.deepEqual(video.inputModalities, ["text", "image"]);
   assert.equal(inferKieModelFromUrl("https://docs.kie.ai/market/claude/claude-opus-5"), null);
+});
+
+// ── BUG FIX: Text-to-Video listed models that cannot do text-to-video ─────
+// The coarse "video" capability legitimately belongs in CAPABILITY_GROUPS.ttv
+// (capability-groups.js) for models whose id gives NO direction signal — but
+// several production ids DO carry an unambiguous short-form direction marker
+// ("-i2v"/"-v2v"/"-t2v", not the spelled-out "image-to-video" the earlier
+// rules already caught) that inferCapability used to ignore, falling all the
+// way through to the coarse "video" catch-all. Measured production example:
+// wan-2.6-v2v (a video-to-video model) was the CHEAPEST model in the T2V
+// pool. These tests pin the exact marker rules and the conservative "leave
+// it alone with no signal" behavior.
+test("inferCapability: '-i2v' suffix maps to image-to-video even without the spelled-out phrase", () => {
+  for (const id of ["wan-2.2-turbo-i2v", "wan-2.5-i2v", "wan-2.6-flash-i2v", "wan-2.6-i2v", "wan-2.7-i2v", "wan/2-2-turbo-i2v"]) {
+    assert.equal(inferCapability(id), "image-to-video", `${id} should be image-to-video`);
+  }
+});
+
+test("inferCapability: '-v2v' suffix and '/extend' (video extend) map to video-to-video", () => {
+  for (const id of ["wan-2.6-v2v", "wan-2.6-flash-v2v", "pixverse/extend"]) {
+    assert.equal(inferCapability(id), "video-to-video", `${id} should be video-to-video`);
+  }
+});
+
+test("inferCapability: '-t2v' suffix maps to text-to-video even without the spelled-out phrase", () => {
+  for (const id of ["wan-2.5-t2v", "wan-2.6-t2v", "wan-2.7-t2v"]) {
+    assert.equal(inferCapability(id), "text-to-video", `${id} should be text-to-video`);
+  }
+});
+
+test("inferCapability: the spelled-out phrases still work exactly as before (regression)", () => {
+  assert.equal(inferCapability("wan-2-6-image-to-video"), "image-to-video");
+  assert.equal(inferCapability("wan-2-6-text-to-video"), "text-to-video");
+  assert.equal(inferCapability("wan-2-6-video-to-video"), "video-to-video");
+  assert.equal(inferCapability("wan-2-7-videoedit"), "video-to-video");
+});
+
+test("inferCapability: img2vid also maps to image-to-video", () => {
+  assert.equal(inferCapability("runway-img2vid"), "image-to-video");
+});
+
+test("inferCapability: an id with NO direction marker at all still falls through to the coarse 'video' fallback — conservative by design", () => {
+  for (const id of ["kling/pro", "bytedance/seedance-2", "wan-animate-move", "wan-animate-replace", "wan-speech-to-video", "wan/2-2-animate-move", "pixverse/transition"]) {
+    assert.equal(inferCapability(id), "video", `${id} should stay coarse "video" — no unambiguous marker`);
+  }
+});
+
+test("inferCapability: an id with no signal whatsoever falls through to the last-resort 'media'", () => {
+  assert.equal(inferCapability("some-totally-unrecognized-thing"), "media");
+});
+
+test("Group membership: no image-to-video/video-to-video model ends up in the ttv group; markers route to i2v/v2v", () => {
+  const i2vIds = ["wan-2.2-turbo-i2v", "wan-2.5-i2v", "wan-2.6-flash-i2v", "wan-2.6-i2v", "wan-2.7-i2v"];
+  const v2vIds = ["wan-2.6-v2v", "wan-2.6-flash-v2v", "pixverse/extend"];
+  const t2vIds = ["wan-2.5-t2v", "wan-2.6-t2v", "wan-2.7-t2v"];
+
+  for (const id of i2vIds) {
+    const capability = inferCapability(id);
+    assert.equal(matchesGroup({ capability }, "ttv"), false, `${id} (${capability}) must not be in ttv`);
+    assert.equal(matchesGroup({ capability }, "i2v"), true, `${id} (${capability}) must be in i2v`);
+  }
+  for (const id of v2vIds) {
+    const capability = inferCapability(id);
+    assert.equal(matchesGroup({ capability }, "ttv"), false, `${id} (${capability}) must not be in ttv`);
+    assert.equal(matchesGroup({ capability }, "v2v"), true, `${id} (${capability}) must be in v2v`);
+  }
+  // Genuinely t2v/multi ids stay in ttv, whether marker-precise or coarse.
+  for (const id of [...t2vIds, "kling/pro", "bytedance/seedance-2", "wan-animate-move", "wan-speech-to-video"]) {
+    const capability = inferCapability(id);
+    assert.equal(matchesGroup({ capability }, "ttv"), true, `${id} (${capability}) must be in ttv`);
+  }
+  assert.ok(CAPABILITY_GROUPS.ttv.includes("video")); // coarse video is still valid for markerless ids
 });
 
 test("formats Alibaba native model payloads", () => {
@@ -196,20 +269,81 @@ test("audioKind: conversion ids (wav, midi) are conversion", () => {
   assert.equal(audioKind({ capability: "audio", modelId: "generate-midi" }), "conversion");
 });
 
-test("audioKind: the Suno composition family is music", () => {
-  for (const id of ["generate-music", "extend-music", "add-instrumental", "add-vocals", "cover-suno", "upload-and-cover-audio", "replace-section", "generate-mashup", "suno-v5"]) {
+// ── BUG FIX: Music listed utilities, not composers ─────────────────────────
+// Only a genuine FROM-SCRATCH composer is "music" — "generate-music" itself
+// and a bare versioned Suno engine selector ("suno-v5", ...). Every id that
+// TRANSFORMS/EXTENDS/COVERS an existing track used to share a token with the
+// Suno family (a bare "cover"/"mashup"/"suno" substring) and landed as
+// "music" too — this is the fix, superseding the old, too-broad test above.
+test("audioKind: only a from-scratch composer is music", () => {
+  for (const id of ["generate-music", "suno-v5", "suno-v4.5-plus", "suno-v4"]) {
     assert.equal(audioKind({ capability: "audio", modelId: id }), "music", `${id} should be music`);
+  }
+});
+
+test("audioKind: a track TRANSFORMER (extends/covers/replaces an EXISTING track) is never music — it falls to utility so Audio Tools lists it", () => {
+  for (const id of ["extend-music", "add-instrumental", "add-vocals", "cover-suno", "upload-and-cover-audio", "upload-and-extend-audio", "replace-section", "generate-mashup"]) {
+    assert.equal(audioKind({ capability: "audio", modelId: id }), "utility", `${id} should be utility, not music`);
   }
 });
 
 test("audioKind: anything else with capability audio is utility", () => {
   assert.equal(audioKind({ capability: "audio", modelId: "generate-lyrics" }), "utility");
   assert.equal(audioKind({ capability: "audio", modelId: "create-music-video" }), "utility");
-  assert.equal(audioKind({ capability: "audio", modelId: "upload-and-extend-audio" }), "utility");
 });
 
 test("audioKind: reads the endpoint when the id itself carries no token, and returns null outside the audio family", () => {
   assert.equal(audioKind({ capability: "audio", modelId: "acme-model", endpoint: "generate-music" }), "music");
   assert.equal(audioKind({ capability: "text-to-video", modelId: "generate-music" }), null);
   assert.equal(audioKind(null), null);
+});
+
+// ── The exact live production audio sub-model pool (kie-sync.js's "Audio
+// sub-models (Suno suite)" pricing overrides) — every one of these must land
+// in its stated bucket. Diagnosed from LIVE production: the Music studio's
+// pool was these 14 ids (audioKind === "music"); the cost-sorted pick landed
+// on "replace-section", a section-replacer that cannot compose from
+// scratch. After the fix, only "generate-music" is a composer — every
+// transformer moves to a bucket AudioToolsStudio pools
+// (enhancement/conversion/utility).
+test("audioKind: the exact live production audio pool lands in its stated bucket — Music pool contains no transformer", () => {
+  const expected = {
+    "generate-music": "music",
+    "extend-music": "utility",
+    "upload-and-cover-audio": "utility",
+    "upload-and-extend-audio": "utility",
+    "add-instrumental": "utility",
+    "add-vocals": "utility",
+    "cover-suno": "utility",
+    "replace-section": "utility",
+    "generate-persona": "voice-clone",
+    "generate-mashup": "utility",
+    "generate-lyrics": "utility",
+    "generate-sounds": "sfx",
+    "suno-voice-generate": "voice-clone",
+    "generate-midi": "conversion",
+    "create-music-video": "utility",
+    "separate-vocals": "enhancement",
+    "convert-to-wav": "conversion",
+    "boost-music-style": "enhancement",
+    "audio-isolation": "enhancement",
+  };
+  const AUDIO_TOOLS_KINDS = new Set(["enhancement", "conversion", "utility"]);
+  for (const [modelId, kind] of Object.entries(expected)) {
+    const actual = audioKind({ capability: "audio", modelId });
+    assert.equal(actual, kind, `${modelId} should be "${kind}", got "${actual}"`);
+    if (kind === "music") {
+      assert.ok(!AUDIO_TOOLS_KINDS.has(actual), `${modelId} (music) must not also qualify for Audio Tools`);
+    } else if (AUDIO_TOOLS_KINDS.has(kind)) {
+      assert.notEqual(actual, "music", `${modelId} must not be in the Music pool`);
+    }
+  }
+  // The Music pool (audioKind === "music") is exactly generate-music.
+  const musicPool = Object.keys(expected).filter((id) => audioKind({ capability: "audio", modelId: id }) === "music");
+  assert.deepEqual(musicPool, ["generate-music"]);
+  // Audio Tools (enhancement/conversion/utility) lists every transformer.
+  const audioToolsPool = Object.keys(expected).filter((id) => AUDIO_TOOLS_KINDS.has(audioKind({ capability: "audio", modelId: id })));
+  for (const transformer of ["extend-music", "upload-and-cover-audio", "upload-and-extend-audio", "add-instrumental", "add-vocals", "cover-suno", "replace-section", "generate-mashup", "boost-music-style"]) {
+    assert.ok(audioToolsPool.includes(transformer), `${transformer} must be listed in Audio Tools`);
+  }
 });

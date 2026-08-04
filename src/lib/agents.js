@@ -10,7 +10,7 @@ import { detectAbuse } from "@/lib/security";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { assembleVideos } from "@/lib/video-assembly";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
-import { runnableProviderModelId } from "@/lib/model-catalog-core.mjs";
+import { runnableProviderModelId, audioKind } from "@/lib/model-catalog-core.mjs";
 import prisma from "@/lib/prisma";
 
 // ── Agent definitions ──
@@ -318,10 +318,41 @@ export async function planTask(userMessage, context = {}) {
 // "flux-dev"/"kling-v2.1-i2v" did (both isDeprecated in production while
 // still hardcoded here). Falls back to LAST_RESORT_FALLBACKS (below) only
 // if the live lookup itself is unavailable.
-async function defaultRunnableModel(agentKind) {
+//
+// Audio is NOT just "cheapest active+non-deprecated row" (BUG FIX):
+// getRunnableModelsForType already applies the runnable gate
+// (isActive/isDeprecated — see isRunnableModelRow's header), but ordering
+// purely by creditsCost resolved an AUDIO step to "boost-music-style" in
+// production — an "enhancement" utility (audioKind, model-catalog-
+// core.mjs) that TRANSFORMS an existing track and cannot run as a
+// from-scratch step at all. audioKind is the SAME honest sub-classification
+// MusicStudio/AudioStudio already gate their pools on; reuse it here to
+// prefer a genuine GENERATOR — a composer ("music") for a music/song task,
+// a reader ("tts") when the task clearly wants a spoken voice instead —
+// over a transformer/enhancement/conversion utility, while keeping every
+// row's already-applied runnable gate untouched (this only re-orders rows
+// getRunnableModelsForType already returned, never widens what's runnable).
+// Falls back to the plain cheapest runnable row only if the catalog has no
+// generator of either kind at all — never worse than the old behavior.
+// Exported (not just used internally) so it's directly unit-testable
+// against a mocked catalog, the same rationale scripts/fix-model-
+// categories.mjs's planFixes and this file's own executeStep/
+// executeStepWithRetry already use — see tests/unit/agent-model-selection.test.mjs.
+export async function defaultRunnableModel(agentKind, { wantsVoice = false } = {}) {
   try {
-    const [row] = await getRunnableModelsForType(agentKind, { limit: 1 });
-    if (row) return runnableProviderModelId(row);
+    if (agentKind === "audio") {
+      const rows = await getRunnableModelsForType("audio", { limit: 50 });
+      const preferredKind = wantsVoice ? "tts" : "music";
+      const fallbackKind = wantsVoice ? "music" : "tts";
+      const generator =
+        rows.find((row) => audioKind(row) === preferredKind) ||
+        rows.find((row) => audioKind(row) === fallbackKind) ||
+        rows[0];
+      if (generator) return runnableProviderModelId(generator);
+    } else {
+      const [row] = await getRunnableModelsForType(agentKind, { limit: 1 });
+      if (row) return runnableProviderModelId(row);
+    }
   } catch { /* fall through to the last-resort id below */ }
   return LAST_RESORT_FALLBACKS[agentKind]?.[0] || agentKind;
 }
@@ -344,7 +375,14 @@ async function buildHeuristicPlan(userMessage, context = {}) {
   } else if (hasMarketing) {
     steps.push({ agent: "marketing", task: userMessage, params: { prompt: userMessage } });
   } else if (hasAudio) {
-    const audioModel = await defaultRunnableModel("audio");
+    // A voice/narration/speech request wants a TTS reader, not a music
+    // composer — unless the message ALSO names music explicitly (e.g. "add
+    // a singing voiceover"), which keeps the music request as the primary
+    // intent. Anything else defaults to "music" (defaultRunnableModel's own
+    // default), matching the broader hasAudio match (music/sound/song/
+    // singing) this branch is already gated on.
+    const wantsVoice = /voice|narrat|speak|read aloud/.test(lower) && !/music|song|singing/.test(lower);
+    const audioModel = await defaultRunnableModel("audio", { wantsVoice });
     steps.push({ agent: "audio", task: userMessage, params: { _modelId: audioModel, endpoint: audioModel, prompt: userMessage, duration: 30 } });
   } else {
     const imageModel = await defaultRunnableModel("image");

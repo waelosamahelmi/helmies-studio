@@ -95,6 +95,54 @@ describe("planFixes", () => {
     expect(needsAttention).toEqual([]);
   });
 
+  // ── BUG FIX: Text-to-Video listed models that cannot do text-to-video ────
+  // Coarse "video" already maps directly to a modelType (the null-capability
+  // recovery branch above never runs for it), so a row stuck there was NEVER
+  // re-examined for a more precise direction — even once its own id/endpoint
+  // carried an unambiguous short-form marker inferCapability now recognizes
+  // ("-i2v"/"-v2v"/"-t2v"). This is what backfills the LIVE production rows
+  // this bug affected (measured: wan-2.6-v2v was the cheapest model in the
+  // T2V pool) once the operator runs the script with --apply --yes.
+  it("recovers a precise video direction for a row stuck under coarse 'video' whose own id now carries an unambiguous marker", () => {
+    const rows = [
+      { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 V2v" },
+      { modelId: "wan-2.6-flash-i2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 Flash I2v" },
+      { modelId: "wan-2.5-t2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.5 T2v" },
+    ];
+    const { capabilityFixes, modelTypeFixes } = planFixes(rows);
+    expect(capabilityFixes).toEqual([
+      { modelId: "wan-2.6-v2v", providerName: "KIE", from: "video", to: "video-to-video" },
+      { modelId: "wan-2.6-flash-i2v", providerName: "KIE", from: "video", to: "image-to-video" },
+      { modelId: "wan-2.5-t2v", providerName: "KIE", from: "video", to: "text-to-video" },
+    ]);
+    expect(modelTypeFixes).toEqual([
+      { modelId: "wan-2.6-v2v", providerName: "KIE", capability: "video", from: "video", to: "v2v" },
+      { modelId: "wan-2.6-flash-i2v", providerName: "KIE", capability: "video", from: "video", to: "i2v" },
+      // wan-2.5-t2v's modelType is already "video" and text-to-video also
+      // maps to "video" — no modelType change, only the capability itself.
+    ]);
+  });
+
+  it("leaves a coarse 'video' row completely alone when its id carries no unambiguous direction marker (kling/*, bytedance/seedance-*, wan-animate-*)", () => {
+    const rows = [
+      { modelId: "bytedance/seedance-2", providerName: "KIE", modelType: "video", capability: "video", displayName: "Seedance 2" },
+      { modelId: "wan-animate-move", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan Animate Move" },
+      { modelId: "kling/pro", providerName: "KIE", modelType: "video", capability: "video", displayName: "Kling Pro" },
+    ];
+    const { capabilityFixes, modelTypeFixes } = planFixes(rows);
+    expect(capabilityFixes).toEqual([]);
+    expect(modelTypeFixes).toEqual([]);
+  });
+
+  it("is idempotent: re-planning a row already recovered to a precise video direction reports nothing further", () => {
+    const rows = [
+      { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "v2v", capability: "video-to-video", displayName: "Wan 2.6 V2v" },
+    ];
+    const { capabilityFixes, modelTypeFixes } = planFixes(rows);
+    expect(capabilityFixes).toEqual([]);
+    expect(modelTypeFixes).toEqual([]);
+  });
+
   it("does not recover — and still flags needing attention — a capability this mapping has never heard of (the sync's own 'media' fallback) with no other signal", () => {
     const rows = [
       { modelId: "totally-unknown-thing", providerName: "KIE", modelType: "image", capability: "media", displayName: "Totally Unknown Thing" },
@@ -388,5 +436,51 @@ describe("run() — curated schema backfill (dry-run / apply / idempotent second
     expect(prisma.modelPricing.update).not.toHaveBeenCalled();
     expect(second.applied).toBe(0);
     expect(second.schemaFixes).toEqual([]);
+  });
+});
+
+// ── BUG FIX: Text-to-Video listed models that cannot do text-to-video —
+// end-to-end through run() (dry-run writes nothing / apply corrects
+// capabilities / second run is a no-op), the exact production remediation
+// path: DATABASE_URL="postgresql://postgres:test@localhost:55432/test" node
+// scripts/fix-model-categories.mjs --apply --yes.
+describe("run() — coarse-'video' direction backfill (dry-run / apply / idempotent second run)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const v2vRow = { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 V2v" };
+  const noSignalRow = { modelId: "bytedance/seedance-2", providerName: "KIE", modelType: "video", capability: "video", displayName: "Seedance 2" };
+
+  it("dry run reports the recovered direction but writes nothing, and leaves the markerless row alone", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([v2vRow, noSignalRow]);
+    const result = await run({ apply: false, yes: false });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.capabilityFixes).toEqual([
+      { modelId: "wan-2.6-v2v", providerName: "KIE", from: "video", to: "video-to-video" },
+    ]);
+  });
+
+  it("--apply --yes writes the recovered capability (and its modelType) for the marked row only", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([v2vRow, noSignalRow]);
+    const result = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).toHaveBeenCalledWith({
+      where: { modelId: "wan-2.6-v2v" },
+      data: { modelType: "v2v", capability: "video-to-video" },
+    });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { modelId: "bytedance/seedance-2" } }),
+    );
+    expect(result.applied).toBe(1);
+  });
+
+  it("is idempotent: a second run against the already-recovered row writes nothing", async () => {
+    const fixedRow = { ...v2vRow, modelType: "v2v", capability: "video-to-video" };
+    prisma.modelPricing.findMany.mockResolvedValue([fixedRow, noSignalRow]);
+    const result = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.capabilityFixes).toEqual([]);
   });
 });

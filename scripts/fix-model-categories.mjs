@@ -41,6 +41,16 @@
 // reported as needing a human to assign a real capability at the sync
 // source.
 //
+// Also recovers a row STUCK under the coarse "video" capability when its own
+// id/endpoint now carries an unambiguous short-form direction marker
+// ("-i2v"/"-v2v"/"-t2v" — see inferCapability's header in model-catalog-
+// core.mjs) — a bug fix distinct from the paragraph above: coarse "video"
+// already maps to a real modelType, so those rows were never even looked at
+// for a more precise capability, no matter how unambiguous their own id
+// later became. Restricted to the three precise video directions; a row
+// with no such marker (kling/*, bytedance/seedance-*, wan-animate-*) is left
+// exactly as "video".
+//
 // `--apply --yes` writes the recomputed modelType/displayName/capability
 // for every row this can safely fix. Idempotent: run it again right after
 // and every list comes back empty (a row it already fixed matches on the
@@ -88,6 +98,34 @@ export function planFixes(rows) {
         });
         capability = inferred;
         mappedType = modelTypeForCapability(inferred);
+      }
+    } else if (capability === "video") {
+      // BUG FIX: production Text-to-Video listed models that cannot do
+      // text-to-video. Coarse "video" already maps to a real modelType (the
+      // branch above never runs for it), so a row stuck there was NEVER
+      // re-examined for a more precise direction — even after the id/
+      // endpoint text-inference fix (inferCapability, model-catalog-
+      // core.mjs) started recognizing short-form "-i2v"/"-v2v"/"-t2v"
+      // markers, a row synced BEFORE that fix (or before its next sync)
+      // kept its stale coarse "video" forever. Re-run the SAME
+      // inferCapabilityFromRow every null-capability row above already goes
+      // through — a marked id (e.g. "wan-2.6-v2v") now resolves to its real
+      // direction; an unmarked one (kling/*, bytedance/seedance-*,
+      // wan-animate-*) comes back exactly "video" again, a no-op, not a
+      // guess. Restricted to the three precise directions on purpose — if
+      // inferCapabilityFromRow ever recovered something else entirely for a
+      // "video" row (e.g. reference-to-video), that's outside this fix's
+      // scope and is left alone rather than silently reclassified.
+      const refined = inferCapabilityFromRow(row);
+      if (["image-to-video", "video-to-video", "text-to-video"].includes(refined) && refined !== capability) {
+        capabilityFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          from: row.capability ?? null,
+          to: refined,
+        });
+        capability = refined;
+        mappedType = modelTypeForCapability(refined);
       }
     }
 
