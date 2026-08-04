@@ -2138,3 +2138,224 @@ select.st-layer__role option {
    instead, same as every other meta/label text in the app (.hs-label,
    .st-stepcard__meta, .hs-meter__k) — 5.0-5.3:1 against every ink tier. */
 .st-sessions__time { flex: none; font-family: var(--ff-mono); font-size: 9px; color: var(--tx-mute); }
+
+/* ── E5 workflow ── */
+/* ══════════════════════════════════════════════════════════════════════════
+   VISUAL PIPELINE — .st-palette, .st-node, .st-flow__gap
+   ──────────────────────────────────────────────────────────────────────────
+   The builder reads left to right: a parts bin, then the line those parts
+   form. The line is drawn by the GAPS between cards, which are also the drop
+   targets — so the thing you aim at and the thing that shows you where it
+   will land are one element, not two. A gap only announces itself while
+   something is being dragged over it; the rest of the time it is a hairline
+   with an arrowhead, the same connector the chain always had.
+   ══════════════════════════════════════════════════════════════════════════ */
+.st-flow__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 184px 1fr;
+}
+@media (max-width: 900px) {
+  .st-flow__body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+}
+
+.st-flow__palette {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s-5) var(--s-4);
+  border-right: 1px solid var(--line);
+  background: var(--ink-050);
+}
+@media (max-width: 900px) {
+  .st-flow__palette {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: var(--s-3);
+    overflow-x: auto;
+  }
+}
+
+.st-palette { display: flex; flex-direction: column; gap: var(--s-3); }
+.st-palette__list { display: flex; flex-direction: column; gap: var(--s-2); }
+@media (max-width: 900px) {
+  .st-palette__list { flex-direction: row; flex-wrap: wrap; }
+  .st-palette .hs-hint { display: none; }
+}
+
+.st-palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-100);
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--t-tiny);
+  text-align: left;
+  cursor: grab;
+}
+.st-palette__item:hover:not(:disabled) { border-color: var(--line-strong); background: var(--ink-150); }
+.st-palette__item:active:not(:disabled) { cursor: grabbing; }
+.st-palette__item:disabled { opacity: 0.45; cursor: default; }
+.st-palette__item svg { flex: none; color: var(--tx-mute); }
+.st-palette__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Each card owns the gap above it so the list keeps only listitem children */
+.st-flow__slot { width: 100%; display: flex; flex-direction: column; align-items: center; }
+
+.st-flow__gap {
+  position: relative;
+  display: block;
+  width: min(560px, 100%);
+  height: 26px;
+  flex: none;
+}
+.st-flow__gap::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+  background: var(--line);
+}
+.st-flow__gap.is-over::before {
+  width: 2px;
+  background: var(--filament);
+  box-shadow: 0 0 0 3px var(--filament-a14);
+  border-radius: 2px;
+}
+/* An empty pipeline has nothing to connect, so its one gap becomes the place
+   to aim at instead of a line between two things. */
+.st-flow__gap.is-blank {
+  height: 96px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+}
+.st-flow__gap.is-blank::before { display: none; }
+.st-flow__gap.is-blank.is-over { border-color: var(--filament); background: var(--filament-a08); }
+/* The tail gap ends the line rather than joining two cards, so it stops short. */
+.st-flow__gap.is-tail { height: 34px; }
+.st-flow__gap.is-tail::before { bottom: 12px; }
+
+.st-node {
+  position: relative;
+  width: min(560px, 100%);
+  display: grid;
+  grid-template-columns: auto auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "grip n icon name kind cost"
+    "prompt prompt prompt prompt prompt prompt"
+    "out out out out out out"
+    "tools tools tools tools tools tools";
+  align-items: center;
+  gap: var(--s-2) var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--ink-100);
+}
+.st-node:hover { border-color: var(--line-strong); }
+.st-node.is-active { border-color: var(--line-accent); }
+.st-node.is-dragging { opacity: 0.4; }
+.st-node.is-done { border-color: var(--signal-a24); }
+.st-node.is-failed { border-color: var(--fault-a24); }
+.st-node.is-running { border-color: var(--filament-a24); }
+
+.st-node__grip { grid-area: grip; color: var(--tx-faint); cursor: grab; display: flex; }
+.st-node:active .st-node__grip { cursor: grabbing; }
+
+.st-node__n {
+  grid-area: n;
+  display: grid;
+  place-items: center;
+  width: 24px; height: 24px;
+  border-radius: var(--r-sm);
+  background: var(--ink-200);
+  color: var(--tx-mute);
+  font-size: var(--t-micro);
+}
+.st-node.is-done .st-node__n { background: var(--signal-a12); color: var(--signal); }
+.st-node.is-failed .st-node__n { background: var(--fault-a12); color: var(--fault); }
+.st-node.is-running .st-node__n { background: var(--filament-a14); color: var(--filament-lit); }
+
+.st-node__icon { grid-area: icon; display: flex; color: var(--tx-mute); }
+
+.st-node__name {
+  grid-area: name;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--tx);
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 600;
+}
+.st-node__name:hover { border-color: var(--line); }
+.st-node__name:focus { outline: none; border-color: var(--line-accent); background: var(--ink-050); }
+
+.st-node__kind { grid-area: kind; font-size: var(--t-micro); color: var(--tx-faint); white-space: nowrap; }
+.st-node__cost { grid-area: cost; font-size: var(--t-micro); color: var(--tx-mute); white-space: nowrap; }
+
+.st-node__chip {
+  position: absolute;
+  top: calc(-1 * var(--s-2));
+  right: var(--s-3);
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: var(--t-micro);
+  border: 1px solid var(--line);
+  background: var(--ink-200);
+  color: var(--tx-mute);
+}
+.st-node__chip.is-done { background: var(--signal-a12); color: var(--signal); border-color: var(--signal-a24); }
+.st-node__chip.is-failed { background: var(--fault-a12); color: var(--fault); border-color: var(--fault-a24); }
+.st-node__chip.is-running { background: var(--filament-a14); color: var(--filament-lit); border-color: var(--filament-a24); }
+
+.st-node__prompt {
+  grid-area: prompt;
+  margin: 0;
+  font-size: var(--t-micro);
+  color: var(--tx-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-node__warn { grid-area: prompt; }
+
+.st-node__out {
+  grid-area: out;
+  display: block;
+  width: 96px;
+  aspect-ratio: 1;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  background: var(--ink-200);
+}
+.st-node__out img,
+.st-node__out video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.st-node__out-audio {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 10px;
+  color: var(--tx-mute);
+}
+
+.st-node__tools {
+  grid-area: tools;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--line);
+}

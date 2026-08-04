@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
   providerConfig: { findUnique: vi.fn().mockResolvedValue(null), upsert: vi.fn() },
-  modelPricing: { upsert: vi.fn() },
+  modelPricing: { upsert: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
 }));
 vi.mock("@/lib/prisma", () => ({ default: prismaMock }));
 
@@ -13,6 +13,8 @@ import {
   setProviderMarkup,
   assertCreditsCoverCost,
   assertMarkupAboveFloor,
+  estimateCredits,
+  estimateAgentTask,
   MIN_MARKUP,
   CREDIT_TO_EUR,
 } from "@/lib/pricing-engine";
@@ -128,5 +130,57 @@ describe("assertCreditsCoverCost / assertMarkupAboveFloor — reused constants, 
     expect(MIN_MARKUP).toBe(1.0);
     expect(() => assertMarkupAboveFloor(1.0)).not.toThrow();
     expect(() => assertMarkupAboveFloor(0.999)).toThrow();
+  });
+});
+
+// ── EDITSv1 E5.1 — non-provider workflow steps ───────────────────────────
+// `assembly` and `export` never call a generation provider, so no
+// ModelPricing row can ever quote them. Their price is fixed here, on the
+// server, and must be the SAME number /api/estimate shows the builder and
+// executeWorkflow reserves against the wallet. The step's KIND decides the
+// price — naming an expensive model on an assembly step must not change what
+// it costs, and naming a cheap one must not make a real generation free.
+describe("non-provider step quotes — server-fixed, kind-decided", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    prismaMock.modelPricing.findUnique.mockResolvedValue(null);
+    prismaMock.modelPricing.findFirst.mockResolvedValue(null);
+  });
+
+  it("assembly is a flat 5 credits — the same figure the director charges", async () => {
+    await expect(estimateCredits("assembly", "assembly", {})).resolves.toBe(5);
+  });
+
+  it("export costs nothing", async () => {
+    await expect(estimateCredits("export", "export", {})).resolves.toBe(0);
+  });
+
+  it("a model name on the step cannot move either price", async () => {
+    prismaMock.modelPricing.findUnique.mockResolvedValue({
+      modelId: "expensive-model", providerCost: 5, creditsCost: 900, providerName: "kie", pricingRules: null,
+    });
+
+    await expect(estimateCredits("assembly", "expensive-model", {})).resolves.toBe(5);
+    await expect(estimateCredits("export", "expensive-model", {})).resolves.toBe(0);
+    expect(prismaMock.modelPricing.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("estimateAgentTask sums a mixed chain with the same fixed figures", async () => {
+    const { total, breakdown } = await estimateAgentTask([
+      { agent: "image", task: "Hero", params: { model: "unpriced-image-model" } },
+      { agent: "assembly", task: "Cut", params: {} },
+      { agent: "export", task: "Deliver", params: {} },
+    ]);
+
+    // image falls back to 2 (no pricing row), assembly 5, export 0.
+    expect(breakdown.map((b) => b.credits)).toEqual([2, 5, 0]);
+    expect(total).toBe(7);
+  });
+
+  it("the new provider-backed kinds have sane fallbacks when a model is unpriced", async () => {
+    await expect(estimateCredits("i2v", "unpriced", {})).resolves.toBeGreaterThan(0);
+    await expect(estimateCredits("upscale", "unpriced", {})).resolves.toBeGreaterThan(0);
+    await expect(estimateCredits("music", "unpriced", {})).resolves.toBeGreaterThan(0);
+    await expect(estimateCredits("voiceover", "unpriced", {})).resolves.toBeGreaterThan(0);
   });
 });

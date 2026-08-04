@@ -57,3 +57,25 @@ describe("POST /api/workflows/[id]/regen — business errors reach the user", ()
     errSpy.mockRestore();
   });
 });
+
+// Same defect as the sibling run route (see its test file's note): Next 15+
+// hands route handlers a promise for params, so reading `params.id` directly
+// gave undefined — and this route CHARGES CREDITS, so it was billing the
+// user for a step of whichever workflow Prisma happened to match first.
+describe("POST /api/workflows/[id]/regen — the id comes from an async params promise", () => {
+  it("reruns a step of the workflow named in the URL", async () => {
+    regenerateStep.mockResolvedValue({ success: true, output: "https://cdn.example/a.png", creditsUsed: 10 });
+
+    const res = await POST(jsonReq({ stepIndex: 2, newParams: {} }), { params: Promise.resolve({ id: "wf_123" }) });
+
+    expect(res.status).toBe(200);
+    expect(regenerateStep).toHaveBeenCalledWith("wf_123", "u1", 2, {});
+  });
+
+  it("refuses, and charges nothing, when the id is missing", async () => {
+    const res = await POST(jsonReq({ stepIndex: 0, newParams: {} }), { params: Promise.resolve({}) });
+
+    expect(res.status).toBe(400);
+    expect(regenerateStep).not.toHaveBeenCalled();
+  });
+});

@@ -15,8 +15,16 @@ export async function POST(req, { params }) {
     const rl = await checkRateLimit(user.id, "/api/workflow/regen");
     if (!rl.allowed) return apiError({ code: "rate_limited", extra: { retryAfter: rl.retryAfter } });
 
+    // `await` works whether params is a promise (Next 15+) or a plain object.
+    // Reading `params.id` off the promise gave undefined, and Prisma drops an
+    // undefined filter — so this rerun charged the user for a step of
+    // whichever workflow they had touched most recently, not the one they
+    // clicked. Same fix as the sibling publish route already carries.
+    const { id } = await params;
+    if (!id) return apiError({ code: "bad_request", message: "id required" });
+
     const { stepIndex, newParams } = await req.json();
-    const result = await regenerateStep(params.id, user.id, stepIndex, newParams || {});
+    const result = await regenerateStep(id, user.id, stepIndex, newParams || {});
     return NextResponse.json(result);
   } catch (e) {
     // Business errors (e.g. insufficient credits) thrown from regenerateStep

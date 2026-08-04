@@ -36,7 +36,7 @@ function pick(body, fields) {
 // GET /api/templates/[slug] — single template detail
 export async function GET(req, { params }) {
   try {
-    const { slug } = params;
+    const { slug } = await params;
     const template = await prisma.template.findUnique({ where: { slug } });
     if (!template) {
       return NextResponse.json({ error: "Template not found" }, { status: 404 });
@@ -65,7 +65,7 @@ export async function PUT(req, { params }) {
     await requireAdmin(req);
     verifyOrigin(req);
 
-    const { slug } = params;
+    const { slug } = await params;
     const body = await req.json();
     const template = await prisma.template.update({
       where: { slug },
@@ -87,7 +87,7 @@ export async function DELETE(req, { params }) {
     await requireAdmin(req);
     verifyOrigin(req);
 
-    const { slug } = params;
+    const { slug } = await params;
     await prisma.template.update({
       where: { slug },
       data: { isPublished: false },

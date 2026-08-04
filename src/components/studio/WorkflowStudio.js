@@ -1,14 +1,17 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
 import { matchesGroup } from "@/lib/capability-groups";
+import { audioKind } from "@/lib/model-catalog-core.mjs";
 import { useModelCatalog } from "./useModelCatalog";
+import StepPalette from "./workflow/StepPalette";
+import StepNode from "./workflow/StepNode";
 import {
-  Sheet, SpendMeter, Field, Group, Chips, RatioPicker, Specs,
-  IcFlow, IcPlay, IcPlus, IcTrash, IcRefresh, IcCheck, IcAlert, IcExternal,
+  Sheet, SpendMeter, ModelPicker, Field, Group, Chips, RatioPicker, Specs,
+  IcFlow, IcPlay, IcPlus, IcTrash, IcCheck, IcAlert, IcExternal,
   IcImage, IcVideo, IcMusic, IcMegaphone, IcGrid, IcBrain, IcUpload, IcLayers,
-  IcChevron, IcChevronLeft,
+  IcChevron, IcChevronLeft, IcMic, IcFilm, IcZoomIn, IcVolume, IcDownload,
 } from "@/components/studio/kit";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -23,18 +26,44 @@ import {
 /* The engine (lib/agents.js → executeStep) understands exactly these agents.
    The previous build offered seven invented types — prompt_compile,
    quality_gate, brand_compliance and friends — saved them as the step's
-   `agent`, and every run then died on "Unknown agent". Only real agents now. */
+   `agent`, and every run then died on "Unknown agent". Only real agents now.
+
+   Each kind names its model pool: `group` picks the capability groups a
+   model must belong to, and `pick` narrows further where a group is too
+   coarse to be honest (an upscaler is not a general image editor; a composer
+   is not a sound-effects box). Kinds with no pool either write text or run
+   entirely on our own machine — assembly shells out to ffmpeg, export only
+   describes what the run made — and their prices are fixed server-side in
+   pricing-engine.js's NON_PROVIDER_STEP_CREDITS. */
 const STEP_KINDS = [
   { id: "image", label: "Image", desc: "Generate or edit an image", icon: IcImage, group: ["tti", "iti"] },
-  { id: "video", label: "Video", desc: "Generate a video clip", icon: IcVideo, group: ["ttv", "i2v"] },
-  { id: "audio", label: "Audio", desc: "Generate music, voice or sound", icon: IcMusic, group: ["audio"] },
+  { id: "i2v", label: "Image to video", desc: "Animate the image from the step before", icon: IcFilm, group: ["i2v"] },
+  { id: "upscale", label: "Upscale", desc: "Enlarge the image from the step before", icon: IcZoomIn, group: ["iti"], pick: (m) => m?.capability === "image-upscale" },
+  { id: "video", label: "Video", desc: "Generate a video clip from text", icon: IcVideo, group: ["ttv"] },
+  { id: "music", label: "Music", desc: "Compose a track", icon: IcMusic, group: ["audio"], pick: (m) => audioKind(m) === "music" },
+  { id: "voiceover", label: "Voiceover", desc: "Read the prompt aloud", icon: IcMic, group: ["audio"], pick: (m) => audioKind(m) === "tts" },
+  { id: "audio", label: "Audio", desc: "Any audio model — effects, dialogue, tools", icon: IcVolume, group: ["audio"] },
+  { id: "assembly", label: "Assemble", desc: "Join every video clip made so far", icon: IcLayers, group: [] },
   { id: "marketing", label: "Marketing", desc: "Write campaign copy or an ad", icon: IcMegaphone, group: [] },
   { id: "website", label: "Website", desc: "Build a page from a brief", icon: IcGrid, group: [] },
   { id: "coding", label: "Code", desc: "Write or explain code", icon: IcBrain, group: [] },
+  { id: "export", label: "Export", desc: "Name the deliverable and list every output", icon: IcDownload, group: [] },
 ];
 
 const KIND_IDS = STEP_KINDS.map((k) => k.id);
 const kindOf = (id) => STEP_KINDS.find((k) => k.id === id) || null;
+
+/* Steps that join or describe earlier work rather than generating anything
+   new — they take no model and no prompt. */
+const CLOSING_KINDS = new Set(["assembly", "export"]);
+
+/* How one clip meets the next in an assembly step. Mirrors
+   video-assembly.js's VALID_ASSEMBLY_TRANSITIONS. */
+const TRANSITIONS = [
+  { value: "cut", label: "Cut" },
+  { value: "fade", label: "Fade" },
+  { value: "dissolve", label: "Dissolve" },
+];
 
 /* Workflows saved by the old builder used these ids. Translate on load so
    existing records still open instead of silently failing at run time. */
@@ -44,6 +73,15 @@ const pad = (n) => String(n).padStart(2, "0");
 const isUrl = (s) => typeof s === "string" && /^(https?:\/\/|\/)/.test(s.trim());
 const isVideoUrl = (u) => /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u) || u.includes("/video/");
 const isAudioUrl = (u) => /\.(mp3|wav|ogg|m4a|flac)(\?|$)/i.test(u);
+
+/* A step's output is a URL for anything that generated a file, and a small
+   record for the closing export step (which reports the deliverable plus a
+   manifest of everything the run made). Both reduce to one thing to open. */
+const outputUrl = (output) => {
+  if (isUrl(output)) return output;
+  if (output && typeof output === "object" && isUrl(output.url)) return output.url;
+  return null;
+};
 
 let seq = 0;
 const newStep = (kind) => {
@@ -58,6 +96,7 @@ const newStep = (kind) => {
     aspect: "",
     negative: "",
     duration: null,
+    transition: "",
   };
 };
 
@@ -67,6 +106,7 @@ function stepParams(step) {
   if (step.aspect) params.aspect_ratio = step.aspect;
   if (step.negative) params.negative_prompt = step.negative;
   if (step.duration) params.duration = step.duration;
+  if (step.kind === "assembly" && step.transition) params.transition = step.transition;
   return params;
 }
 
@@ -85,6 +125,7 @@ function fromApiStep(raw, i) {
     aspect: params.aspect_ratio || "",
     negative: params.negative_prompt || "",
     duration: typeof params.duration === "number" ? params.duration : null,
+    transition: typeof params.transition === "string" ? params.transition : "",
   };
 }
 
@@ -164,7 +205,7 @@ export default function WorkflowStudio({ onCreditsChanged }) {
   const [balance, setBalance] = useState(null);
   const [quote, setQuote] = useState({ perStep: [], total: null, quoting: false });
 
-  const { models } = useModelCatalog({});
+  const { models, loading: modelsLoading } = useModelCatalog({});
   const nameRef = useRef(null);
 
   /* ── Load saved workflows and templates ─────────────────────────────── */
@@ -265,6 +306,112 @@ export default function WorkflowStudio({ onCreditsChanged }) {
     resetRun();
   }, [resetRun]);
 
+  const duplicateStep = useCallback((key) => {
+    setSteps((prev) => {
+      const i = prev.findIndex((s) => s.key === key);
+      if (i < 0) return prev;
+      seq += 1;
+      const copy = { ...prev[i], key: `c${Date.now().toString(36)}${seq}` };
+      const next = [...prev];
+      next.splice(i + 1, 0, copy);
+      return next;
+    });
+    resetRun();
+    setNotice("");
+  }, [resetRun]);
+
+  /* ── Drag and drop ──────────────────────────────────────────────────────
+     Native HTML5 DnD (same approach as the canvas layer list) — no library.
+     What is being dragged is held in a ref rather than read back out of the
+     DataTransfer, because `getData` is unreadable during dragover in most
+     browsers and blocked outright in some; the DataTransfer payload is still
+     written, both because Firefox will not start a drag without one and as
+     the fallback for anything that loses the ref. Every drop lands on a GAP,
+     and a gap's index is the position the step takes. */
+  const dragRef = useRef(null);
+  const [dropAt, setDropAt] = useState(null);
+
+  const insertStep = useCallback((kindId, at) => {
+    if (!KIND_IDS.includes(kindId)) return;
+    setSteps((prev) => {
+      const next = [...prev];
+      next.splice(Math.min(Math.max(at, 0), next.length), 0, newStep(kindId));
+      return next;
+    });
+    resetRun();
+    setNotice("");
+  }, [resetRun]);
+
+  const moveStepTo = useCallback((key, at) => {
+    setSteps((prev) => {
+      const from = prev.findIndex((s) => s.key === key);
+      if (from < 0) return prev;
+      const next = [...prev];
+      const [item] = next.splice(from, 1);
+      // Removing the step first shifts everything after it down by one, so a
+      // drop below its old home lands one slot too far without this.
+      const target = at > from ? at - 1 : at;
+      next.splice(Math.min(Math.max(target, 0), next.length), 0, item);
+      return next;
+    });
+    resetRun();
+  }, [resetRun]);
+
+  const onPaletteDragStart = useCallback((e, kindId) => {
+    dragRef.current = { type: "palette", kind: kindId };
+    try {
+      e.dataTransfer.effectAllowed = "copy";
+      e.dataTransfer.setData("text/plain", `kind:${kindId}`);
+    } catch { /* a browser that refuses the write still has the ref */ }
+  }, []);
+
+  const onNodeDragStart = useCallback((e, key) => {
+    dragRef.current = { type: "node", key };
+    try {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", `step:${key}`);
+    } catch { /* as above */ }
+  }, []);
+
+  const onDragEnd = useCallback(() => {
+    dragRef.current = null;
+    setDropAt(null);
+  }, []);
+
+  const onGapOver = useCallback((e, at) => {
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = dragRef.current?.type === "node" ? "move" : "copy";
+    setDropAt(at);
+  }, []);
+
+  const onGapLeave = useCallback((at) => {
+    setDropAt((cur) => (cur === at ? null : cur));
+  }, []);
+
+  const onGapDrop = useCallback((e, at) => {
+    e.preventDefault();
+    let payload = dragRef.current;
+    if (!payload) {
+      const raw = (() => { try { return e.dataTransfer?.getData("text/plain") || ""; } catch { return ""; } })();
+      if (raw.startsWith("kind:")) payload = { type: "palette", kind: raw.slice(5) };
+      else if (raw.startsWith("step:")) payload = { type: "node", key: raw.slice(5) };
+    }
+    dragRef.current = null;
+    setDropAt(null);
+    if (!payload) return;
+    if (payload.type === "palette") insertStep(payload.kind, at);
+    else moveStepTo(payload.key, at);
+  }, [insertStep, moveStepTo]);
+
+  const gapProps = useCallback((at, extra = "") => ({
+    "data-testid": `drop-gap-${at}`,
+    className: `st-flow__gap${extra ? ` ${extra}` : ""}${dropAt === at ? " is-over" : ""}`,
+    onDragOver: (e) => onGapOver(e, at),
+    onDragLeave: () => onGapLeave(at),
+    onDrop: (e) => onGapDrop(e, at),
+    "aria-hidden": "true",
+  }), [dropAt, onGapOver, onGapLeave, onGapDrop]);
+
   /* ── Open a saved workflow or template ──────────────────────────────── */
   const open = useCallback((wf, asCopy = false) => {
     const loaded = (Array.isArray(wf?.steps) ? wf.steps : []).map(fromApiStep);
@@ -355,23 +502,30 @@ export default function WorkflowStudio({ onCreditsChanged }) {
       });
       const data = await res.json();
 
+      /* Per-step status AND per-step output, both keyed by step index, so a
+         card can show what it made without a second request — the engine
+         records the same pair onto WorkflowRun.outputs as it goes. */
       const stepStatus = {};
+      const stepOutputs = {};
       (data?.stepResults || []).forEach((r, i) => {
         const index = (r.step || i + 1) - 1;
         stepStatus[index] = r.status === "completed" ? "done" : "failed";
+        const url = outputUrl(r.output);
+        if (url) stepOutputs[index] = url;
       });
 
       setResult({
         running: false,
         ok: !!data?.success,
         stepStatus,
+        stepOutputs,
         error: data?.success ? "" : data?.error || "The run stopped before it finished.",
         creditsUsed: typeof data?.creditsUsed === "number" ? data.creditsUsed : null,
-        outputs: (data?.outputs || []).filter((o) => typeof o === "string"),
+        outputs: (data?.outputs || []).map(outputUrl).filter(Boolean),
       });
       if (!data?.success) setError(data?.error || "The run stopped before it finished.");
     } catch (err) {
-      setResult({ running: false, ok: false, stepStatus: {}, error: err?.message || "The run failed.", outputs: [] });
+      setResult({ running: false, ok: false, stepStatus: {}, stepOutputs: {}, error: err?.message || "The run failed.", outputs: [] });
       setError(err?.message || "The run failed.");
     } finally {
       setBusy("");
@@ -397,13 +551,15 @@ export default function WorkflowStudio({ onCreditsChanged }) {
       const data = await res.json();
       if (!data?.success) throw new Error(data?.error || "The step did not regenerate.");
 
+      const fresh = outputUrl(data.output);
       setResult((prev) => ({
         running: false,
         ok: prev?.ok ?? true,
         stepStatus: { ...(prev?.stepStatus || {}), [index]: "done" },
+        stepOutputs: { ...(prev?.stepOutputs || {}), ...(fresh ? { [index]: fresh } : {}) },
         error: "",
         creditsUsed: prev?.creditsUsed ?? null,
-        outputs: isUrl(data.output) ? [...(prev?.outputs || []), data.output] : prev?.outputs || [],
+        outputs: fresh ? [...(prev?.outputs || []), fresh] : prev?.outputs || [],
       }));
       setNotice(
         `Step ${pad(index + 1)} regenerated${data.creditsUsed != null ? ` for ${data.creditsUsed} credits` : ""}.`,
@@ -452,9 +608,11 @@ export default function WorkflowStudio({ onCreditsChanged }) {
   const stepIndex = step ? steps.findIndex((s) => s.key === step.key) : -1;
 
   const stepModels = useMemo(() => {
-    const groups = kindOf(step?.kind)?.group || [];
+    const preset = kindOf(step?.kind);
+    const groups = preset?.group || [];
     if (!groups.length) return [];
-    return (models || []).filter((m) => groups.some((g) => matchesGroup(m, g)));
+    const inGroup = (models || []).filter((m) => groups.some((g) => matchesGroup(m, g)));
+    return preset.pick ? inGroup.filter(preset.pick) : inGroup;
   }, [models, step?.kind]);
 
   const chosenModel = stepModels.find((m) => m.id === step?.model) || null;
@@ -551,121 +709,69 @@ export default function WorkflowStudio({ onCreditsChanged }) {
           </div>
         )}
 
-        <div className="st-flow__chain">
+        <div className="st-flow__body">
+          <aside className="st-flow__palette" aria-label="Step types">
+            <StepPalette
+              kinds={STEP_KINDS}
+              onAdd={addStep}
+              onDragStart={onPaletteDragStart}
+              onDragEnd={onDragEnd}
+              disabled={!!busy}
+            />
+          </aside>
+
+          <div className="st-flow__chain">
           {steps.length === 0 && (
             <div className="hs-empty">
               <span className="hs-empty__mark"><IcFlow /></span>
               <h3>Build a pipeline</h3>
               <p>
-                Add a step below. Each step feeds the next — write{" "}
+                Drag a step type out of the palette, or click one. Each step feeds the next — write{" "}
                 <code className="hs-mono">$STEP_1_OUTPUT</code> in a prompt to use what the first
                 step produced, or <code className="hs-mono">$INPUT_PROMPT</code> for the run input.
               </p>
             </div>
           )}
 
-          {/* The chain itself is the list; the connectors are decoration and the
-              add block below it is not a step, so both stay out of the role. */}
+          {/* The chain is the list, and each card owns the gap ABOVE it so
+              every direct child of the list is still a listitem. The gap
+              after the last card lives outside for the same reason — it is a
+              drop target and a connector, not a step. */}
           <div className="st-flow__steps" role="list" aria-label="Step chain" aria-busy={running}>
             {steps.map((s, i) => {
               const kind = kindOf(s.kind);
-              const status = result?.stepStatus?.[i];
-              const isRegenerating = regenAt === i;
-              const cost = quote.perStep[i];
+              const status = regenAt === i ? "running" : result?.stepStatus?.[i];
 
               return (
-                <Fragment key={s.key}>
-                  {i > 0 && <span className="st-flow__link" aria-hidden="true" />}
-                  <div
-                    role="listitem"
-                    className={`st-step${
-                      isRegenerating ? " is-running"
-                      : status === "done" ? " is-done"
-                      : status === "failed" ? " is-failed" : ""
-                    }${editing === s.key ? " is-active" : ""}`}
-                  >
-                    <span className="st-step__n">{pad(i + 1)}</span>
-
-                    <button
-                      type="button"
-                      className="st-step__open"
-                      onClick={() => setEditing(s.key)}
-                      aria-label={`Edit step ${i + 1}, ${s.name || kind?.label || s.kind}`}
-                    >
-                      <span className="st-step__name">
-                        {s.name || kind?.label || s.kind}
-                      </span>
-                      <span className="st-step__desc">
-                        {kind ? `${kind.label} · ` : ""}
-                        {s.prompt?.trim() ? s.prompt.trim() : s.model || "Not configured yet"}
-                      </span>
-                    </button>
-
-                    <span className="st-step__end">
-                      <span className="st-plan__cost">
-                        {isRegenerating ? "running"
-                          : status === "failed" ? "failed"
-                          : cost == null ? "—" : `${cost} cr`}
-                      </span>
-
-                      {current?.id && !dirty && (
-                        <button
-                          type="button"
-                          className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
-                          onClick={() => regenerate(i)}
-                          disabled={!!busy || regenAt != null}
-                          aria-label={`Rerun step ${i + 1} on its own`}
-                          title="Rerun this step on its own"
-                        >
-                          {isRegenerating
-                            ? <span className="hs-spin" style={{ width: 12, height: 12 }} />
-                            : <IcRefresh className="hs-icon-sm" />}
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
-                        onClick={() => removeStep(s.key)}
-                        disabled={!!busy}
-                        aria-label={`Remove step ${i + 1}`}
-                        title="Remove this step"
-                      >
-                        <IcTrash className="hs-icon-sm" />
-                      </button>
-                    </span>
-
-                    {!kind && (
-                      <p className="hs-notice hs-notice--caution" style={{ gridColumn: "1 / -1" }}>
-                        This step is a “{s.kind}” type, which the engine cannot run. Open it and pick
-                        a different type.
-                      </p>
-                    )}
-                  </div>
-                </Fragment>
+                <div role="listitem" className="st-flow__slot" key={s.key}>
+                  <span {...gapProps(i)} />
+                  <StepNode
+                    index={i}
+                    step={s}
+                    kind={kind}
+                    cost={quote.perStep[i]}
+                    status={status}
+                    output={result?.stepOutputs?.[i]}
+                    active={editing === s.key}
+                    dragging={false}
+                    busy={busy || (regenAt != null)}
+                    canRerun={!!current?.id && !dirty}
+                    onOpen={() => setEditing(s.key)}
+                    onRename={(name) => changeStep(s.key, { name })}
+                    onDuplicate={() => duplicateStep(s.key)}
+                    onRemove={() => removeStep(s.key)}
+                    onRerun={() => regenerate(i)}
+                    onDragStart={onNodeDragStart}
+                    onDragEnd={onDragEnd}
+                  />
+                </div>
               );
             })}
           </div>
 
-          {steps.length > 0 && <span className="st-flow__link" aria-hidden="true" />}
-
-          <div className="st-flow__add">
-            <span className="hs-label" style={{ margin: 0 }}>Add a step</span>
-            <div className="hs-chips">
-              {STEP_KINDS.map((k) => (
-                <button
-                  key={k.id}
-                  type="button"
-                  className="hs-chip"
-                  onClick={() => addStep(k.id)}
-                  disabled={!!busy}
-                  title={k.desc}
-                >
-                  <k.icon className="hs-icon-sm" /> {k.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* The tail gap: a place to append, and — when there is nothing to
+              connect yet — the only thing on the canvas to aim at. */}
+          <span {...gapProps(steps.length, steps.length === 0 ? "is-blank" : "is-tail")} />
 
           {result && !result.running && (
             <div className="st-flow__out hs-card" style={{ marginTop: "var(--s-6)" }}>
@@ -720,6 +826,7 @@ export default function WorkflowStudio({ onCreditsChanged }) {
               )}
             </div>
           )}
+          </div>
         </div>
 
         <div className="st-dock-prompt">
@@ -803,7 +910,7 @@ export default function WorkflowStudio({ onCreditsChanged }) {
                 label="Step type"
                 options={STEP_KINDS.map((k) => ({ value: k.id, label: k.label, title: k.desc }))}
                 value={step.kind}
-                onChange={(kind) => { changeStep(step.key, { kind, model: "", aspect: "", duration: null }); resetRun(); }}
+                onChange={(kind) => { changeStep(step.key, { kind, model: "", aspect: "", duration: null, transition: "" }); resetRun(); }}
               />
             </Field>
 
@@ -819,40 +926,54 @@ export default function WorkflowStudio({ onCreditsChanged }) {
               )}
             </Field>
 
-            {stepModels.length > 0 && (
-              <Field label="Model" hint="Leave unset to let the engine pick its fallback.">
+            {(kindOf(step.kind)?.group || []).length > 0 && (
+              <Group label="Model" >
+                <ModelPicker
+                  models={stepModels}
+                  value={step.model}
+                  onSelect={(id) => changeStep(step.key, { model: id === step.model ? "" : id, aspect: "" })}
+                  loading={modelsLoading}
+                  label="Model"
+                  emptyHint="No models for this step type are available yet. Leave it unset and the engine picks its own."
+                />
+              </Group>
+            )}
+
+            {!CLOSING_KINDS.has(step.kind) && (
+              <Field
+                label="Prompt"
+                hint="Use $INPUT_PROMPT for the run input and $STEP_1_OUTPUT to pass an earlier result forward."
+              >
                 {(id) => (
-                  <select
+                  <textarea
                     id={id}
-                    className="hs-select"
-                    value={step.model}
-                    onChange={(e) => changeStep(step.key, { model: e.target.value, aspect: "" })}
-                  >
-                    <option value="">Engine default</option>
-                    {stepModels.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.displayName || m.name}
-                      </option>
-                    ))}
-                  </select>
+                    className="hs-input hs-textarea"
+                    value={step.prompt}
+                    onChange={(e) => changeStep(step.key, { prompt: e.target.value })}
+                    placeholder="Describe what this step should produce."
+                  />
                 )}
               </Field>
             )}
 
-            <Field
-              label="Prompt"
-              hint="Use $INPUT_PROMPT for the run input and $STEP_1_OUTPUT to pass an earlier result forward."
-            >
-              {(id) => (
-                <textarea
-                  id={id}
-                  className="hs-input hs-textarea"
-                  value={step.prompt}
-                  onChange={(e) => changeStep(step.key, { prompt: e.target.value })}
-                  placeholder="Describe what this step should produce."
+            {step.kind === "assembly" && (
+              <Field label="Between clips" hint="How one clip meets the next in the finished cut.">
+                <Chips
+                  label="Transition"
+                  options={TRANSITIONS}
+                  value={step.transition || "cut"}
+                  onChange={(transition) => changeStep(step.key, { transition })}
                 />
-              )}
-            </Field>
+              </Field>
+            )}
+
+            {CLOSING_KINDS.has(step.kind) && (
+              <p className="hs-hint">
+                {step.kind === "assembly"
+                  ? "Joins every video clip made earlier in this chain, in order. Runs here rather than at a model, so it costs a flat fee."
+                  : "Closes the chain: names the deliverable and lists every file the run produced. Free."}
+              </p>
+            )}
 
             {ratios.length > 0 && (
               <Field label="Aspect ratio">
