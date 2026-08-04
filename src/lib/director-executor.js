@@ -526,10 +526,21 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
     if (videoUrls.length > 1) {
       await transitionPipeline(pipelineId, PIPELINE_STATES.ASSEMBLING);
       try {
-        assembledUrl = await assembleVideos(videoUrls, {
-          transition: "fade",
-          transitionDuration: 0.3
-        });
+        // E4.4: assembly honors each shot's own `transition` (how it cuts
+        // INTO the next shot) — the old options.transition:"fade" here was
+        // read and silently ignored by the previous assembleVideos.
+        const shotById = new Map((plan.shots || []).map(s => [s.id, s]));
+        const withVideo = completedShots.filter(r => r.videoUrl);
+        const transitions = withVideo
+          .slice(0, -1)
+          .map(r => {
+            const t = shotById.get(r.shotId)?.transition;
+            return ["cut", "fade", "dissolve"].includes(t) ? t : "cut";
+          });
+        assembledUrl = await assembleVideos(
+          { clips: videoUrls.map(url => ({ url })), transitions },
+          { transitionDuration: 0.3 }
+        );
 
         await prisma.directorPipeline.update({
           where: { id: pipelineId },

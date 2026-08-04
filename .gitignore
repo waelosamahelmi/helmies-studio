@@ -47,3 +47,8 @@ public/media/e2e-fixture.png
 # — the triaged findings live in docs/runbook-security-scan.md; the raw
 # report is a local artifact, same treatment as playwright-report/ above.
 /zap-out/
+public/media/e2e-tl-*.mp4
+public/media/assembled_*.mp4
+public/media/_seg_*.mp4
+public/media/_tmp_*
+public/media/_concat_*.txt

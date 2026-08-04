@@ -7,6 +7,7 @@ import {
   IcBrush, IcCopy, IcTrash, IcChevronLeft, IcChevronRight,
 } from "@/components/studio/kit";
 import ShotEditor from "@/components/studio/director/ShotEditor";
+import Timeline from "@/components/studio/director/Timeline";
 import { apiFetch } from "@/lib/client-fetch";
 import { PRODUCTION_TYPE_PRESETS } from "@/lib/director-constants";
 
@@ -563,6 +564,24 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
     });
   }, [plan, runIndex, costEstimate, pipelineStatus]);
 
+  /* E4.4: completed shot clips, in plan order — the timeline's raw material. */
+  const timelineClips = useMemo(() => {
+    const shots = plan?.shots || [];
+    return shots
+      .map((shot, i) => {
+        const run = runIndex.get(shot.id) || runIndex.get(`#${shot.index ?? i}`) || null;
+        if (!run?.videoUrl) return null;
+        return {
+          shotId: shot.id,
+          title: shot.title || `Shot ${i + 1}`,
+          url: run.videoUrl,
+          durationSec: shot.durationSec ?? null,
+          transition: shot.transition || "cut",
+        };
+      })
+      .filter(Boolean);
+  }, [plan, runIndex]);
+
   const totalCost = costEstimate?.totalCredits ?? null;
   const totalDuration = useMemo(() => {
     const shots = plan?.shots || [];
@@ -883,6 +902,17 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
           </div>
         )}
       </div>
+
+      {/* E4.4: once the film is rendered, the cut becomes editable. */}
+      {finished && timelineClips.length > 0 && (
+        <Timeline
+          pipelineId={pipelineId}
+          clips={timelineClips}
+          onAssembled={(url) => setAssembledUrl(url)}
+          onRegenerate={(shotId) => rerun(shotId, "video")}
+          regenerating={rerunning}
+        />
+      )}
 
       <div className="st-board__foot">
         {error && (
