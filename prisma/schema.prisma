@@ -37,6 +37,8 @@ model User {
   purchases     TemplatePurchase[]
   agentSessions AgentSession[]
 
+  announcementDismissals AnnouncementDismissal[]
+
   @@schema("public")
 }
 
@@ -614,18 +616,51 @@ model CmsRevision {
 }
 
 // ── Announcements ──
+// EDITSv1 Phase E8 Task E8.1: a one-line bar grew into a campaign object.
+// Every column added here is nullable or defaulted, so the rows that already
+// exist in production stay valid and keep rendering exactly as they did.
 model SiteAnnouncement {
-  id        String    @id @default(cuid())
-  message   String
-  style     String    @default("info")
-  link      String?
-  startDate DateTime  @default(now())
-  endDate   DateTime?
-  audience  String    @default("all")
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id          String                  @id @default(cuid())
+  message     String
+  style       String                  @default("info") // info | success | warning | critical
+  link        String?
+  startDate   DateTime                @default(now())
+  endDate     DateTime?
+  audience    String                  @default("all") // all | anon | authed
+  isActive    Boolean                 @default(true)
+  placement   String                  @default("banner") // banner | modal | toast
+  title       String?
+  imageUrl    String?
+  ctaLabel    String?
+  ctaUrl      String?
+  dismissible Boolean                 @default(true)
+  priority    Int                     @default(0)
+  planTargets String[]                @default([]) // empty = every plan
+  impressions Int                     @default(0)
+  clicks      Int                     @default(0)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  dismissals  AnnouncementDismissal[]
 
+  // The exact predicate trio /api/announcements filters on for every page
+  // load. Before E8 this table carried no index at all.
+  @@index([isActive, startDate, endDate])
+  @@schema("public")
+}
+
+// A signed-in dismissal has to outlive one browser's localStorage, or the
+// campaign reappears on the user's next device. Anonymous viewers still get
+// the localStorage-only path — there is no account to hang a row off.
+model AnnouncementDismissal {
+  id             String           @id @default(cuid())
+  announcementId String
+  userId         String
+  dismissedAt    DateTime         @default(now())
+  announcement   SiteAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId])
   @@schema("public")
 }
 

@@ -24,8 +24,15 @@ export async function resetDb() {
   // from a prior test run survive and collide with fixed keys/ids used by
   // idempotency / rate-limit / job-claim / ops-flags tests (this exact gap
   // bit Phase 2 Task 9 with StripeEvent before it was added here).
+  //
+  // EDITSv1 Phase E8: SiteAnnouncement and PromoCode join that list for the
+  // same reason — both are standalone catalog tables with no FK to User, so
+  // campaigns and codes from a previous suite would otherwise survive and
+  // show up in the next suite's listForViewer/validatePromo results.
+  // AnnouncementDismissal and PromoRedemption hang off them by FK and go
+  // with the CASCADE.
   await prisma.$executeRawUnsafe(
-    `TRUNCATE "public"."User", "public"."StripeEvent", "public"."AnonRateLimit", "public"."GenerationJob", "public"."FeatureFlag", "public"."ProviderConfig" RESTART IDENTITY CASCADE`
+    `TRUNCATE "public"."User", "public"."StripeEvent", "public"."AnonRateLimit", "public"."GenerationJob", "public"."FeatureFlag", "public"."ProviderConfig", "public"."SiteAnnouncement", "public"."PromoCode" RESTART IDENTITY CASCADE`
   );
   return prisma;
 }
