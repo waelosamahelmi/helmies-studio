@@ -40,7 +40,9 @@ const normalizeKind = (agent) => String(agent || "").trim().toLowerCase().replac
    a modelType fallback for rows whose capability is missing. */
 const EDITABLE_KINDS = new Set(["image", "video", "audio"]);
 
-function modelsForStep(step, models) {
+// Exported for the review surface (E3.5): the Edit sheet's model-override
+// pool uses the same per-step filtering as the plan card.
+export function modelsForStep(step, models) {
   const kind = normalizeKind(step.agent);
   if (kind === "image") {
     return models.filter((m) => matchesGroup(m, "tti") || matchesGroup(m, "iti") || m.modelType === "image");

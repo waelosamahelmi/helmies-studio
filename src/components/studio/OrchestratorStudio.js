@@ -10,7 +10,9 @@ import {
 import Markdown from "@/components/studio/agent/Markdown";
 import QuestionCard from "@/components/studio/agent/QuestionCard";
 import ThinkingCard from "@/components/studio/agent/ThinkingCard";
-import PlanApproval from "@/components/studio/agent/PlanApproval";
+import PlanApproval, { modelsForStep } from "@/components/studio/agent/PlanApproval";
+import StepProgress from "@/components/studio/agent/StepProgress";
+import AssetCard from "@/components/studio/agent/AssetCard";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -201,6 +203,46 @@ function RunCard({ run }) {
         </p>
       )}
     </section>
+  );
+}
+
+/* ── Typed outputs (assembled) → AssetCards, ungated (E3.5) ────────────── */
+function AssetGrid({ assembled }) {
+  const media = [
+    ...(assembled?.images || []),
+    ...(assembled?.videos || []),
+    ...(assembled?.audio || []),
+  ].filter((entry) => isUrl(entry?.url));
+  const text = (assembled?.text || []).filter((entry) => entry?.content?.trim?.());
+  if (!media.length && !text.length) return null;
+
+  return (
+    <div className="hs-stack" style={{ gap: "var(--s-3)" }}>
+      {media.map((entry) => (
+        <AssetCard
+          key={`${entry.step}-${entry.url}`}
+          url={entry.url}
+          label={`Step ${entry.step} output`}
+          gated={false}
+        />
+      ))}
+      {text.map((entry, i) => (
+        <details key={`text-${entry.step}-${i}`} className="hs-card">
+          <summary className="hs-label" style={{ margin: 0, cursor: "pointer" }}>
+            Text output {pad(entry.step || i + 1)}
+          </summary>
+          <pre
+            style={{
+              marginTop: "var(--s-3)", maxHeight: 240, overflow: "auto",
+              whiteSpace: "pre-wrap", wordBreak: "break-word",
+              fontSize: 11, color: "var(--tx-dim)",
+            }}
+          >
+            {entry.content}
+          </pre>
+        </details>
+      ))}
+    </div>
   );
 }
 
@@ -505,17 +547,303 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     }
   }, [input, busy, patch, loadBalance, ensureSession]);
 
+  /* ══ Review-mode execution (EDITSv1 E3.5) ══════════════════════════════
+     The client walks the approved plan one /api/agent/step call at a time.
+     Each media output pauses the run behind an AssetCard — Accept advances,
+     Regenerate re-runs the same step (charged again, exactly its quote),
+     Edit regenerates with a server-re-quoted override, and "Don't ask
+     again" flips the session to auto-complete and runs the remaining
+     sub-plan through /api/agent/run. Raw (un-proxied) outputs are kept
+     client-side only for $STEP_N_OUTPUT chaining. */
+  const reviewRuns = useRef(new Map()); // messageId -> { plan, rawOutputs: [] }
+
+  const patchReview = useCallback((id, change) => {
+    patch(id, (m) => ({
+      ...m,
+      review: { ...m.review, ...(typeof change === "function" ? change(m.review) : change) },
+    }));
+  }, [patch]);
+
+  const patchReviewItem = useCallback((id, index, change) => {
+    patchReview(id, (review) => ({
+      items: review.items.map((it, i) => (i === index ? { ...it, ...change } : it)),
+    }));
+  }, [patchReview]);
+
+  const finishReview = useCallback((id, failed = false) => {
+    patchReview(id, { done: true, awaiting: null });
+    patch(id, (m) => ({
+      ...m,
+      text: failed
+        ? "The production stopped before it finished."
+        : "The production finished. Everything above is in your library.",
+    }));
+    setBusy("");
+    loadBalance();
+    onCreditsChanged?.();
+  }, [patchReview, patch, loadBalance, onCreditsChanged]);
+
+  const runReviewStep = useCallback(async (id, index) => {
+    const ctx = reviewRuns.current.get(id);
+    if (!ctx) return;
+    const { plan } = ctx;
+    if (index >= plan.steps.length) { finishReview(id); return; }
+
+    setBusy("run");
+    patchReviewItem(id, index, { status: "running", error: "" });
+    setAtBottom(true);
+
+    try {
+      const res = await apiFetch("/api/agent/step", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionRef.current,
+          plan,
+          stepIndex: index,
+          previousOutputs: ctx.rawOutputs.slice(0, index).map((o) => o ?? null),
+        }),
+        timeout: 600000,
+        retries: 0,
+      });
+      const data = await res.json();
+      ctx.rawOutputs[index] = data.rawOutput ?? data.output ?? null;
+      const media = !!(data.assembled &&
+        (data.assembled.images?.length || data.assembled.videos?.length || data.assembled.audio?.length));
+      patchReviewItem(id, index, {
+        status: "done",
+        credits: typeof data.creditsUsed === "number" ? data.creditsUsed : undefined,
+        ...(typeof data.output === "string" ? { output: data.output } : {}),
+        media,
+      });
+      loadBalance();
+      if (media) {
+        /* Pause for review — Accept / Regenerate / Edit / Don't ask again. */
+        patchReview(id, { awaiting: index });
+        setBusy("");
+      } else {
+        runReviewStep(id, index + 1);
+      }
+    } catch (err) {
+      patchReviewItem(id, index, { status: "failed", error: err?.message || "The step failed." });
+      patchReview(id, { awaiting: null, failedAt: index });
+      setBusy("");
+      setError(err?.message || "The step failed. It was not charged — try it again.");
+      loadBalance();
+    }
+  }, [patchReviewItem, patchReview, finishReview, loadBalance]);
+
+  const acceptStep = useCallback((id, index) => {
+    if (busy) return;
+    patchReview(id, { awaiting: null });
+    runReviewStep(id, index + 1);
+  }, [busy, patchReview, runReviewStep]);
+
+  /* Regenerate one step (optionally with prompt/model overrides — the
+     server re-quotes them). Charged again on success; a failure refunds
+     and keeps the previous asset reviewable. */
+  const regenerateStep = useCallback(async (id, index, overrides = null) => {
+    const ctx = reviewRuns.current.get(id);
+    if (!ctx || busy) return;
+    const hadOutput = ctx.rawOutputs[index] != null;
+
+    setBusy("run");
+    patchReview(id, { awaiting: null });
+    patchReviewItem(id, index, { status: "running", error: "" });
+
+    try {
+      const res = await apiFetch("/api/agent/step", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: sessionRef.current,
+          plan: ctx.plan,
+          stepIndex: index,
+          regenerate: true,
+          ...(overrides ? { paramOverrides: overrides } : {}),
+          previousOutputs: ctx.rawOutputs.slice(0, index).map((o) => o ?? null),
+        }),
+        timeout: 600000,
+        retries: 0,
+      });
+      const data = await res.json();
+      ctx.rawOutputs[index] = data.rawOutput ?? data.output ?? null;
+      const media = !!(data.assembled &&
+        (data.assembled.images?.length || data.assembled.videos?.length || data.assembled.audio?.length));
+      patchReviewItem(id, index, {
+        status: "done",
+        credits: typeof data.creditsUsed === "number" ? data.creditsUsed : undefined,
+        ...(typeof data.output === "string" ? { output: data.output } : {}),
+        media,
+      });
+      if (media) {
+        patchReview(id, { awaiting: index });
+        setBusy("");
+      } else {
+        runReviewStep(id, index + 1);
+      }
+    } catch (err) {
+      /* The failed attempt was refunded server-side; the previous asset
+         (if any) stays reviewable. */
+      patchReviewItem(id, index, {
+        status: hadOutput ? "done" : "failed",
+        error: hadOutput ? "" : err?.message || "The step failed.",
+      });
+      if (hadOutput) patchReview(id, { awaiting: index });
+      setBusy("");
+      setError(err?.message || "Regenerating failed. The attempt was not charged.");
+    } finally {
+      loadBalance();
+    }
+  }, [busy, patchReview, patchReviewItem, runReviewStep, loadBalance]);
+
+  /* Rewrite $STEP_N_OUTPUT references for the remaining sub-plan: refs to
+     already-completed steps get their real output substituted; refs to
+     later steps are renumbered relative to the sub-plan. */
+  const substituteRefs = (steps, rawOutputs, offset) =>
+    steps.map((s) => {
+      const params = { ...(s.params || {}) };
+      for (const [key, value] of Object.entries(params)) {
+        if (typeof value === "string" && value.startsWith("$STEP_")) {
+          const n = parseInt(value.match(/\d+/)?.[0], 10);
+          if (Number.isFinite(n)) {
+            if (n <= offset && rawOutputs[n - 1]) params[key] = rawOutputs[n - 1];
+            else if (n > offset) params[key] = `$STEP_${n - offset}_OUTPUT`;
+          }
+        }
+      }
+      return { ...s, params };
+    });
+
+  /* "Don't ask again": accept this asset, flip the session to
+     auto-complete, and run every remaining step as one /api/agent/run
+     stream (its estimate is the remaining slice of the approved quote). */
+  const dontAskAgain = useCallback(async (id, index) => {
+    const ctx = reviewRuns.current.get(id);
+    if (!ctx || busy) return;
+
+    changeMode("auto");
+    patchReview(id, { awaiting: null });
+
+    const { plan } = ctx;
+    const doneCount = index + 1;
+    const remainingSteps = substituteRefs(plan.steps.slice(doneCount), ctx.rawOutputs, doneCount);
+    if (!remainingSteps.length) { finishReview(id); return; }
+
+    const remainingBreakdown = (plan.estimate?.breakdown || []).slice(doneCount);
+    const remainingPlan = {
+      steps: remainingSteps,
+      summary: plan.summary,
+      estimate: {
+        total: remainingBreakdown.reduce((a, b) => a + (b?.credits || 0), 0),
+        breakdown: remainingBreakdown,
+      },
+    };
+
+    setBusy("run");
+    setAtBottom(true);
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    const itemPatch = (event) => {
+      const change = {
+        status: event.status === "completed" ? "done" : "failed",
+        error: event.error || "",
+      };
+      if (typeof event.creditsUsed === "number") change.credits = event.creditsUsed;
+      if (typeof event.output === "string" && /^(https?:\/\/|\/)/.test(event.output)) {
+        change.output = event.output;
+        change.media = true;
+      }
+      return change;
+    };
+
+    const settleAuto = (event) => {
+      patchReview(id, (review) => ({
+        items: review.items.map((it, i) => {
+          if (i < doneCount) return it;
+          const r = (event.stepResults || []).find((sr) => sr.step === i - doneCount + 1);
+          return r ? { ...it, ...itemPatch({ ...r, output: r.output }) } : it;
+        }),
+        assembled: event.assembled || review.assembled,
+      }));
+      finishReview(id, !event.success);
+    };
+
+    try {
+      const { res, json } = await openStream(
+        "/api/agent/run",
+        { message: plan.summary || "", plan: remainingPlan, sessionId: sessionRef.current },
+        ctrl.signal,
+      );
+
+      if (json) {
+        settleAuto(json);
+      } else {
+        let finished = false;
+        await readSSE(res, (event) => {
+          if (event.type === "step_start") {
+            patchReviewItem(id, doneCount + event.step - 1, { status: "running", error: "" });
+          } else if (event.type === "step_complete") {
+            patchReviewItem(id, doneCount + event.step - 1, itemPatch(event));
+          } else if (event.type === "run_complete") {
+            finished = true;
+            settleAuto(event);
+          }
+        });
+        if (!finished) throw new Error("The run stream ended before it reported a result.");
+      }
+    } catch (err) {
+      if (err?.name !== "AbortError") setError(err?.message || "The run failed.");
+      finishReview(id, true);
+    } finally {
+      if (abortRef.current === ctrl) abortRef.current = null;
+    }
+  }, [busy, changeMode, patchReview, patchReviewItem, finishReview]);
+
+  const startReview = useCallback((plan) => {
+    const reviewId = nextId();
+    reviewRuns.current.set(reviewId, { plan, rawOutputs: [] });
+    setMessages((prev) => [...prev, {
+      id: reviewId,
+      role: "agent",
+      text: "",
+      review: {
+        items: plan.steps.map((s, i) => ({
+          n: i + 1,
+          agent: s.agent,
+          task: s.task,
+          status: "waiting",
+          credits: plan.estimate?.breakdown?.[i]?.credits ?? null,
+          prompt: s.params?.prompt || "",
+          kind: s.agent,
+        })),
+        awaiting: null,
+        done: false,
+      },
+    }]);
+    setAtBottom(true);
+    runReviewStep(reviewId, 0);
+  }, [runReviewStep]);
+
   /* ── Approve — the only path that spends credits ─────────────────────── */
   /* `approvedPlan` is the EXACT plan the user saw and edited in the
      PlanApproval card (models/params + its live re-quoted estimate); the
-     server re-verifies every price and honors it verbatim (E3.2). */
-  const approve = useCallback(async (message, approvedPlan) => {
+     server re-verifies every price and honors it verbatim (E3.2).
+     Review mode walks it step by step; auto-complete streams the whole
+     run. */
+  const approve = useCallback(async (message, approvedPlan, chosenMode) => {
     if (busy || !message?.plan) return;
     const plan = approvedPlan || message.plan;
 
     patch(message.id, { decision: "approved", plan });
     setError("");
     setAtBottom(true);
+
+    if ((chosenMode || mode) !== "auto") {
+      startReview(plan);
+      return;
+    }
 
     const runId = nextId();
     const steps = (plan.steps || []).map((s, i) => ({
@@ -547,6 +875,8 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
           error: event.success ? "" : event.error || "The run failed.",
           creditsUsed: typeof event.creditsUsed === "number" ? event.creditsUsed : m.run.creditsUsed,
           outputs: Array.isArray(event.outputs) ? event.outputs.filter((o) => typeof o === "string") : m.run.outputs,
+          /* `assembled` (typed outputs) drives the AssetCard grid — E3.5. */
+          assembled: event.assembled || m.run.assembled,
           steps: mergeStepResults(m.run.steps, event.stepResults),
         },
       }));
@@ -612,7 +942,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       loadBalance();
       onCreditsChanged?.();
     }
-  }, [busy, patch, loadBalance, onCreditsChanged]);
+  }, [busy, patch, loadBalance, onCreditsChanged, mode, startReview]);
 
   /* A free-text revision request goes back to the planner with the
      original brief as context. */
@@ -628,7 +958,13 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
   /* ── Session readout for the side panel ──────────────────────────────── */
   const spent = useMemo(
-    () => messages.reduce((sum, m) => sum + (typeof m.run?.creditsUsed === "number" ? m.run.creditsUsed : 0), 0),
+    () => messages.reduce((sum, m) => {
+      let acc = sum + (typeof m.run?.creditsUsed === "number" ? m.run.creditsUsed : 0);
+      for (const item of m.review?.items || []) {
+        if (item.status === "done" && typeof item.credits === "number") acc += item.credits;
+      }
+      return acc;
+    }, 0),
     [messages],
   );
 
@@ -641,7 +977,10 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
   const producedUrls = useMemo(() => {
     const urls = [];
-    for (const m of messages) for (const o of m.run?.outputs || []) if (isUrl(o)) urls.push(o);
+    for (const m of messages) {
+      for (const o of m.run?.outputs || []) if (isUrl(o)) urls.push(o);
+      for (const item of m.review?.items || []) if (isUrl(item.output)) urls.push(item.output);
+    }
     return urls;
   }, [messages]);
 
@@ -746,8 +1085,69 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
                       />
                     )}
 
+                    {message.review && (
+                      <div className="hs-stack" style={{ gap: "var(--s-2)" }} role="list" aria-label="Production steps">
+                        {message.review.items.map((item, i) => {
+                          const gated = message.review.awaiting === i && !message.review.done;
+                          const showAsset = typeof item.output === "string" && isUrl(item.output);
+                          const showText = typeof item.output === "string" && !isUrl(item.output) && item.output.trim();
+                          return (
+                            <div key={item.n} className="hs-stack" style={{ gap: "var(--s-2)" }}>
+                              <StepProgress item={item} />
+                              {showText && (
+                                <details className="hs-card">
+                                  <summary className="hs-label" style={{ margin: 0, cursor: "pointer" }}>
+                                    Step {pad(item.n)} text output
+                                  </summary>
+                                  <pre
+                                    style={{
+                                      marginTop: "var(--s-3)", maxHeight: 240, overflow: "auto",
+                                      whiteSpace: "pre-wrap", wordBreak: "break-word",
+                                      fontSize: 11, color: "var(--tx-dim)",
+                                    }}
+                                  >
+                                    {item.output.slice(0, 2000)}
+                                  </pre>
+                                </details>
+                              )}
+                              {showAsset && (
+                                <AssetCard
+                                  url={item.output}
+                                  label={`Step ${item.n} output`}
+                                  gated={gated}
+                                  busy={busy === "run"}
+                                  currentPrompt={item.prompt}
+                                  modelPool={modelsForStep({ agent: item.kind, params: {} }, catalogModels)}
+                                  modelsLoading={catalogLoading}
+                                  onAccept={() => acceptStep(message.id, i)}
+                                  onRegenerate={(overrides) => regenerateStep(message.id, i, overrides)}
+                                  onAutoComplete={() => dontAskAgain(message.id, i)}
+                                />
+                              )}
+                              {item.status === "failed" && !message.review.done && (
+                                <div>
+                                  <button
+                                    type="button"
+                                    className="hs-btn hs-btn--ghost hs-btn--sm"
+                                    onClick={() => regenerateStep(message.id, i)}
+                                    disabled={!!busy}
+                                  >
+                                    <IcAlert className="hs-icon-sm" /> Try this step again
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     {message.run && <RunCard run={message.run} />}
-                    {message.run?.outputs?.length > 0 && <Outputs items={message.run.outputs} />}
+                    {message.run?.assembled ? (
+                      <AssetGrid assembled={message.run.assembled} />
+                    ) : (
+                      message.run?.outputs?.length > 0 && <Outputs items={message.run.outputs} />
+                    )}
                   </div>
                 </article>
               );

@@ -184,8 +184,10 @@ test("changing a step's model re-quotes live, and approval runs with the chosen 
   // Live re-quote: the step's price becomes the server's 10 credits.
   await expect(planCard.locator(".st-plan__cost").first()).toHaveText("10 cr", { timeout: 15000 });
 
-  // Approve — the run executes the EDITED plan (mocked provider, real
-  // Generation row, real debit).
+  // Approve in auto-complete (the step-gated review path has its own E3.5
+  // journeys below) — the run executes the EDITED plan (mocked provider,
+  // real Generation row, real debit).
+  await planCard.getByRole("button", { name: "Auto-complete" }).click();
   await planCard.getByRole("button", { name: /^Approve/ }).click();
   await expect(visible(page.locator(".st-plan").filter({ hasText: "Finished" }))).toBeVisible({ timeout: 60000 });
 
@@ -224,3 +226,95 @@ test("the execution-mode toggle persists onto the session's settings", async ({ 
 });
 
 }); // describe: plan approval
+
+test.describe("per-asset review (E3.5)", () => {
+
+async function readyIsolated(page, label) {
+  let user;
+  await withTestDb(async (prisma) => {
+    user = await createIsolatedUser(prisma, { credits: 500, label });
+  });
+  await loginThroughForm(page, user);
+  await gotoAgent(page);
+  return user;
+}
+
+async function planBrief(page, text) {
+  await brief(page).fill(text);
+  await visible(page.getByRole("button", { name: "Plan production" })).click();
+  const planCard = visible(page.locator(".st-plan"));
+  await expect(planCard).toBeVisible({ timeout: 30000 });
+  // Wait until the live quote settles so Approve is enabled.
+  await expect(planCard.getByRole("button", { name: /^Approve/ })).toBeEnabled({ timeout: 15000 });
+  return planCard;
+}
+
+const walletOf = (userId) =>
+  withTestDb(async (prisma) => (await prisma.creditWallet.findUnique({ where: { userId } })).available);
+const generationCountOf = (userId) =>
+  withTestDb(async (prisma) => prisma.generation.count({ where: { userId } }));
+
+test("review mode: asset card gates the run; Regenerate charges once more; Accept finishes", async ({ page }) => {
+  const user = await readyIsolated(page, "review");
+
+  // Heuristic plan: ONE image step (flux-dev fallback quote, 2 cr).
+  const planCard = await planBrief(page, "Create a hero shot of a ceramic kettle");
+  await planCard.getByRole("button", { name: /^Approve/ }).click();
+
+  // The step runs via /api/agent/step and pauses behind an AssetCard.
+  const asset = visible(page.locator(".st-asset"));
+  await expect(asset).toBeVisible({ timeout: 60000 });
+  await expect(asset.locator("img")).toBeVisible();
+  await expect(asset.getByRole("button", { name: "Accept" })).toBeVisible();
+
+  // One generation, 2 credits charged.
+  await expect.poll(() => generationCountOf(user.id), { timeout: 15000 }).toBe(1);
+  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(498);
+
+  // Regenerate: a NEW Generation row, charged once more.
+  await asset.getByRole("button", { name: "Regenerate" }).click();
+  await expect(visible(page.locator(".st-asset")).getByRole("button", { name: "Accept" })).toBeVisible({ timeout: 60000 });
+  await expect.poll(() => generationCountOf(user.id), { timeout: 15000 }).toBe(2);
+  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(496);
+
+  // Accept advances — single-step plan, so the production finishes.
+  await visible(page.locator(".st-asset")).getByRole("button", { name: "Accept" }).click();
+  await expect(visible(page.locator(".st-msg--agent")).filter({ hasText: "The production finished" })).toBeVisible({ timeout: 30000 });
+});
+
+test("don't ask again completes the remaining steps without further prompts", async ({ page }) => {
+  const user = await readyIsolated(page, "dontask");
+
+  // Heuristic plan: image step + video step ($STEP_1_OUTPUT chained).
+  await planBrief(page, "Create a hero shot of a ceramic kettle and animate it as a video clip");
+  await visible(page.locator(".st-plan")).getByRole("button", { name: /^Approve/ }).click();
+
+  // First asset gates; choose "Don't ask again".
+  const asset = visible(page.locator(".st-asset"));
+  await expect(asset.getByRole("button", { name: "Don't ask again" })).toBeVisible({ timeout: 60000 });
+  await asset.getByRole("button", { name: "Don't ask again" }).click();
+
+  // The remaining video step runs to completion with NO further Accept
+  // gate — the run finishes on its own.
+  await expect(visible(page.locator(".st-msg--agent")).filter({ hasText: /The production (finished|stopped)/ }))
+    .toBeVisible({ timeout: 90000 });
+  await expect(visible(page.locator(".st-msg--agent")).filter({ hasText: "The production finished" })).toBeVisible();
+
+  // Both steps produced Generation rows; the session flipped to
+  // auto-complete; total spend = 2 (image) + 10 (video) = 12.
+  await expect.poll(() => generationCountOf(user.id), { timeout: 15000 }).toBe(2);
+  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(488);
+  await expect
+    .poll(async () =>
+      withTestDb(async (prisma) => {
+        const session = await prisma.agentSession.findFirst({
+          where: { userId: user.id },
+          orderBy: { updatedAt: "desc" },
+        });
+        return session?.settings?.autoComplete ?? null;
+      }),
+    { timeout: 15000 })
+    .toBe(true);
+});
+
+}); // describe: per-asset review
