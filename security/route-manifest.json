@@ -17,6 +17,7 @@
     "methods": [
       "GET",
       "POST",
+      "PUT",
       "PATCH",
       "DELETE"
     ],
@@ -24,7 +25,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 (final round): verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked)."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST/PUT/PATCH/DELETE (GET read-only, unchecked). EDITSv1 E8.3 added PUT — the full, explicitly validated campaign edit that did not exist before (create/toggle/delete only, so fixing a typo meant deleting the campaign and its metrics). PATCH is narrowed to the isActive switch, the one thing it was ever actually called with. Both write through one shared field mapper, so a field cannot be settable on create and silently ignored on edit — which is exactly how `audience` ended up write-only. The impressions/clicks counters are deliberately NOT writable from here: they are facts about what happened."
   },
   {
     "path": "/api/admin/audit",

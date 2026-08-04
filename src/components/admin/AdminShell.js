@@ -28,8 +28,9 @@ import PromoManager from "./PromoManager";
 import CmsEditor from "./CmsEditor";
 import MetricsPanel from "./MetricsPanel";
 import OpsPanel from "./OpsPanel";
+import AnnouncementsPanel from "./AnnouncementsPanel";
 import {
-  AnnouncementsPanel, AuditPanel, FlagsPanel, JobsPanel,
+  AuditPanel, FlagsPanel, JobsPanel,
   ProviderHealthPanel, RefundsPanel, UsersPanel,
 } from "./AdminPanel";
 

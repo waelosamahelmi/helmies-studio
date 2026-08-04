@@ -1252,6 +1252,34 @@ kbd.hs-kbd {
   }
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   MODAL CENTRING — a real bug, found by E8.3's tall edit form
+   ──────────────────────────────────────────────────────────────────────────
+   `.hs-modal` above centres itself with `top:50%; left:50%` plus
+   `transform: translate(-50%,-50%)`. But kit/Sheet.js renders it as a
+   framer-motion element animating `y`/`scale`, and framer writes the
+   `transform` property INLINE — resolving to `transform: none` once the
+   enter animation settles at y:0, scale:1. Inline beats the stylesheet, so
+   the centring translate is wiped on every modal in the app: each one is
+   ANCHORED AT the viewport centre rather than CENTRED ON it, hanging down
+   and to the right.
+
+   Measured, not guessed (1280x720 viewport, the announcement edit modal):
+   computed transform "none", box top 360 / left 640, height 619, so the
+   footer sat at y=907–978 — completely below the fold, and "Save changes"
+   was literally unclickable. Short dialogs (Confirm) survived only because
+   360 + their height still fits.
+
+   The fix is the `translate` PROPERTY, which is separate from `transform`
+   and composes with it rather than being overwritten by it — so framer
+   keeps full control of the animation while the centring stays put. Done
+   here in CSS because kit/Sheet.js is owned by a concurrent phase; this
+   needs no change to it.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (min-width: 641px) {
+  .hs-modal { translate: -50% -50%; }
+}
+
 /* Popup body — Modal itself is already styled; this is only its content. */
 .hs-announce-pop { display: flex; flex-direction: column; gap: var(--s-4); }
 .hs-announce-pop__img {
