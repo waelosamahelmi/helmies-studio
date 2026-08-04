@@ -1169,3 +1169,96 @@ kbd.hs-kbd {
 @media (pointer: coarse) {
   .hs-toast__x { width: 44px; height: 44px; margin: -6px -8px -6px 0; }
 }
+/* ── E8 announcements ── */
+/* ══════════════════════════════════════════════════════════════════════════
+   ANNOUNCEMENTS  (EDITSv1 Phase E8 Task E8.2)
+   ──────────────────────────────────────────────────────────────────────────
+   These live in system.css, not pages.css, on purpose. pages.css styles the
+   marketing surfaces; the studio never loads it, so a bar styled there was
+   unstyled inside /studio even before the stacking problem buried it. Same
+   reasoning as OfflineBanner, which draws itself from `.hs-notice--caution`
+   in this file for exactly this reason.
+
+   POSITION: fixed to the bottom. The top edge is taken on every surface —
+   the marketing Navbar, the studio's `.st-bar` — while the bottom is clear
+   everywhere except the studio's mobile dock, handled below.
+
+   Z-INDEX 80: deliberately ABOVE the studio shell (`.st-bar` and `.st-dock`
+   sit at 40, which is what buried the old bar) and deliberately BELOW
+   `.hs-scrim` at 90. An announcement is ambient; a dialog the user opened is
+   the thing they are actually doing, and must not be floated over.
+   ══════════════════════════════════════════════════════════════════════════ */
+.hs-announce {
+  position: fixed;
+  z-index: 80;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--s-4) + var(--sa-bottom));
+  width: min(680px, calc(100vw - var(--s-6)));
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--line-strong);
+  border-left-width: 3px;
+  border-radius: var(--r-lg);
+  background: var(--ink-200);
+  box-shadow: var(--lift-2);
+  font-size: var(--t-sm);
+  color: var(--tx);
+  line-height: 1.5;
+}
+
+.hs-announce__body { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.hs-announce__title { font-weight: 600; }
+
+.hs-announce__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  flex: none;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.hs-announce__x {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  color: var(--tx-mute);
+}
+.hs-announce__x:hover { color: var(--tx); background: var(--ink-300); }
+
+/* The four style tokens must LOOK different. Before E8 the style string was
+   printed raw into a badge and "warning" was pixel-identical to "info". */
+.hs-announce--info     { border-left-color: var(--filament); background: var(--ink-200); }
+.hs-announce--success  { border-left-color: var(--signal);   background: var(--signal-a12); }
+.hs-announce--warning  { border-left-color: var(--caution);  background: var(--caution-a12); }
+.hs-announce--critical { border-left-color: var(--fault);    background: var(--fault-a12); }
+
+/* Inside the studio at phone widths a bottom dock owns the bottom edge, so
+   lift the bar clear of it. `:has()` keeps this scoped to documents that
+   actually render a dock — a marketing page at the same width has none and
+   should not be left with a 64px gap under the bar. */
+@media (max-width: 900px) {
+  .hs-announce { width: calc(100vw - var(--s-4)); }
+  body:has(.st-dock) .hs-announce {
+    bottom: calc(var(--s-3) + var(--sa-bottom) + var(--dock-h));
+  }
+}
+
+/* Popup body — Modal itself is already styled; this is only its content. */
+.hs-announce-pop { display: flex; flex-direction: column; gap: var(--s-4); }
+.hs-announce-pop__img {
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+}
+.hs-announce-pop__text { font-size: var(--t-sm); line-height: 1.6; color: var(--tx-dim); }

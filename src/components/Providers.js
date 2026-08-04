@@ -6,6 +6,8 @@ import { AuthModalProvider } from "@/components/AuthModal";
 import { Toaster } from "react-hot-toast";
 import DevMode from "@/components/DevMode";
 import OfflineBanner from "@/components/states/OfflineBanner";
+import AnnouncementBar from "@/components/AnnouncementBar";
+import AnnouncementPopup from "@/components/AnnouncementPopup";
 
 export default function Providers({ children }) {
   return (
@@ -14,6 +16,13 @@ export default function Providers({ children }) {
         <AuthModalProvider>{children}</AuthModalProvider>
       </ToastProvider>
       <OfflineBanner />
+      {/* EDITSv1 E8.2: mounted HERE, as siblings of the page tree, for the
+          same reason OfflineBanner is. Rendered inside `children` they land
+          under the studio shell (`.st-app` is `position: fixed; inset: 0`)
+          and are invisible on every /studio route — which is exactly what
+          had been happening to every announcement the owner ever posted. */}
+      <AnnouncementBar />
+      <AnnouncementPopup />
       <DevMode />
       <Toaster
         position="top-right"

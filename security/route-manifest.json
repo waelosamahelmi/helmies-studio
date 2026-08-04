@@ -393,7 +393,43 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": ""
+    "notes": "EDITSv1 E8.2: read-only, anonymous callers allowed, but the result is now PER-VIEWER (audience + plan targeting + this user's dismissals), so it carries Cache-Control: private, no-store — a shared cache serving one viewer's targeted campaigns to another is the whole risk here. Previously returned the raw e.message from any failure to unauthenticated callers; now goes through the apiError envelope, which logs the cause server-side against an errorId and returns nothing internal. Targeting internals (audience, planTargets) and the metrics counters are stripped from the response shape."
+  },
+  {
+    "path": "/api/announcements/[id]/click",
+    "file": "src/app/api/announcements/[id]/click/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "public",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E8.2. PUBLIC + STATE-CHANGING BY DESIGN, reviewed: a promotion on a public page is seen mostly by signed-out visitors and impressions are counted for them, so restricting clicks to signed-in users would leave the owner reading a click-through rate whose numerator is systematically missing. Blast radius is one integer: the handler can only add 1 to SiteAnnouncement.clicks on one row — it reads nothing, returns nothing about the campaign, and cannot reach any user's data. Protections: verifyOrigin (so another site cannot drive it from a visitor's browser) plus a hashed-IP limiter via checkAnonLimit (30 / 5min). rateLimit is 'none' here because that field tracks checkRateLimit/RATE_LIMITS keys only, per the auth/register precedent; the real limiter is src/lib/rate-limit.js's checkAnonLimit."
+  },
+  {
+    "path": "/api/announcements/[id]/impression",
+    "file": "src/app/api/announcements/[id]/impression/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "public",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E8.2. PUBLIC + STATE-CHANGING BY DESIGN, reviewed — same rationale, protections and blast radius as the sibling /click route (one integer, SiteAnnouncement.impressions), open to anonymous callers because a click count without a matching impression count measures nothing. Kept OUT of GET /api/announcements deliberately: a mutating GET would be incremented by every prefetch and speculative fetch, inflating the count with views no human had. verifyOrigin plus checkAnonLimit (60 / 5min)."
+  },
+  {
+    "path": "/api/announcements/[id]/dismiss",
+    "file": "src/app/api/announcements/[id]/dismiss/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E8.2: persists a signed-in user's dismissal so a campaign closed on one device stays closed on the next (it used to be localStorage-only). Auth required — an anonymous viewer has no account to hang the row off and keeps the localStorage path. Idempotent by construction via the (announcementId, userId) compound unique, so a double-submit is an update, not a duplicate or a 500."
   },
   {
     "path": "/api/assemble",
