@@ -152,7 +152,13 @@ test("formats Alibaba native model payloads", () => {
 
 test("routes Alibaba media models to their DashScope service", () => {
   assert.match(getAlibabaApiPath("wan2.7-t2v"), /video-generation/);
-  assert.match(getAlibabaApiPath("qwen-image-2.0-pro"), /text2image/);
+  // BUG 3: the image family is NOT on text2image/image-synthesis. Live
+  // probing on 2026-08-04 got 403 AccessDenied there for 9 of the 10 catalog
+  // image models (including this one) while the synchronous
+  // multimodal-generation route returned a real image — see
+  // src/lib/alibaba-provider-core.mjs's header for the full matrix and
+  // tests/unit/alibaba-routing.test.mjs for the per-model coverage.
+  assert.match(getAlibabaApiPath("qwen-image-2.0-pro"), /multimodal-generation/);
 });
 
 // ── URGENT production fix: hide upstream provider identity baked into

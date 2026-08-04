@@ -6,14 +6,20 @@
 // problem; the specifier is simply unresolvable), so both imports below
 // were changed from the alias form to resolve identically in both contexts.
 import prisma from "./prisma.js";
-import { formatAlibabaPayload, getAlibabaApiPath } from "./alibaba-provider-core.mjs";
+import { formatAlibabaPayload, getAlibabaApiPath, getAlibabaHeaders, parseAlibabaOutputs } from "./alibaba-provider-core.mjs";
 import { resolveModelPricingRow } from "./model-catalog-core.mjs";
+import { applyRequiredDefaults } from "./provider-payload-core.mjs";
 import { log } from "./log.js";
 
 const BRANDED_ERRORS = {
   rate_limit: "Too many requests. Please wait a moment and try again.",
   invalid_api_key: "Provider authentication failed. Our team has been notified.",
   model_not_found: "This model is temporarily unavailable. Please try another.",
+  // A provider that recognises our credentials but refuses THIS model (e.g.
+  // DashScope's per-route AccessDenied, see alibaba-provider-core.mjs's
+  // header). Honest — the model genuinely cannot run — without naming the
+  // upstream provider or implying the user's own plan is at fault.
+  access_denied: "This model isn't available to run right now. Please choose another.",
   timeout: "The request took too long. Please try again.",
   content_filter: "The request was blocked by safety filters.",
   insufficient_balance: "Provider balance is low. Please contact support.",
@@ -25,6 +31,11 @@ export function brandError(providerError) {
   const lower = (providerError || "").toLowerCase();
   if (lower.includes("rate") || lower.includes("429")) return BRANDED_ERRORS.rate_limit;
   if (lower.includes("api key") || lower.includes("api_key") || lower.includes("apikey") || lower.includes("unauthorized") || lower.includes("401")) return BRANDED_ERRORS.invalid_api_key;
+  // Checked BEFORE the generic buckets: an AccessDenied body would otherwise
+  // fall through to "unknown" and hide a completely explicable, permanent
+  // failure behind "An unexpected error occurred".
+  if (lower.includes("accessdenied") || lower.includes("access denied") || lower.includes("does not support asynchronous calls") || lower.includes("does not support synchronous calls")) return BRANDED_ERRORS.access_denied;
+  if (lower.includes("model name you specified is not supported") || lower.includes("model not exist")) return BRANDED_ERRORS.model_not_found;
   if (lower.includes("not found") || lower.includes("404")) return BRANDED_ERRORS.model_not_found;
   if (lower.includes("timeout") || lower.includes("timed out")) return BRANDED_ERRORS.timeout;
   if (lower.includes("content") || lower.includes("filter") || lower.includes("safety")) return BRANDED_ERRORS.content_filter;
@@ -143,24 +154,33 @@ export const PROVIDERS = {
         : "https://dashscope.aliyuncs.com";
     },
     getKey: () => process.env.ALIBABA_KEY,
-    headers: { "X-DashScope-Async": "enable" },
+    // Per-ROUTE, not per-provider: the async task header is only correct on
+    // the video routes. Sending it on the synchronous multimodal image route
+    // is exactly what produced the 403 "current user api does not support
+    // asynchronous calls" that killed every Alibaba image generation — see
+    // alibaba-provider-core.mjs's header for the full probe matrix.
+    headers: getAlibabaHeaders,
     buildUrl: getAlibabaApiPath,
     formatPayload: formatAlibabaPayload,
     parseResult: (data) => {
       // Image generations return synchronously as an array of { url }
       if (Array.isArray(data)) {
-        return { requestId: null, status: "succeeded", outputs: data.map((d) => d?.url).filter(Boolean) };
+        return { requestId: null, status: "succeeded", outputs: parseAlibabaOutputs(data) };
       }
       return {
+        // NOTE: `request_id` is deliberately NOT in this chain — the
+        // synchronous multimodal response carries one, and treating it as a
+        // task id would send the runner off polling /api/v1/tasks for a task
+        // that never existed instead of returning the image it already has.
         requestId: data.output?.task_id || data.task_id || data.id,
         status: data.output?.task_status || data.status,
-        outputs: data.output?.results ? data.output.results.map(r => r.url || r.b64_image).filter(Boolean) : (data.output ? [data.output.video_url || data.output.url].filter(Boolean) : []),
+        outputs: parseAlibabaOutputs(data),
       };
     },
     buildPollUrl: (requestId) => `/api/v1/tasks/${requestId}`,
     parsePoll: (data) => ({
       status: (data.output?.task_status || data.status || "").toLowerCase(),
-      outputs: data.output?.results ? data.output.results.map(r => r.url || r.b64_image).filter(Boolean) : (data.output ? [data.output.video_url || data.output.url].filter(Boolean) : []),
+      outputs: parseAlibabaOutputs(data),
       error: data.output?.message || data.error,
     }),
     isSync: false,
@@ -328,6 +348,37 @@ async function submitOnlyMock(provider, payload) {
   };
 }
 
+// ── The ONE required-parameter defaulting site (BUG 2) ─────────────────────
+// submitOnly is the single choke point every provider submit passes through
+// (studio sync route → generation.js, studio async route → job-queue →
+// job-runner, agents.js, director-executor.js, template-runner.js all end up
+// here), so filling a model's declared-required-but-absent parameters
+// belongs here and nowhere else — see provider-payload-core.mjs's header for
+// the routing map and the two hard rules (never override a caller value,
+// never invent content).
+//
+// The schema comes from the model's own ModelPricing row. A failure to read
+// it is deliberately non-fatal: a submit must never be blocked because the
+// catalog lookup hiccuped (and several unit suites mock "@/lib/prisma" as an
+// empty object), so we simply submit exactly what the caller built.
+async function fillRequiredParams(modelId, params) {
+  let schema = null;
+  try {
+    const row = await resolveModelPricingRow(prisma, modelId, { modelId: true, inputSchema: true });
+    schema = row?.inputSchema || null;
+  } catch {
+    return params;
+  }
+  if (!schema) return params;
+  const { params: next, filled } = applyRequiredDefaults(params, schema, { modelId });
+  if (Object.keys(filled).length) {
+    try {
+      log.info("provider_required_params_filled", { model: modelId, filled });
+    } catch { /* logging must never block a submit */ }
+  }
+  return next;
+}
+
 export async function submitOnly(providerName, endpoint, payload) {
   let provider;
   if (typeof providerName === "object" && providerName.name) {
@@ -343,14 +394,19 @@ export async function submitOnly(providerName, endpoint, payload) {
   const key = provider.apiKey || provider.getKey();
   if (!key) throw new Error(brandError("invalid_api_key"));
 
-  const { model, prompt, ...params } = payload;
+  const { model, prompt, ...rawParams } = payload;
+  const providerModel = model || endpoint;
+  const params = await fillRequiredParams(providerModel, rawParams);
   const apiPath = provider.buildUrl(endpoint);
   const url = `${provider.baseUrl}${apiPath}`;
-  const body = provider.formatPayload(model || endpoint, prompt, params);
+  const body = provider.formatPayload(providerModel, prompt, params);
+  // `headers` may be a per-route function (Alibaba: the async task header is
+  // only correct on the video routes) or a plain object (none today).
+  const providerHeaders = typeof provider.headers === "function" ? provider.headers(endpoint) : provider.headers;
 
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, ...(provider.headers || {}) },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, ...(providerHeaders || {}) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(60000),
   });
@@ -362,6 +418,20 @@ export async function submitOnly(providerName, endpoint, payload) {
   }
 
   const result = await res.json();
+
+  // KIE answers createTask with HTTP 200 and puts the REAL status in the
+  // envelope — a rejected submit is `{"code":422,"msg":"The model name you
+  // specified is not supported…","data":null}` with res.ok === true. Without
+  // this branch the failure only surfaced further down as the generic "No
+  // task ID returned", losing the provider's actual reason before anything
+  // logged it. (Same envelope carries `{"code":500,"msg":"aspect_ratio is
+  // required"}`, the failure fillRequiredParams above now prevents.)
+  if (typeof result?.code === "number" && (result.code < 200 || result.code >= 300)) {
+    const reason = result.msg || result.message || `provider returned code ${result.code}`;
+    logRawProviderError("provider_submit_envelope_error", { provider: provider?.name, endpoint, model: providerModel, status: res.status, providerCode: result.code, body: JSON.stringify(result) });
+    throw brandedError(reason);
+  }
+
   const responseData = result.data || result;
   const parsed = provider.parseResult ? provider.parseResult(responseData) : { requestId: responseData.request_id || responseData.id, outputs: responseData.outputs || [] };
   const requestId = parsed.requestId;
