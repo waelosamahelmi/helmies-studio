@@ -21,7 +21,7 @@ export async function GET(req, { params }) {
     }
     verifyOrigin(req);
     const userId = session.user.id;
-    const { slug } = params;
+    const { slug } = await params;
 
     const template = await prisma.template.findUnique({ where: { slug } });
     if (!template) {
