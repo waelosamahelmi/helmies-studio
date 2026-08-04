@@ -20,8 +20,8 @@ vi.mock("@/lib/workflows", () => ({
 
 import { getCurrentUser } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
-import { executeWorkflow } from "@/lib/workflows";
-import { POST } from "@/app/api/workflows/[id]/run/route.js";
+import { executeWorkflow, deleteWorkflow, updateWorkflow } from "@/lib/workflows";
+import { POST, DELETE, PATCH } from "@/app/api/workflows/[id]/run/route.js";
 
 const jsonReq = (body) =>
   new Request("http://test/api/workflows/w1/run", {
@@ -29,6 +29,11 @@ const jsonReq = (body) =>
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
+
+// Next 15+ hands route handlers a PROMISE for params. Reading `.id` straight
+// off it — which is what these handlers used to do — yields undefined, and
+// this is the shape that actually reaches them at runtime.
+const asyncParams = (id) => ({ params: Promise.resolve({ id }) });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -58,5 +63,50 @@ describe("POST /api/workflows/[id]/run — business errors reach the user", () =
     expect(body).toMatchObject({ code: "internal" });
     expect(typeof body.error).toBe("string");
     errSpy.mockRestore();
+  });
+});
+
+// Found by the E5.2 e2e journey, which was the first thing ever to drive
+// these three handlers end to end: they read `params.id` directly, but Next
+// 15+ hands route handlers a PROMISE for params, so the id was always
+// undefined. Prisma drops an undefined field from a where clause rather than
+// matching nothing, which turned:
+//   POST   → run whichever workflow the user touched most recently
+//   PATCH  → write this payload over EVERY workflow the user owns
+//   DELETE → delete EVERY workflow the user owns
+// The sibling publish route already awaited params; these did not.
+describe("workflow routes resolve the id from an async params promise", () => {
+  it("POST runs the workflow named in the URL, not whatever Prisma matches first", async () => {
+    executeWorkflow.mockResolvedValue({ success: true, outputs: [], stepResults: [] });
+
+    const res = await POST(jsonReq({ inputs: { prompt: "go" } }), asyncParams("wf_123"));
+
+    expect(res.status).toBe(200);
+    expect(executeWorkflow).toHaveBeenCalledWith("wf_123", "u1", { prompt: "go" });
+  });
+
+  it("PATCH updates only the workflow named in the URL", async () => {
+    updateWorkflow.mockResolvedValue({ count: 1 });
+
+    const res = await PATCH(jsonReq({ name: "Renamed" }), asyncParams("wf_123"));
+
+    expect(res.status).toBe(200);
+    expect(updateWorkflow).toHaveBeenCalledWith("wf_123", "u1", { name: "Renamed" });
+  });
+
+  it("DELETE removes only the workflow named in the URL", async () => {
+    deleteWorkflow.mockResolvedValue({ count: 1 });
+
+    const res = await DELETE(jsonReq({}), asyncParams("wf_123"));
+
+    expect(res.status).toBe(200);
+    expect(deleteWorkflow).toHaveBeenCalledWith("wf_123", "u1");
+  });
+
+  it("refuses outright when the id is missing rather than acting on everything", async () => {
+    const res = await DELETE(jsonReq({}), asyncParams(undefined));
+
+    expect(res.status).toBe(400);
+    expect(deleteWorkflow).not.toHaveBeenCalled();
   });
 });

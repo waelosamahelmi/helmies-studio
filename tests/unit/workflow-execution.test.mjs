@@ -17,7 +17,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // itself; that is why this is its own file.
 
 const prismaMock = vi.hoisted(() => ({
-  workflow: { findFirst: vi.fn() },
+  workflow: { findFirst: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
   workflowRun: { create: vi.fn(), update: vi.fn(), findFirst: vi.fn() },
   user: { update: vi.fn() },
 }));
@@ -40,7 +40,7 @@ import { executeStep, executeStepWithRetry } from "@/lib/agents";
 import { estimateAgentTask } from "@/lib/pricing-engine";
 import { detectAbuse } from "@/lib/security";
 import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
-import { executeWorkflow } from "@/lib/workflows";
+import { executeWorkflow, updateWorkflow, deleteWorkflow, regenerateStep } from "@/lib/workflows";
 
 const STEPS = [
   { agent: "image", task: "Hero frame", params: { prompt: "a hero", model: "m1" } },
@@ -147,6 +147,33 @@ describe("executeWorkflow — per-step status is recorded as the run progresses"
     expect(final.outputs).toEqual(["https://cdn.example/hero.png"]);
     expect(final.stepResults).toHaveLength(2);
     expect(final.stepResults[1]).toMatchObject({ step: 2, status: "failed" });
+  });
+});
+
+// Prisma drops an `undefined` field from a where clause instead of matching
+// nothing, so `{ id: undefined, userId }` selects EVERY workflow the user
+// owns. That is how a lost id (see the route tests) turned "run this one"
+// into "run whichever came back first" and "delete this one" into "delete
+// them all". These entry points refuse the shape rather than trusting every
+// caller to have the id.
+describe("workflow lookups refuse a missing id instead of widening to the whole collection", () => {
+  it.each([undefined, null, ""])("executeWorkflow rejects %p without touching the wallet", async (badId) => {
+    await expect(executeWorkflow(badId, "u1", {})).rejects.toThrow(/not found/i);
+    expect(prismaMock.workflow.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.workflowRun.create).not.toHaveBeenCalled();
+    expect(reserveCredits).not.toHaveBeenCalled();
+  });
+
+  it("updateWorkflow and deleteWorkflow refuse a missing id", async () => {
+    await expect(updateWorkflow(undefined, "u1", { name: "x" })).rejects.toThrow(/not found/i);
+    await expect(deleteWorkflow(undefined, "u1")).rejects.toThrow(/not found/i);
+    expect(prismaMock.workflow.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.workflow.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it("regenerateStep refuses a missing id before it can charge anything", async () => {
+    await expect(regenerateStep(undefined, "u1", 0, {})).rejects.toThrow(/not found/i);
+    expect(reserveCredits).not.toHaveBeenCalled();
   });
 });
 
