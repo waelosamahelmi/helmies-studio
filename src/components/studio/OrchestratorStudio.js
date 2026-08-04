@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
 import { parseQuestionBlock, stripQuestionBlock } from "@/lib/agent-chat";
 import {
-  Brief, SpendMeter, Group, Specs, Confirm,
-  IcSpark, IcFlow, IcCheck, IcAlert, IcChevron, IcExternal,
+  Brief, SpendMeter, Group, Specs, Confirm, Sheet,
+  IcSpark, IcFlow, IcCheck, IcAlert, IcChevron, IcExternal, IcInfo,
 } from "@/components/studio/kit";
 import SessionList from "@/components/studio/agent/SessionList";
 import Markdown from "@/components/studio/agent/Markdown";
@@ -411,6 +411,8 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   const [mode, setMode] = useState("review");     // "review" | "auto" (execution mode)
   const [sessions, setSessions] = useState([]);   // the rail: newest active sessions
   const [confirmSwitch, setConfirmSwitch] = useState(null); // { id: string|null } while busy
+  /* E7.3: the side pane is hidden below 1024px, so it needs a way back. */
+  const [sideOpen, setSideOpen] = useState(false);
 
   const feedRef = useRef(null);
   const abortRef = useRef(null);
@@ -1190,6 +1192,87 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   const stageWord =
     busy === "run" ? "running" : busy === "plan" ? "planning" : busy === "chat" ? "thinking" : undefined;
 
+  /* ── The session context, rendered once and placed twice (E7.3) ───────────
+     `.st-talk__side` is hidden below 1024px — on every phone AND every
+     tablet — and until now nothing replaced it, so the balance, the Clear
+     control, the latest plan's summary and the produced-outputs list simply
+     ceased to exist there. Every other surface already had an answer to
+     this: Workspace and the audio archetype use a `.st-panel-tabs` button
+     that opens a Sheet, the canvas has its layers Sheet, workflows have
+     `.st-flow__open`. This reuses that pattern rather than inventing a
+     fourth one — the SAME subtree renders in the desktop aside and in the
+     Sheet, so anything that appears in one appears in the other by
+     construction, including groups that only exist once there is a plan. */
+  const sessionPane = (
+    <div className="hs-stack" style={{ gap: "var(--s-5)" }} data-testid="agent-session-pane">
+      <SessionList
+        sessions={sessions}
+        activeId={sessionId}
+        onSelect={handleSelectSession}
+        onNew={handleNewSession}
+      />
+
+      <Group
+        label="Credits"
+        right={
+          messages.length > 0 ? (
+            <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={clear}>
+              Clear
+            </button>
+          ) : null
+        }
+      >
+        <Specs
+          rows={[
+            { k: "Balance", v: balance == null ? "Unknown" : `${balance} cr` },
+            { k: "Spent here", v: `${spent} cr` },
+          ]}
+        />
+      </Group>
+
+      {latestPlan && (
+        <Group label="Latest plan">
+          <Specs
+            rows={[
+              { k: "Steps", v: String(latestPlan.plan.steps?.length || 0) },
+              { k: "Estimate", v: latestPlanTotal == null ? "Not quoted" : `${latestPlanTotal} cr` },
+              { k: "Ceiling", v: latestPlan.plan.maxCredits != null ? `${latestPlan.plan.maxCredits} cr` : null },
+              { k: "State", v: latestPlan.decision === "approved" ? "Approved" : "Awaiting approval" },
+            ]}
+          />
+        </Group>
+      )}
+
+      {producedUrls.length > 0 && (
+        <Group label="Produced">
+          <div className="hs-stack" style={{ gap: "var(--s-2)" }}>
+            {producedUrls.map((url, i) => (
+              <a
+                key={`${url}-${i}`}
+                className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--block"
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ justifyContent: "flex-start" }}
+              >
+                <IcExternal className="hs-icon-sm" />
+                <span className="hs-mono">Output {pad(i + 1)}</span>
+              </a>
+            ))}
+          </div>
+        </Group>
+      )}
+
+      <Group label="How this works">
+        <p className="hs-hint">
+          Chat is free. A plan is a quote — nothing runs and nothing is charged until you
+          approve it. Approving spends the total shown on the plan; if a step fails partway,
+          the unused reservation is returned.
+        </p>
+      </Group>
+    </div>
+  );
+
   /* ══════════════════════════════════════════════════════════════════════ */
   return (
     <div className="st-talk">
@@ -1419,77 +1502,29 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
             </button>
           }
         />
+
+        {/* Below 1024px the pane on the right is gone — this is the way back
+            to it, the same affordance Workspace.js and the audio archetype
+            use. Hidden above that width by `.st-panel-tabs`. */}
+        <div className="st-panel-tabs st-panel-tabs--talk">
+          <button
+            type="button"
+            className="hs-btn hs-btn--sm"
+            onClick={() => setSideOpen(true)}
+            aria-expanded={sideOpen}
+          >
+            <IcInfo className="hs-icon-sm" /> Session
+          </button>
+        </div>
       </div>
 
       <aside className="st-talk__side" aria-label="Session context">
-        <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
-          <SessionList
-            sessions={sessions}
-            activeId={sessionId}
-            onSelect={handleSelectSession}
-            onNew={handleNewSession}
-          />
-
-          <Group
-            label="Credits"
-            right={
-              messages.length > 0 ? (
-                <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={clear}>
-                  Clear
-                </button>
-              ) : null
-            }
-          >
-            <Specs
-              rows={[
-                { k: "Balance", v: balance == null ? "Unknown" : `${balance} cr` },
-                { k: "Spent here", v: `${spent} cr` },
-              ]}
-            />
-          </Group>
-
-          {latestPlan && (
-            <Group label="Latest plan">
-              <Specs
-                rows={[
-                  { k: "Steps", v: String(latestPlan.plan.steps?.length || 0) },
-                  { k: "Estimate", v: latestPlanTotal == null ? "Not quoted" : `${latestPlanTotal} cr` },
-                  { k: "Ceiling", v: latestPlan.plan.maxCredits != null ? `${latestPlan.plan.maxCredits} cr` : null },
-                  { k: "State", v: latestPlan.decision === "approved" ? "Approved" : "Awaiting approval" },
-                ]}
-              />
-            </Group>
-          )}
-
-          {producedUrls.length > 0 && (
-            <Group label="Produced">
-              <div className="hs-stack" style={{ gap: "var(--s-2)" }}>
-                {producedUrls.map((url, i) => (
-                  <a
-                    key={`${url}-${i}`}
-                    className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--block"
-                    href={url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ justifyContent: "flex-start" }}
-                  >
-                    <IcExternal className="hs-icon-sm" />
-                    <span className="hs-mono">Output {pad(i + 1)}</span>
-                  </a>
-                ))}
-              </div>
-            </Group>
-          )}
-
-          <Group label="How this works">
-            <p className="hs-hint">
-              Chat is free. A plan is a quote — nothing runs and nothing is charged until you
-              approve it. Approving spends the total shown on the plan; if a step fails partway,
-              the unused reservation is returned.
-            </p>
-          </Group>
-        </div>
+        {sessionPane}
       </aside>
+
+      <Sheet open={sideOpen} onClose={() => setSideOpen(false)} title="Session">
+        {sessionPane}
+      </Sheet>
 
       {/* Switching sessions mid-run needs a conscious choice (E3.6). */}
       <Confirm

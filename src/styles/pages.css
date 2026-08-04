@@ -825,3 +825,74 @@
   color: var(--tx);
   overflow-wrap: anywhere;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ── E7 mobile ──
+   ──────────────────────────────────────────────────────────────────────────
+   EDITSv1 E7.2/E7.5. Appended as one block for the same reason as
+   system.css's: the mobile pass reads as one decision and merges cleanly.
+   Every rule here is keyed on `pointer: coarse` (or a phone width) and
+   changes nothing on a desktop.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (pointer: coarse) {
+  /* Section tabs — settings and admin both use these, ~38px before. */
+  .pg-tab { min-height: 44px; }
+
+  /* The masthead lockup and every footer link were 20-25px tall: they are
+     block-level flex items, not inline links in a sentence, so WCAG 2.5.8's
+     inline exception does not cover them. */
+  .pg-logo { min-height: 44px; }
+  .pg-nav__link { display: inline-flex; align-items: center; min-height: 44px; }
+  .pg-foot__col a { display: flex; align-items: center; min-height: 44px; }
+  .pg-foot__col { gap: 0; }
+  .pg-foot__base a { display: inline-flex; align-items: center; min-height: 44px; }
+
+  /* The announcement bar's dismiss control was a bare 14x14 icon — the
+     smallest target measured anywhere in the app, and it sits on every page
+     the moment the owner posts anything. Fixed here rather than in
+     src/components/AnnouncementBar.js so nothing about that component's
+     markup changes. */
+  .pg-announce button {
+    display: inline-grid;
+    place-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: calc(var(--s-2) * -1) 0;
+  }
+}
+
+/* ── Admin section rail + settings tabs: say that you scroll (E7.5) ─────────
+   Fifteen links in a ~1,900px strip with `scrollbar-width: none` and no edge
+   treatment. On a phone the first three are all you can see and nothing on
+   screen suggests the other twelve exist — the settings tab strip has the
+   identical shape. These are the classic background-attachment scrolling
+   shadows: the two `local` layers are painted relative to the CONTENT, so
+   they slide away as you reach an end, and the two `scroll` layers are
+   painted relative to the BOX, so they sit over the edges. No JS, no scroll
+   listener, and it corrects itself at both ends. Above 900px both strips
+   become vertical columns that do not overflow, so this is scoped below
+   that. */
+@media (max-width: 899px) {
+  .pg-admin__side,
+  .pg-tabs {
+    background-position: left center, right center, left center, right center;
+    background-repeat: no-repeat;
+    background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+  .pg-admin__side {
+    background-image:
+      linear-gradient(to right, var(--ink-050) 40%, rgba(11,11,16,0)),
+      linear-gradient(to left,  var(--ink-050) 40%, rgba(11,11,16,0)),
+      linear-gradient(to right, rgba(0,0,0,0.6), rgba(0,0,0,0)),
+      linear-gradient(to left,  rgba(0,0,0,0.6), rgba(0,0,0,0));
+  }
+  /* .pg-tabs sits on the page ground, not on the rail's chrome. */
+  .pg-tabs {
+    background-image:
+      linear-gradient(to right, var(--ink-000) 40%, rgba(8,8,12,0)),
+      linear-gradient(to left,  var(--ink-000) 40%, rgba(8,8,12,0)),
+      linear-gradient(to right, rgba(0,0,0,0.6), rgba(0,0,0,0)),
+      linear-gradient(to left,  rgba(0,0,0,0.6), rgba(0,0,0,0));
+  }
+}

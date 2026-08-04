@@ -1395,6 +1395,11 @@
   height: 100%;
   min-height: 0;
 }
+/* The `display: none` here loses to the plain `.st-talk__side` rule below
+   (same specificity, later in the file). It is restated — and explained —
+   in this file's "E7 mobile" block at the end, which is where it actually
+   takes effect. Left in place so the intent still reads with the layout it
+   belongs to. */
 @media (max-width: 1024px) { .st-talk { grid-template-columns: 1fr; } .st-talk__side { display: none; } }
 
 .st-talk__main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -2358,4 +2363,157 @@ select.st-layer__role option {
   flex-wrap: wrap;
   padding-top: var(--s-2);
   border-top: 1px solid var(--line);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ── E7 mobile ──
+   ──────────────────────────────────────────────────────────────────────────
+   EDITSv1 E7. One appended block, same reasoning as system.css's: the whole
+   mobile pass reads as a single decision and merges cleanly. Everything here
+   is gated on `pointer: coarse` or a phone width — a desktop renders exactly
+   as it did.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Chrome controls that never had a coarse rule (E7.2) ────────────────── */
+@media (pointer: coarse) {
+  .st-brand   { min-height: 44px; }
+  .st-search  { height: 44px; }
+  .st-credits { height: 44px; }
+  .st-running { height: 44px; }
+  .st-palette__item { min-height: 44px; }
+  .st-canvas__tool  { min-width: 44px; height: 44px; }
+}
+/* The bar collapses the search box to an icon below 900px; 40px is short. */
+@media (max-width: 900px) and (pointer: coarse) {
+  .st-search { width: 44px; }
+}
+
+/* ── Icon-only actions name themselves on touch (E7.2) ─────────────────────
+   `.hs-tip::after` is gated on `@media (hover: hover) and (pointer: fine)`
+   (system.css), so on a phone a tooltip never appears. That is survivable
+   for a lone gear in the top bar, and not survivable in the per-item action
+   toolbars, where five or six identical ghost icons sit side by side and the
+   tooltip was the only thing telling them apart — Director's shot toolbar
+   and its still/motion/whole-shot re-run trio, and the timeline's clip
+   actions. Under a coarse pointer those grow into icon + label buttons.
+
+   The property resets matter: a device can report BOTH `hover: hover` and
+   `pointer: coarse` (a touchscreen laptop), and there the floating-tooltip
+   rule also matches — without these the caption would inherit its
+   `position: absolute; opacity: 0` and vanish. */
+@media (pointer: coarse) {
+  .st-shot__tools   .hs-tip[data-tip]::after,
+  .st-shot__foot    .hs-tip[data-tip]::after,
+  .st-clip__actions .hs-tip[data-tip]::after {
+    content: attr(data-tip);
+    position: static;
+    transform: none;
+    opacity: 1;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+    pointer-events: auto;
+    font-family: var(--ff-ui);
+    font-size: var(--t-tiny);
+    font-weight: 500;
+    color: inherit;
+    white-space: nowrap;
+  }
+  .st-shot__tools   .hs-btn--icon.hs-tip[data-tip],
+  .st-shot__foot    .hs-btn--icon.hs-tip[data-tip],
+  .st-clip__actions .hs-btn--icon.hs-tip[data-tip] {
+    width: auto;
+    padding: 0 var(--s-3);
+    gap: var(--s-2);
+  }
+  /* Five labelled buttons do not fit one 393px row. */
+  .st-shot__tools, .st-shot__foot { flex-wrap: wrap; }
+}
+
+/* ── The agent's side pane gets a way back (E7.3) ──────────────────────────
+   Two bugs, one fix. First, `.st-talk__side { display: none }` inside the
+   `@media (max-width: 1024px)` block further up this file NEVER APPLIED:
+   the plain `.st-talk__side { display: flex }` rule below it has the same
+   0-1-0 specificity and comes later, so it won. What actually happened on a
+   phone was worse than the intended hiding — the pane rendered, stacked
+   underneath the conversation, inside a work area with `overflow: hidden`
+   and nothing to scroll it with. The balance, the Clear control, the latest
+   plan's summary and the produced-outputs list were all there and all
+   unreachable.
+
+   Repeating the rule here — after every declaration it has to beat — hides
+   it for real, and `.st-panel-tabs--talk` opens it as a Sheet instead. The
+   modifier exists because `.st-panel-tabs` itself only appears below 900px,
+   while this pane disappears at 1024px: without it, a tablet between those
+   two widths would lose the pane and gain nothing. */
+@media (max-width: 1024px) {
+  .st-talk__side { display: none; }
+  .st-panel-tabs--talk { display: flex; }
+}
+
+/* ── Reordering with a finger (E7.4) ───────────────────────────────────────
+   HTML5 drag-and-drop fires NOTHING on touch. Three surfaces shipped with a
+   reorder that only existed as a drag: the canvas layer stack
+   (`draggable` rows), the workflow step chain (`draggable` cards), and the
+   Director timeline (`draggable` <li>). The workflow cards gained explicit
+   move buttons in this task; the canvas and the timeline already had them
+   and they were simply too small to hit — 20x20 for a layer's move pair,
+   22x22 for its visibility toggle. On a phone those buttons ARE the
+   reorder, so they get the full 44px.
+
+   `.st-layer` becomes a two-row grid at the same time: a 44px eye plus a
+   34px thumbnail plus a name plus two 44px buttons does not fit 393px, and
+   an actions row that overflows is the same bug in a different shape. */
+@media (pointer: coarse) {
+  .st-layer {
+    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-areas: "eye thumb body" "acts acts acts";
+    row-gap: var(--s-1);
+  }
+  .st-layer > .st-layer__eye { grid-area: eye; }
+  .st-layer > .st-layer__thumb { grid-area: thumb; }
+  .st-layer > .st-layer__body { grid-area: body; }
+  .st-layer > .st-layer__acts { grid-area: acts; justify-content: flex-end; gap: var(--s-2); }
+  .st-layer__eye { width: 44px; height: 44px; }
+  .st-layer__act { width: 44px; height: 44px; }
+  .st-layer__act svg { width: 16px; height: 16px; }
+  .st-layer__role { min-height: 24px; }
+
+  /* Clip trim grips are drawn as a 2px line inside a 7px box. The line
+     stays 2px (it is centred background art, not the box); the box that
+     receives the pointer grows to 44px so a fingertip can actually catch
+     it. `.st-range` is `position: relative`, so the negative offsets keep
+     the grip centred on the edge it drags. */
+  .st-range__grip { width: 44px; }
+  .st-range__grip--l { left: -22px; }
+  .st-range__grip--r { right: -22px; }
+}
+
+/* ── The canvas had no canvas (E7.4) ───────────────────────────────────────
+   Measured at 393x851: `.st-canvas__surface` was 0px tall. The archetype is
+   a grid of `auto auto 1fr auto` — context bar, tool row, surface, prompt
+   dock — and the context bar is a `flex-wrap: wrap` row carrying two number
+   fields, a preset select, six background swatches, a document-name input
+   and four buttons. At this width it wrapped to roughly six lines, and
+   between it and the composer there was nothing left for the `1fr` row, so
+   the surface (which sets `min-height: 0`) collapsed to nothing. Drawing,
+   placing, masking — the entire tool — was unusable on a phone, and the
+   layer list this task is about had no way to acquire a layer in the first
+   place.
+
+   The context bar becomes one horizontally-scrolling row, exactly the
+   treatment `.st-canvas__tools` already gets at this breakpoint, and the
+   surface gets a floor so it can never be squeezed out again. */
+@media (max-width: 640px) {
+  .st-canvas { grid-template-rows: auto auto minmax(200px, 1fr) auto; }
+  .st-canvas__topbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+  .st-canvas__topbar::-webkit-scrollbar { display: none; }
+  .st-canvas__topbar > * { flex: none; }
+  .st-canvas__surface { min-height: 200px; }
 }

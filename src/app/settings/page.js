@@ -377,10 +377,11 @@ function BillingPanel({ data, loading, error, reload }) {
                 <tbody>
                   {ledger.map((t) => (
                     <tr key={t.id}>
-                      <td className="hs-mono">{day(t.createdAt)}</td>
-                      <td><span className="hs-badge">{t.type}</span></td>
-                      <td>{t.description || "—"}</td>
+                      <td className="hs-mono" data-label="Date">{day(t.createdAt)}</td>
+                      <td data-label="Type"><span className="hs-badge">{t.type}</span></td>
+                      <td data-label="Description">{t.description || "—"}</td>
                       <td
+                        data-label="Credits"
                         className="hs-num"
                         style={{ color: t.amount > 0 ? "var(--signal)" : "var(--tx)" }}
                       >
@@ -571,11 +572,11 @@ function KeysPanel() {
               <tbody>
                 {keys.map((k) => (
                   <tr key={k.id}>
-                    <td style={{ color: "var(--tx)", fontWeight: 500 }}>{k.name}</td>
-                    <td className="hs-mono">{k.keyPrefix}</td>
-                    <td className="hs-mono">{day(k.createdAt)}</td>
-                    <td className="hs-mono">{k.lastUsedAt ? day(k.lastUsedAt) : "Never"}</td>
-                    <td>
+                    <td data-label="Name" style={{ color: "var(--tx)", fontWeight: 500 }}>{k.name}</td>
+                    <td data-label="Key" className="hs-mono">{k.keyPrefix}</td>
+                    <td data-label="Created" className="hs-mono">{day(k.createdAt)}</td>
+                    <td data-label="Last used" className="hs-mono">{k.lastUsedAt ? day(k.lastUsedAt) : "Never"}</td>
+                    <td data-label="State">
                       <span className={`hs-badge ${k.isActive ? "hs-badge--signal" : ""}`}>
                         {k.isActive ? "Active" : "Revoked"}
                       </span>
