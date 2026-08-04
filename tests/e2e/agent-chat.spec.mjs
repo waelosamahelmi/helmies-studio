@@ -1,13 +1,18 @@
-// EDITSv1 Phase E3 Task E3.3 — the agent chat surface: Enter-to-send,
-// markdown rendering, question cards, and the busy glow.
+// EDITSv1 Phase E3 Tasks E3.3/E3.4 — the agent chat surface (Enter-to-send,
+// markdown, question cards, busy glow) and the plan approval card (live
+// re-quotes, model editing, honored approval, execution-mode persistence).
 //
-// The LLM reply is stubbed with page.route on OUR OWN /api/agent/chat
+// Chat replies are stubbed with page.route on OUR OWN /api/agent/chat
 // endpoint (never a real LLM), returning the exact SSE frame shape the
-// route emits ({type:"token",content} + [DONE]).
+// route emits ({type:"token",content} + [DONE]). The PLAN journeys use the
+// real /api/agent/plan and /api/agent/run routes end to end: with no
+// OPENROUTER_KEY in the e2e app the planner is the deterministic heuristic
+// (one image step), and provider calls resolve through the double-locked
+// E2E mock (playwright.config.mjs webServerEnv), never a real provider.
 import { test, expect } from "@playwright/test";
 import { USER_AUTH_FILE } from "./fixtures/storage-state.mjs";
-
-test.use({ storageState: USER_AUTH_FILE });
+import { withTestDb, createIsolatedUser } from "./fixtures/db.mjs";
+import { loginThroughForm } from "./fixtures/login.mjs";
 
 // React 19 briefly duplicates streamed content — scope to the visible copy
 // (see tests/e2e/fixtures/studio-actions.mjs for the full story).
@@ -35,6 +40,9 @@ async function gotoAgent(page) {
 }
 
 const brief = (page) => visible(page.getByLabel("Creative brief"));
+
+test.describe("chat surface (E3.3)", () => {
+test.use({ storageState: USER_AUTH_FILE });
 
 test("Enter sends the message and the reply renders markdown (bold -> <strong>)", async ({ page }) => {
   await page.route("**/api/agent/chat", (route) =>
@@ -136,3 +144,83 @@ test("the thinking card and input-dock glow show while the agent is busy, and cl
   await expect(page.locator(".st-dock-prompt.hs-glow")).toHaveCount(0);
   await expect(page.locator(".st-thinking")).toHaveCount(0);
 });
+
+}); // describe: chat surface
+
+test.describe("plan approval (E3.4)", () => {
+
+async function readyIsolated(page, label) {
+  let user;
+  await withTestDb(async (prisma) => {
+    user = await createIsolatedUser(prisma, { credits: 500, label });
+  });
+  await loginThroughForm(page, user);
+  await gotoAgent(page);
+  return user;
+}
+
+// The heuristic planner (no LLM key in the e2e app) turns any image-y brief
+// into exactly one image step, model flux-dev — which has no ModelPricing
+// row in the test DB, so its fallback quote is 2 credits. The seeded
+// catalog model costs 10. The 2 -> 10 flip after swapping models is the
+// live re-quote, priced by the server.
+async function planHeroShot(page) {
+  await brief(page).fill("Create a hero shot of a ceramic kettle");
+  await visible(page.getByRole("button", { name: "Plan production" })).click();
+  const planCard = visible(page.locator(".st-plan"));
+  await expect(planCard).toBeVisible({ timeout: 30000 });
+  await expect(planCard.locator(".st-plan__cost").first()).toHaveText("2 cr", { timeout: 15000 });
+  return planCard;
+}
+
+test("changing a step's model re-quotes live, and approval runs with the chosen model at its price", async ({ page }) => {
+  const user = await readyIsolated(page, "agentplan");
+  const planCard = await planHeroShot(page);
+
+  // Swap the step's model to the seeded 10-credit catalog model.
+  await planCard.getByRole("button", { name: "Change model for step 1" }).click();
+  await visible(page.locator(".st-model", { hasText: "E2E Image Model" })).click();
+
+  // Live re-quote: the step's price becomes the server's 10 credits.
+  await expect(planCard.locator(".st-plan__cost").first()).toHaveText("10 cr", { timeout: 15000 });
+
+  // Approve — the run executes the EDITED plan (mocked provider, real
+  // Generation row, real debit).
+  await planCard.getByRole("button", { name: /^Approve/ }).click();
+  await expect(visible(page.locator(".st-plan").filter({ hasText: "Finished" }))).toBeVisible({ timeout: 60000 });
+
+  await withTestDb(async (prisma) => {
+    const generation = await prisma.generation.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(generation, "the approved run must write a Generation row").not.toBeNull();
+    expect(generation.model).toBe("e2e-image-model");
+    expect(generation.creditsUsed).toBe(10);
+
+    // Debits never exceed the approved total: exactly 10 left the wallet.
+    const wallet = await prisma.creditWallet.findUnique({ where: { userId: user.id } });
+    expect(wallet.available).toBe(490);
+  });
+});
+
+test("the execution-mode toggle persists onto the session's settings", async ({ page }) => {
+  const user = await readyIsolated(page, "agentmode");
+  const planCard = await planHeroShot(page);
+
+  await planCard.getByRole("button", { name: "Auto-complete" }).click();
+
+  await expect
+    .poll(async () =>
+      withTestDb(async (prisma) => {
+        const session = await prisma.agentSession.findFirst({
+          where: { userId: user.id },
+          orderBy: { updatedAt: "desc" },
+        });
+        return session?.settings?.autoComplete ?? null;
+      }),
+    { timeout: 15000 })
+    .toBe(true);
+});
+
+}); // describe: plan approval

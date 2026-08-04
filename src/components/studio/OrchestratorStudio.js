@@ -10,6 +10,8 @@ import {
 import Markdown from "@/components/studio/agent/Markdown";
 import QuestionCard from "@/components/studio/agent/QuestionCard";
 import ThinkingCard from "@/components/studio/agent/ThinkingCard";
+import PlanApproval from "@/components/studio/agent/PlanApproval";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 
 /* ══════════════════════════════════════════════════════════════════════════
    ORCHESTRATOR — .st-talk
@@ -142,85 +144,10 @@ function planCosts(plan) {
   return { perStep, total };
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   The plan — the one screen the user has to read before spending
-   ══════════════════════════════════════════════════════════════════════════ */
-function PlanCard({ message, balance, busy, onApprove, onAdjust }) {
-  const plan = message.plan;
-  const steps = plan?.steps || [];
-  const { perStep, total } = planCosts(plan);
-
-  const approved = message.decision === "approved";
-  const affordable = balance == null || total == null || balance >= total;
-  const shortfall = affordable || total == null || balance == null ? 0 : total - balance;
-
-  return (
-    <section className="st-plan" aria-label={`Proposed plan, ${steps.length} steps`}>
-      <header className="st-plan__head">
-        <IcFlow className="hs-icon-sm" />
-        <span className="hs-label" style={{ margin: 0 }}>Proposed plan</span>
-        <span className="hs-badge hs-mono" style={{ marginLeft: "auto" }}>
-          {steps.length} {steps.length === 1 ? "step" : "steps"}
-        </span>
-      </header>
-
-      <div role="list">
-        {steps.map((step, i) => (
-          <div className="st-plan__step" role="listitem" key={`${step.agent}-${i}`}>
-            <span className="st-plan__n">{pad(i + 1)}</span>
-            <div className="st-plan__task">
-              <span>{agentName(step.agent)}</span>
-              {step.task && <span className="hs-hint">{step.task}</span>}
-            </div>
-            <span className="st-plan__cost">{perStep[i] == null ? "—" : `${perStep[i]} cr`}</span>
-          </div>
-        ))}
-      </div>
-
-      <footer className="st-plan__foot">
-        <SpendMeter
-          cost={total ?? 0}
-          balance={balance}
-          affordable={affordable}
-          shortfall={shortfall}
-          label="Total"
-        />
-
-        {approved ? (
-          <span className="st-plan__acts hs-mono" style={{ fontSize: 10, color: "var(--signal)" }}>
-            <IcCheck className="hs-icon-sm" /> Approved
-          </span>
-        ) : (
-          <span className="st-plan__acts">
-            <button
-              type="button"
-              className="hs-btn hs-btn--ghost hs-btn--sm"
-              onClick={onAdjust}
-              disabled={!!busy}
-            >
-              Adjust
-            </button>
-            <button
-              type="button"
-              className="hs-btn hs-btn--primary hs-btn--sm"
-              onClick={onApprove}
-              disabled={!!busy || !affordable || !steps.length}
-              title={
-                !affordable ? "Not enough credits for this plan"
-                : total == null ? "Approve and run this plan"
-                : `Approve and spend ${total} credits`
-              }
-            >
-              <IcCheck className="hs-icon-sm" />
-              Approve
-              {total != null && <span className="hs-btn__cost hs-mono">{total}</span>}
-            </button>
-          </span>
-        )}
-      </footer>
-    </section>
-  );
-}
+/* The plan card itself is src/components/studio/agent/PlanApproval.js —
+   models, quality and aspect are editable per media step, every change is
+   re-quoted live by the server, and Approve sends the exact displayed
+   plan. */
 
 /* ── Live run progress — driven by the run stream's own step events ─────── */
 function RunCard({ run }) {
@@ -342,11 +269,53 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   const [error, setError] = useState("");
   const [balance, setBalance] = useState(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [sessionId, setSessionId] = useState(null);
+  const [mode, setMode] = useState("review");     // "review" | "auto" (execution mode)
 
   const feedRef = useRef(null);
   const abortRef = useRef(null);
+  const sessionRef = useRef(null);
   const idRef = useRef(0);
   const nextId = () => (idRef.current += 1);
+
+  /* Model catalog for the plan's per-step model editing */
+  const { models: catalogModels, loading: catalogLoading } = useModelCatalog({});
+
+  /* ── Session: created implicitly on the first message (E3.1/E3.4) ────── */
+  const ensureSession = useCallback(async () => {
+    if (sessionRef.current) return sessionRef.current;
+    try {
+      const res = await apiFetch("/api/agent/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        retries: 0,
+      });
+      const data = await res.json();
+      if (data?.session?.id) {
+        sessionRef.current = data.session.id;
+        setSessionId(data.session.id);
+        return data.session.id;
+      }
+    } catch { /* chat still works without persistence */ }
+    return null;
+  }, []);
+
+  /* Execution mode is persisted onto the session's settings so
+     "don't ask again" survives resume. */
+  const changeMode = useCallback(async (next) => {
+    setMode(next);
+    const sid = sessionRef.current;
+    if (!sid) return;
+    try {
+      await apiFetch(`/api/agent/sessions/${sid}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { autoComplete: next === "auto" } }),
+        retries: 0,
+      });
+    } catch { /* the toggle still applies locally */ }
+  }, []);
 
   /* ── Balance: the API's number, or nothing at all ────────────────────── */
   const loadBalance = useCallback(async () => {
@@ -441,7 +410,8 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     abortRef.current = ctrl;
 
     try {
-      const { res, json } = await openStream("/api/agent/chat", { messages: history }, ctrl.signal);
+      const sid = await ensureSession();
+      const { res, json } = await openStream("/api/agent/chat", { messages: history, sessionId: sid }, ctrl.signal);
 
       if (json) {
         if (json.error) throw new Error(json.error);
@@ -469,7 +439,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       if (abortRef.current === ctrl) abortRef.current = null;
       setBusy("");
     }
-  }, [input, busy, messages, patch]);
+  }, [input, busy, messages, patch, ensureSession]);
 
   /* Answering the agent's question sends the choice as the next message */
   const answerQuestion = useCallback((message, answer) => {
@@ -479,13 +449,15 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   }, [busy, patch, send]);
 
   /* ── Plan — one JSON quote, no credits spent ─────────────────────────── */
-  const propose = useCallback(async () => {
-    const text = input.trim();
+  /* `textOverride` lets a plan-card revision request re-plan without
+     touching the composer's draft. */
+  const propose = useCallback(async (textOverride) => {
+    const text = (typeof textOverride === "string" ? textOverride : input).trim();
     if (!text || busy) return;
 
     const askId = nextId();
     const replyId = nextId();
-    setInput("");
+    if (typeof textOverride !== "string") setInput("");
     setError("");
     setAtBottom(true);
     setMessages((prev) => [
@@ -496,12 +468,13 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     setBusy("plan");
 
     try {
+      const sid = await ensureSession();
       /* `stream: false` is required — the route streams SSE by default and the
          previous build called .json() on that stream, so no plan ever landed. */
       const res = await apiFetch("/api/agent/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, stream: false }),
+        body: JSON.stringify({ message: text, stream: false, sessionId: sid }),
         timeout: 120000,
         retries: 0,
       });
@@ -530,18 +503,22 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     } finally {
       setBusy("");
     }
-  }, [input, busy, patch, loadBalance]);
+  }, [input, busy, patch, loadBalance, ensureSession]);
 
   /* ── Approve — the only path that spends credits ─────────────────────── */
-  const approve = useCallback(async (message) => {
+  /* `approvedPlan` is the EXACT plan the user saw and edited in the
+     PlanApproval card (models/params + its live re-quoted estimate); the
+     server re-verifies every price and honors it verbatim (E3.2). */
+  const approve = useCallback(async (message, approvedPlan) => {
     if (busy || !message?.plan) return;
+    const plan = approvedPlan || message.plan;
 
-    patch(message.id, { decision: "approved" });
+    patch(message.id, { decision: "approved", plan });
     setError("");
     setAtBottom(true);
 
     const runId = nextId();
-    const steps = (message.plan.steps || []).map((s, i) => ({
+    const steps = (plan.steps || []).map((s, i) => ({
       n: i + 1, agent: s.agent, task: s.task, status: "pending",
     }));
     setMessages((prev) => [
@@ -578,7 +555,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     try {
       const { res, json } = await openStream(
         "/api/agent/run",
-        { message: message.request || message.plan.summary || "", plan: message.plan },
+        { message: message.request || plan.summary || "", plan, sessionId: sessionRef.current },
         ctrl.signal,
       );
 
@@ -637,10 +614,17 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     }
   }, [busy, patch, loadBalance, onCreditsChanged]);
 
-  const adjust = useCallback((message) => {
-    setInput(message.request || message.plan?.summary || "");
-    setAtBottom(true);
-  }, []);
+  /* A free-text revision request goes back to the planner with the
+     original brief as context. */
+  const adjust = useCallback((message, revision) => {
+    const original = message.request || message.plan?.summary || "";
+    if (revision) {
+      propose(`${original}\n\nRevision: ${revision}`);
+    } else {
+      setInput(original);
+      setAtBottom(true);
+    }
+  }, [propose]);
 
   /* ── Session readout for the side panel ──────────────────────────────── */
   const spent = useMemo(
@@ -748,12 +732,17 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
                     )}
 
                     {message.plan && (
-                      <PlanCard
+                      <PlanApproval
+                        key={`plan-${message.id}`}
                         message={message}
                         balance={balance}
                         busy={busy}
-                        onApprove={() => approve(message)}
-                        onAdjust={() => adjust(message)}
+                        models={catalogModels}
+                        modelsLoading={catalogLoading}
+                        mode={mode}
+                        onModeChange={changeMode}
+                        onApprove={(plan, chosenMode) => approve(message, plan, chosenMode)}
+                        onAdjust={(revision) => adjust(message, revision)}
                       />
                     )}
 
