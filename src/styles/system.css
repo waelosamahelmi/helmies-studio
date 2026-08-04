@@ -423,11 +423,20 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Coarse pointers: every target reaches 44px */
+/* Coarse pointers: every target reaches 44px.
+   EDITSv1 E7.2 — this block used to leave two holes measured at 393px:
+   `--btn-h: 40px` on the small variant (so every ghost/small action was
+   40px tall, four short of the floor this file's own header states), and a
+   specificity loss — `.hs-btn--icon.hs-btn--sm { width: 32px }` above is
+   0-2-0 and out-specified the 0-1-0 `.hs-btn--icon` rule here, so small
+   icon buttons stayed 32px WIDE on touch. Fixed by matching that
+   specificity inside this block rather than reaching for !important. */
 @media (pointer: coarse) {
   .hs-btn { --btn-h: 44px; }
-  .hs-btn--sm { --btn-h: 40px; }
+  .hs-btn--sm { --btn-h: 44px; }
   .hs-btn--icon { width: var(--btn-h); }
+  .hs-btn--icon.hs-btn--sm { width: var(--btn-h); }
+  .hs-btn--icon.hs-btn--lg { width: var(--btn-h); }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -1006,3 +1015,61 @@ kbd.hs-kbd {
 .hs-head { display: flex; flex-direction: column; gap: var(--s-3); margin-bottom: var(--s-8); max-width: 62ch; }
 .hs-head h2 { font-size: var(--t-2xl); font-weight: 600; }
 .hs-head p  { font-size: var(--t-md); color: var(--tx-dim); line-height: 1.6; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ── E7 mobile ──
+   ──────────────────────────────────────────────────────────────────────────
+   EDITSv1 E7. Everything below was added in one block at the end of the file
+   rather than threaded through the sections above, so it stays trivially
+   mergeable and so the whole mobile pass reads as one decision.
+
+   The rule this file has claimed since it was written — "Every interactive
+   target >= 44px on coarse pointers" — was true of .hs-btn and the form
+   fields and of nothing else. tests/e2e/mobile.spec.mjs measures it at
+   393x851 on a real coarse pointer; these are the controls that came back
+   short. Hit areas grow by growing the element's OWN box (padding or
+   min-height), never with an absolutely-positioned pseudo-element: a fake
+   hit area does not move with the element in a scrolling list, and it is not
+   what a fingertip actually lands on.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (pointer: coarse) {
+  /* Chips and segments — 40px and 38px before */
+  .hs-chip { min-height: 44px; }
+  .hs-segmented > button { min-height: 44px; }
+
+  /* Switch — 40x24 before, and it is a role="switch" target, not decoration.
+     The visible track keeps its 40x24 dimensions as a ::before, centred
+     inside a 44x44 box, so the control looks identical and the finger has
+     somewhere to land. */
+  .hs-switch {
+    width: 44px; height: 44px;
+    display: grid; place-items: center;
+    background: transparent;
+    border-color: transparent;
+  }
+  .hs-switch::before {
+    content: "";
+    width: 40px; height: 24px;
+    border-radius: var(--r-full);
+    background: var(--ink-300);
+    border: 1px solid var(--line);
+    transition: background var(--d-base) var(--ease), border-color var(--d-base) var(--ease);
+  }
+  .hs-switch::after { top: 12px; left: 4px; }   /* the 40x24 track sits at 2,10 */
+  .hs-switch[aria-checked="true"] { background: transparent; border-color: transparent; }
+  .hs-switch[aria-checked="true"]::before { background: var(--filament); border-color: var(--filament); }
+
+  /* Thumbnail remove — 20x20 before, in the corner of a 64px tile. The tile
+     grows with it so a 44px button is a corner, not the whole thumbnail. */
+  .hs-thumbs { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+  .hs-thumb__x { top: 4px; right: 4px; width: 44px; height: 44px; }
+  .hs-thumb__x svg { width: 16px; height: 16px; }
+
+  /* Native range inputs are ~24px of hit area regardless of the track's
+     drawn height. The Director timeline's trim sliders are bare
+     <input type="range"> elements, so this is keyed on the type too. */
+  .hs-range, input[type="range"] { min-height: 44px; height: 44px; }
+
+  /* The skip link is the first focusable element on every page */
+  .hs-skip { min-height: 44px; display: inline-flex; align-items: center; }
+}

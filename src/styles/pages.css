@@ -825,3 +825,38 @@
   color: var(--tx);
   overflow-wrap: anywhere;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ── E7 mobile ──
+   ──────────────────────────────────────────────────────────────────────────
+   EDITSv1 E7.2/E7.5. Appended as one block for the same reason as
+   system.css's: the mobile pass reads as one decision and merges cleanly.
+   Every rule here is keyed on `pointer: coarse` (or a phone width) and
+   changes nothing on a desktop.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (pointer: coarse) {
+  /* Section tabs — settings and admin both use these, ~38px before. */
+  .pg-tab { min-height: 44px; }
+
+  /* The masthead lockup and every footer link were 20-25px tall: they are
+     block-level flex items, not inline links in a sentence, so WCAG 2.5.8's
+     inline exception does not cover them. */
+  .pg-logo { min-height: 44px; }
+  .pg-nav__link { display: inline-flex; align-items: center; min-height: 44px; }
+  .pg-foot__col a { display: flex; align-items: center; min-height: 44px; }
+  .pg-foot__col { gap: 0; }
+  .pg-foot__base a { display: inline-flex; align-items: center; min-height: 44px; }
+
+  /* The announcement bar's dismiss control was a bare 14x14 icon — the
+     smallest target measured anywhere in the app, and it sits on every page
+     the moment the owner posts anything. Fixed here rather than in
+     src/components/AnnouncementBar.js so nothing about that component's
+     markup changes. */
+  .pg-announce button {
+    display: inline-grid;
+    place-items: center;
+    min-width: 44px;
+    min-height: 44px;
+    margin: calc(var(--s-2) * -1) 0;
+  }
+}
