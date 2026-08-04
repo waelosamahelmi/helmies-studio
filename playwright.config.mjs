@@ -131,10 +131,17 @@ export default defineConfig({
       testDir: "./tests/e2e/fixtures",
       testMatch: /auth\.setup\.mjs$/,
     },
+    // EDITSv1 E7.1: the desktop projects gain a testIgnore for the mobile
+    // spec and nothing else. Without it, `testMatch: /.*\.spec\.mjs$/` would
+    // also hand tests/e2e/mobile.spec.mjs to three DESKTOP viewports, where
+    // its assertions (no horizontal page scroll at 393px, a coarse-pointer
+    // 44px tap target, a panel that only becomes a sheet below 1024px) are
+    // not just wrong but meaningless. The projects are otherwise untouched.
     {
       name: "chromium",
       testDir: "./tests/e2e",
       testMatch: /.*\.spec\.mjs$/,
+      testIgnore: /mobile\.spec\.mjs$/,
       use: { ...devices["Desktop Chrome"] },
       dependencies: ["setup"],
     },
@@ -148,6 +155,7 @@ export default defineConfig({
       name: "firefox",
       testDir: "./tests/e2e",
       testMatch: /.*\.spec\.mjs$/,
+      testIgnore: /mobile\.spec\.mjs$/,
       use: { ...devices["Desktop Firefox"] },
       dependencies: ["setup"],
     },
@@ -155,7 +163,22 @@ export default defineConfig({
       name: "webkit",
       testDir: "./tests/e2e",
       testMatch: /.*\.spec\.mjs$/,
+      testIgnore: /mobile\.spec\.mjs$/,
       use: { ...devices["Desktop Safari"] },
+      dependencies: ["setup"],
+    },
+    // EDITSv1 E7.1 — the first phone-sized coverage this suite has ever had.
+    // Pixel 5 is 393x851 with `hasTouch` and `isMobile` set, which is what
+    // makes `@media (pointer: coarse)` and `(hover: none)` actually apply:
+    // a desktop project with setViewportSize() narrows the layout but still
+    // reports a fine pointer, so every touch-target rule in system.css stays
+    // switched off and the run proves nothing. Chromium is the only engine
+    // Playwright emulates mobile devices on.
+    {
+      name: "mobile",
+      testDir: "./tests/e2e",
+      testMatch: /mobile\.spec\.mjs$/,
+      use: { ...devices["Pixel 5"] },
       dependencies: ["setup"],
     },
   ],
