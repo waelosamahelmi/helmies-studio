@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import prisma from "@/lib/prisma";
-import { executeStep } from "@/lib/agents";
+import { executeStepWithRetry } from "@/lib/agents";
 import { estimateAgentTask } from "@/lib/pricing-engine";
 import { detectAbuse } from "@/lib/security";
 import { reserveCredits, settleReservation, releaseReservation, getWallet } from "@/lib/wallet";
@@ -95,6 +95,20 @@ export async function executeWorkflow(workflowId, userId, inputs = {}) {
   const outputs = [];
   const stepResults = [];
 
+  // A run used to write its outputs ONCE, at the very end — so a chain that
+  // died on step four left no record of steps one to three, and nothing
+  // could show what had already been paid for and produced. Every step now
+  // checkpoints its own result onto the run row as it finishes. Failures to
+  // write are swallowed: a bookkeeping hiccup must never abort a run that is
+  // otherwise going fine (the terminal write below is authoritative).
+  // Snapshotted, not the live arrays: what gets persisted must be the state
+  // at the moment of the checkpoint, whatever the loop does next.
+  const checkpoint = async () => {
+    await prisma.workflowRun
+      .update({ where: { id: run.id }, data: { outputs: { outputs: [...outputs], stepResults: [...stepResults] } } })
+      .catch(() => {});
+  };
+
   try {
     for (let i = 0; i < steps.length; i++) {
       const step = { ...steps[i] };
@@ -112,14 +126,17 @@ export async function executeWorkflow(workflowId, userId, inputs = {}) {
       }
 
       try {
-        const output = await executeStep(step, outputs);
+        // executeStepWithRetry, not executeStep: the fallback model/provider
+        // chain in agents.js applies to workflow runs too now.
+        const output = await executeStepWithRetry(step, outputs, 0);
         outputs.push(output);
         stepResults.push({ step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output });
+        await checkpoint();
       } catch (stepError) {
         stepResults.push({ step: i + 1, agent: step.agent, status: "failed", error: stepError.message });
         await prisma.workflowRun.update({
           where: { id: run.id },
-          data: { status: "failed", error: stepError.message, outputs: { stepResults } },
+          data: { status: "failed", error: stepError.message, outputs: { outputs, stepResults } },
         });
         // Settle only the steps that actually ran; the remainder of the
         // reservation is released back to the wallet automatically.
@@ -184,7 +201,9 @@ export async function regenerateStep(workflowId, userId, stepIndex, newParams = 
   await syncLegacyCredits(userId);
 
   try {
-    const output = await executeStep(step, priorOutputs);
+    // Same fallback chain as a full run — rerunning one step is the user's
+    // answer to a step that failed, so it is exactly where retries matter.
+    const output = await executeStepWithRetry(step, priorOutputs, 0);
     await settleReservation(userId, jobId, stepCost).catch(() => {});
     await syncLegacyCredits(userId);
     return { success: true, output, creditsUsed: stepCost };

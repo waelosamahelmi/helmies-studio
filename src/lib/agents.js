@@ -8,6 +8,7 @@ import {
 } from "@/lib/generation";
 import { detectAbuse } from "@/lib/security";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
+import { assembleVideos } from "@/lib/video-assembly";
 import prisma from "@/lib/prisma";
 
 // ── Agent definitions ──
@@ -328,6 +329,23 @@ export async function executeStep(step, previousOutputs = []) {
       return await executeVideoStep(resolvedParams);
     case "audio":
       return await executeAudioStep(resolvedParams);
+    // ── EDITSv1 E5.1 — the workflow step kinds ─────────────────────────
+    // WorkflowStudio stores a step's KIND verbatim as its `agent`, so every
+    // kind the builder offers needs a case here. Without one they fell
+    // through to the generic-LLM default below and quietly returned prose
+    // where the user had paid for a video, an upscale or a finished cut.
+    case "i2v":
+      return await executeI2VStep(resolvedParams, previousOutputs);
+    case "upscale":
+      return await executeUpscaleStep(resolvedParams, previousOutputs);
+    case "music":
+      return await executeMusicStep(resolvedParams);
+    case "voiceover":
+      return await executeVoiceoverStep(resolvedParams);
+    case "assembly":
+      return await executeAssemblyStep(resolvedParams, previousOutputs);
+    case "export":
+      return await executeExportStep(resolvedParams, previousOutputs, step);
     case "website":
       return await executeWebsiteStep(resolvedParams);
     case "marketing":
@@ -393,6 +411,121 @@ async function executeAudioStep(params) {
   const provider = await resolveProvider(params._modelId || params.model || endpoint);
   const result = await generateAudio({ endpoint, ...params, _provider: provider });
   return result.url || result.outputs?.[0];
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   EDITSv1 E5.1 — WORKFLOW STEP KINDS
+   ──────────────────────────────────────────────────────────────────────────
+   A pipeline is a straight line, so a step's inputs are simply what came
+   before it. These executors read backwards through `previousOutputs` for
+   the right KIND of thing (a still to animate, clips to join) rather than
+   making the user wire every link by hand — an explicit $STEP_N_OUTPUT in
+   the step's params still wins, because it was resolved before dispatch.
+
+   `assembly` and `export` never touch a provider: one shells out to ffmpeg
+   through video-assembly.js, the other only describes what the run produced.
+   Their prices live in pricing-engine.js's NON_PROVIDER_STEP_CREDITS, fixed
+   server-side, so the quote the builder shows and the credits the run
+   reserves are the same number.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const isMediaUrl = (v) => typeof v === "string" && /^(https?:\/\/|\/)/.test(v.trim());
+// Same two heuristics WorkflowStudio uses to decide what a URL is, so the
+// builder's thumbnails and the engine's step wiring never disagree: the file
+// extension, plus the "/video/" path segment some delivery URLs carry
+// instead of one.
+const isVideoOutput = (v) => isMediaUrl(v) && (/\.(mp4|webm|mov|m4v)(\?|$)/i.test(v) || v.includes("/video/"));
+const isAudioOutput = (v) => isMediaUrl(v) && /\.(mp3|wav|ogg|m4a|flac|aac)(\?|$)/i.test(v);
+const isImageOutput = (v) => isMediaUrl(v) && !isVideoOutput(v) && !isAudioOutput(v);
+
+// The newest earlier output that is a still image. Videos and audio are
+// skipped rather than mistaken for a frame.
+function latestImageOutput(previousOutputs = []) {
+  for (let i = previousOutputs.length - 1; i >= 0; i--) {
+    if (isImageOutput(previousOutputs[i])) return previousOutputs[i];
+  }
+  return null;
+}
+
+// Image → Video. The still comes from the step's own image_url when one was
+// wired, otherwise from the most recent earlier image.
+async function executeI2VStep(params, previousOutputs) {
+  const image = isMediaUrl(params.image_url) ? params.image_url : latestImageOutput(previousOutputs);
+  if (!image) {
+    throw new Error("This step animates an image, but no earlier step produced one. Add an image step before it.");
+  }
+  const endpoint = params.endpoint || params.model;
+  const provider = await resolveProvider(params.model || endpoint);
+  const result = await generateI2V({ ...params, endpoint, image_url: image, _provider: provider });
+  return result.url || result.outputs?.[0];
+}
+
+// Upscale — an image-to-image route with an upscaling model.
+async function executeUpscaleStep(params, previousOutputs) {
+  const image = isMediaUrl(params.image_url) ? params.image_url : latestImageOutput(previousOutputs);
+  if (!image) {
+    throw new Error("This step enlarges an image, but no earlier step produced one. Add an image step before it.");
+  }
+  const endpoint = params.endpoint || params.model;
+  const provider = await resolveProvider(params.model || endpoint);
+  const result = await generateI2I({ ...params, endpoint, image_url: image, _provider: provider });
+  return result.url || result.outputs?.[0];
+}
+
+// Music and voiceover are the same audio route with different model pools —
+// the builder filters music models by audioKind and speech models by their
+// text-to-speech capability, and the prompt carries the lyric brief or the
+// line to read. Named separately so a step says what it is on the chain and
+// so each gets its own quote.
+async function executeMusicStep(params) {
+  return await executeAudioStep(params);
+}
+
+async function executeVoiceoverStep(params) {
+  return await executeAudioStep(params);
+}
+
+// Assembly — joins every video this run has produced so far, in order.
+// Server-side only: the clip list is derived from the run's own outputs, so
+// a caller can never point it at a URL of their choosing.
+async function executeAssemblyStep(params, previousOutputs = []) {
+  const clips = previousOutputs.filter(isVideoOutput);
+  if (!clips.length) {
+    throw new Error("This step joins the video clips made earlier in the chain, but none were produced. Add a video step before it.");
+  }
+  const options = {};
+  if (typeof params?.transition === "string" && params.transition) options.transition = params.transition;
+  if (params?.transitionDuration != null) options.transitionDuration = params.transitionDuration;
+  return await assembleVideos(clips, options);
+}
+
+// Export — the closing step. Costs nothing and generates nothing: it names
+// the deliverable and lists everything the run made, so the finished chain
+// hands back one thing to open and a record of how it got there.
+function manifestEntry(output, index) {
+  const step = index + 1;
+  if (isVideoOutput(output)) return { step, type: "video", url: output };
+  if (isAudioOutput(output)) return { step, type: "audio", url: output };
+  if (isImageOutput(output)) return { step, type: "image", url: output };
+  if (typeof output === "string") return { step, type: "text", text: output.slice(0, 2000) };
+  return { step, type: "data", data: output ?? null };
+}
+
+async function executeExportStep(params, previousOutputs = [], step = null) {
+  const manifest = previousOutputs.map(manifestEntry);
+  // The deliverable is the newest video (an assembled cut is a video, and it
+  // is by construction the last one), else the newest file of any kind.
+  const deliverable =
+    [...previousOutputs].reverse().find(isVideoOutput) ||
+    [...previousOutputs].reverse().find(isMediaUrl) ||
+    null;
+
+  return {
+    kind: "export",
+    name: params?.name || step?.task || "Deliverable",
+    url: deliverable,
+    manifest,
+  };
 }
 
 // ── Fallback models per agent type (model + provider pairs) ──

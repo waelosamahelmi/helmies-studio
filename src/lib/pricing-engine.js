@@ -22,8 +22,30 @@ async function resolveMarkup(providerName) {
   }
 }
 
+// ── Non-provider step kinds (EDITSv1 E5.1) ──
+// A workflow's `assembly` and `export` steps never call a generation
+// provider: one shells out to ffmpeg on our own machine, the other only
+// describes what the run produced. No ModelPricing row can ever quote them,
+// so their price is fixed here — the one place both /api/estimate (what the
+// builder shows) and estimateAgentTask (what executeWorkflow reserves) read
+// it from, which is what keeps those two numbers identical.
+//
+// The KIND decides the price, which is why this is checked BEFORE any model
+// lookup: naming an expensive model on an assembly step must not inflate it,
+// and — the direction that actually costs money — a real generation step can
+// never be priced as a free export, because the same `agent` field that
+// picks the executor is the one that picks the price.
+//
+// 5 for assembly is the director's own assembly charge
+// (director-planner.js's assemblyCost), for the same ffmpeg work.
+export const NON_PROVIDER_STEP_CREDITS = { assembly: 5, export: 0 };
+
 // ── Estimate credits for a task before execution ──
 export async function estimateCredits(tool, model, params = {}) {
+  if (Object.prototype.hasOwnProperty.call(NON_PROVIDER_STEP_CREDITS, tool)) {
+    return NON_PROVIDER_STEP_CREDITS[tool];
+  }
+
   // Tolerant of the "public" (provider-prefix-stripped) id the catalog now
   // hands back to clients — see resolveModelPricingRow's header.
   const pricing = await resolveModelPricingRow(prisma, model).catch(() => null);
@@ -56,6 +78,9 @@ function getFallbackCost(tool, model, params) {
     image: 2, i2i: 3, video: 10, i2v: 12, v2v: 8,
     lipsync: 8, audio: 5, recast: 12, cinema: 4,
     motion: 8, clipping: 6, marketing: 15, influencer: 3, llm: 1,
+    // E5.1 workflow kinds that DO reach a provider — priced like the route
+    // they run through when the chosen model has no pricing row yet.
+    upscale: 3, music: 5, voiceover: 5,
   };
 
   let base = costs[tool] || 2;

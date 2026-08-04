@@ -3,12 +3,13 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
 import { matchesGroup } from "@/lib/capability-groups";
+import { audioKind } from "@/lib/model-catalog-core.mjs";
 import { useModelCatalog } from "./useModelCatalog";
 import {
   Sheet, SpendMeter, Field, Group, Chips, RatioPicker, Specs,
   IcFlow, IcPlay, IcPlus, IcTrash, IcRefresh, IcCheck, IcAlert, IcExternal,
   IcImage, IcVideo, IcMusic, IcMegaphone, IcGrid, IcBrain, IcUpload, IcLayers,
-  IcChevron, IcChevronLeft,
+  IcChevron, IcChevronLeft, IcMic, IcFilm, IcZoomIn, IcVolume, IcDownload, IcCopy,
 } from "@/components/studio/kit";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -23,18 +24,44 @@ import {
 /* The engine (lib/agents.js → executeStep) understands exactly these agents.
    The previous build offered seven invented types — prompt_compile,
    quality_gate, brand_compliance and friends — saved them as the step's
-   `agent`, and every run then died on "Unknown agent". Only real agents now. */
+   `agent`, and every run then died on "Unknown agent". Only real agents now.
+
+   Each kind names its model pool: `group` picks the capability groups a
+   model must belong to, and `pick` narrows further where a group is too
+   coarse to be honest (an upscaler is not a general image editor; a composer
+   is not a sound-effects box). Kinds with no pool either write text or run
+   entirely on our own machine — assembly shells out to ffmpeg, export only
+   describes what the run made — and their prices are fixed server-side in
+   pricing-engine.js's NON_PROVIDER_STEP_CREDITS. */
 const STEP_KINDS = [
   { id: "image", label: "Image", desc: "Generate or edit an image", icon: IcImage, group: ["tti", "iti"] },
-  { id: "video", label: "Video", desc: "Generate a video clip", icon: IcVideo, group: ["ttv", "i2v"] },
-  { id: "audio", label: "Audio", desc: "Generate music, voice or sound", icon: IcMusic, group: ["audio"] },
+  { id: "i2v", label: "Image to video", desc: "Animate the image from the step before", icon: IcFilm, group: ["i2v"] },
+  { id: "upscale", label: "Upscale", desc: "Enlarge the image from the step before", icon: IcZoomIn, group: ["iti"], pick: (m) => m?.capability === "image-upscale" },
+  { id: "video", label: "Video", desc: "Generate a video clip from text", icon: IcVideo, group: ["ttv"] },
+  { id: "music", label: "Music", desc: "Compose a track", icon: IcMusic, group: ["audio"], pick: (m) => audioKind(m) === "music" },
+  { id: "voiceover", label: "Voiceover", desc: "Read the prompt aloud", icon: IcMic, group: ["audio"], pick: (m) => audioKind(m) === "tts" },
+  { id: "audio", label: "Audio", desc: "Any audio model — effects, dialogue, tools", icon: IcVolume, group: ["audio"] },
+  { id: "assembly", label: "Assemble", desc: "Join every video clip made so far", icon: IcLayers, group: [] },
   { id: "marketing", label: "Marketing", desc: "Write campaign copy or an ad", icon: IcMegaphone, group: [] },
   { id: "website", label: "Website", desc: "Build a page from a brief", icon: IcGrid, group: [] },
   { id: "coding", label: "Code", desc: "Write or explain code", icon: IcBrain, group: [] },
+  { id: "export", label: "Export", desc: "Name the deliverable and list every output", icon: IcDownload, group: [] },
 ];
 
 const KIND_IDS = STEP_KINDS.map((k) => k.id);
 const kindOf = (id) => STEP_KINDS.find((k) => k.id === id) || null;
+
+/* Steps that join or describe earlier work rather than generating anything
+   new — they take no model and no prompt. */
+const CLOSING_KINDS = new Set(["assembly", "export"]);
+
+/* How one clip meets the next in an assembly step. Mirrors
+   video-assembly.js's VALID_ASSEMBLY_TRANSITIONS. */
+const TRANSITIONS = [
+  { value: "cut", label: "Cut" },
+  { value: "fade", label: "Fade" },
+  { value: "dissolve", label: "Dissolve" },
+];
 
 /* Workflows saved by the old builder used these ids. Translate on load so
    existing records still open instead of silently failing at run time. */
@@ -58,6 +85,7 @@ const newStep = (kind) => {
     aspect: "",
     negative: "",
     duration: null,
+    transition: "",
   };
 };
 
@@ -67,6 +95,7 @@ function stepParams(step) {
   if (step.aspect) params.aspect_ratio = step.aspect;
   if (step.negative) params.negative_prompt = step.negative;
   if (step.duration) params.duration = step.duration;
+  if (step.kind === "assembly" && step.transition) params.transition = step.transition;
   return params;
 }
 
@@ -85,6 +114,7 @@ function fromApiStep(raw, i) {
     aspect: params.aspect_ratio || "",
     negative: params.negative_prompt || "",
     duration: typeof params.duration === "number" ? params.duration : null,
+    transition: typeof params.transition === "string" ? params.transition : "",
   };
 }
 
@@ -452,9 +482,11 @@ export default function WorkflowStudio({ onCreditsChanged }) {
   const stepIndex = step ? steps.findIndex((s) => s.key === step.key) : -1;
 
   const stepModels = useMemo(() => {
-    const groups = kindOf(step?.kind)?.group || [];
+    const preset = kindOf(step?.kind);
+    const groups = preset?.group || [];
     if (!groups.length) return [];
-    return (models || []).filter((m) => groups.some((g) => matchesGroup(m, g)));
+    const inGroup = (models || []).filter((m) => groups.some((g) => matchesGroup(m, g)));
+    return preset.pick ? inGroup.filter(preset.pick) : inGroup;
   }, [models, step?.kind]);
 
   const chosenModel = stepModels.find((m) => m.id === step?.model) || null;
@@ -803,7 +835,7 @@ export default function WorkflowStudio({ onCreditsChanged }) {
                 label="Step type"
                 options={STEP_KINDS.map((k) => ({ value: k.id, label: k.label, title: k.desc }))}
                 value={step.kind}
-                onChange={(kind) => { changeStep(step.key, { kind, model: "", aspect: "", duration: null }); resetRun(); }}
+                onChange={(kind) => { changeStep(step.key, { kind, model: "", aspect: "", duration: null, transition: "" }); resetRun(); }}
               />
             </Field>
 
@@ -839,20 +871,41 @@ export default function WorkflowStudio({ onCreditsChanged }) {
               </Field>
             )}
 
-            <Field
-              label="Prompt"
-              hint="Use $INPUT_PROMPT for the run input and $STEP_1_OUTPUT to pass an earlier result forward."
-            >
-              {(id) => (
-                <textarea
-                  id={id}
-                  className="hs-input hs-textarea"
-                  value={step.prompt}
-                  onChange={(e) => changeStep(step.key, { prompt: e.target.value })}
-                  placeholder="Describe what this step should produce."
+            {!CLOSING_KINDS.has(step.kind) && (
+              <Field
+                label="Prompt"
+                hint="Use $INPUT_PROMPT for the run input and $STEP_1_OUTPUT to pass an earlier result forward."
+              >
+                {(id) => (
+                  <textarea
+                    id={id}
+                    className="hs-input hs-textarea"
+                    value={step.prompt}
+                    onChange={(e) => changeStep(step.key, { prompt: e.target.value })}
+                    placeholder="Describe what this step should produce."
+                  />
+                )}
+              </Field>
+            )}
+
+            {step.kind === "assembly" && (
+              <Field label="Between clips" hint="How one clip meets the next in the finished cut.">
+                <Chips
+                  label="Transition"
+                  options={TRANSITIONS}
+                  value={step.transition || "cut"}
+                  onChange={(transition) => changeStep(step.key, { transition })}
                 />
-              )}
-            </Field>
+              </Field>
+            )}
+
+            {CLOSING_KINDS.has(step.kind) && (
+              <p className="hs-hint">
+                {step.kind === "assembly"
+                  ? "Joins every video clip made earlier in this chain, in order. Runs here rather than at a model, so it costs a flat fee."
+                  : "Closes the chain: names the deliverable and lists every file the run produced. Free."}
+              </p>
+            )}
 
             {ratios.length > 0 && (
               <Field label="Aspect ratio">
