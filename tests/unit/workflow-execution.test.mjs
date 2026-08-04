@@ -72,11 +72,31 @@ const outputWrites = () =>
     .filter(Boolean);
 
 describe("executeWorkflow — steps go through the retry/fallback path", () => {
+  // Regression: executeStepWithRetry returns { output, credits, model }, not a
+  // bare string. A rebase once left executeWorkflow storing the whole object,
+  // so every later $STEP_N_OUTPUT interpolated "[object Object]" and no output
+  // ever rendered. Assert the RECORDED output is the unwrapped url.
+  it("stores the unwrapped output url, never the { output, credits, model } envelope", async () => {
+    executeStepWithRetry
+      .mockResolvedValueOnce({ output: "https://cdn.example/hero.png", credits: 2, model: "m" })
+      .mockResolvedValueOnce({ output: "https://cdn.example/clip.mp4", credits: 10, model: "m" })
+      .mockResolvedValueOnce({ output: "/api/media/local/assembled_x.mp4", credits: 5, model: "m" });
+
+    const result = await executeWorkflow("wf1", "u1", {});
+
+    expect(result.success).toBe(true);
+    for (const o of result.outputs) {
+      expect(typeof o).toBe("string");
+      expect(o).not.toContain("object Object");
+    }
+    expect(result.outputs).toContain("https://cdn.example/hero.png");
+  });
+
   it("runs every step via executeStepWithRetry, never executeStep directly", async () => {
     executeStepWithRetry
-      .mockResolvedValueOnce("https://cdn.example/hero.png")
-      .mockResolvedValueOnce("https://cdn.example/clip.mp4")
-      .mockResolvedValueOnce("/api/media/local/assembled_x.mp4");
+      .mockResolvedValueOnce({ output: "https://cdn.example/hero.png", credits: 1, model: "m" })
+      .mockResolvedValueOnce({ output: "https://cdn.example/clip.mp4", credits: 1, model: "m" })
+      .mockResolvedValueOnce({ output: "/api/media/local/assembled_x.mp4", credits: 1, model: "m" });
 
     const result = await executeWorkflow("wf1", "u1", {});
 
@@ -92,9 +112,9 @@ describe("executeWorkflow — steps go through the retry/fallback path", () => {
     // fully-populated array.
     const seen = [];
     const results = [
-      "https://cdn.example/hero.png",
-      "https://cdn.example/clip.mp4",
-      "/api/media/local/assembled_x.mp4",
+      { output: "https://cdn.example/hero.png", credits: 1, model: "m" },
+      { output: "https://cdn.example/clip.mp4", credits: 1, model: "m" },
+      { output: "/api/media/local/assembled_x.mp4", credits: 1, model: "m" },
     ];
     executeStepWithRetry.mockImplementation(async (_step, previousOutputs) => {
       seen.push([...previousOutputs]);
@@ -112,9 +132,9 @@ describe("executeWorkflow — steps go through the retry/fallback path", () => {
 describe("executeWorkflow — per-step status is recorded as the run progresses", () => {
   it("writes an incremental record after every completed step, not just at the end", async () => {
     executeStepWithRetry
-      .mockResolvedValueOnce("https://cdn.example/hero.png")
-      .mockResolvedValueOnce("https://cdn.example/clip.mp4")
-      .mockResolvedValueOnce("/api/media/local/assembled_x.mp4");
+      .mockResolvedValueOnce({ output: "https://cdn.example/hero.png", credits: 1, model: "m" })
+      .mockResolvedValueOnce({ output: "https://cdn.example/clip.mp4", credits: 1, model: "m" })
+      .mockResolvedValueOnce({ output: "/api/media/local/assembled_x.mp4", credits: 1, model: "m" });
 
     await executeWorkflow("wf1", "u1", {});
 
@@ -136,7 +156,7 @@ describe("executeWorkflow — per-step status is recorded as the run progresses"
 
   it("keeps the completed steps' outputs on the record when a later step fails", async () => {
     executeStepWithRetry
-      .mockResolvedValueOnce("https://cdn.example/hero.png")
+      .mockResolvedValueOnce({ output: "https://cdn.example/hero.png", credits: 1, model: "m" })
       .mockRejectedValueOnce(new Error("the clip did not render"));
 
     const result = await executeWorkflow("wf1", "u1", {});
@@ -179,7 +199,7 @@ describe("workflow lookups refuse a missing id instead of widening to the whole 
 
 describe("executeWorkflow — money: one reservation, one settlement", () => {
   it("reserves the quoted total once and settles it once on success", async () => {
-    executeStepWithRetry.mockResolvedValue("https://cdn.example/out.png");
+    executeStepWithRetry.mockResolvedValue({ output: "https://cdn.example/out.png", credits: 1, model: "m" });
 
     await executeWorkflow("wf1", "u1", {});
 
@@ -192,7 +212,7 @@ describe("executeWorkflow — money: one reservation, one settlement", () => {
 
   it("settles only the steps that ran when the chain breaks part-way", async () => {
     executeStepWithRetry
-      .mockResolvedValueOnce("https://cdn.example/hero.png")
+      .mockResolvedValueOnce({ output: "https://cdn.example/hero.png", credits: 1, model: "m" })
       .mockRejectedValueOnce(new Error("the clip did not render"));
 
     await executeWorkflow("wf1", "u1", {});

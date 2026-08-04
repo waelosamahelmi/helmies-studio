@@ -143,7 +143,11 @@ export async function executeWorkflow(workflowId, userId, inputs = {}) {
       try {
         // executeStepWithRetry, not executeStep: the fallback model/provider
         // chain in agents.js applies to workflow runs too now.
-        const output = await executeStepWithRetry(step, outputs, 0);
+        // executeStepWithRetry returns { output, credits, model } (the budget
+        // -aware form added for agent runs) — unwrap it, or the raw object
+        // lands in `outputs` and every later $STEP_N_OUTPUT interpolates as
+        // "[object Object]".
+        const { output } = await executeStepWithRetry(step, outputs, 0);
         outputs.push(output);
         stepResults.push({ step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output });
         await checkpoint();
@@ -218,7 +222,7 @@ export async function regenerateStep(workflowId, userId, stepIndex, newParams = 
   try {
     // Same fallback chain as a full run — rerunning one step is the user's
     // answer to a step that failed, so it is exactly where retries matter.
-    const output = await executeStepWithRetry(step, priorOutputs, 0);
+    const { output } = await executeStepWithRetry(step, priorOutputs, 0);
     await settleReservation(userId, jobId, stepCost).catch(() => {});
     await syncLegacyCredits(userId);
     return { success: true, output, creditsUsed: stepCost };
