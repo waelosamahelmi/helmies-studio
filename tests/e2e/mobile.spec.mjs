@@ -251,7 +251,10 @@ test.describe("mobile — admin", () => {
   test("the admin section rail shows that it scrolls", async ({ page }) => {
     await page.goto("/admin");
     const rail = visible(page.locator(".pg-admin__side"));
-    await expect(rail).toBeVisible({ timeout: 20000 });
+    // Wait for the REAL rail, not the Suspense/loading placeholder that
+    // shares its class name and is empty — measuring that would report "does
+    // not overflow" and pass for the wrong reason.
+    await expect(rail.getByRole("link")).toHaveCount(15, { timeout: 20000 });
 
     // 15 links in a ~1,900px strip with `scrollbar-width: none` — nothing on
     // screen says the other 12 exist. Either it no longer overflows, or it

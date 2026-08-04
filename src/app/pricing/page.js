@@ -146,13 +146,13 @@ export default function PricingPage() {
                 <tbody>
                   {RUNS.map((r) => (
                     <tr key={r.key}>
-                      <th scope="row">
+                      <th scope="row" data-label="Run">
                         <Link href={r.href}>{r.label}</Link>
                       </th>
-                      <td className="hs-num" style={{ color: "var(--filament-lit)", fontWeight: 600 }}>
+                      <td data-label="Credits" className="hs-num" style={{ color: "var(--filament-lit)", fontWeight: 600 }}>
                         {CREDIT_COSTS[r.key]?.default ?? "—"}
                       </td>
-                      <td>{r.note}</td>
+                      <td data-label="Produces">{r.note}</td>
                     </tr>
                   ))}
                 </tbody>

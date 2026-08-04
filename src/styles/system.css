@@ -1073,3 +1073,99 @@ kbd.hs-kbd {
   /* The skip link is the first focusable element on every page */
   .hs-skip { min-height: 44px; display: inline-flex; align-items: center; }
 }
+
+/* ── Tables become label-value cards on a phone (E7.5) ──────────────────────
+   `.hs-table { min-width: 560px }` put every admin table behind a nested
+   horizontal scroller at 393px: the page itself did not break, but reading a
+   user row meant scrubbing a small inner scroller sideways with a finger and
+   losing the column header as you went. Below 640px each row becomes a card
+   and each cell a label-value line; `data-label` supplies the label the
+   now-hidden <thead> used to carry (AdminPanel.js's <Table> stamps it onto
+   every cell from the same `head` array the header row is built from). A
+   cell with no data-label — a full-width actions group, say — renders its
+   value across the card. */
+@media (max-width: 640px) {
+  .hs-table-wrap { border: 0; border-radius: 0; overflow-x: visible; }
+  .hs-table { min-width: 0; display: block; font-size: var(--t-sm); }
+  .hs-table thead {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .hs-table tbody { display: block; }
+  .hs-table tbody tr {
+    display: block;
+    margin-bottom: var(--s-3);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--ink-100);
+    overflow: hidden;
+  }
+  .hs-table tbody tr:last-child { margin-bottom: 0; }
+  .hs-table tbody tr:hover td { background: transparent; }
+  /* Row headers (pricing's first column) stack exactly like a cell. */
+  .hs-table tbody td,
+  .hs-table tbody th[scope="row"] {
+    display: grid;
+    grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr);
+    gap: var(--s-3);
+    align-items: center;
+    padding: var(--s-2) var(--s-3);
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    white-space: normal;
+  }
+  .hs-table tbody tr > *:last-child { border-bottom: 0; }
+  .hs-table tbody td::before,
+  .hs-table tbody th[scope="row"]::before {
+    content: attr(data-label);
+    font-family: var(--ff-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--tx-mute);
+  }
+  /* A cell with no label is its own row — action groups, mostly. */
+  .hs-table tbody td:not([data-label]),
+  .hs-table tbody th[scope="row"]:not([data-label]) { grid-template-columns: minmax(0, 1fr); }
+  .hs-table tbody td:not([data-label])::before,
+  .hs-table tbody th[scope="row"]:not([data-label])::before { display: none; }
+  .hs-table tbody td.hs-num { text-align: left; }
+}
+
+/* ── Toasts (E7.5) ─────────────────────────────────────────────────────────
+   src/components/ToastProvider.js is mounted globally (Providers.js), but
+   the classes it rendered — .toast-container / .toast / .toast__close —
+   only ever existed in globals.css, which src/app/page.js imports and no
+   other page does. So every "your image is ready" toast in the studio
+   rendered completely unstyled, in normal document flow, shoving the layout
+   down. Meanwhile the fully-tokenised .hs-toasts / .hs-toast system above —
+   including the mobile rule that lifts it clear of the dock — had no caller
+   at all.
+
+   The provider now renders .hs-toasts / .hs-toast; the two extra pieces it
+   needs, a generation thumbnail and a dismiss button, are defined here so
+   there is exactly ONE toast system in the app. */
+.hs-toast--success { border-color: rgba(52,227,155,0.32); }
+.hs-toast--error   { border-color: rgba(255,90,90,0.32); }
+.hs-toast__thumb {
+  width: 40px; height: 40px;
+  flex: none;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  object-fit: cover;
+}
+.hs-toast__msg { flex: 1; min-width: 0; line-height: 1.45; }
+.hs-toast__x {
+  flex: none;
+  display: grid; place-items: center;
+  width: 24px; height: 24px;
+  margin: -2px -4px -2px 0;
+  border-radius: var(--r-xs);
+  color: var(--tx-mute);
+}
+.hs-toast__x:hover { color: var(--tx); background: var(--fill-02); }
+@media (pointer: coarse) {
+  .hs-toast__x { width: 44px; height: 44px; margin: -6px -8px -6px 0; }
+}

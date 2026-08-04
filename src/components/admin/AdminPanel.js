@@ -11,7 +11,7 @@
    larger editors can import from it without a cycle.
    ══════════════════════════════════════════════════════════════════════════ */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Children, cloneElement, isValidElement, useCallback, useEffect, useMemo, useState } from "react";
 import { Confirm, Modal } from "@/components/studio/kit/Sheet";
 import {
   IcBolt, IcClock, IcHistory, IcInfo, IcMegaphone, IcPersona,
@@ -133,6 +133,26 @@ export function Stats({ items }) {
 
 /* head: array of strings, or { key, num } for right-aligned mono columns */
 export function Table({ caption, head, children }) {
+  /* EDITSv1 E7.5: below 640px system.css turns every row into a card and
+     hides the header row, because `.hs-table { min-width: 560px }` otherwise
+     traps each admin table behind its own sideways scroller at 393px. A
+     stacked cell has to carry its own label, so each <td> is stamped with
+     `data-label` from the SAME `head` array the header row above is built
+     from — one source of truth, and no panel has to remember to repeat its
+     column names. A cell with no heading (the actions column, whose head
+     entry is `{}`) is left unlabelled and renders full width. */
+  const labels = head.map((h) => (typeof h === "string" ? h : h?.key) || "");
+
+  const rows = Children.map(children, (row) => {
+    if (!isValidElement(row) || row.type !== "tr") return row;
+    const cells = Children.map(row.props.children, (cell, i) => {
+      if (!isValidElement(cell) || cell.type !== "td") return cell;
+      if (!labels[i] || cell.props.colSpan) return cell;
+      return cloneElement(cell, { "data-label": labels[i] });
+    });
+    return cloneElement(row, undefined, cells);
+  });
+
   return (
     <div className="hs-table-wrap">
       <table className="hs-table">
@@ -149,7 +169,7 @@ export function Table({ caption, head, children }) {
             })}
           </tr>
         </thead>
-        <tbody>{children}</tbody>
+        <tbody>{rows}</tbody>
       </table>
     </div>
   );

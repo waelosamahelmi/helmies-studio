@@ -860,3 +860,39 @@
     margin: calc(var(--s-2) * -1) 0;
   }
 }
+
+/* ── Admin section rail + settings tabs: say that you scroll (E7.5) ─────────
+   Fifteen links in a ~1,900px strip with `scrollbar-width: none` and no edge
+   treatment. On a phone the first three are all you can see and nothing on
+   screen suggests the other twelve exist — the settings tab strip has the
+   identical shape. These are the classic background-attachment scrolling
+   shadows: the two `local` layers are painted relative to the CONTENT, so
+   they slide away as you reach an end, and the two `scroll` layers are
+   painted relative to the BOX, so they sit over the edges. No JS, no scroll
+   listener, and it corrects itself at both ends. Above 900px both strips
+   become vertical columns that do not overflow, so this is scoped below
+   that. */
+@media (max-width: 899px) {
+  .pg-admin__side,
+  .pg-tabs {
+    background-position: left center, right center, left center, right center;
+    background-repeat: no-repeat;
+    background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+  .pg-admin__side {
+    background-image:
+      linear-gradient(to right, var(--ink-050) 40%, rgba(11,11,16,0)),
+      linear-gradient(to left,  var(--ink-050) 40%, rgba(11,11,16,0)),
+      linear-gradient(to right, rgba(0,0,0,0.6), rgba(0,0,0,0)),
+      linear-gradient(to left,  rgba(0,0,0,0.6), rgba(0,0,0,0));
+  }
+  /* .pg-tabs sits on the page ground, not on the rail's chrome. */
+  .pg-tabs {
+    background-image:
+      linear-gradient(to right, var(--ink-000) 40%, rgba(8,8,12,0)),
+      linear-gradient(to left,  var(--ink-000) 40%, rgba(8,8,12,0)),
+      linear-gradient(to right, rgba(0,0,0,0.6), rgba(0,0,0,0)),
+      linear-gradient(to left,  rgba(0,0,0,0.6), rgba(0,0,0,0));
+  }
+}
