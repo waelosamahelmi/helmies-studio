@@ -4,9 +4,15 @@
    ADMIN — CMS CONTENT
    ──────────────────────────────────────────────────────────────────────────
    /api/admin/cms-content: GET, POST { key, section, content }, PATCH { id, content }.
-   /api/admin/cms-content/publish: POST { id, key } — flips the entry to
-   published, drops any sibling with the same key back to draft, and writes
-   a revision snapshot.
+   /api/admin/cms-content/publish: POST { id } — flips the entry to
+   published and writes a revision snapshot, both in one transaction.
+
+   EDITSv1 E8.5: that route used to also send `key` so it could "drop any
+   sibling with the same key back to draft". CmsEntry.key is @unique, so no
+   sibling can exist — the statement was written against a versioned-rows
+   model that was never built. The model is one row per key carrying a
+   status, with CmsRevision as its append-only history. Publishing also
+   used to write no revision at all (see the route's header).
 
    `content` is a Json column, so an entry may hold a plain string or a
    structure. The editor shows whichever it is and stores JSON back as JSON.
@@ -116,7 +122,10 @@ export default function CmsEditor() {
   const publish = async (entry) => {
     setFault("");
     try {
-      await send("/api/admin/cms-content/publish", "POST", { id: entry.id, key: entry.key });
+      // `key` is no longer sent — the entry is addressed by id, and letting
+      // the client name a key that decided which OTHER rows got demoted was
+      // half of the bug repaired in E8.5.
+      await send("/api/admin/cms-content/publish", "POST", { id: entry.id });
       reload();
     } catch (e) {
       setFault(e.message);
@@ -189,7 +198,17 @@ export default function CmsEditor() {
           </Table>
         )}
 
-        <Note>Editing saves a draft. Nothing reaches the public site until you publish it.</Note>
+        {/* EDITSv1 E8.5: this used to say only the first sentence, while no
+            page in the app read a CmsEntry at all — so "reaches the public
+            site" was not true of anything. One key is wired now; the rest
+            are stored but not yet rendered anywhere, and saying so is
+            better than letting the owner write copy into a void. */}
+        <Note>
+          Editing saves a draft. Nothing reaches the public site until you publish it.
+          Wired keys render live: <span className="hs-mono">pricing.faq</span> replaces the
+          questions on the pricing page (an array of <span className="hs-mono">{'{ q, a }'}</span>{" "}
+          objects). Any other key is stored and versioned here, but no page reads it yet.
+        </Note>
       </Panel>
 
       {/* Edit */}

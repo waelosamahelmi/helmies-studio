@@ -32,7 +32,7 @@ export async function resetDb() {
   // AnnouncementDismissal and PromoRedemption hang off them by FK and go
   // with the CASCADE.
   await prisma.$executeRawUnsafe(
-    `TRUNCATE "public"."User", "public"."StripeEvent", "public"."AnonRateLimit", "public"."GenerationJob", "public"."FeatureFlag", "public"."ProviderConfig", "public"."SiteAnnouncement", "public"."PromoCode" RESTART IDENTITY CASCADE`
+    `TRUNCATE "public"."User", "public"."StripeEvent", "public"."AnonRateLimit", "public"."GenerationJob", "public"."FeatureFlag", "public"."ProviderConfig", "public"."SiteAnnouncement", "public"."PromoCode", "public"."CmsEntry" RESTART IDENTITY CASCADE`
   );
   return prisma;
 }
