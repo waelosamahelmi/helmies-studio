@@ -113,6 +113,23 @@ beforeEach(() => {
   prisma.generation.create.mockResolvedValue({ id: "gen1" });
   prisma.agentSession.update.mockResolvedValue({});
   prisma.agentMessage.create.mockResolvedValue({ id: "m1" });
+  // Every step's named model resolves as active/non-deprecated/runnable by
+  // default (URGENT production fix: executeStepWithRetry/executeAgentStep
+  // now validate a step's model against the live catalog before executing/
+  // debiting it) — these tests exercise the E3.2 money invariants (approved
+  // budget ceilings, re-quoting, refunds), not model-catalog resolution, so
+  // the new runnable-model gate must never trigger a substitution here.
+  // Catalog gate/substitution behavior itself is covered by
+  // tests/unit/agent-model-selection.test.mjs.
+  prisma.modelPricing.findUnique.mockImplementation(async ({ where }) => ({
+    modelId: where.modelId,
+    isActive: true,
+    isDeprecated: false,
+    endpoint: where.modelId,
+    providerModelId: where.modelId,
+    providerName: "KIE",
+    creditsCost: 2,
+  }));
   getWallet.mockResolvedValue({ available: 1000 });
   debitWallet.mockResolvedValue({});
   refundCredits.mockResolvedValue({});

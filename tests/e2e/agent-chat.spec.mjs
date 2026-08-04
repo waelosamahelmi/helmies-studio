@@ -170,16 +170,23 @@ async function readyIsolated(page, label) {
 }
 
 // The heuristic planner (no LLM key in the e2e app) turns any image-y brief
-// into exactly one image step, model flux-dev — which has no ModelPricing
-// row in the test DB, so its fallback quote is 2 credits. The seeded
-// catalog model costs 10. The 2 -> 10 flip after swapping models is the
-// live re-quote, priced by the server.
+// into exactly one image step, using the cheapest currently-runnable image
+// model in the live catalog (URGENT production fix — it used to hardcode
+// the dead "flux-dev" id with no ModelPricing row at all; see
+// src/lib/agents.js's defaultRunnableModel). Its starting price is
+// therefore whatever that model actually costs and is deliberately NOT
+// asserted here (it depends on live catalog state, by design — the whole
+// point of the fix). What IS deterministic, and what actually proves the
+// live re-quote works, is swapping to the seeded "E2E Image Model" and
+// confirming the quote becomes EXACTLY its known, fixed price.
 async function planHeroShot(page) {
   await brief(page).fill("Create a hero shot of a ceramic kettle");
   await visible(page.getByRole("button", { name: "Plan production" })).click();
   const planCard = visible(page.locator(".st-plan"));
   await expect(planCard).toBeVisible({ timeout: 30000 });
-  await expect(planCard.locator(".st-plan__cost").first()).toHaveText("2 cr", { timeout: 15000 });
+  // Wait until the live quote settles so Approve is enabled (same signal
+  // planBrief below uses) before touching the model picker.
+  await expect(planCard.getByRole("button", { name: /^Approve/ })).toBeEnabled({ timeout: 15000 });
   return planCard;
 }
 
@@ -267,7 +274,13 @@ const generationCountOf = (userId) =>
 test("review mode: asset card gates the run; Regenerate charges once more; Accept finishes", async ({ page }) => {
   const user = await readyIsolated(page, "review");
 
-  // Heuristic plan: ONE image step (flux-dev fallback quote, 2 cr).
+  // Heuristic plan: ONE image step, priced at whatever the live catalog's
+  // cheapest runnable model actually costs (URGENT production fix — no
+  // longer a hardcoded, unpriced "flux-dev" placeholder; see
+  // src/lib/agents.js's defaultRunnableModel). The exact price is
+  // deliberately not asserted below — only the money invariant that
+  // matters: the wallet always debits exactly what the Generation row(s)
+  // record as spent.
   const planCard = await planBrief(page, "Create a hero shot of a ceramic kettle");
   await planCard.getByRole("button", { name: /^Approve/ }).click();
 
@@ -277,15 +290,25 @@ test("review mode: asset card gates the run; Regenerate charges once more; Accep
   await expect(asset.locator("img")).toBeVisible();
   await expect(asset.getByRole("button", { name: "Accept" })).toBeVisible();
 
-  // One generation, 2 credits charged.
+  const spentSoFar = () =>
+    withTestDb(async (prisma) => {
+      const rows = await prisma.generation.findMany({ where: { userId: user.id } });
+      return rows.reduce((sum, g) => sum + g.creditsUsed, 0);
+    });
+
+  // One generation, its real quoted price charged.
   await expect.poll(() => generationCountOf(user.id), { timeout: 15000 }).toBe(1);
-  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(498);
+  const firstSpend = await spentSoFar();
+  expect(firstSpend).toBeGreaterThan(0);
+  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(500 - firstSpend);
 
   // Regenerate: a NEW Generation row, charged once more.
   await asset.getByRole("button", { name: "Regenerate" }).click();
   await expect(visible(page.locator(".st-asset")).getByRole("button", { name: "Accept" })).toBeVisible({ timeout: 60000 });
   await expect.poll(() => generationCountOf(user.id), { timeout: 15000 }).toBe(2);
-  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(496);
+  const totalSpend = await spentSoFar();
+  expect(totalSpend).toBeGreaterThan(firstSpend);
+  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(500 - totalSpend);
 
   // Accept advances — single-step plan, so the production finishes.
   await visible(page.locator(".st-asset")).getByRole("button", { name: "Accept" }).click();
@@ -311,9 +334,19 @@ test("don't ask again completes the remaining steps without further prompts", as
   await expect(visible(page.locator(".st-msg--agent")).filter({ hasText: "The production finished" })).toBeVisible();
 
   // Both steps produced Generation rows; the session flipped to
-  // auto-complete; total spend = 2 (image) + 10 (video) = 12.
+  // auto-complete. The image step's price is whatever the live catalog's
+  // cheapest runnable model actually costs (URGENT production fix — no
+  // longer a hardcoded, unpriced "flux-dev" placeholder; see
+  // src/lib/agents.js's defaultRunnableModel), so the exact total isn't
+  // pinned to a magic number here — instead this asserts the money
+  // invariant that actually matters: the wallet debited EXACTLY the sum of
+  // what the two Generation rows record as spent, no more and no less.
   await expect.poll(() => generationCountOf(user.id), { timeout: 15000 }).toBe(2);
-  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(488);
+  const totalSpent = await withTestDb(async (prisma) => {
+    const rows = await prisma.generation.findMany({ where: { userId: user.id } });
+    return rows.reduce((sum, g) => sum + g.creditsUsed, 0);
+  });
+  await expect.poll(() => walletOf(user.id), { timeout: 15000 }).toBe(500 - totalSpent);
   await expect
     .poll(async () =>
       withTestDb(async (prisma) => {

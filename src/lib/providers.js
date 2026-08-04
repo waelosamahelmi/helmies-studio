@@ -8,6 +8,7 @@
 import prisma from "./prisma.js";
 import { formatAlibabaPayload, getAlibabaApiPath } from "./alibaba-provider-core.mjs";
 import { resolveModelPricingRow } from "./model-catalog-core.mjs";
+import { log } from "./log.js";
 
 const BRANDED_ERRORS = {
   rate_limit: "Too many requests. Please wait a moment and try again.",
@@ -40,6 +41,47 @@ export function brandForUser(message) {
   const msg = message || "";
   if (BRANDED_VALUES.has(msg)) return msg;
   return brandError(msg);
+}
+
+// ── URGENT production fix: never discard a provider/LLM error again ───────
+// Every `throw new Error(brandError(txt))` site below used to hand the raw
+// provider/LLM response straight to brandError and then let `txt` fall out
+// of scope forever — nothing ever logged it. In production, src/lib/log.js
+// also strips stacks, so the combination made the real cause of a failure
+// unrecoverable from the server logs (this file's own header incident: a
+// database-forensics session was the only way to find out flux-dev was
+// dead, because the actual KIE/Alibaba error text was never written down
+// anywhere). Every such site now calls logRawProviderError(...) first —
+// provider/adapter name, endpoint/model, HTTP status, and the raw body
+// (truncated) via the structured logger, which already redacts secrets —
+// then throws via brandedError(...) below instead of `new Error(brandError(...))`
+// directly.
+//
+// brandedError keeps the SAME user-facing contract every existing caller
+// already relies on (`.message` is the branded string — brandForUser/
+// brandError re-derive from it, generateHandler.js and agents.js both
+// propagate `.message` straight to the client), but attaches the raw
+// reason as the error's native (ES2022) `.cause` — including a stack in
+// non-production — so anything that later logs this error's cause (e.g.
+// apiError's own `log.error(code, { errorId, err: cause })`) has more than
+// the generic branded string to trace an errorId back to a real reason.
+function brandedError(rawReason) {
+  const reasonText = String(rawReason ?? "").slice(0, 2000);
+  const cause = { message: reasonText };
+  if (process.env.NODE_ENV !== "production") cause.stack = new Error(reasonText).stack;
+  return new Error(brandError(rawReason), { cause });
+}
+
+// Logs the RAW (unbranded) provider/LLM failure once, server-side only —
+// see brandedError's header above for why this exists. `body` is truncated
+// to 2000 chars (a raw HTML error page or a huge JSON blob is still useful
+// as a prefix; logging it unbounded is not worth the log-volume risk).
+// Never throws itself — a logging failure must never mask the real error.
+function logRawProviderError(event, fields) {
+  try {
+    const { body, ...rest } = fields || {};
+    log.error(event, { ...rest, body: body != null ? String(body).slice(0, 2000) : undefined });
+  } catch { /* logging must never mask the real error */ }
 }
 
 export async function logProviderError(provider, endpoint, originalError, userId) {
@@ -315,7 +357,8 @@ export async function submitOnly(providerName, endpoint, payload) {
 
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(brandError(txt));
+    logRawProviderError("provider_submit_http_error", { provider: provider?.name, endpoint, model: model || endpoint, status: res.status, body: txt });
+    throw brandedError(txt);
   }
 
   const result = await res.json();
@@ -330,7 +373,9 @@ export async function submitOnly(providerName, endpoint, payload) {
     if (responseData.outputs && responseData.outputs.length > 0) {
       return { provider, requestId: null, submitData: result, immediateResult: responseData };
     }
-    throw new Error(brandError(result.message || result.msg || responseData.error || "No task ID returned"));
+    const reason = result.message || result.msg || responseData.error || "No task ID returned";
+    logRawProviderError("provider_submit_no_request_id", { provider: provider?.name, endpoint, model: model || endpoint, body: JSON.stringify(result) });
+    throw brandedError(reason);
   }
 
   return { provider, requestId, submitData: result };
@@ -358,7 +403,8 @@ export async function pollProviderResult(provider, requestId, maxAttempts = 900,
       if (!pollRes.ok) {
         if (pollRes.status >= 500) continue;
         const txt = await pollRes.text();
-        throw new Error(brandError(txt));
+        logRawProviderError("provider_poll_http_error", { provider: provider?.name, requestId, status: pollRes.status, attempt, body: txt });
+        throw brandedError(txt);
       }
       const body = await pollRes.json();
       const data = body.data || body;
@@ -369,7 +415,8 @@ export async function pollProviderResult(provider, requestId, maxAttempts = 900,
         return { ...data, outputs, url: outputs[0], outputUrl: outputs[0] };
       }
       if (status === "failed" || status === "error" || status === "fail") {
-        const terminalError = new Error(brandError(parsed.error || ""));
+        logRawProviderError("provider_terminal_failure", { provider: provider?.name, requestId, attempt, body: JSON.stringify(data) });
+        const terminalError = brandedError(parsed.error || "");
         terminalError.terminal = true;
         throw terminalError;
       }
@@ -425,7 +472,8 @@ export async function llmComplete(messages, options = {}) {
 
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(brandError(txt));
+    logRawProviderError("llm_complete_http_error", { provider: "openrouter", model: modelId, status: res.status, body: txt });
+    throw brandedError(txt);
   }
 
   const data = await res.json();
@@ -458,7 +506,8 @@ export async function llmStream(messages, options = {}) {
 
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(brandError(txt));
+    logRawProviderError("llm_stream_http_error", { provider: "openrouter", model: modelId, status: res.status, body: txt });
+    throw brandedError(txt);
   }
 
   return res.body;

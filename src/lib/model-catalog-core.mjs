@@ -349,6 +349,72 @@ export async function resolveModelPricingRow(prisma, candidateId, selectOpt) {
   }
 }
 
+// ── Runnable-model gate (URGENT production fix) ────────────────────────────
+// generation-handler.js and generate/async's route already refuse to BILL a
+// model unless its ModelPricing row exists, is active, and isn't deprecated
+// (their own `!dbPricing || isActive===false || isDeprecated` checks) — this
+// is the single place that exact gate lives so every other caller can share
+// it instead of re-deriving a looser copy.
+//
+// Production incident this targets: agents.js's entire image fallback chain
+// was `flux-dev` → `nano-banana` → `qwen-image` — the first two are
+// isActive:false + isDeprecated:true in production, so a planner naming
+// either one (or falling through the dead chain to them) had nowhere left
+// to go.
+//
+// The endpoint/providerModelId check below intentionally does NOT require
+// either to be non-null on its own — an earlier version of this function
+// did, and it broke every hand-priced row that isn't written by a sync
+// (measured regression: tests/e2e's own seeded "e2e-image-model" fixture,
+// and identically any row an admin prices by hand via
+// pricing-engine.js's setModelPricing, since NEITHER path ever sets
+// endpoint/providerModelId — only kie-sync's inferKieModelFromUrl and
+// model-catalog.js's Alibaba sync do). generation-handler.js/generate/
+// async's route never hard-require either field either: both derive
+// `endpoint: dbPricing?.endpoint || staticModel?.endpoint || model` and
+// `model: dbPricing?.providerModelId || staticModel?.providerModelId ||
+// model`, falling back to the row's own modelId — which
+// resolveModelPricingRow guarantees is present on any row it returns — so
+// that IS "a usable endpoint" per the working studio path, and this
+// mirrors it rather than inventing a stricter rule. Kept as an explicit
+// OR-chain (not collapsed to true) so the precedence documents itself and
+// stays visually paired with runnableProviderModelId's own chain below.
+export function isRunnableModelRow(row) {
+  if (!row) return false;
+  if (row.isActive !== true) return false;
+  if (row.isDeprecated === true) return false;
+  return !!(row.endpoint || row.providerModelId || row.modelId);
+}
+
+// The identifier to actually hand a provider adapter for a runnable row —
+// providerModelId first, since that's what strips a DB-only namespacing
+// prefix (Alibaba's sync writes modelId as "alibaba:qwen-image-max" but
+// providerModelId as the bare "qwen-image-max" the real Alibaba API
+// expects — see alibaba-catalog.js's model() and this file's own
+// toPublicModelId header) that the upstream provider has never heard of.
+// Matches the derivation generation-handler.js/generate/async's route use
+// for the outgoing payload's `model` field
+// (`dbPricing?.providerModelId || staticModel?.providerModelId || model`,
+// where that final fallback `model` is effectively the row's own modelId).
+//
+// Deliberately does NOT fall back to `endpoint` here (an earlier version
+// did): for every row a SYNC writes, endpoint and providerModelId are the
+// same string, so it made no difference there — but for a hand-priced row
+// (an admin's setModelPricing, or a fixture like tests/e2e's own
+// "e2e-input-model"), endpoint can be an arbitrary, unrelated string with
+// no connection to the model's real identifier at all. Falling back to it
+// as "the model to send the provider" produced a value
+// resolveModelPricingRow could never look back up (modelId is the only
+// thing it indexes on, plus its own ":<id>" suffix form) — silently
+// mis-billing the step at pricing-engine.js's generic per-tool fallback
+// cost instead of the row's real creditsCost, and sending the WRONG
+// identifier to the provider adapter. The row's own modelId is always
+// present and always resolves, so it — not endpoint — is the correct
+// second choice.
+export function runnableProviderModelId(row) {
+  return row?.providerModelId || row?.modelId || null;
+}
+
 // ── Audio subcategorization (EDITSv1 E1.1) ─────────────────────────────────
 // The sync files EVERY audio utility under the coarse capability "audio"
 // (and every speech model under "text-to-speech") — far too coarse for

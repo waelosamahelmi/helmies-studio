@@ -9,6 +9,8 @@ import {
 import { detectAbuse } from "@/lib/security";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { assembleVideos } from "@/lib/video-assembly";
+import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
+import { runnableProviderModelId } from "@/lib/model-catalog-core.mjs";
 import prisma from "@/lib/prisma";
 
 // ── Agent definitions ──
@@ -42,8 +44,8 @@ For complex creative requests, delegate planning to the creative_director and us
 Respond ONLY in JSON format:
 {
   "steps": [
-    { "agent": "image", "task": "Generate a hero image of...", "params": { "model": "flux-dev", "prompt": "...", "aspect_ratio": "16:9" }, "estimatedCredits": 5 },
-    { "agent": "video", "task": "Animate the hero image", "params": { "model": "kling-v2.1-i2v", "image_url": "$STEP_1_OUTPUT", "prompt": "..." }, "estimatedCredits": 15 }
+    { "agent": "image", "task": "Generate a hero image of...", "params": { "model": "<an id from the runnable image models list below>", "prompt": "...", "aspect_ratio": "16:9" }, "estimatedCredits": 5 },
+    { "agent": "video", "task": "Animate the hero image", "params": { "model": "<an id from the runnable video models list below>", "image_url": "$STEP_1_OUTPUT", "prompt": "..." }, "estimatedCredits": 15 }
   ],
   "summary": "Brief description of the plan",
   "totalCredits": 20,
@@ -52,7 +54,7 @@ Respond ONLY in JSON format:
 
 Rules:
 - Reference previous step outputs as $STEP_N_OUTPUT
-- Always specify the model for each step
+- Always specify a "model" for every image/video/audio step, using ONLY an exact id from the "Currently runnable models" list appended to this prompt — providers retire models constantly, so an id you recall from training data or an earlier turn may no longer exist; never guess one
 - Include estimatedCredits per step and totalCredits + maxCredits for the plan
 - Keep steps minimal and efficient
 - If the user asks for something simple, use a single step
@@ -174,18 +176,48 @@ export function normalizeAgentKey(agent) {
   return byName ? byName[0] : slug;
 }
 
+// ── Live runnable-model hint for the planner LLM (URGENT production fix) ──
+// AGENTS.orchestrator.systemPrompt's own JSON example used to hardcode
+// "flux-dev"/"kling-v2.1-i2v" as illustrative model ids — both are
+// isDeprecated in production, and the planner LLM took the hint literally,
+// which is how the exact production incident this fix targets happened
+// (`{ agent: "image", params: { model: "flux-dev" } }`). A module-level
+// string constant can never track a live catalog, so instead of hardcoding
+// BETTER examples (which would just go stale the same way, eventually),
+// this fetches a short, live snapshot of currently-runnable ids per
+// capability and appends it to the system prompt on every planning call —
+// the prompt (above) tells the model to pick ONLY from this list.
+async function runnableModelHint() {
+  try {
+    const [images, videos, audioRows] = await Promise.all([
+      getRunnableModelsForType("image", { limit: 6 }),
+      getRunnableModelsForType("video", { limit: 6 }),
+      getRunnableModelsForType("audio", { limit: 6 }),
+    ]);
+    const line = (label, rows) => {
+      const ids = rows.map(runnableProviderModelId).filter(Boolean);
+      return ids.length ? `- ${label}: ${ids.join(", ")}` : null;
+    };
+    const lines = [line("image", images), line("video", videos), line("audio", audioRows)].filter(Boolean);
+    if (!lines.length) return "";
+    return `\n\nCurrently runnable models — use ONLY an exact id from this list in a step's "model" param:\n${lines.join("\n")}`;
+  } catch {
+    return "";
+  }
+}
+
 // ── Plan a task with token-by-token streaming ──
 export async function planTaskStream(userMessage, context = {}) {
   const hasLLM = process.env.OPENROUTER_KEY;
 
   if (!hasLLM) {
-    const plan = buildHeuristicPlan(userMessage, context);
+    const plan = await buildHeuristicPlan(userMessage, context);
     const estimate = await estimateAgentTask(plan.steps || []);
     return { stream: null, plan: { ...plan, estimate } };
   }
 
   const messages = [
-    { role: "system", content: AGENTS.orchestrator.systemPrompt },
+    { role: "system", content: AGENTS.orchestrator.systemPrompt + (await runnableModelHint()) },
     { role: "user", content: `Context: ${JSON.stringify(context)}\n\nRequest: ${userMessage}` },
   ];
 
@@ -193,7 +225,7 @@ export async function planTaskStream(userMessage, context = {}) {
   try {
     llmReadable = await llmStream(messages, { maxTokens: 2000, temperature: 0.3 });
   } catch {
-    const plan = buildHeuristicPlan(userMessage, context);
+    const plan = await buildHeuristicPlan(userMessage, context);
     const estimate = await estimateAgentTask(plan.steps || []);
     return { stream: null, plan: { ...plan, estimate } };
   }
@@ -235,13 +267,13 @@ export async function planTaskStream(userMessage, context = {}) {
           const estimate = await estimateAgentTask(json.steps || []);
           plan = { ...json, estimate };
         } catch {
-          plan = buildHeuristicPlan(userMessage, context);
+          plan = await buildHeuristicPlan(userMessage, context);
           const estimate = await estimateAgentTask(plan.steps || []);
           plan = { ...plan, estimate };
         }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "plan", plan })}\n\n`));
       } catch {
-        const fallback = buildHeuristicPlan(userMessage, context);
+        const fallback = await buildHeuristicPlan(userMessage, context);
         const estimate = await estimateAgentTask(fallback.steps || []);
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "plan", plan: { ...fallback, estimate } })}\n\n`));
       }
@@ -257,13 +289,13 @@ export async function planTask(userMessage, context = {}) {
   const hasLLM = process.env.OPENROUTER_KEY;
 
   if (!hasLLM) {
-    const plan = buildHeuristicPlan(userMessage, context);
+    const plan = await buildHeuristicPlan(userMessage, context);
     const estimate = await estimateAgentTask(plan.steps || []);
     return { ...plan, estimate };
   }
 
   const messages = [
-    { role: "system", content: AGENTS.orchestrator.systemPrompt },
+    { role: "system", content: AGENTS.orchestrator.systemPrompt + (await runnableModelHint()) },
     { role: "user", content: `Context: ${JSON.stringify(context)}\n\nRequest: ${userMessage}` },
   ];
 
@@ -273,14 +305,29 @@ export async function planTask(userMessage, context = {}) {
     const estimate = await estimateAgentTask(json.steps || []);
     return { ...json, estimate };
   } catch {
-    const plan = buildHeuristicPlan(userMessage, context);
+    const plan = await buildHeuristicPlan(userMessage, context);
     const estimate = await estimateAgentTask(plan.steps || []);
     return { ...plan, estimate };
   }
 }
 
+// The cheapest currently-runnable model for a capability, straight from the
+// live catalog (URGENT production fix) — the heuristic planner only runs
+// when there's no LLM configured (dev/local, or an OPENROUTER outage), so
+// its defaults must never be a hardcoded id that can go stale the way
+// "flux-dev"/"kling-v2.1-i2v" did (both isDeprecated in production while
+// still hardcoded here). Falls back to LAST_RESORT_FALLBACKS (below) only
+// if the live lookup itself is unavailable.
+async function defaultRunnableModel(agentKind) {
+  try {
+    const [row] = await getRunnableModelsForType(agentKind, { limit: 1 });
+    if (row) return runnableProviderModelId(row);
+  } catch { /* fall through to the last-resort id below */ }
+  return LAST_RESORT_FALLBACKS[agentKind]?.[0] || agentKind;
+}
+
 // ── Heuristic plan when no LLM available ──
-function buildHeuristicPlan(userMessage, context = {}) {
+async function buildHeuristicPlan(userMessage, context = {}) {
   const lower = userMessage.toLowerCase();
   const steps = [];
 
@@ -297,11 +344,14 @@ function buildHeuristicPlan(userMessage, context = {}) {
   } else if (hasMarketing) {
     steps.push({ agent: "marketing", task: userMessage, params: { prompt: userMessage } });
   } else if (hasAudio) {
-    steps.push({ agent: "audio", task: userMessage, params: { _modelId: "suno-v4.5", endpoint: "suno-v4.5", prompt: userMessage, duration: 30 } });
+    const audioModel = await defaultRunnableModel("audio");
+    steps.push({ agent: "audio", task: userMessage, params: { _modelId: audioModel, endpoint: audioModel, prompt: userMessage, duration: 30 } });
   } else {
-    steps.push({ agent: "image", task: userMessage, params: { model: "flux-dev", endpoint: "flux-dev-image", prompt: userMessage, aspect_ratio: "1:1" } });
+    const imageModel = await defaultRunnableModel("image");
+    steps.push({ agent: "image", task: userMessage, params: { model: imageModel, endpoint: imageModel, prompt: userMessage, aspect_ratio: "1:1" } });
     if (hasVideo) {
-      steps.push({ agent: "video", task: "Animate the generated image", params: { model: "kling-v2.1-i2v", endpoint: "kling-v2.1-i2v", image_url: "$STEP_1_OUTPUT", prompt: userMessage, duration: 5 } });
+      const videoModel = await defaultRunnableModel("video");
+      steps.push({ agent: "video", task: "Animate the generated image", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_1_OUTPUT", prompt: userMessage, duration: 5 } });
     }
   }
 
@@ -528,28 +578,100 @@ async function executeExportStep(params, previousOutputs = [], step = null) {
   };
 }
 
-// ── Fallback models per agent type (model + provider pairs) ──
-const FALLBACKS = {
-  image: [
-    { model: "flux-dev", provider: "kie" },
-    { model: "nano-banana", provider: "kie" },
-    { model: "qwen-image", provider: "alibaba" },
-  ],
-  video: [
-    { model: "wan-2.6-t2v", provider: "kie" },
-    { model: "hailuo-02-standard", provider: "kie" },
-    { model: "wan-2.6-t2v", provider: "alibaba" },
-  ],
-  audio: [
-    { model: "suno-v4", provider: "kie" },
-    { model: "suno-v4.5", provider: "kie" },
-  ],
+// ── Runnable-model resolution for the executor (URGENT production fix) ────
+// Only these three agent kinds name a real ModelPricing-backed provider
+// model — the EDITSv1 E5.1 workflow step kinds (i2v/upscale/music/
+// voiceover/assembly/export) and the persona/website/coding kinds have
+// nothing here to validate, exactly like the FALLBACKS object this section
+// replaces only ever had image/video/audio keys.
+const CATALOG_MODEL_KINDS = new Set(["image", "video", "audio"]);
+
+// Last-resort only — used when the live getRunnableModelsForType lookup
+// (src/lib/model-catalog.js) returns nothing at all, e.g. the catalog
+// genuinely has no active row of this kind left. Every id below was
+// confirmed `managedBySync: true` with a non-null endpoint (i.e. genuinely
+// active) as of the production forensics this fix is built from — this is
+// NOT the primary fallback source (the live catalog lookup above always is)
+// and every real request already needs the DB reachable for the wallet/
+// AgentRun checks before code ever reaches this point, so this only fires
+// when the catalog itself is empty of runnable rows, not when the DB is
+// merely slow/unreachable.
+const LAST_RESORT_FALLBACKS = {
+  image: ["google/nano-banana-2-lite", "qwen-image-max"],
+  video: ["wan2.6-t2v"],
+  audio: ["suno-v4.5"],
 };
 
 // Steps whose output is a media URL worth logging as a Generation record
 // (website/coding return code/text, not a media URL).
 const MEDIA_AGENT_KEYS = new Set(["image", "video", "audio", "marketing"]);
 const isMediaAgent = (agent) => MEDIA_AGENT_KEYS.has(normalizeAgentKey(agent));
+
+// Confirms a LAST_RESORT_FALLBACKS id is STILL actually runnable in this
+// environment's live catalog before ever treating it as a candidate.
+// Without this, an id that has itself gone stale (or was never present in
+// a given environment's catalog at all) would slip through anyway:
+// estimateCredits' generic per-tool default (pricing-engine.js's
+// getFallbackCost) happily returns SOME number for ANY model string, real
+// or not, so a naive "try to quote it" check can never fail — the exact
+// gap this whole fix closes for the PLANNED model must not be reopened for
+// the last-resort list.
+async function verifyLastResortIds(ids) {
+  const verified = [];
+  for (const id of ids) {
+    const row = await resolveRunnableModel(id).catch(() => null);
+    if (row) verified.push(id);
+  }
+  return verified;
+}
+
+// Picks a single runnable replacement for `excludeModel`, cheapest first —
+// the live catalog first, LAST_RESORT_FALLBACKS only if that comes back
+// empty (and only ids verifyLastResortIds confirms are still actually
+// runnable). Re-quotes every candidate against `params` and skips anything
+// that can't be quoted at all or that would exceed `ceiling` (the caller's
+// budget — see executeAgentStep and executeStepWithRetry below for what
+// "ceiling" means in each context). Returns `{ model, credits }` or null if
+// nothing runnable/affordable exists.
+async function pickSubstituteModel(agentKind, excludeModel, params, ceiling) {
+  const tryIds = async (ids) => {
+    for (const subId of ids) {
+      if (!subId || subId === excludeModel) continue;
+      let credits;
+      try {
+        credits = await estimateCredits(agentKind, subId, { ...params, model: subId, endpoint: subId });
+      } catch {
+        continue;
+      }
+      if (typeof ceiling === "number" && credits > ceiling) continue;
+      return { model: subId, credits };
+    }
+    return null;
+  };
+
+  const liveCandidates = await getRunnableModelsForType(agentKind, { excludeModelIds: [excludeModel], limit: 5 }).catch(() => []);
+  const found = await tryIds(liveCandidates.map(runnableProviderModelId));
+  if (found) return found;
+  const lastResort = await verifyLastResortIds((LAST_RESORT_FALLBACKS[agentKind] || []).filter((id) => id !== excludeModel));
+  return tryIds(lastResort);
+}
+
+// Additional retry-chain candidates (beyond the primary slot) for a step —
+// replaces the old hardcoded FALLBACKS object with a live catalog lookup so
+// a provider deprecating one model can never again take down the whole
+// chain with it (production incident: FALLBACKS.image WAS flux-dev →
+// nano-banana → qwen-image; the first two are isActive:false +
+// isDeprecated:true in production). Falls back to LAST_RESORT_FALLBACKS
+// only when the live lookup returns nothing, and only ids
+// verifyLastResortIds confirms are still actually runnable.
+async function getFallbackModels(agentKind, excludeModelIds = [], limit = 2) {
+  if (!CATALOG_MODEL_KINDS.has(agentKind)) return [];
+  const rows = await getRunnableModelsForType(agentKind, { excludeModelIds, limit }).catch(() => []);
+  const ids = rows.map(runnableProviderModelId).filter(Boolean);
+  if (ids.length) return ids;
+  const lastResort = (LAST_RESORT_FALLBACKS[agentKind] || []).filter((id) => !excludeModelIds.includes(id));
+  return verifyLastResortIds(lastResort);
+}
 
 // ── Retry with fallback model + provider (budget-aware, EDITSv1 E3.2) ──
 // Returns { output, credits, model }. `budget` is { quoted, max }:
@@ -560,16 +682,44 @@ const isMediaAgent = (agent) => MEDIA_AGENT_KEYS.has(normalizeAgentKey(agent));
 //     server-side; a fallback whose re-quote exceeds `max` is skipped, and
 //     if no affordable fallback succeeds, the step FAILS with the original
 //     error. Failing is always preferred to overspending.
+//
+// URGENT production fix: before ever attempting the step as planned, the
+// named model (image/video/audio only — see CATALOG_MODEL_KINDS) is
+// checked against the live catalog. A model that's gone inactive/deprecated
+// (flux-dev, nano-banana in production) is swapped for the best runnable
+// substitute right here — capped at `budget.max` when a budget is given —
+// instead of wasting a real provider call on something guaranteed to fail.
+// If NO runnable model exists for this capability at all, the step fails
+// immediately with a clear, actionable error instead of a raw provider 500.
 export async function executeStepWithRetry(step, previousOutputs, attempt = 0, budget = null) {
   const agentKind = normalizeAgentKey(step.agent);
-  const fallbacks = FALLBACKS[agentKind] || [];
+  const originalModel = step.params?.model || step.params?._modelId || null;
+  const ceiling = budget && typeof budget.max === "number" ? budget.max : null;
 
-  // Candidate list: the step as planned, then each fallback swap.
-  const candidates = [{ step, credits: budget && typeof budget.quoted === "number" ? budget.quoted : null }];
-  for (const fb of fallbacks) {
+  let primary = { step, credits: budget && typeof budget.quoted === "number" ? budget.quoted : null };
+  if (originalModel && CATALOG_MODEL_KINDS.has(agentKind)) {
+    const runnableRow = await resolveRunnableModel(originalModel).catch(() => null);
+    if (!runnableRow) {
+      const sub = await pickSubstituteModel(agentKind, originalModel, step.params, ceiling);
+      if (!sub) {
+        const err = new Error(`No runnable ${agentKind} model is currently available to replace "${originalModel}". Please try again once a provider model is re-enabled.`);
+        err.code = "model_unavailable";
+        throw err;
+      }
+      const newParams = { ...step.params, model: sub.model, endpoint: sub.model };
+      delete newParams._provider; // re-resolve the provider for the substituted model
+      primary = { step: { ...step, params: newParams }, credits: sub.credits };
+    }
+  }
+
+  const excludeIds = [originalModel, primary.step.params?.model].filter(Boolean);
+  const liveFallbacks = await getFallbackModels(agentKind, excludeIds).catch(() => []);
+
+  const candidates = [primary];
+  for (const fbModel of liveFallbacks) {
     candidates.push({
-      step: { ...step, params: { ...step.params, model: fb.model, endpoint: fb.model, _provider: fb.provider } },
-      fallbackModel: fb.model,
+      step: { ...step, params: { ...step.params, model: fbModel, endpoint: fbModel } },
+      fallbackModel: fbModel,
     });
   }
 
@@ -884,7 +1034,34 @@ export async function executeAgentStep(userId, {
   const tool = normalizeAgentKey(step.agent);
   const model = step.params?.model || step.params?._modelId || tool;
   // Server-side re-quote, including any overrides — never the client's number.
-  const quoted = await estimateCredits(tool, model, step.params || {});
+  let quoted = await estimateCredits(tool, model, step.params || {});
+
+  // ── URGENT production fix: never debit for a model that cannot run ──────
+  // estimateCredits above happily quotes a price for a model whose
+  // ModelPricing row is inactive/deprecated (production incident: flux-dev
+  // — isActive:false, isDeprecated:true — still got quoted and debited
+  // before its execution 500'd). Resolve runnability BEFORE the debit
+  // below: an unrunnable model is swapped for the cheapest runnable model
+  // of the same kind and RE-QUOTED, capped at `quoted` (the original
+  // model's own would-be cost — this step's approved budget ceiling, same
+  // EDITSv1 E3.2 invariant executeStepWithRetry's fallback budget already
+  // enforces), or the step fails cleanly with zero debit if no runnable
+  // substitute exists at all within that ceiling.
+  if (CATALOG_MODEL_KINDS.has(tool)) {
+    const runnableRow = await resolveRunnableModel(model).catch(() => null);
+    if (!runnableRow) {
+      const sub = await pickSubstituteModel(tool, model, step.params, quoted);
+      if (!sub) {
+        const err = new Error(`"${model}" is no longer available for ${tool} generation, and no runnable replacement fits this step's approved budget of ${quoted} credit${quoted === 1 ? "" : "s"}. Please re-plan this step.`);
+        err.code = "model_unavailable";
+        throw err;
+      }
+      step.params.model = sub.model;
+      step.params.endpoint = sub.model;
+      delete step.params._provider; // re-resolve the provider for the substituted model
+      quoted = sub.credits;
+    }
+  }
 
   const wallet = await getWallet(userId);
   if (wallet.available < quoted) {

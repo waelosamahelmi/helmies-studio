@@ -11,6 +11,7 @@ import {
   calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput,
   modelTypeForCapability, UNCATEGORIZED_MODEL_TYPE, slugToTitle, toPublicModelId, resolveModelPricingRow,
   inferCapabilityFromRow, sanitizeCatalogDescription, sanitizeDisplayName,
+  isRunnableModelRow, runnableProviderModelId,
 } from "./model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
@@ -255,5 +256,63 @@ export async function quoteCatalogModel(modelId, params = {}) {
   const config = await prisma.providerConfig.findUnique({ where: { name: row.providerName } }).catch(() => null);
   const markup = config?.markup || DEFAULT_MARKUP;
   return { valid: true, modelId, provider: row.providerName, ...quote, markup, credits: providerCostToCredits(quote.providerCost, markup) };
+}
+
+// ── Runnable-model resolution (URGENT production fix) ──────────────────────
+// Shared by the agent executor (src/lib/agents.js — validate-before-charge,
+// live fallback pool, planner hints) and available to any studio-path
+// caller that wants the same gate. isRunnableModelRow (model-catalog-
+// core.mjs) is the actual rule; this just wires it up to a live DB lookup
+// using the SAME id-resolution resolveProvider/generation-handler.js
+// already rely on (resolveModelPricingRow tolerates both the real modelId
+// and the public/provider-prefix-stripped form a client or planner might
+// hand back).
+export async function resolveRunnableModel(candidateId) {
+  const row = await resolveModelPricingRow(prisma, candidateId).catch(() => null);
+  return isRunnableModelRow(row) ? row : null;
+}
+
+// The cheapest currently-runnable rows for a coarse modelType ("image",
+// "video", "audio", ...), for use as a live fallback/substitution pool —
+// replaces a hardcoded model list that goes stale the instant a provider
+// deprecates one of its entries (production incident: agents.js's FALLBACKS
+// hardcoded flux-dev/nano-banana, both isDeprecated in production while
+// still the ENTIRE image fallback chain).
+//
+// Reuses the SAME effective-capability recovery getCatalogModels uses
+// (resolveEffectiveCapability + modelTypeForCapability) so a row whose
+// stored `modelType` column is stale is still found correctly — then adds
+// isRunnableModelRow on top, which getCatalogModels' public serialization
+// deliberately hides (serializeCatalogModel always synthesizes an
+// endpoint/providerModelId fallback for display, even when the underlying
+// row has neither — see its own header), so this only ever returns models
+// an executor can actually submit to a provider.
+//
+// Never throws — a DB error (including an incompletely-mocked test client)
+// degrades to an empty result, same as every other `.catch(() => ...)`
+// guard in this module, so callers can always fall back to their own tiny
+// last-resort list without a try/catch of their own.
+export async function getRunnableModelsForType(modelType, { excludeModelIds = [], limit = 5 } = {}) {
+  if (!modelType) return [];
+  let rows;
+  try {
+    rows = await prisma.modelPricing.findMany({
+      where: { isActive: true, isDeprecated: false },
+      orderBy: [{ creditsCost: "asc" }],
+    });
+  } catch {
+    return [];
+  }
+  const exclude = new Set((excludeModelIds || []).filter(Boolean));
+  const matches = [];
+  for (const row of rows) {
+    if (exclude.has(row.modelId) || exclude.has(runnableProviderModelId(row))) continue;
+    if (!isRunnableModelRow(row)) continue;
+    const capability = resolveEffectiveCapability(row);
+    if (modelTypeForCapability(capability) !== modelType) continue;
+    matches.push(row);
+    if (matches.length >= limit) break;
+  }
+  return matches;
 }
 
