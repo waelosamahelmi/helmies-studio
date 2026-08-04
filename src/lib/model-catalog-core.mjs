@@ -435,9 +435,25 @@ export function runnableProviderModelId(row) {
 //   enhancement  "boost-music-style" contains "music" — isolation/boost/
 //                separation must be classified before the music family
 //   conversion   format/notation converters
-//   music        the Suno composition family
+//   music        ONLY a from-scratch composer — see below
 //   utility      anything else that is still genuinely audio
 // A model outside the audio family (or no model at all) returns null.
+//
+// music (BUG FIX: production Music studio listed utilities, not composers):
+// the old rule (`generate-music|extend-music|add-instrumental|add-vocals|
+// cover|mashup|replace-section|suno`) matched anything that shared a token
+// with the Suno composition family, which swept every TRANSFORMER of an
+// EXISTING track in with the genuine composers — extend-music,
+// upload-and-cover-audio (via bare "cover"), add-instrumental, add-vocals,
+// cover-suno, replace-section, generate-mashup all landed as "music", so
+// MusicStudio's cost-sorted pick could land on replace-section (its
+// cheapest entry), a section-replacer that cannot compose anything from
+// scratch. Only "generate-music" itself and a bare versioned Suno engine
+// selector ("suno-v5", "suno-v4.5-plus", ...) — the actual from-scratch
+// generate flow, see CURATED_SCHEMAS's SUNO_MUSIC_FIELDS — are genuine
+// composers; every transformer above now falls through with no match and
+// lands on the "utility" catch-all below, which is exactly the bucket
+// AudioToolsStudio already pools ("enhancement"/"conversion"/"utility").
 const AUDIO_KIND_RULES = [
   ["dialogue", /text-to-dialogue|dialogue/],
   ["tts", /text-to-speech|tts/],
@@ -445,7 +461,7 @@ const AUDIO_KIND_RULES = [
   ["sfx", /generate-sounds|sound-effect|sfx/],
   ["enhancement", /audio-isolation|boost-music|separate-vocals|enhance/],
   ["conversion", /convert-to-wav|to-wav|convert|generate-midi/],
-  ["music", /generate-music|extend-music|add-instrumental|add-vocals|cover|mashup|replace-section|suno/],
+  ["music", /\bgenerate-music\b|\bsuno-v[\d.]+\b/],
 ];
 
 export const AUDIO_KINDS = ["tts", "dialogue", "voice-clone", "music", "sfx", "enhancement", "conversion", "utility"];
@@ -464,12 +480,40 @@ export function audioKind(model) {
   return capability === "text-to-speech" ? "tts" : "utility";
 }
 
+// Precise short-form video-direction markers (BUG FIX: production
+// Text-to-Video listed models that cannot do text-to-video). CAPABILITY_
+// GROUPS.ttv (capability-groups.js) folds the coarse "video" capability in
+// alongside "text-to-video" because ~27 live models legitimately carry no
+// more specific value — but several of those 27 DO carry an unambiguous
+// short-form direction suffix in their own id/endpoint (KIE and Alibaba both
+// use "-i2v"/"-v2v"/"-t2v", not always the spelled-out "image-to-video" the
+// rules below already matched) that was being ignored, so an image-to-video
+// or video-to-video model (needs a source image/clip and will fail with
+// none) landed in the ttv pool — measured production example: wan-2.6-v2v,
+// a video-to-video model, was the CHEAPEST entry in the T2V pool.
+//
+// Checked BEFORE the coarse "video"/generic-vendor fallback further down so
+// an unambiguous marker always wins over it. `\b` anchors each short marker
+// so it only matches as its own token (preceded/followed by a non-word
+// character or the string boundary) — "wan-2.6-flash-i2v" matches, a
+// hypothetical unrelated "musi2vc" would not.
+//
+// Deliberately narrow: an id with NO such marker (kling/*, bytedance/
+// seedance-*, wan-animate-*, wan-speech-to-video, wan/2-2-*) is left
+// completely alone here and still falls through to the coarse "video" rule
+// below — those genuinely accept text+image+video with no single direction,
+// so coarse "video" (and therefore ttv) is the CORRECT bucket for them, not
+// a bug to fix. Only move a model when its id is unambiguous.
+const IMAGE_TO_VIDEO_MARKERS = /image-to-video|-i2v\b|img2vid/;
+const TEXT_TO_VIDEO_MARKERS = /text-to-video|-t2v\b/;
+const VIDEO_TO_VIDEO_MARKERS = /video-to-video|videoedit|video-edit|style-transform|-v2v\b|\/extend\b/;
+
 export function inferCapability(path) {
   if (/text-to-image|text2image/.test(path)) return "text-to-image";
   if (/image-to-image|image-edit|edit-image|remix|character-edit/.test(path)) return "image-to-image";
-  if (/image-to-video/.test(path)) return "image-to-video";
-  if (/text-to-video/.test(path)) return "text-to-video";
-  if (/video-to-video|videoedit|video-edit|style-transform/.test(path)) return "video-to-video";
+  if (IMAGE_TO_VIDEO_MARKERS.test(path)) return "image-to-video";
+  if (TEXT_TO_VIDEO_MARKERS.test(path)) return "text-to-video";
+  if (VIDEO_TO_VIDEO_MARKERS.test(path)) return "video-to-video";
   if (/reference-to-video|r2v/.test(path)) return "reference-to-video";
   if (/lip-sync|avatar|omnihuman|infinitalk|from-audio/.test(path)) return "avatar-video";
   if (/upscale/.test(path)) return path.includes("video") ? "video-upscale" : "image-upscale";

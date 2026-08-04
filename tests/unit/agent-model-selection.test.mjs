@@ -55,7 +55,7 @@ import prisma from "@/lib/prisma";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { detectAbuse } from "@/lib/security";
 import { generateImage } from "@/lib/generation";
-import { executeAgentStep, executeStepWithRetry } from "@/lib/agents";
+import { executeAgentStep, executeStepWithRetry, defaultRunnableModel } from "@/lib/agents";
 
 // The exact production shape reported for the two dead models that used to
 // be the ENTIRE hardcoded image fallback chain.
@@ -264,5 +264,77 @@ describe("executeStepWithRetry — catalog-driven fallback selection returns onl
     const step = { agent: "creative_director", task: "plan", params: { prompt: "plan" } };
     const { output } = await executeStepWithRetry(step, [], 0, null);
     expect(output).toBe("some text");
+  });
+});
+
+// ── URGENT production fix: the heuristic (no-LLM) planner's default audio
+// model must be a real GENERATOR, not a transformer.
+//
+// Production incident: defaultRunnableModel("audio") picked the plain
+// cheapest active+non-deprecated row whose modelType is "audio" — which
+// resolved to "boost-music-style", an "enhancement" utility (audioKind,
+// model-catalog-core.mjs) that transforms an EXISTING track and cannot run
+// as a from-scratch generation step at all. The fix reuses audioKind (the
+// SAME honest sub-classification MusicStudio/AudioStudio already gate their
+// pools on) to prefer a genuine composer ("music") or reader ("tts") over a
+// transformer, while keeping the runnable gate (isActive/isDeprecated, via
+// getRunnableModelsForType) completely unchanged.
+describe("defaultRunnableModel — the audio default picks a generator, not a transformer", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  const BOOST_MUSIC_STYLE = {
+    modelId: "boost-music-style", isActive: true, isDeprecated: false,
+    endpoint: "boost-music-style", providerModelId: "boost-music-style",
+    providerName: "KIE", capability: "audio", modelType: "audio", creditsCost: 1, // cheapest
+  };
+  const REPLACE_SECTION = {
+    modelId: "replace-section", isActive: true, isDeprecated: false,
+    endpoint: "replace-section", providerModelId: "replace-section",
+    providerName: "KIE", capability: "audio", modelType: "audio", creditsCost: 2,
+  };
+  const GENERATE_MUSIC = {
+    modelId: "generate-music", isActive: true, isDeprecated: false,
+    endpoint: "generate-music", providerModelId: "generate-music",
+    providerName: "KIE", capability: "audio", modelType: "audio", creditsCost: 5, // pricier than the transformers
+  };
+  const ELEVENLABS_TTS = {
+    modelId: "elevenlabs-text-to-speech-turbo-2.5", isActive: true, isDeprecated: false,
+    endpoint: "elevenlabs-text-to-speech-turbo-2.5", providerModelId: "elevenlabs-text-to-speech-turbo-2.5",
+    providerName: "KIE", capability: "text-to-speech", modelType: "audio", creditsCost: 8, // pricier still
+  };
+
+  it("REGRESSION: production resolved the audio default to 'boost-music-style' (a transformer) — the fix picks the composer even though it costs more", async () => {
+    seedCatalog([BOOST_MUSIC_STYLE, REPLACE_SECTION, GENERATE_MUSIC]);
+    expect(await defaultRunnableModel("audio")).toBe("generate-music");
+  });
+
+  it("prefers a TTS reader over both a transformer and a composer when the step explicitly wants a voice", async () => {
+    seedCatalog([BOOST_MUSIC_STYLE, GENERATE_MUSIC, ELEVENLABS_TTS]);
+    expect(await defaultRunnableModel("audio", { wantsVoice: true })).toBe("elevenlabs-text-to-speech-turbo-2.5");
+  });
+
+  it("still prefers the composer over the transformer when no voice was requested, even with a TTS row present", async () => {
+    seedCatalog([BOOST_MUSIC_STYLE, GENERATE_MUSIC, ELEVENLABS_TTS]);
+    expect(await defaultRunnableModel("audio")).toBe("generate-music");
+  });
+
+  it("falls back to the plain cheapest runnable row when the catalog has NO generator of either kind — never worse than the old behavior", async () => {
+    seedCatalog([BOOST_MUSIC_STYLE, REPLACE_SECTION]);
+    expect(await defaultRunnableModel("audio")).toBe("boost-music-style");
+  });
+
+  it("non-audio kinds are unaffected — still the plain cheapest runnable row for the type", async () => {
+    // getRunnableModelsForType relies on the DB's own orderBy(creditsCost)
+    // for "cheapest first" (it does no client-side re-sort) — seeded here
+    // in that same already-cost-ordered shape, matching every other
+    // getRunnableModelsForType-driven test in this file/model-catalog-
+    // runnable.test.mjs.
+    seedCatalog([NANO_BANANA_2, QWEN_IMAGE_MAX]);
+    expect(await defaultRunnableModel("image")).toBe("google/nano-banana-2-lite");
+  });
+
+  it("degrades to the last-resort fallback id when the catalog lookup itself fails", async () => {
+    prisma.modelPricing.findMany.mockRejectedValue(new Error("db unreachable"));
+    expect(await defaultRunnableModel("audio")).toBe("suno-v4.5");
   });
 });

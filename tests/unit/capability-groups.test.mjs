@@ -1,7 +1,7 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
 import { CAPABILITY_GROUPS, matchesGroup } from "@/lib/capability-groups";
-import { CAPABILITY_TO_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
+import { CAPABILITY_TO_MODEL_TYPE, inferCapability } from "@/lib/model-catalog-core.mjs";
 
 // ── EDITSv1 E1.1: capability groups must tell the truth ────────────────────
 // The live catalog files ~14 genuinely working video models under the COARSE
@@ -51,4 +51,28 @@ test("matchesGroup routes coarse-video models into ttv and reference-to-video in
 test("matchesGroup is safe on null models and unknown groups", () => {
   assert.equal(matchesGroup(null, "ttv"), false);
   assert.equal(matchesGroup({ capability: "text-to-video" }, "no-such-group"), false);
+});
+
+// ── BUG FIX: Text-to-Video listed models that cannot do text-to-video ─────
+// Real production ids (e.g. wan-2.6-v2v) carried an unambiguous short-form
+// direction marker inferCapability used to ignore, so they fell through to
+// coarse "video" and landed in ttv even though they need a source
+// image/clip. inferCapability (model-catalog-core.mjs) now assigns the
+// precise capability for a marked id; this pins that the precise capability
+// routes it OUT of ttv and into the correct direction group.
+test("no image-to-video/video-to-video model (via a marked id) ends up in ttv — it routes to i2v/v2v instead", () => {
+  const i2vModel = { capability: inferCapability("wan-2.6-flash-i2v") };
+  const v2vModel = { capability: inferCapability("wan-2.6-v2v") };
+  assert.equal(i2vModel.capability, "image-to-video");
+  assert.equal(v2vModel.capability, "video-to-video");
+  assert.equal(matchesGroup(i2vModel, "ttv"), false);
+  assert.equal(matchesGroup(i2vModel, "i2v"), true);
+  assert.equal(matchesGroup(v2vModel, "ttv"), false);
+  assert.equal(matchesGroup(v2vModel, "v2v"), true);
+});
+
+test("a markerless video id stays coarse 'video' and correctly stays IN ttv (not a bug to fix — no direction signal exists)", () => {
+  const multiModel = { capability: inferCapability("bytedance/seedance-2") };
+  assert.equal(multiModel.capability, "video");
+  assert.equal(matchesGroup(multiModel, "ttv"), true);
 });
