@@ -15,6 +15,7 @@
 
 import prisma from "@/lib/prisma";
 import { CURATED_SCHEMAS, inferKieModelFromUrl, modelTypeForCapability, schemaForModel, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
+import { readVerification, verificationAllowsActive, withProviderRequired, STATUS_PENDING, VERIFICATION_KEY } from "@/lib/catalog-verification.mjs";
 import { calculateCredits } from "@/lib/pricing-engine";
 
 // Curated per-model parameter schemas (EDITSv1 E1.2). The data physically
@@ -442,6 +443,7 @@ export async function syncKieModels() {
   
   for (const model of kieModels) {
     seenIds.add(model.modelId);
+    const existingRow = existingMap.get(model.modelId);
     const providerCost = getPricing(model.modelId, model.type);
     const creditsCost = calculateCredits(providerCost, MARKUP);
     const pricingRules = { currency: "USD", unit: model.type === "image" || model.type === "i2i" ? "image" : "fixed", rules: [{ price: providerCost }] };
@@ -457,6 +459,44 @@ export async function syncKieModels() {
     // the sync source, and getCatalogModels/serializeCatalogModel (model-
     // catalog.js) never show an UNCATEGORIZED row to end users.
     const modelType = modelTypeForCapability(model.capability) || UNCATEGORIZED_MODEL_TYPE;
+
+    // ── Defensive sync (BUG 1) ────────────────────────────────────────────
+    // The catalog is built by crawling docs.kie.ai's sitemap, and a doc page
+    // is not proof of a callable model — 27 of the 32 generations this app
+    // has ever run failed, most of them with "The model name you specified
+    // is not supported". This block stops the sync from PRESENTING an
+    // unproven id as usable, without touching prisma/schema.prisma:
+    //
+    //   • A row whose recorded verdict is not-callable is never resurrected.
+    //     (This whole loop used to write `isActive: true` unconditionally,
+    //     so the next nightly cron undid every deactivation — an operator's
+    //     as well as the sweep's.)
+    //   • A model the crawl has NEVER SEEN BEFORE is created inactive and
+    //     marked verification.status = "pending". It becomes usable only
+    //     once scripts/verify-catalog.mjs proves a real submit reaches it.
+    //     New slugs are exactly the population that turned out to be
+    //     uncallable, and gating only NEW rows means shipping this cannot
+    //     take the live catalog offline the way gating every unverified row
+    //     would (every pre-existing row keeps whatever activity it has until
+    //     the sweep gives it a real verdict).
+    //   • verification + any provider-required fields the sweep discovered
+    //     are carried forward instead of being overwritten by the sync's
+    //     freshly-derived blobs.
+    const existingVerification = readVerification(existingRow?.constraints);
+    const verification = existingRow
+      ? existingVerification
+      : { status: STATUS_PENDING, callable: null, verdict: null, reason: "awaiting first verification probe", checkedAt: null };
+    const isActive = verificationAllowsActive(
+      verification ? { [VERIFICATION_KEY]: verification } : null,
+      // Fallback for a pre-existing row with no verdict yet: keep the
+      // activity it already has rather than flipping it either way.
+      existingRow ? existingRow.isActive !== false : true,
+    );
+    const existingProviderRequired = Array.isArray(existingRow?.inputSchema?.providerRequired)
+      ? existingRow.inputSchema.providerRequired
+      : [];
+    const inputSchema = withProviderRequired(model.inputSchema, existingProviderRequired);
+
     const modelData = {
       modelType,
       providerName: "KIE",
@@ -476,8 +516,10 @@ export async function syncKieModels() {
       capability: model.capability,
       inputModalities: model.inputModalities,
       outputModalities: model.outputModalities,
-      inputSchema: model.inputSchema,
-      constraints: model.inputSchema?.ui || {},
+      inputSchema,
+      constraints: verification
+        ? { ...(model.inputSchema?.ui || {}), [VERIFICATION_KEY]: verification }
+        : (model.inputSchema?.ui || {}),
       pricingRules,
       billingUnit: pricingRules.unit,
       currency: "USD",
@@ -489,9 +531,9 @@ export async function syncKieModels() {
       isDeprecated: false,
       providerCost,
       creditsCost,
-      isActive: true,
+      isActive,
     };
-    
+
     if (existingMap.has(model.modelId)) {
       await prisma.modelPricing.update({
         where: { modelId: model.modelId },
