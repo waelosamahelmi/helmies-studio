@@ -27,7 +27,7 @@ process.env.OPENROUTER_KEY = "test-openrouter-key";
 
 vi.mock("@/lib/prisma", () => ({
   default: {
-    directorPipeline: { create: vi.fn() },
+    directorPipeline: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
   },
 }));
 
@@ -53,7 +53,7 @@ import { estimateCredits } from "@/lib/pricing-engine";
 import { llmComplete } from "@/lib/providers";
 import { getCurrentUser } from "@/lib/session";
 import {
-  createProductionPlan, DirectorPlanError, isValidPlanShape, extractJsonObject, PRODUCTION_TYPE_PRESETS,
+  createProductionPlan, updateProductionPlan, DirectorPlanError, isValidPlanShape, extractJsonObject, PRODUCTION_TYPE_PRESETS,
 } from "@/lib/director-planner";
 
 const BRIEF = { title: "Test Track", type: "music_video", duration: 30, concept: "A neon-lit night drive" };
@@ -153,6 +153,220 @@ describe("createProductionPlan — a well-formed LLM response is used as-is", ()
       camera: expect.objectContaining({ framing: "extreme close-up" }),
     });
     expect(result.plan.conceptSummary).toBe("A neon-lit night drive");
+  });
+});
+
+// E4.1: the plan route always sent `shots` in the brief, but buildUserPrompt
+// never read brief.shots — the user's sketched outline silently never reached
+// the LLM. Characters and aspect ratio had planner support but were never
+// passed by the route. These lock in that all three land in the user prompt.
+describe("createProductionPlan — the sketched outline, characters and aspect ratio reach the LLM", () => {
+  const VALID_PLAN = {
+    shots: [{ id: "shot_000", title: "Opening", durationSec: 5 }],
+    globalStyle: {}, estimatedDuration: 5, conceptSummary: "x",
+  };
+
+  it("includes the user's sketched shot outline verbatim in the user prompt", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify(VALID_PLAN));
+
+    await createProductionPlan({
+      ...BRIEF,
+      shots: [
+        { index: 0, title: "City wakes", description: "Aerial pass over rooftops at dawn" },
+        { index: 1, title: "The chase", description: "Handheld sprint through a market" },
+      ],
+    }, "u1");
+
+    const messages = llmComplete.mock.calls[0][0];
+    const userPrompt = messages.find((m) => m.role === "user").content;
+    expect(userPrompt).toContain("City wakes");
+    expect(userPrompt).toContain("Aerial pass over rooftops at dawn");
+    expect(userPrompt).toContain("The chase");
+    expect(userPrompt).toContain("Handheld sprint through a market");
+  });
+
+  it("includes named characters and the aspect ratio in the user prompt", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify(VALID_PLAN));
+
+    await createProductionPlan({
+      ...BRIEF,
+      aspectRatio: "16:9",
+      characters: [{ name: "Mara", description: "a woman in a red trench coat" }],
+    }, "u1");
+
+    const messages = llmComplete.mock.calls[0][0];
+    const userPrompt = messages.find((m) => m.role === "user").content;
+    expect(userPrompt).toContain("Mara");
+    expect(userPrompt).toContain("a woman in a red trench coat");
+    expect(userPrompt).toContain("16:9");
+  });
+});
+
+// E4.3: character consistency is image-anchored, not just prompt text. With
+// named characters in the brief, the LLM contract switches from a
+// hard-coded `"references": []` to $CHARACTER_<name> tokens the executor
+// resolves to real images (upload or rolling reference), and the heuristic
+// builder emits the same tokens.
+describe("character reference tokens in the planner", () => {
+  const VALID_PLAN = {
+    shots: [{ id: "shot_000", title: "x", durationSec: 5 }],
+    globalStyle: {}, estimatedDuration: 5, conceptSummary: "x",
+  };
+
+  it("with characters, the system prompt teaches the $CHARACTER_<name> token and lists the cast", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify(VALID_PLAN));
+
+    await createProductionPlan({
+      ...BRIEF,
+      characters: [{ name: "The Night Courier", description: "a wiry rider in a scuffed helmet" }],
+    }, "u1");
+
+    const systemPrompt = llmComplete.mock.calls[0][0].find((m) => m.role === "system").content;
+    expect(systemPrompt).toContain("$CHARACTER_The_Night_Courier");
+    expect(systemPrompt).toContain("a wiry rider in a scuffed helmet");
+  });
+
+  it("without characters, the contract keeps the empty references array", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify(VALID_PLAN));
+
+    await createProductionPlan(BRIEF, "u1");
+
+    const systemPrompt = llmComplete.mock.calls[0][0].find((m) => m.role === "system").content;
+    expect(systemPrompt).toContain('"references": []');
+    expect(systemPrompt).not.toContain("$CHARACTER_");
+  });
+
+  it("the heuristic builder emits the character token in every shot's image references", async () => {
+    llmComplete.mockResolvedValue("not json at all"); // -> heuristic path
+
+    const result = await createProductionPlan({
+      ...BRIEF,
+      characters: [{ name: "Mara", description: "a woman in a red trench coat" }],
+    }, "u1");
+
+    for (const shot of result.plan.shots) {
+      expect(shot.imageStrategy.references).toContain("$CHARACTER_Mara");
+    }
+  });
+});
+
+// E4.2: the shot shape gains per-shot `transition` (consumed by assembly),
+// `dialogue` (text -> TTS) and `audioCues` — in the LLM contract, the
+// normalizer, and the heuristic builder (which also previously omitted
+// continuityTracker entirely).
+describe("shot shape — transition, dialogue, audioCues", () => {
+  it("normalizes LLM-provided transition/dialogue/audioCues and defaults them to null/cut when absent", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify({
+      shots: [
+        {
+          id: "shot_a", title: "With extras", durationSec: 5,
+          transition: "dissolve", dialogue: '"Hold on."', audioCues: "rising wind, distant thunder",
+        },
+        { id: "shot_b", title: "Bare", durationSec: 5 },
+      ],
+      globalStyle: {}, estimatedDuration: 10, conceptSummary: "x",
+    }));
+
+    const result = await createProductionPlan(BRIEF, "u1");
+
+    expect(result.plan.shots[0].transition).toBe("dissolve");
+    expect(result.plan.shots[0].dialogue).toBe('"Hold on."');
+    expect(result.plan.shots[0].audioCues).toBe("rising wind, distant thunder");
+
+    expect(result.plan.shots[1].transition).toBe("cut");
+    expect(result.plan.shots[1].dialogue).toBeNull();
+    expect(result.plan.shots[1].audioCues).toBeNull();
+  });
+
+  it("rejects an unknown transition value back to the cut default", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify({
+      shots: [{ id: "shot_a", title: "x", durationSec: 5, transition: "star-wipe-deluxe" }],
+      globalStyle: {}, estimatedDuration: 5, conceptSummary: "x",
+    }));
+
+    const result = await createProductionPlan(BRIEF, "u1");
+
+    expect(result.plan.shots[0].transition).toBe("cut");
+  });
+
+  it("tells the LLM about the new fields in the system prompt contract", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify({
+      shots: [{ id: "shot_a", title: "x", durationSec: 5 }],
+      globalStyle: {}, estimatedDuration: 5, conceptSummary: "x",
+    }));
+
+    await createProductionPlan(BRIEF, "u1");
+
+    const systemPrompt = llmComplete.mock.calls[0][0].find((m) => m.role === "system").content;
+    expect(systemPrompt).toContain('"transition"');
+    expect(systemPrompt).toContain('"dialogue"');
+    expect(systemPrompt).toContain('"audioCues"');
+  });
+
+  it("the heuristic builder emits transition/dialogue/audioCues AND a filled continuityTracker", async () => {
+    // Both LLM attempts unparseable -> heuristic path.
+    llmComplete.mockResolvedValue("not json at all");
+
+    const result = await createProductionPlan(BRIEF, "u1");
+
+    for (const shot of result.plan.shots) {
+      expect(["cut", "fade", "dissolve"]).toContain(shot.transition);
+      expect(shot.dialogue).toBeNull();
+      expect(shot.audioCues).toBeNull();
+      expect(shot.continuityTracker).toBeTruthy();
+      expect(typeof shot.continuityTracker.characterIdentity).toBe("string");
+      expect(typeof shot.continuityTracker.previousEndingFrame).toBe("string");
+    }
+    expect(result.plan.shots[0].continuityTracker.previousEndingFrame).toBe("first shot");
+  });
+});
+
+// E4.1: updateProductionPlan existed but was called by nothing. Now that the
+// PATCH route uses it, its contract is load-bearing: it recomputes the cost
+// server-side from the edited shots, re-runs the shot validators, persists
+// both, and refuses edits while executing/completed.
+describe("updateProductionPlan — server-side recompute on every edit", () => {
+  const storedPipeline = {
+    id: "p1", userId: "u1", status: "planning",
+    plan: { shots: [{ id: "shot_000", index: 0, durationSec: 5 }], globalStyle: {} },
+    brief: { type: "music_video" },
+  };
+
+  it("recomputes the cost estimate from the edited shots and returns validation results", async () => {
+    prisma.directorPipeline.findFirst.mockResolvedValue({ ...storedPipeline });
+    prisma.directorPipeline.update.mockResolvedValue({});
+
+    const result = await updateProductionPlan("p1", "u1", {
+      shots: [
+        { id: "shot_000", index: 0, durationSec: 5, imageStrategy: { prompt: "a static skyline at dusk" } },
+        { id: "shot_001", index: 1, durationSec: 5, imageStrategy: { prompt: "a static close-up of rain on glass" } },
+      ],
+    });
+
+    // 2 shots x (image 2 + video 2 + audio 2 [music_video]) + assembly 5
+    expect(result.costEstimate.totalCredits).toBe(17);
+    expect(result.plan.shots).toHaveLength(2);
+    expect(result.validation).toBeDefined();
+    expect(Array.isArray(result.validation.results)).toBe(true);
+    expect(result.validation.results).toHaveLength(2);
+
+    // Persisted, not just returned.
+    expect(prisma.directorPipeline.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "p1" },
+        data: expect.objectContaining({
+          plan: expect.objectContaining({ shots: expect.any(Array) }),
+          costEstimate: expect.objectContaining({ totalCredits: 17 }),
+        }),
+      })
+    );
+  });
+
+  it.each(["executing", "completed"])("refuses edits while the pipeline is %s", async (status) => {
+    prisma.directorPipeline.findFirst.mockResolvedValue({ ...storedPipeline, status });
+
+    await expect(updateProductionPlan("p1", "u1", { shots: [] })).rejects.toThrow(/Cannot edit plan/);
+    expect(prisma.directorPipeline.update).not.toHaveBeenCalled();
   });
 });
 

@@ -66,6 +66,33 @@ function canTransition(from, to) {
   return (VALID_TRANSITIONS[from] || []).includes(to);
 }
 
+// DirectorShot.id is a plain, no-default `String @id` — the executor always
+// supplies it explicitly. Plan-local shot ids ("shot_000", "shot_001", …)
+// are IDENTICAL across every pipeline ever planned, so writing the bare shot
+// id as the row id let one pipeline's upsert match — and silently overwrite
+// — a DIFFERENT pipeline's row (even a different user's). Namespacing the
+// row id to its pipeline closes the collision while the plan-local id keeps
+// working as the client-facing identifier (the client only ever sends the
+// plan-local shot id to /api/director/rerun and /api/director/generate-shot).
+// Guarded: a falsy pipelineId or shotId here means a caller lost track of
+// which pipeline/shot it's addressing — exactly how this bug class starts —
+// so fail loudly instead of silently building a garbage row id.
+export function shotRowId(pipelineId, shotId) {
+  if (!pipelineId) throw new Error("shotRowId: pipelineId is required");
+  if (!shotId) throw new Error("shotRowId: shotId is required");
+  return `${pipelineId}::${shotId}`;
+}
+
+// Strip the resolved `_provider` adapter before persisting generation params.
+// It carries function values (Prisma 7 refuses to serialize them into a Json
+// column — every Generation write here crashed on it) AND the provider's API
+// key, which must never land in the database. Found by
+// tests/integration/director-generate-shot.int.test.mjs.
+function persistableParams(params) {
+  const { _provider, ...rest } = params || {};
+  return rest;
+}
+
 async function transitionPipeline(pipelineId, toState, metadata = {}) {
   const pipeline = await prisma.directorPipeline.findUnique({ where: { id: pipelineId } });
   if (!pipeline) throw new Error("Pipeline not found");
@@ -86,14 +113,91 @@ async function transitionPipeline(pipelineId, toState, metadata = {}) {
 }
 
 // ──────────────────────────────────────────────
+// Character reference threading (E4.3)
+// ──────────────────────────────────────────────
+
+// Token-safe identifier for a character name: "The Night Courier" →
+// "The_Night_Courier". Mirrors the $CHARACTER_<name> tokens the planner's
+// LLM contract and heuristic builder emit (director-planner.js keeps its own
+// copy of this 2-liner rather than importing across the executor/planner
+// boundary — the two files already import in the other direction).
+export function characterSlug(name) {
+  return String(name || "").trim().replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+const CHARACTER_TOKEN_PREFIX = "$CHARACTER_";
+
+// Resolve a shot's imageStrategy.references. $CHARACTER_<name> tokens become
+// real image URLs — the character's uploaded reference first, then the
+// pipeline's rolling reference (the first completed shot image that
+// contained the character). Tokens with no image yet are returned as
+// `pending`: the caller seeds the rolling reference from this shot's own
+// completed image. Plain URLs pass through untouched.
+export function resolveCharacterReferences(refs, characters = [], rollingRefs = {}) {
+  const urls = [];
+  const pending = [];
+  for (const ref of refs || []) {
+    if (typeof ref !== "string" || !ref) continue;
+    if (!ref.startsWith(CHARACTER_TOKEN_PREFIX)) {
+      urls.push(ref);
+      continue;
+    }
+    // Token may carry a trailing annotation ("$CHARACTER_Mara — ...") — the
+    // name is everything up to the first whitespace.
+    const raw = ref.slice(CHARACTER_TOKEN_PREFIX.length).split(/\s/)[0];
+    const slug = characterSlug(raw);
+    if (!slug) continue;
+    const match = (characters || []).find(
+      (c) => characterSlug(c?.name).toLowerCase() === slug.toLowerCase()
+    );
+    const rolling =
+      rollingRefs[slug] ??
+      rollingRefs[characterSlug(match?.name)] ??
+      Object.entries(rollingRefs || {}).find(([k]) => k.toLowerCase() === slug.toLowerCase())?.[1];
+    const url = match?.referenceUrl || rolling;
+    if (url) {
+      urls.push(url);
+    } else {
+      pending.push(characterSlug(match?.name) || slug);
+    }
+  }
+  return { urls, pending };
+}
+
+// Store this shot's completed image as the rolling reference for each
+// still-unreferenced character it contained — SET ONCE: the first completed
+// image wins; later shots only ever read it.
+async function seedRollingCharacterRefs(pipelineId, slugs, url) {
+  if (!slugs?.length || !url) return;
+  const row = await prisma.directorPipeline.findUnique({ where: { id: pipelineId } });
+  if (!row) return;
+  const current = row.stateMetadata?.characterRefs || {};
+  const additions = {};
+  for (const slug of slugs) {
+    if (!current[slug]) additions[slug] = url;
+  }
+  if (!Object.keys(additions).length) return;
+  await prisma.directorPipeline.update({
+    where: { id: pipelineId },
+    data: {
+      stateMetadata: {
+        ...(row.stateMetadata || {}),
+        characterRefs: { ...current, ...additions },
+      },
+    },
+  });
+}
+
+// ──────────────────────────────────────────────
 // Shot Execution
 // ──────────────────────────────────────────────
 
 async function executeShotImage(shot, pipeline, brief) {
+  const rowId = shotRowId(pipeline.id, shot.id);
   const shotRecord = await prisma.directorShot.upsert({
-    where: { id: shot.id },
+    where: { id: rowId },
     create: {
-      id: shot.id,
+      id: rowId,
       pipelineId: pipeline.id,
       index: shot.index,
       title: shot.title,
@@ -111,7 +215,27 @@ async function executeShotImage(shot, pipeline, brief) {
 
   try {
     const imagePrompt = shot.imageStrategy?.prompt || "";
-    const refs = shot.imageStrategy?.references || [];
+    const rawRefs = shot.imageStrategy?.references || [];
+
+    // E4.3: $CHARACTER_<name> tokens → real image URLs (upload first, then
+    // the pipeline's rolling reference). The rolling refs are re-read fresh
+    // from the DB when tokens are present — during a full pipeline run the
+    // `pipeline` object was fetched once up front, and an earlier shot in
+    // this same run may have just seeded a reference.
+    let refs = rawRefs;
+    let pendingCharacters = [];
+    if (rawRefs.some((r) => typeof r === "string" && r.startsWith(CHARACTER_TOKEN_PREFIX))) {
+      let rollingRefs = pipeline.stateMetadata?.characterRefs || {};
+      try {
+        const fresh = await prisma.directorPipeline.findUnique({ where: { id: pipeline.id } });
+        rollingRefs = fresh?.stateMetadata?.characterRefs || rollingRefs;
+      } catch { /* fall back to the snapshot */ }
+      ({ urls: refs, pending: pendingCharacters } = resolveCharacterReferences(
+        rawRefs,
+        brief.characters || [],
+        rollingRefs
+      ));
+    }
 
     // Build generation params
     const params = {
@@ -149,7 +273,7 @@ async function executeShotImage(shot, pipeline, brief) {
         tool: "image",
         model: brief.modelImage || "flux-dev",
         prompt: imagePrompt,
-        params,
+        params: persistableParams(params),
         outputUrl: storedUrl,
         status: "completed",
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.image || 2
@@ -158,18 +282,29 @@ async function executeShotImage(shot, pipeline, brief) {
 
     // Update shot record
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: rowId },
       data: {
         imageResult: { url: storedUrl, rawUrl: imageUrl, prompt: imagePrompt },
         status: SHOT_STATES.GENERATING_VIDEO
       }
     });
 
+    // E4.3: this completed image becomes the rolling reference for any
+    // character in the shot that had none yet — later shots anchor to it.
+    if (pendingCharacters.length) {
+      try {
+        await seedRollingCharacterRefs(pipeline.id, pendingCharacters, storedUrl);
+      } catch (seedErr) {
+        // Never fail a successful shot over reference bookkeeping.
+        console.error(`[Director] Rolling character ref write failed for ${pipeline.id}:`, seedErr.message);
+      }
+    }
+
     return { success: true, imageUrl: storedUrl };
   } catch (err) {
     console.error(`[Director] Shot ${shot.id} image failed:`, err.message);
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: rowId },
       data: {
         status: SHOT_STATES.FAILED,
         error: err.message
@@ -180,6 +315,7 @@ async function executeShotImage(shot, pipeline, brief) {
 }
 
 async function executeShotVideo(shot, pipeline, brief, imageUrl) {
+  const rowId = shotRowId(pipeline.id, shot.id);
   try {
     const videoPrompt = shot.videoStrategy?.prompt || "";
     const modelRoute = shot.videoStrategy?.modelRoute || brief.modelVideo || "wan-2.6";
@@ -217,7 +353,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
         tool: "video",
         model: modelRoute,
         prompt: videoPrompt,
-        params,
+        params: persistableParams(params),
         outputUrl: storedUrl,
         status: "completed",
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.video || 10
@@ -225,7 +361,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
     });
 
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: rowId },
       data: {
         videoResult: { url: storedUrl, rawUrl: videoUrl, prompt: videoPrompt, modelRoute },
         status: SHOT_STATES.COMPLETED
@@ -236,7 +372,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
   } catch (err) {
     console.error(`[Director] Shot ${shot.id} video failed:`, err.message);
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: rowId },
       data: {
         status: SHOT_STATES.FAILED,
         error: err.message
@@ -247,11 +383,14 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
 }
 
 async function executeShotAudio(shot, pipeline, brief) {
-  if (!shot.audio && brief.type !== "music_video") return { success: true, audioUrl: null };
+  // E4.2: `shot.dialogue` is the plan-shape field (the LLM contract keeps
+  // `audio` null, so the old shot.audio.dialogue read was unreachable in
+  // practice). A shot with dialogue always attempts audio.
+  if (!shot.audio && !shot.dialogue && brief.type !== "music_video") return { success: true, audioUrl: null };
 
   try {
     const audioParams = {
-      prompt: shot.audio?.dialogue || brief.concept || "Background music",
+      prompt: shot.dialogue || shot.audio?.dialogue || brief.concept || "Background music",
       duration: shot.durationSec || 5,
       _provider: await resolveProvider(brief.modelAudio || "suno-v4")
     };
@@ -274,7 +413,7 @@ async function executeShotAudio(shot, pipeline, brief) {
         tool: "audio",
         model: brief.modelAudio || "suno-v4",
         prompt: audioParams.prompt,
-        params: audioParams,
+        params: persistableParams(audioParams),
         outputUrl: storedUrl,
         status: "completed",
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.audio || 5
@@ -282,7 +421,7 @@ async function executeShotAudio(shot, pipeline, brief) {
     });
 
     await prisma.directorShot.update({
-      where: { id: shot.id },
+      where: { id: shotRowId(pipeline.id, shot.id) },
       data: {
         audioResult: { url: storedUrl, rawUrl: audioUrl }
       }
@@ -373,7 +512,7 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
 
     for (const shot of shots) {
       // Check if already completed
-      const existing = await prisma.directorShot.findUnique({ where: { id: shot.id } });
+      const existing = await prisma.directorShot.findUnique({ where: { id: shotRowId(pipelineId, shot.id) } });
       if (existing?.status === SHOT_STATES.COMPLETED && !options.rerunAll) {
         results.push({ shotId: shot.id, status: "skipped", alreadyCompleted: true });
         continue;
@@ -406,10 +545,21 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
     if (videoUrls.length > 1) {
       await transitionPipeline(pipelineId, PIPELINE_STATES.ASSEMBLING);
       try {
-        assembledUrl = await assembleVideos(videoUrls, {
-          transition: "fade",
-          transitionDuration: 0.3
-        });
+        // E4.4: assembly honors each shot's own `transition` (how it cuts
+        // INTO the next shot) — the old options.transition:"fade" here was
+        // read and silently ignored by the previous assembleVideos.
+        const shotById = new Map((plan.shots || []).map(s => [s.id, s]));
+        const withVideo = completedShots.filter(r => r.videoUrl);
+        const transitions = withVideo
+          .slice(0, -1)
+          .map(r => {
+            const t = shotById.get(r.shotId)?.transition;
+            return ["cut", "fade", "dissolve"].includes(t) ? t : "cut";
+          });
+        assembledUrl = await assembleVideos(
+          { clips: videoUrls.map(url => ({ url })), transitions },
+          { transitionDuration: 0.3 }
+        );
 
         await prisma.directorPipeline.update({
           where: { id: pipelineId },
@@ -496,6 +646,123 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
 }
 
 // ──────────────────────────────────────────────
+// Per-shot generation BEFORE full execution (E4.2)
+// ──────────────────────────────────────────────
+
+// The kinds a planned-but-unexecuted shot can generate on its own. Audio is
+// deliberately absent: pre-execution audio belongs to the full pipeline run
+// (music) or an audio rerun on an executed shot (dialogue).
+export const VALID_SHOT_ASSET_KINDS = ["image", "video"];
+
+// Pipeline statuses during which per-shot generation must not run — the
+// inline pipeline run owns the shots (and the money) while any of these is
+// current.
+const EXECUTING_STATUSES = new Set([
+  PIPELINE_STATES.QUEUED,
+  PIPELINE_STATES.GENERATING_IMAGES,
+  PIPELINE_STATES.GENERATING_VIDEOS,
+  PIPELINE_STATES.GENERATING_AUDIO,
+  PIPELINE_STATES.QUALITY_CHECK,
+  PIPELINE_STATES.ASSEMBLING,
+]);
+
+// Generate ONE asset (image or video) for ONE planned shot, before any full
+// execution. Money invariant: debits EXACTLY that shot's server-quoted cost
+// for that kind (pipeline.costEstimate.shotCosts — never a client number),
+// refunds on failure, and — unlike rerunShot, which requires an existing
+// DirectorShot row — creates the row when this is the shot's first work.
+export async function generateShotAsset(pipelineId, userId, shotId, kind) {
+  if (!VALID_SHOT_ASSET_KINDS.includes(kind)) {
+    throw new Error(`Invalid kind: ${kind}`);
+  }
+
+  const pipeline = await prisma.directorPipeline.findFirst({
+    where: { id: pipelineId, userId }
+  });
+  if (!pipeline) throw new Error("Pipeline not found");
+  if (EXECUTING_STATUSES.has(pipeline.status)) {
+    throw new Error("Pipeline is executing — wait for the run to finish before generating single shots");
+  }
+
+  const plan = pipeline.plan;
+  const brief = pipeline.brief || {};
+  const shot = plan?.shots?.find(s => s.id === shotId);
+  if (!shot) throw new Error("Shot not found in plan");
+
+  // Exactly this shot's quoted cost for this kind. Prefer the by-shotId
+  // entry (edits re-index shots, so identity beats position), then the
+  // positional entry, then the even-split fallback rerunShot also uses.
+  const costRow = pipeline.costEstimate?.shotCosts?.find?.(c => c.shotId === shotId)
+    || pipeline.costEstimate?.shotCosts?.[shot.index];
+  let cost = costRow?.costs?.[kind];
+  if (!cost) {
+    const totalShots = plan.shots?.length || 0;
+    cost = Math.ceil((pipeline.costEstimate?.totalCredits || 0) / Math.max(1, totalShots));
+  }
+
+  await debitWallet(userId, cost, `Director shot generate (${kind})`, `director:${pipelineId}:generate`);
+
+  // Keep the Generation-row bookkeeping accurate (same trick as
+  // executeProductionPipeline).
+  brief._shotCosts = pipeline.costEstimate?.shotCosts || [];
+
+  const rowId = shotRowId(pipeline.id, shot.id);
+
+  try {
+    const existing = await prisma.directorShot.findUnique({ where: { id: rowId } });
+
+    if (kind === "image") {
+      // executeShotImage upserts the DirectorShot row itself.
+      const imageResult = await executeShotImage(shot, pipeline, brief);
+      if (!imageResult.success) throw new Error(imageResult.error);
+      // executeShotImage leaves the shot in GENERATING_VIDEO (its pipeline
+      // meaning is "image done, video next") — a standalone image isn't
+      // "generating video", so settle the row into an honest resting state.
+      await prisma.directorShot.update({
+        where: { id: rowId },
+        data: { status: existing?.videoResult ? SHOT_STATES.COMPLETED : SHOT_STATES.DRAFT }
+      });
+      return { shotId, kind, imageUrl: imageResult.imageUrl, creditsUsed: cost };
+    }
+
+    // kind === "video": executeShotVideo only UPDATEs the DirectorShot row,
+    // so create it first when this is the shot's first generated asset.
+    if (!existing) {
+      await prisma.directorShot.create({
+        data: {
+          id: rowId,
+          pipelineId: pipeline.id,
+          index: shot.index,
+          title: shot.title,
+          status: SHOT_STATES.DRAFT,
+          plan: shot,
+          imageResult: null,
+          videoResult: null,
+          audioResult: null
+        }
+      });
+    }
+    const imageUrl = existing?.imageResult?.url || null;
+    const videoResult = await executeShotVideo(shot, pipeline, brief, imageUrl);
+    if (!videoResult.success) throw new Error(videoResult.error);
+    return { shotId, kind, videoUrl: videoResult.videoUrl, imageUrl, creditsUsed: cost };
+  } catch (err) {
+    // Same refund discipline as rerunShot: the user must never stay billed
+    // for work that never happened, and a refund failure must never mask the
+    // original error.
+    try {
+      await refundCredits(userId, cost, `director:${pipelineId}:generate`, "Failed per-shot generation refund");
+    } catch (refundErr) {
+      console.error(
+        `[Director] GENERATE-SHOT REFUND FAILED — user is owed ${cost} credits. userId=${userId} pipelineId=${pipelineId} shotId=${shotId} kind=${kind}:`,
+        refundErr.message
+      );
+    }
+    throw err;
+  }
+}
+
+// ──────────────────────────────────────────────
 // Rerun a specific shot (image only, video only, or full)
 // ──────────────────────────────────────────────
 
@@ -530,7 +797,7 @@ export async function rerunShot(pipelineId, userId, shotId, rerunType = "full") 
   if (!shot) throw new Error("Shot not found in plan");
 
   // Get existing shot record
-  const shotRecord = await prisma.directorShot.findUnique({ where: { id: shotId } });
+  const shotRecord = await prisma.directorShot.findUnique({ where: { id: shotRowId(pipelineId, shotId) } });
   if (!shotRecord) throw new Error("Shot record not found");
 
   // Charge before regenerating — a rerun is new work on top of what the
@@ -644,6 +911,9 @@ export async function getPipelineStatus(pipelineId, userId) {
     assembledUrl: pipeline.assembledUrl,
     shots: shots.map(s => ({
       id: s.id,
+      // Row id is namespaced (shotRowId) — expose the plan-local id too, the
+      // same shape the HTTP status route returns (see its comment).
+      shotId: s.plan?.id ?? null,
       index: s.index,
       title: s.title,
       status: s.status,

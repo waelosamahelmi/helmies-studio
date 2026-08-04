@@ -47,6 +47,18 @@ const webServerEnv = {
   STRIPE_WEBHOOK_SECRET: "e2e-dummy-stripe-webhook-not-a-real-key",
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "e2e-dummy-stripe-publishable-not-a-real-key",
   NODE_ENV: "production",
+  // EDITSv1 E4.2: the Director executor (src/lib/director-executor.js) runs
+  // INLINE in the app's own HTTP request — unlike /api/generate/async, its
+  // provider calls never go through the worker process, so the worker-only
+  // mock can't cover them and page.route() can't reach a server-side fetch.
+  // Same double-locked short-circuit as the worker entry below (env var AND
+  // a localhost DATABASE_URL — see src/lib/providers.js): every submitOnly
+  // call in the app process answers with the local fixture image instead of
+  // dialing a real provider. No other e2e journey exercises an inline
+  // provider call (async generation is worker-side; sync /api/generate/*
+  // tool routes have no e2e coverage), so this changes director/timeline
+  // specs only.
+  E2E_MOCK_PROVIDERS: "1",
 };
 
 // Phase 5 Task 2: a real generation must actually reach "completed" or

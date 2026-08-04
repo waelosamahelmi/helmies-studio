@@ -23,6 +23,10 @@ export class DirectorPlanError extends Error {
   }
 }
 
+// E4.2: the transitions a shot may cut into the next one with — consumed by
+// assembly (video-assembly.js). Anything else normalizes to a hard cut.
+export const VALID_SHOT_TRANSITIONS = ["cut", "fade", "dissolve"];
+
 // A plan is only usable downstream (estimateDirectorCost, validateShotPlan,
 // the route) if `shots` is a real, non-empty array of shot objects.
 export function isValidPlanShape(plan) {
@@ -236,15 +240,36 @@ export function validateShotPlan(shot) {
   };
 }
 
+// E4.3: token-safe identifier for a character name, mirroring
+// director-executor.js's characterSlug (a deliberate 2-line duplicate — the
+// executor already imports from this module, so importing back would create
+// a cycle). "$CHARACTER_<slug>" in imageStrategy.references is resolved by
+// the executor to the character's uploaded reference image, or to the
+// rolling reference seeded by the first completed shot containing them.
+function characterToken(name) {
+  const slug = String(name || "").trim().replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug ? `$CHARACTER_${slug}` : null;
+}
+
 // ──────────────────────────────────────────────
 // LLM System Prompt for Director Orchestrator
 // ──────────────────────────────────────────────
-function buildSystemPrompt(productionType, sectionStrategy) {
+function buildSystemPrompt(productionType, sectionStrategy, characters = []) {
   const strategyDesc = Object.entries(sectionStrategy)
     .map(([section, strat]) =>
       `  ${section}: ${strat.camera.framing}, ${strat.camera.angle}, ${strat.camera.lens}, ${strat.camera.movement} (${strat.camera.intensity} intensity). ${strat.notes}`
     )
     .join("\n");
+
+  const cast = (characters || []).filter((c) => c?.name && characterToken(c.name));
+  const referencesContract = cast.length
+    ? `"references": ["$CHARACTER_<name> tokens for the characters in this shot — e.g. ${characterToken(cast[0].name)}"]`
+    : `"references": []`;
+  const castRules = cast.length
+    ? `\nCHARACTER TOKENS (image-anchored consistency):\n${cast
+        .map((c) => `  ${characterToken(c.name)} — "${c.name}": ${c.description || "no description"}`)
+        .join("\n")}\nInclude each character's token in imageStrategy.references for EVERY shot that character appears in. Tokens resolve to real reference images at generation time. Still re-describe the character physically in the prompt text — the token anchors identity, the words anchor the pose.`
+    : "";
 
   return `You are Helmies Studio's Director Agent. You create detailed multi-shot video production plans.
 
@@ -275,7 +300,7 @@ You MUST output a single valid JSON object with this exact structure:
       "imageStrategy": {
         "mode": "generate",
         "prompt": "Static image description — NO action verbs, NO meta-language, present tense, physical descriptions only",
-        "references": []
+        ${referencesContract}
       },
       "videoStrategy": {
         "mode": "t2v",
@@ -285,6 +310,9 @@ You MUST output a single valid JSON object with this exact structure:
         "windows": []
       },
       "audio": null,
+      "transition": "cut|fade|dissolve — how this shot cuts INTO the next shot (applied at assembly)",
+      "dialogue": "the spoken line for this shot in quotes, or null when nobody speaks",
+      "audioCues": "sound design notes for this shot (e.g. rain on glass, distant sirens), or null",
       "continuity": ["character identity consistent with shot N-1", "outfit match", "environment match"],
       "continuityTracker": {
         "characterIdentity": "same person as previous shot — describe physically",
@@ -311,7 +339,7 @@ You MUST output a single valid JSON object with this exact structure:
 
 SECTION-BASED CAMERA STRATEGY (apply these defaults per section):
 ${strategyDesc}
-
+${castRules}
 CRITICAL RULES:
 1. Every shot is independent — re-describe all characters, environment, and lighting in every shot
 2. NO character names in prompts — use physical descriptors ("the woman in red", "the guitarist")
@@ -331,6 +359,7 @@ CRITICAL RULES:
 16. continuityTracker MUST be filled for every shot — it is explicit data, not LLM-guessed. For shot 0, use "first shot" / "establishing" where appropriate
 17. previousEndingFrame: shot N must visually start where shot N-1 ended (e.g. "starts on the close-up of the coffee cup, pulls back to reveal the cafe")
 18. Re-describe characters physically in continuityTracker.characterIdentity every shot — never assume the model remembers
+19. transition is per shot ("cut" unless a fade/dissolve serves the edit); dialogue and audioCues are null unless the shot genuinely calls for them
 
 OUTPUT ONLY VALID JSON — no markdown, no explanation outside the JSON object.`;
 }
@@ -364,6 +393,17 @@ function buildUserPrompt(brief) {
 
   if (brief.references?.length) {
     parts.push(`\nREFERENCE IMAGES: ${brief.references.length} reference(s) provided — use as visual ground truth for consistent character, lighting, and aesthetic`);
+  }
+
+  // E4.1: the user's pre-plan sketched outline. The plan route has always
+  // sent `shots`, but nothing here ever read it — the sketch silently never
+  // reached the LLM. It is a binding constraint, not a suggestion.
+  if (brief.shots?.length) {
+    parts.push(`\nUSER'S SHOT OUTLINE (follow this structure — keep the order, expand each sketch into a full shot):`);
+    for (const s of brief.shots) {
+      const title = s.title || `Shot ${(s.index ?? 0) + 1}`;
+      parts.push(`  ${(s.index ?? 0) + 1}. ${title}${s.description ? ` — ${s.description}` : ""}`);
+    }
   }
 
   if (brief.sections?.length) {
@@ -426,7 +466,12 @@ function buildHeuristicDirectorPlan(brief) {
         imageStrategy: {
           mode: "generate",
           prompt: `${strat.camera.framing} of ${brief.characters?.[0]?.description || "the subject"}, ${strat.notes.toLowerCase()}, ${strat.camera.angle}, ${strat.camera.lens}`,
-          references: brief.references || []
+          // E4.3: named characters ride along as $CHARACTER_<name> tokens —
+          // the executor anchors them to an uploaded or rolling reference.
+          references: [
+            ...(brief.references || []),
+            ...(brief.characters || []).map((c) => characterToken(c?.name)).filter(Boolean),
+          ]
         },
         videoStrategy: {
           mode: "t2v",
@@ -436,7 +481,23 @@ function buildHeuristicDirectorPlan(brief) {
           windows: []
         },
         audio: brief.type === "music_video" ? null : undefined,
-        continuity: index > 0 ? [`Character consistent with shot ${index - 1}`, "Environment match", "Lighting continuity"] : ["Establishing shot — sets baseline"]
+        // E4.2: same shape the LLM contract emits — the heuristic path must
+        // never produce a structurally poorer plan than the LLM path.
+        transition: "cut",
+        dialogue: null,
+        audioCues: null,
+        continuity: index > 0 ? [`Character consistent with shot ${index - 1}`, "Environment match", "Lighting continuity"] : ["Establishing shot — sets baseline"],
+        continuityTracker: {
+          characterIdentity: brief.characters?.[0]?.description || "the performer — same person throughout",
+          outfit: index === 0 ? "establishing" : "same outfit as previous shot",
+          productIdentity: null,
+          environment: brief.concept?.slice(0, 100) || "same setting throughout",
+          lighting: "dramatic directional lighting, warm key, cool rim — consistent",
+          timeOfDay: "consistent",
+          screenDirection: "180-degree rule maintained",
+          previousEndingFrame: index === 0 ? "first shot" : `continues from shot ${index}`,
+          cameraLanguage: `${strat.camera.lens}, ${strat.camera.framing} vocabulary`,
+        }
       });
       runningTime += shotDuration;
       index++;
@@ -537,6 +598,14 @@ function normalizePlanFromLLM(parsed, preset, brief) {
         windows: shot.videoStrategy?.windows || []
       },
       audio: shot.audio || null,
+      // E4.2: per-shot editorial fields. `transition` is how this shot cuts
+      // INTO the next (consumed by assembly); unknown values fall back to a
+      // hard cut rather than surprising the editor later.
+      transition: VALID_SHOT_TRANSITIONS.includes(shot.transition) ? shot.transition : "cut",
+      dialogue: typeof shot.dialogue === "string" && shot.dialogue.trim() ? shot.dialogue : null,
+      audioCues: Array.isArray(shot.audioCues)
+        ? (shot.audioCues.filter(Boolean).join(", ") || null)
+        : (typeof shot.audioCues === "string" && shot.audioCues.trim() ? shot.audioCues : null),
       continuity: shot.continuity || [],
       continuityTracker: shot.continuityTracker || {
         characterIdentity: "not specified",
@@ -596,7 +665,7 @@ export async function createProductionPlan(brief, userId) {
   let lastError = null;
 
   if (hasLLM) {
-    const systemPrompt = buildSystemPrompt(preset.label, sectionStrategy);
+    const systemPrompt = buildSystemPrompt(preset.label, sectionStrategy, brief.characters);
     const userPrompt = buildUserPrompt(brief);
 
     let parsed = null;
@@ -709,13 +778,30 @@ export async function updateProductionPlan(pipelineId, userId, updates) {
     shots: updates.shots || currentPlan.shots
   };
 
+  if (!isValidPlanShape(newPlan)) {
+    throw new Error("Cannot edit plan: the edited plan has no shots");
+  }
+
+  // Re-index after edits so reorder/duplicate/delete keep index === position —
+  // the executor and cost estimator both key shotCosts by shot.index.
+  newPlan.shots = newPlan.shots.map((shot, i) => ({ ...shot, index: i }));
+
   const costEstimate = await estimateDirectorCost(newPlan, pipeline.brief || {});
+
+  // E4.1: re-run the shot validators on every edit — edited prompts get the
+  // same 11-policy validation a fresh plan gets, and the stored
+  // validationResults never go stale relative to the stored plan.
+  const validationResults = newPlan.shots.map(shot => ({
+    shotId: shot.id,
+    ...validateShotPlan(shot)
+  }));
 
   await prisma.directorPipeline.update({
     where: { id: pipelineId },
     data: {
       plan: newPlan,
-      costEstimate
+      costEstimate,
+      validationResults
     }
   });
 
@@ -723,6 +809,7 @@ export async function updateProductionPlan(pipelineId, userId, updates) {
     pipelineId,
     plan: newPlan,
     costEstimate,
+    validation: { allValid: validationResults.every(r => r.valid), results: validationResults },
     status: pipeline.status
   };
 }

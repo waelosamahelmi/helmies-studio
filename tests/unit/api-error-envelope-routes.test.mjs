@@ -19,7 +19,10 @@ vi.mock("@/lib/security", () => ({ checkRateLimit: vi.fn() }));
 vi.mock("@/lib/origin-check", () => ({ verifyOrigin: vi.fn(() => true) }));
 vi.mock("@/lib/prisma", () => ({
   default: {
-    project: { findFirst: vi.fn(), findMany: vi.fn() },
+    // E4.1: director/status now reads the REAL director tables
+    // (directorPipeline + directorShot), not `project`.
+    directorPipeline: { findFirst: vi.fn(), findMany: vi.fn() },
+    directorShot: { findMany: vi.fn() },
     workflow: { updateMany: vi.fn(), findFirst: vi.fn() },
     asset: { create: vi.fn() },
     user: { findUnique: vi.fn() },
@@ -174,7 +177,7 @@ describe("POST /api/agent/run — envelope", () => {
 
 describe("GET /api/director/status — envelope", () => {
   it("404s with a not_found envelope for an unknown pipeline", async () => {
-    prisma.project.findFirst.mockResolvedValue(null);
+    prisma.directorPipeline.findFirst.mockResolvedValue(null);
     const res = await getDirectorStatus(new Request("http://test/api/director/status?pipelineId=nope"));
     expect(res.status).toBe(404);
     const body = await res.json();
@@ -184,7 +187,7 @@ describe("GET /api/director/status — envelope", () => {
 
   it("500s with a generic internal envelope, never the thrown message", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
-    prisma.project.findMany.mockRejectedValue(new Error("relation does not exist"));
+    prisma.directorPipeline.findMany.mockRejectedValue(new Error("relation does not exist"));
     const res = await getDirectorStatus(new Request("http://test/api/director/status"));
     expect(res.status).toBe(500);
     const body = await res.json();
