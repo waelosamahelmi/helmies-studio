@@ -2,11 +2,38 @@ import { getCurrentUser } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
 import { llmComplete, brandError } from "@/lib/providers";
 import { apiError } from "@/lib/api-error";
+import { authzResponse } from "@/lib/authz";
+import { verifyOrigin } from "@/lib/origin-check";
+import { buildChatSystemPrompt, parseQuestionBlock } from "@/lib/agent-chat";
+import { appendMessage, resolveOwnedSession } from "@/lib/agent-sessions";
+
+// EDITSv1 E3.2 — structured agent chat. The system prompt (src/lib/
+// agent-chat.js) enforces: markdown prose, AT MOST ONE clarifying question
+// per turn delivered as a trailing ```question fenced block, and a pointer
+// to plan review when enough is known. When the client attaches a
+// sessionId, both sides of the turn are persisted via appendMessage — the
+// newest user message before the LLM call, the full assistant reply after
+// the stream ends (kind "question" when it carries a question block).
+
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  Connection: "keep-alive",
+};
+
+const sse = (payload) => `data: ${JSON.stringify(payload)}\n\n`;
+
+async function persistAssistantTurn(sessionId, text) {
+  if (!sessionId || !text) return;
+  const kind = parseQuestionBlock(text) ? "question" : "text";
+  await appendMessage(sessionId, { role: "assistant", kind, content: text }).catch(() => {});
+}
 
 export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
     if (!user) return apiError({ code: "unauthorized" });
+    verifyOrigin(req);
 
     const rl = await checkRateLimit(user.id, "/api/agent");
     if (!rl.allowed) return apiError({ code: "rate_limited", extra: { retryAfter: rl.retryAfter } });
@@ -17,32 +44,29 @@ export async function POST(req) {
       return apiError({ code: "bad_request", message: "Messages required" });
     }
 
+    const session = await resolveOwnedSession(user.id, body.sessionId);
+    const sessionId = session?.id || null;
+
+    // The client sends the full history; only the FINAL user message is new.
+    const last = messages[messages.length - 1];
+    if (sessionId && last?.role === "user" && typeof last.content === "string" && last.content.trim()) {
+      await appendMessage(sessionId, { role: "user", kind: "text", content: last.content }).catch(() => {});
+    }
+
     const selectedModel = model || process.env.LLM_MODEL || "deepseek/deepseek-v4-flash";
     const key = process.env.OPENROUTER_KEY;
 
     if (!key) {
-      return new Response(
-        `data: ${JSON.stringify({ type: "token", content: "No LLM configured. Set OPENROUTER_KEY in .env" })}\n\ndata: [DONE]\n\n`,
-        { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } }
-      );
+      const fallbackText = "No LLM configured. Set OPENROUTER_KEY in .env";
+      await persistAssistantTurn(sessionId, fallbackText);
+      return new Response(sse({ type: "token", content: fallbackText }) + "data: [DONE]\n\n", {
+        headers: SSE_HEADERS,
+      });
     }
 
-    const systemContent = `You are Helmies Studio's Orchestrator Agent — a friendly, knowledgeable AI assistant inside a creative studio app. You help users plan and create multimedia content (images, video, audio, music, and more).
-
-Your role in chat mode:
-- Have a natural conversation with the user to understand their creative needs
-- Ask clarifying questions when the request is vague
-- Suggest creative ideas and approaches
-- When the user is ready to execute, tell them to click "Generate Plan" to proceed
-- Keep responses helpful, concise, and conversational — NOT JSON
-
-Available creative tools: image generation, video generation, audio/music, lip sync, recast, cinema, motion, video editing, clipping, marketing campaigns, brand kits, AI avatars, and more.
-
-Do NOT output JSON. Respond in plain text as a helpful assistant.`;
-
     const allMessages = [
-      { role: "system", content: systemContent },
-      ...messages.map(m => ({ role: m.role, content: m.content })),
+      { role: "system", content: buildChatSystemPrompt() },
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 
     // OpenRouter exposes an OpenAI-compatible /chat/completions endpoint.
@@ -81,26 +105,25 @@ Do NOT output JSON. Respond in plain text as a helpful assistant.`;
 
     if (typeof ReadableStream === "undefined") {
       const fullText = await llmComplete(allMessages, { maxTokens: 2000, temperature: 0.7, model: selectedModel });
-      const body = `data: ${JSON.stringify({ type: "token", content: fullText })}\n\ndata: [DONE]\n\n`;
-      return new Response(body, {
-        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+      await persistAssistantTurn(sessionId, fullText);
+      return new Response(sse({ type: "token", content: fullText }) + "data: [DONE]\n\n", {
+        headers: SSE_HEADERS,
       });
     }
 
     if (typeof streamRes.body?.getReader !== "function") {
       const raw = await streamRes.text();
       let content = "";
-      for (const line of raw.split("\n").filter(l => l.startsWith("data: "))) {
+      for (const line of raw.split("\n").filter((l) => l.startsWith("data: "))) {
         try {
           const d = JSON.parse(line.slice(6).trim());
           if (d.choices?.[0]?.delta?.content) content += d.choices[0].delta.content;
         } catch {}
       }
-      const body = content
-        ? `data: ${JSON.stringify({ type: "token", content })}\n\ndata: [DONE]\n\n`
-        : `data: ${JSON.stringify({ type: "token", content: raw })}\n\ndata: [DONE]\n\n`;
-      return new Response(body, {
-        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
+      const text = content || raw;
+      await persistAssistantTurn(sessionId, text);
+      return new Response(sse({ type: "token", content: text }) + "data: [DONE]\n\n", {
+        headers: SSE_HEADERS,
       });
     }
 
@@ -110,24 +133,29 @@ Do NOT output JSON. Respond in plain text as a helpful assistant.`;
 
     const stream = new ReadableStream({
       async start(controller) {
+        let full = "";
         try {
           while (!cancelled) {
             const { done, value } = await reader.read();
             if (done) break;
             const chunk = decoder.decode(value, { stream: true });
-            for (const line of chunk.split("\n").filter(l => l.startsWith("data: "))) {
+            for (const line of chunk.split("\n").filter((l) => l.startsWith("data: "))) {
               const data = line.slice(6).trim();
               if (data === "[DONE]") continue;
               try {
                 const parsed = JSON.parse(data);
                 const content = parsed.choices?.[0]?.delta?.content || "";
                 if (content) {
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "token", content })}\n\n`));
+                  full += content;
+                  controller.enqueue(encoder.encode(sse({ type: "token", content })));
                 }
               } catch {}
             }
           }
         } catch {}
+        // Persist the complete assistant turn (even a partial one the user
+        // cancelled — that's what they saw) before closing the stream.
+        await persistAssistantTurn(sessionId, full);
         try {
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
@@ -136,10 +164,8 @@ Do NOT output JSON. Respond in plain text as a helpful assistant.`;
       cancel() { cancelled = true; },
     });
 
-    return new Response(stream, {
-      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
-    });
+    return new Response(stream, { headers: SSE_HEADERS });
   } catch (e) {
-    return apiError({ code: "internal", cause: e, context: { route: "agent/chat" } });
+    return authzResponse(e);
   }
 }

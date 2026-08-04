@@ -302,10 +302,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "/api/agent",
-    "stateChanging": false,
-    "notes": "Streams an LLM chat completion; no DB writes."
+    "stateChanging": true,
+    "notes": "EDITSv1 E3.2: streams an LLM chat completion; when body.sessionId names an OWNED AgentSession, both sides of the turn are persisted as AgentMessage rows (appendMessage), so this is now state-changing — verifyOrigin wired on POST."
   },
   {
     "path": "/api/agent/plan",
@@ -314,10 +314,10 @@
       "POST"
     ],
     "auth": "user",
-    "originCheck": false,
+    "originCheck": true,
     "rateLimit": "/api/agent",
-    "stateChanging": false,
-    "notes": "planTask/planTaskStream do not write to the DB (verified: no prisma calls above executeAgentRun's line in lib/agents.js)."
+    "stateChanging": true,
+    "notes": "EDITSv1 E3.2: still a pure server-side quote (nothing runs/charged), but when body.sessionId names an OWNED AgentSession the brief + plan are persisted as AgentMessage rows for resume — verifyOrigin wired on POST."
   },
   {
     "path": "/api/agent/run",
@@ -330,6 +330,45 @@
     "rateLimit": "/api/agent",
     "stateChanging": true,
     "notes": "Task 3 origin-check target. Delegates to executeAgentRun/executeAgentRunStream, which create AgentRun and Generation rows and spend credits — same billing surface as /api/generate/*. Task 3 fix: verifyOrigin wired on POST — reviewer flagged this as the same shape as workflows/[id]/run and generate/async (cookie-session, state-changing, credit-consuming), which WERE wired in the original pass; leaving it unwired was an inconsistency, not staging."
+  },
+  {
+    "path": "/api/agent/step",
+    "file": "src/app/api/agent/step/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/agent",
+    "stateChanging": true,
+    "notes": "EDITSv1 E3.2. Executes exactly ONE approved-plan step (per-asset Accept/Regenerate/Edit): debits exactly the step's SERVER-computed quote (model/prompt overrides re-quoted server-side; fallbacks capped at the same quote), writes the Generation row for media steps, refunds in full on failure. Same billing surface as /api/agent/run — verifyOrigin wired on POST."
+  },
+  {
+    "path": "/api/agent/sessions",
+    "file": "src/app/api/agent/sessions/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/agent",
+    "stateChanging": true,
+    "notes": "EDITSv1 E3.1. GET lists the caller's active AgentSession rows (read-only, unchecked); POST creates one — verifyOrigin wired on POST, rate-limited via the shared '/api/agent' key."
+  },
+  {
+    "path": "/api/agent/sessions/[id]",
+    "file": "src/app/api/agent/sessions/[id]/route.js",
+    "methods": [
+      "GET",
+      "PATCH",
+      "DELETE"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E3.1. GET returns one owned session + its messages (404s identically for missing and other users' sessions); PATCH renames/updates settings, DELETE archives (soft delete) — verifyOrigin wired on PATCH/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/analyze",

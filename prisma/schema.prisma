@@ -35,7 +35,8 @@ model User {
   wallet        CreditWallet?
   projects      Project[]
   purchases     TemplatePurchase[]
- 
+  agentSessions AgentSession[]
+
   @@schema("public")
 }
 
@@ -171,10 +172,46 @@ model AgentRun {
   steps            Json?
   result           Json?
   error            String?  @db.Text
+  sessionId        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@schema("public")
+}
+
+// ── Agent sessions (EDITSv1 E3.1) ──
+// A persistent conversation with the orchestrator agent. Messages are the
+// full feed history: `kind` disambiguates plain markdown text from the
+// structured cards (question/plan/run/outputs), whose `content` is a JSON
+// string. AgentRun.sessionId (above) ties a paid run back to the session
+// it was approved in — deliberately NOT a foreign key, matching AgentRun's
+// standalone-billing-record character (runs must survive session deletion).
+model AgentSession {
+  id        String         @id @default(cuid())
+  userId    String
+  title     String         @default("New session")
+  status    String         @default("active") // active|archived
+  settings  Json? // { imageModel, videoModel, audioModel, quality, aspect, autoComplete }
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AgentMessage[]
+
+  @@index([userId, updatedAt])
+  @@schema("public")
+}
+
+model AgentMessage {
+  id        String       @id @default(cuid())
+  sessionId String
+  role      String // user|assistant|system
+  kind      String       @default("text") // text|question|plan|run|outputs
+  content   String       @db.Text // markdown for text; JSON string for structured kinds
+  createdAt DateTime     @default(now())
+  session   AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
   @@schema("public")
 }
 

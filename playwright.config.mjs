@@ -56,8 +56,19 @@ const webServerEnv = {
   // call in the app process answers with the local fixture image instead of
   // dialing a real provider. No other e2e journey exercises an inline
   // provider call (async generation is worker-side; sync /api/generate/*
-  // tool routes have no e2e coverage), so this changes director/timeline
-  // specs only.
+  // tool routes have no e2e coverage).
+  // EDITSv1 E3.4/E3.5: the AGENT run/step routes execute provider calls
+  // INLINE in the app process (src/lib/agents.js -> generation.js ->
+  // providers.js submitOnly), unlike /api/generate/async which only
+  // enqueues for the worker below. The agent e2e journeys (approve a plan,
+  // regenerate a step) need those inline calls to complete for real —
+  // Generation rows written, wallet debited — without ever dialing a real
+  // provider, so the SAME double-locked mock the worker uses (env var AND
+  // a localhost DATABASE_URL, see providers.js's E2E_MOCK_PROVIDERS block)
+  // is switched on for the app too. LLM calls are unaffected: llmComplete/
+  // llmStream check OPENROUTER_KEY (explicitly "" above) before anything
+  // else, and the durable-queue journeys never touched this branch — the
+  // async route still only enqueues.
   E2E_MOCK_PROVIDERS: "1",
 };
 

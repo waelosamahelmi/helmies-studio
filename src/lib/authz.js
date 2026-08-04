@@ -8,14 +8,12 @@ import { apiError } from "@/lib/api-error";
 // status (401 unauthenticated vs 403 authenticated-but-not-admin) and never
 // sees an internal error message from an unrelated failure (e.g. a DB error)
 // leak into the response body.
-export class AuthzError extends Error {
-  constructor(status, publicMessage) {
-    super(publicMessage);
-    this.name = "AuthzError";
-    this.status = status;
-    this.publicMessage = publicMessage;
-  }
-}
+//
+// AuthzError itself lives in src/lib/authz-error.js (a dependency-free leaf
+// module) so libraries can throw it without importing this file's
+// next-auth chain — re-exported here so existing imports keep working.
+import { AuthzError } from "@/lib/authz-error";
+export { AuthzError };
 
 // Any signed-in user, or throw 401.
 export async function requireUser(req) {
@@ -44,7 +42,11 @@ export function authzResponse(e) {
   if (e instanceof AuthzError) {
     return apiError({
       status: e.status,
-      code: e.status === 401 ? "unauthorized" : e.status === 404 ? "not_found" : "forbidden",
+      code:
+        e.status === 400 ? "bad_request"
+        : e.status === 401 ? "unauthorized"
+        : e.status === 404 ? "not_found"
+        : "forbidden",
       message: e.publicMessage,
     });
   }
