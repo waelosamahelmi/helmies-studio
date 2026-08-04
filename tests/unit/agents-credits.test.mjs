@@ -74,7 +74,23 @@ async function drainStream(stream) {
 beforeEach(() => {
   vi.clearAllMocks();
   detectAbuse.mockResolvedValue({ flagged: false });
-  prisma.modelPricing.findUnique.mockResolvedValue(null);
+  // Every step's named model resolves as active/non-deprecated/runnable by
+  // default (URGENT production fix: executeStepWithRetry now validates a
+  // step's model against the live catalog before executing it) — these
+  // tests exercise the wallet-ledger debit/refund invariant, not
+  // model-catalog resolution, so the new runnable-model gate must never
+  // interfere with them or trigger a substitution. Catalog gate/
+  // substitution behavior itself is covered by
+  // tests/unit/agent-model-selection.test.mjs.
+  prisma.modelPricing.findUnique.mockImplementation(async ({ where }) => ({
+    modelId: where.modelId,
+    isActive: true,
+    isDeprecated: false,
+    endpoint: where.modelId,
+    providerModelId: where.modelId,
+    providerName: "KIE",
+    creditsCost: 2,
+  }));
   prisma.agentRun.create.mockResolvedValue({ id: "run1" });
   prisma.agentRun.update.mockResolvedValue({});
   prisma.generation.create.mockResolvedValue({});

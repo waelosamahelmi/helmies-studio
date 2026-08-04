@@ -59,6 +59,17 @@ export async function POST(req) {
       if (err?.code === "blocked") {
         return apiError({ code: "forbidden", message: err.message });
       }
+      // URGENT production fix: a step named a model with no runnable
+      // replacement within its approved budget — thrown BEFORE any debit
+      // (see executeAgentStep), so nothing needs refunding here. Pass the
+      // actual message straight through instead of the generic `internal`
+      // branch below, which would re-brand it via brandForUser and discard
+      // the actionable "re-plan this step" detail (brandForUser's keyword
+      // matching can even miscategorize it, since the message legitimately
+      // contains the word "credits").
+      if (err?.code === "model_unavailable") {
+        return apiError({ code: "invalid_model", message: err.message, retryable: true });
+      }
       // Execution failure: the step's quote was already refunded in full by
       // executeAgentStep; the client sees a branded, retryable message.
       return apiError({

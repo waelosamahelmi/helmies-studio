@@ -124,7 +124,13 @@ test("Music studio: composition pool only, with genre/duration/instrumental cont
 
   // Schema-gated controls render from the curated schema.
   await expect(page.getByRole("group", { name: "Genre" })).toBeVisible();
-  await expect(page.getByText("Instrumental only")).toBeVisible();
+  // Assert the CONTROL, not the loose text: kit/Controls.js's Toggle wraps a
+  // role="switch" button and a <span> label inside one <label>, so a text
+  // locator matches both the wrapper and the span — and React 19's streaming
+  // duplicate can double that again, which is the strict-mode violation this
+  // used to hit under full-suite load. The switch is unambiguous and is what
+  // the user actually operates.
+  await expect(page.getByRole("switch", { name: /Instrumental only/ })).toBeVisible();
 
   // Duration comes from the schema enum [30,60,120,180,240] — "4m" exists
   // and the fallback-only "90s" does NOT (the fallback list would show it).

@@ -52,6 +52,13 @@ export const E2E_ADMIN_EMAIL = "e2e-admin@test.local";
 export const E2E_USER_STARTING_CREDITS = 5000;
 export const E2E_IMAGE_MODEL_ID = "e2e-image-model";
 export const E2E_IMAGE_MODEL_CREDITS_COST = 10;
+// The agent's heuristic plans chain an image step into a video step, and the
+// executor now refuses to charge for a model that isn't runnable (active +
+// not deprecated) — so a seeded VIDEO model is required for a two-step plan
+// to complete. Production has 58 runnable video models; without this the
+// second step legitimately has nothing to run.
+export const E2E_VIDEO_MODEL_ID = "e2e-video-model";
+export const E2E_VIDEO_MODEL_CREDITS_COST = 12;
 
 // Mirrors scripts/seed-plans.mjs's catalog exactly (four plans, four packs)
 // minus the live Stripe price IDs — E2E never talks to Stripe for real, so
@@ -116,6 +123,32 @@ async function ensureImageModel(prisma) {
   });
 }
 
+async function ensureVideoModel(prisma) {
+  await prisma.modelPricing.upsert({
+    where: { modelId: E2E_VIDEO_MODEL_ID },
+    update: {
+      modelType: "video",
+      capability: "text-to-video",
+      providerName: "kie",
+      displayName: "E2E Video Model",
+      providerCost: 0.02,
+      creditsCost: E2E_VIDEO_MODEL_CREDITS_COST,
+      isActive: true,
+      isDeprecated: false,
+    },
+    create: {
+      modelId: E2E_VIDEO_MODEL_ID,
+      modelType: "video",
+      capability: "text-to-video",
+      providerName: "kie",
+      displayName: "E2E Video Model",
+      providerCost: 0.02,
+      creditsCost: E2E_VIDEO_MODEL_CREDITS_COST,
+      isActive: true,
+    },
+  });
+}
+
 async function ensureCredentialsUser(prisma, email, role) {
   const passwordHash = await bcrypt.hash(SEED_PASSWORD, 10);
   return prisma.user.upsert({
@@ -169,6 +202,7 @@ export async function seedE2E() {
   try {
     await ensurePlansAndPacks(prisma);
     await ensureImageModel(prisma);
+    await ensureVideoModel(prisma);
 
     const userRow = await ensureCredentialsUser(prisma, E2E_USER_EMAIL, "user");
     await ensureWalletAtLeast(prisma, userRow.id, E2E_USER_STARTING_CREDITS);
