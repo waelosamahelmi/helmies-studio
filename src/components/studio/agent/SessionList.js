@@ -56,16 +56,24 @@ export default function SessionList({ sessions = [], activeId, onSelect, onNew, 
       {sessions.length === 0 ? (
         <p className="hs-hint">Your conversations are saved here — send a message to start one.</p>
       ) : (
-        <div className="st-sessions" role="list" aria-label="Saved sessions">
-          {top.map((session) => (
-            <SessionButton
-              key={session.id}
-              session={session}
-              active={session.id === activeId}
-              onSelect={onSelect}
-              disabled={busy}
-            />
-          ))}
+        <>
+          {/* role="list" may contain ONLY role="listitem" children — the
+              "Show all" button lives outside it, or axe reports
+              aria-required-children (critical). It only surfaced once a user
+              had more sessions than fit the preview, which is why it read as
+              intermittent. */}
+          <div className="st-sessions" role="list" aria-label="Saved sessions">
+            {top.map((session) => (
+              <div key={session.id} role="listitem">
+                <SessionButton
+                  session={session}
+                  active={session.id === activeId}
+                  onSelect={onSelect}
+                  disabled={busy}
+                />
+              </div>
+            ))}
+          </div>
 
           {sessions.length > top.length && (
             <button
@@ -76,19 +84,20 @@ export default function SessionList({ sessions = [], activeId, onSelect, onNew, 
               <IcHistory className="hs-icon-sm" /> Show all ({sessions.length})
             </button>
           )}
-        </div>
+        </>
       )}
 
       <Sheet open={showAll} onClose={() => setShowAll(false)} title="All sessions">
         <div className="st-sessions" role="list" aria-label="All saved sessions">
           {sessions.map((session) => (
-            <SessionButton
-              key={session.id}
-              session={session}
-              active={session.id === activeId}
-              onSelect={(id) => { setShowAll(false); onSelect?.(id); }}
-              disabled={busy}
-            />
+            <div key={session.id} role="listitem">
+              <SessionButton
+                session={session}
+                active={session.id === activeId}
+                onSelect={(id) => { setShowAll(false); onSelect?.(id); }}
+                disabled={busy}
+              />
+            </div>
           ))}
         </div>
       </Sheet>

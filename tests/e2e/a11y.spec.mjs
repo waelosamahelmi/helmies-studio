@@ -17,6 +17,17 @@ function describeViolation(v) {
   return `${v.id} [${v.impact}] — ${v.help} (${v.nodes.length} node(s)) ${v.helpUrl}`;
 }
 
+// React 19's streaming SSR briefly renders the shell TWICE (see
+// fixtures/studio-actions.mjs). The doomed copy is a PARTIAL tree — a
+// role="list" whose listitems haven't streamed in yet reads to axe as a
+// genuine aria-required-children violation, and its unsettled text trips
+// contrast checks. Audit the settled page: wait for the duplicate to be
+// removed before analyzing. Under full-suite load that window is longer,
+// which is why this only ever failed when the whole suite ran at once.
+async function settle(page, root) {
+  await expect.poll(() => page.locator(root).count(), { timeout: 20000 }).toBe(1);
+}
+
 async function auditPage(page, label) {
   const results = await new AxeBuilder({ page }).analyze();
   // Logged unconditionally — this is the full record the brief asks be
@@ -54,6 +65,7 @@ test.describe("a11y — authenticated pages", () => {
     await stubProviders(page);
     await page.goto("/studio");
     await expect(page.locator(".st-app:visible")).toBeVisible();
+    await settle(page, ".st-app");
     await auditPage(page, "/studio");
   });
 

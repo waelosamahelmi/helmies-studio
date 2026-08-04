@@ -17,6 +17,16 @@ const brief = (page) => visible(page.getByLabel("Creative brief"));
 async function gotoAgent(page) {
   await page.goto("/studio/orchestrator");
   await expect(page.locator(".st-talk:visible")).toBeVisible();
+  // React 19's streaming SSR briefly renders the page TWICE (documented in
+  // fixtures/studio-actions.mjs and smoke.spec.mjs) — one copy survives,
+  // the other is a doomed duplicate whose handlers are already detached.
+  // `:visible` alone isn't enough: during the reconciliation flash a
+  // fill()/press() can still land on the copy that's about to be dropped,
+  // silently no-op'ing the interaction. Wait for the duplicate to be fully
+  // removed from the DOM (count collapses to 1) before touching anything.
+  // NOTE: do not gate this on the credits pill instead — on the agent
+  // surface it can legitimately read "—cr", so that guard would hang.
+  await expect.poll(() => page.locator(".st-talk").count(), { timeout: 20000 }).toBe(1);
 }
 
 async function readyIsolated(page, label) {

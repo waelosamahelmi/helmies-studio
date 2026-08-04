@@ -2132,4 +2132,9 @@ select.st-layer__role option {
 .st-sessions__item:hover { background: var(--fill-02); }
 .st-sessions__item.is-active { border-color: var(--line-accent); background: var(--filament-a08); color: var(--tx); }
 .st-sessions__title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-sessions__time { flex: none; font-family: var(--ff-mono); font-size: 9px; color: var(--tx-ghost); }
+/* Phase E3.6 (a11y): --tx-ghost was ~1.8:1 here — decorative-only, never
+   readable text (see system.css's token comment). This is real, read
+   content (a session's relative timestamp), so it takes --tx-mute
+   instead, same as every other meta/label text in the app (.hs-label,
+   .st-stepcard__meta, .hs-meter__k) — 5.0-5.3:1 against every ink tier. */
+.st-sessions__time { flex: none; font-family: var(--ff-mono); font-size: 9px; color: var(--tx-mute); }
