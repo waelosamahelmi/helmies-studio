@@ -1,7 +1,6 @@
 import "@/styles/system.css";
 import "@/styles/studio.css";
 import "@/styles/pages.css";
-import AnnouncementBar from "@/components/AnnouncementBar";
 import Providers from "@/components/Providers";
 
 export const metadata = {
@@ -149,10 +148,11 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body className="min-h-screen w-full antialiased">
-        <Providers>
-          <AnnouncementBar />
-          {children}
-        </Providers>
+        {/* EDITSv1 E8.2: AnnouncementBar used to be rendered right here, in
+            the page tree, where the studio shell covered it on every
+            /studio route. It is now mounted inside Providers alongside
+            OfflineBanner — see that component's header. */}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

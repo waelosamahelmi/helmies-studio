@@ -3,6 +3,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import PricingPlans, { PricingFaq } from "./PricingClient";
 import { CREDIT_COSTS } from "@/lib/plan-constants";
+import { getPublishedFaq } from "@/lib/cms";
 
 const SITE = process.env.NEXTAUTH_URL || "https://studio.helmies.fi";
 
@@ -82,11 +83,32 @@ const FAQ = [
   },
 ];
 
-export default function PricingPage() {
+/* EDITSv1 E8.5: the CMS section of the admin panel wrote CmsEntry rows that
+   NO PAGE ANYWHERE read — the whole feature was write-only, while the
+   editor told the owner "nothing reaches the public site until you publish
+   it". This is the first real consumer: publish an entry under the key
+   below and it replaces the questions here, no deploy required.
+
+   FAQ stays as the shipped copy and the fallback. getPublishedFaq never
+   throws and validates the shape, so an unreachable database, an
+   unpublished draft or a malformed entry all render exactly what ships
+   today rather than an empty accordion — and the JSON-LD below is built
+   from whichever list actually renders, so the structured data can never
+   describe questions the page does not show. */
+export const CMS_FAQ_KEY = "pricing.faq";
+
+// Reading the database makes this page dynamic instead of prerendered.
+// Revalidating means at most one query a minute, and an edit is live within
+// the minute rather than at the next deploy.
+export const revalidate = 60;
+
+export default async function PricingPage() {
+  const faq = await getPublishedFaq(CMS_FAQ_KEY, FAQ);
+
   const faqLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: FAQ.map((f) => ({
+    mainEntity: faq.map((f) => ({
       "@type": "Question",
       name: f.q,
       acceptedAnswer: { "@type": "Answer", text: f.a },
@@ -173,7 +195,7 @@ export default function PricingPage() {
             <div className="hs-head">
               <h2 id="faq-h">Questions people actually ask</h2>
             </div>
-            <PricingFaq items={FAQ} />
+            <PricingFaq items={faq} />
 
             <div className="pg-head__row" style={{ marginTop: "var(--s-8)" }}>
               <Link href="/login?new=1" className="hs-btn hs-btn--primary hs-btn--lg">

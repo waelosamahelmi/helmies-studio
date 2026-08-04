@@ -37,6 +37,9 @@ model User {
   purchases     TemplatePurchase[]
   agentSessions AgentSession[]
 
+  announcementDismissals AnnouncementDismissal[]
+  promoRedemptions       PromoRedemption[]
+
   @@schema("public")
 }
 
@@ -614,18 +617,51 @@ model CmsRevision {
 }
 
 // ── Announcements ──
+// EDITSv1 Phase E8 Task E8.1: a one-line bar grew into a campaign object.
+// Every column added here is nullable or defaulted, so the rows that already
+// exist in production stay valid and keep rendering exactly as they did.
 model SiteAnnouncement {
-  id        String    @id @default(cuid())
-  message   String
-  style     String    @default("info")
-  link      String?
-  startDate DateTime  @default(now())
-  endDate   DateTime?
-  audience  String    @default("all")
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id          String                  @id @default(cuid())
+  message     String
+  style       String                  @default("info") // info | success | warning | critical
+  link        String?
+  startDate   DateTime                @default(now())
+  endDate     DateTime?
+  audience    String                  @default("all") // all | anon | authed
+  isActive    Boolean                 @default(true)
+  placement   String                  @default("banner") // banner | modal | toast
+  title       String?
+  imageUrl    String?
+  ctaLabel    String?
+  ctaUrl      String?
+  dismissible Boolean                 @default(true)
+  priority    Int                     @default(0)
+  planTargets String[]                @default([]) // empty = every plan
+  impressions Int                     @default(0)
+  clicks      Int                     @default(0)
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  dismissals  AnnouncementDismissal[]
 
+  // The exact predicate trio /api/announcements filters on for every page
+  // load. Before E8 this table carried no index at all.
+  @@index([isActive, startDate, endDate])
+  @@schema("public")
+}
+
+// A signed-in dismissal has to outlive one browser's localStorage, or the
+// campaign reappears on the user's next device. Anonymous viewers still get
+// the localStorage-only path — there is no account to hang a row off.
+model AnnouncementDismissal {
+  id             String           @id @default(cuid())
+  announcementId String
+  userId         String
+  dismissedAt    DateTime         @default(now())
+  announcement   SiteAnnouncement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId])
   @@schema("public")
 }
 
@@ -733,9 +769,9 @@ model Project {
 model PromoCode {
   id             String    @id @default(cuid())
   code           String    @unique
-  type           String    @default("percentage")
+  type           String    @default("percentage") // percentage | fixed | credits
   value          Float
-  eligibility    String    @default("all")
+  eligibility    String    @default("all") // all | new | existing
   maxUses        Int?
   maxUsesPerUser Int       @default(1)
   currentUses    Int       @default(0)
@@ -743,9 +779,35 @@ model PromoCode {
   expiresAt      DateTime?
   description    String?
   isActive       Boolean   @default(true)
+  // EDITSv1 E8.4: the Stripe coupon this code applies at checkout. Created
+  // on first use and cached here, so one promo means one coupon in Stripe
+  // rather than a fresh one per customer.
+  stripeCouponId String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  redemptions PromoRedemption[]
+
+  @@schema("public")
+}
+
+// EDITSv1 E8.4. Without this table `maxUsesPerUser` could not be enforced
+// at all — there was no record of who had redeemed what, and `currentUses`
+// was never incremented by anything either.
+//
+// The compound unique is the enforcement mechanism, not a nicety: it makes
+// "one redemption per user" true by construction, so a double-submitted
+// form loses the race in Postgres instead of granting twice.
+model PromoRedemption {
+  id          String    @id @default(cuid())
+  promoCodeId String
+  userId      String
+  redeemedAt  DateTime  @default(now())
+  promoCode   PromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([promoCodeId, userId])
+  @@index([userId])
   @@schema("public")
 }
 

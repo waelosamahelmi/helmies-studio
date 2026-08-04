@@ -103,8 +103,23 @@ describe("route security manifest — security/route-manifest.json", () => {
   // the full rationale. This is a pinned regression guard, not condition (c) itself —
   // if this set changes, it means a NEW public+stateChanging route was introduced (or
   // reclassified) and needs the same conscious review the four above got.
+  //
+  // EDITSv1 Phase E8 Task E8.2 added the two announcement-metric routes
+  // below, and they got that review. Both are open to anonymous callers
+  // because a promotion on a public page is seen mostly by signed-out
+  // visitors — counting impressions for them but refusing their clicks
+  // would hand the owner a click-through rate whose numerator is
+  // systematically missing, which is worse than not measuring. What makes
+  // that acceptable is the blast radius: each handler can only add 1 to one
+  // integer column on one SiteAnnouncement row. Neither reads anything,
+  // returns anything about the campaign, or can reach any user's data.
+  // Both are origin-checked (so another site cannot drive them from a
+  // visitor's browser) and IP rate-limited via checkAnonLimit. See their
+  // manifest notes for the full argument.
   it("the exact set of public+stateChanging routes matches what Task 2 reviewed", () => {
     const EXPECTED_PUBLIC_STATE_CHANGING = new Set([
+      "src/app/api/announcements/[id]/click/route.js",
+      "src/app/api/announcements/[id]/impression/route.js",
       "src/app/api/auth/[...nextauth]/route.js",
       "src/app/api/auth/register/route.js",
       "src/app/api/contact/route.js",
