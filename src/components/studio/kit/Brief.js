@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { SpendMeter } from "./Spend";
 import { IcSpark, IcUpload, IcClose, IcBolt } from "./Icons";
+import { shouldSubmitOnKeyDown, isEnterSendGesture } from "@/lib/brief-keydown";
 
 /* ══════════════════════════════════════════════════════════════════════════
    BRIEF — the prompt dock
@@ -65,28 +66,100 @@ export default function Brief({
   const near = count > maxChars * 0.85;
   const at = count >= maxChars;
 
-  const ready = !!value.trim() && !generating && !disabled && affordable;
+  const isReady = useCallback(
+    (v) => !!v.trim() && !generating && !disabled && affordable,
+    [generating, disabled, affordable],
+  );
 
-  const submit = () => { if (ready) onSubmit?.(); };
+  const ready = isReady(value);
 
+  // Every submit path funnels through here with the EXACT text being
+  // submitted, rather than letting the caller re-read `value` itself — see
+  // the WebKit note below for why that distinction matters end to end, not
+  // just for this component's own readiness check.
+  const submitText = (text) => { if (isReady(text)) onSubmit?.(text); };
+
+  const submit = () => submitText(value);
+
+  // WebKit note: Playwright's fill() (and, in principle, a very fast real
+  // keystroke) can dispatch this keydown before React's controlled `value`
+  // prop has re-rendered into this closure — proven empirically (a probe
+  // dumping both showed `value` still "" while the textarea's actual DOM
+  // value already held the typed text). Deciding readiness from the stale
+  // closure silently swallowed the keystroke: preventDefault() had already
+  // run, so not even a newline appeared. Reading the live DOM value off
+  // e.currentTarget removes that race entirely instead of papering over it.
+  // Passing that same live text to onSubmit (rather than calling it with no
+  // arguments and trusting the caller's own state) matters just as much:
+  // OrchestratorStudio's `send` closure over `input` is exactly as stale as
+  // this component's `value` prop at that instant — they re-render
+  // together — so a caller that fell back to its own state would silently
+  // resend the previous (or empty) draft instead of what's on screen.
+  //
+  // The actual submit/no-submit DECISION (readiness, IME composition, the
+  // Enter/Shift+Enter/Ctrl+Enter branches) lives in the pure, unit-tested
+  // shouldSubmitOnKeyDown (@/lib/brief-keydown.js) rather than inline here —
+  // it has no DOM/React dependency, so it's covered directly without
+  // rendering this component. isEnterSendGesture (same module) answers the
+  // narrower "is this Enter meant to send at all" question, independent of
+  // readiness, which is what decides whether to swallow the default
+  // newline — matching the pre-existing behavior where enterSends surfaces
+  // never let plain Enter insert a newline, ready or not.
   const onKeyDown = (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-      e.preventDefault();
-      submit();
+    // IME composition confirms with Enter too (Safari/WebKit reports it via
+    // the native event's isComposing, not React's synthetic KeyboardEvent
+    // interface — keyCode 229 is the cross-browser fallback signal). Either
+    // way, that Enter must never preventDefault (it would break the
+    // composition) or submit.
+    if (e.nativeEvent?.isComposing || e.keyCode === 229) return;
+
+    if (!isEnterSendGesture({ key: e.key, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey, enterSends })) {
       return;
     }
-    // Plain Enter sends only when the surface opts in; Shift+Enter always
-    // falls through to the textarea's default newline.
-    if (enterSends && e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      e.preventDefault();
-      submit();
+    e.preventDefault();
+
+    const liveValue = e.currentTarget.value;
+    if (shouldSubmitOnKeyDown({
+      key: e.key, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey, altKey: e.altKey,
+      isComposing: e.nativeEvent?.isComposing, keyCode: e.keyCode,
+      value: liveValue, generating, disabled, affordable, enterSends,
+    })) {
+      onSubmit?.(liveValue);
     }
   };
 
-  const handleChange = (e) => {
-    const next = e.target.value;
+  const applyChange = useCallback((next) => {
     onChange?.(maxChars && next.length > maxChars ? next.slice(0, maxChars) : next);
-  };
+  }, [onChange, maxChars]);
+
+  const handleChange = (e) => applyChange(e.target.value);
+
+  // WebKit note #2 (the deeper one): React's own onChange for a controlled
+  // text field is gated behind an internal "value tracker" — it overrides
+  // the textarea's `value` SETTER to keep a shadow copy in sync with every
+  // assignment through that setter, then on the native "input" event
+  // compares the DOM's current value against that shadow copy and only
+  // calls onChange if they differ. Playwright's WebKit driver fills a
+  // <textarea> by selecting its content and issuing a native insertText —
+  // proven (via a throwaway probe with a raw, non-React addEventListener on
+  // this exact node) to land as a fully trusted "input" event carrying the
+  // right text. But on WebKit specifically that insertText appears to go
+  // through the SAME overridden setter React patched, so the shadow copy is
+  // already caught up by the time the "input" event fires — React's
+  // comparison sees no difference and silently skips onChange. Chromium and
+  // Firefox don't take this path (their insertText updates the control's
+  // value without touching that JS setter), which is exactly why this only
+  // reproduces on WebKit. A plain addEventListener isn't routed through
+  // React's ChangeEventPlugin, so it isn't subject to that tracker
+  // comparison — it always sees the real edit, closing the gap entirely
+  // instead of guessing at timing.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onNativeInput = (e) => applyChange(e.target.value);
+    el.addEventListener("input", onNativeInput);
+    return () => el.removeEventListener("input", onNativeInput);
+  }, [applyChange]);
 
   return (
     <div className={`st-dock-prompt${glow ? " hs-glow" : ""}`}>

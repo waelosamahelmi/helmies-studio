@@ -613,8 +613,17 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
   /* ── Chat — streams, costs nothing ───────────────────────────────────── */
   /* `textOverride` lets a QuestionCard answer go out as a normal user
-     message without touching the composer's draft. */
-  const send = useCallback(async (textOverride) => {
+     message without touching the composer's draft — and also lets <Brief>
+     (kit/Brief.js) pass the textarea's live DOM value straight through on
+     Enter, rather than this closure falling back to its own `input` state.
+     That fallback would be exactly as stale: Brief's `value` prop IS
+     `input`, so at the instant a WebKit keydown can fire before React's
+     controlled-value re-render lands (proven in Brief.js's onKeyDown), this
+     closure's `input` is stale too — reusing it here would silently resend
+     the previous draft. `clearInput` defaults to true so Brief's own
+     Enter/click sends still clear the composer as before; the QuestionCard
+     path below opts out since that override isn't the composer's text. */
+  const send = useCallback(async (textOverride, { clearInput = true } = {}) => {
     const text = (typeof textOverride === "string" ? textOverride : input).trim();
     if (!text || busy) return;
 
@@ -628,7 +637,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
     const askId = nextId();
     const replyId = nextId();
-    if (typeof textOverride !== "string") setInput("");
+    if (clearInput) setInput("");
     setError("");
     setAtBottom(true);
     setMessages((prev) => [
@@ -674,11 +683,13 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     }
   }, [input, busy, messages, patch, ensureSession, autoTitle]);
 
-  /* Answering the agent's question sends the choice as the next message */
+  /* Answering the agent's question sends the choice as the next message —
+     the composer's own draft (if the user was mid-typing something else)
+     is untouched, so this explicitly opts out of send's default clear. */
   const answerQuestion = useCallback((message, answer) => {
     if (busy) return;
     patch(message.id, { answered: answer });
-    send(answer);
+    send(answer, { clearInput: false });
   }, [busy, patch, send]);
 
   /* ── Plan — one JSON quote, no credits spent ─────────────────────────── */
