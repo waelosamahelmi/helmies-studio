@@ -56,8 +56,7 @@ const webServerEnv = {
   // call in the app process answers with the local fixture image instead of
   // dialing a real provider. No other e2e journey exercises an inline
   // provider call (async generation is worker-side; sync /api/generate/*
-  // tool routes have no e2e coverage), so this changes director/timeline
-  // specs only.
+  // tool routes have no e2e coverage).
   // EDITSv1 E3.4/E3.5: the AGENT run/step routes execute provider calls
   // INLINE in the app process (src/lib/agents.js -> generation.js ->
   // providers.js submitOnly), unlike /api/generate/async which only
