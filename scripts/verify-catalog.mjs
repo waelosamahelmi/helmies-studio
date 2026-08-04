@@ -50,8 +50,13 @@
  *   node scripts/verify-catalog.mjs --only flux-2/pro-text-to-image
  *   node scripts/verify-catalog.mjs --provider kie --limit 25 --apply --yes
  */
-import { config } from "dotenv";
-config();
+// MUST be `import "dotenv/config"`, not `import { config } from "dotenv"`
+// followed by a `config()` call: ES module imports are hoisted and evaluated
+// before any statement body, so prisma.js below would read DATABASE_URL
+// before .env had been loaded — which fails on the server with
+// "SASL: client password must be a string". The side-effect import is
+// ordered with the other imports, so the env is in place first.
+import "dotenv/config";
 
 import { pathToFileURL } from "node:url";
 import prisma from "../src/lib/prisma.js";
