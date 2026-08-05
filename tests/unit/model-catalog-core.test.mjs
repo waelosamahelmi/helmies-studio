@@ -353,3 +353,142 @@ test("audioKind: the exact live production audio pool lands in its stated bucket
     assert.ok(audioToolsPool.includes(transformer), `${transformer} must be listed in Audio Tools`);
   }
 });
+
+// ── M1 fix B: KIE sitemap-slug → real API model-id normalization ──────────
+// docs/model-audit/image-market.md (root causes #8/#9) and video-market.md
+// (root cause #7) verified, per family, what the real `model` field is. The
+// old blanket `<letters><digits>` → `<letters>-<digits>` hyphenation was
+// correct ONLY for flux2 and actively broke qwen2/qwen3; the rest of the
+// corrections (version dots, Kling version prefixes, PixVerse -v6, bare ids)
+// are doc-pinned one by one here.
+function kieId(url) {
+  return inferKieModelFromUrl(url)?.modelId ?? null;
+}
+
+test("KIE id normalization: flux2 → flux-2 (the one live-verified hyphenation — image-market.md, Flux 2)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/flux2/pro-text-to-image"), "flux-2/pro-text-to-image");
+  assert.equal(kieId("https://docs.kie.ai/market/flux2/pro-image-to-image"), "flux-2/pro-image-to-image");
+});
+
+test("KIE id normalization: qwen2/qwen3 stay UNHYPHENATED (image-market.md root cause #8 — the API id is qwen2/*, the hyphenated qwen-2/* rows 422)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/qwen2/image-edit"), "qwen2/image-edit");
+  assert.equal(kieId("https://docs.kie.ai/market/qwen2/text-to-image"), "qwen2/text-to-image");
+  assert.equal(kieId("https://docs.kie.ai/market/qwen3/text-to-image"), "qwen3/text-to-image");
+  assert.equal(kieId("https://docs.kie.ai/market/qwen3/image-to-image"), "qwen3/image-to-image");
+  assert.equal(kieId("https://docs.kie.ai/market/qwen3-pro/text-to-image"), "qwen3-pro/text-to-image");
+});
+
+test("KIE id corrections: bytedance/seedance-1-5-pro gets its version DOT (video-market.md — dash form confirmed live-422'd)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/bytedance/seedance-1-5-pro"), "bytedance/seedance-1.5-pro");
+  // Siblings whose slug IS the real id are untouched.
+  assert.equal(kieId("https://docs.kie.ai/market/bytedance/seedance-2"), "bytedance/seedance-2");
+});
+
+test("KIE id corrections: Kling version-prefixed ids (video-market.md, Kling section)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/kling/text-to-video"), "kling-2.6/text-to-video");
+  assert.equal(kieId("https://docs.kie.ai/market/kling/image-to-video"), "kling-2.6/image-to-video");
+  assert.equal(kieId("https://docs.kie.ai/market/kling/kling-3-0"), "kling-3.0/video");
+  assert.equal(kieId("https://docs.kie.ai/market/kling/motion-control"), "kling-2.6/motion-control");
+  assert.equal(kieId("https://docs.kie.ai/market/kling/motion-control-v3"), "kling-3.0/motion-control");
+  assert.equal(kieId("https://docs.kie.ai/market/kling/v25-turbo-text-to-video-pro"), "kling/v2-5-turbo-text-to-video-pro");
+  assert.equal(kieId("https://docs.kie.ai/market/kling/v25-turbo-image-to-video-pro"), "kling/v2-5-turbo-image-to-video-pro");
+  // Kling ids the doc confirms match their slug exactly stay verbatim.
+  assert.equal(kieId("https://docs.kie.ai/market/kling/v2-1-master-text-to-video"), "kling/v2-1-master-text-to-video");
+  assert.equal(kieId("https://docs.kie.ai/market/kling/v3-turbo-text-to-video"), "kling/v3-turbo-text-to-video");
+});
+
+test("KIE id corrections: PixVerse ids carry the -v6 version segment the slug omits (video-market.md, PixVerse section)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/pixverse/text-to-video"), "pixverse-v6/text-to-video");
+  assert.equal(kieId("https://docs.kie.ai/market/pixverse/image-to-video"), "pixverse-v6/image-to-video");
+  assert.equal(kieId("https://docs.kie.ai/market/pixverse/transition"), "pixverse-v6/transition");
+  assert.equal(kieId("https://docs.kie.ai/market/pixverse/extend"), "pixverse-v6/extend");
+  assert.equal(kieId("https://docs.kie.ai/market/pixverse/reference-to-video"), "pixverse-v6/reference-to-video");
+});
+
+test("KIE id corrections: bare-model prefix drift — exactly the audit-named ids lose their folder prefix, nothing else (image-market.md root cause #9)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/google/nanobanana2"), "nano-banana-2");
+  assert.equal(kieId("https://docs.kie.ai/market/google/nano-banana-2-lite"), "nano-banana-2-lite");
+  assert.equal(kieId("https://docs.kie.ai/market/google/pro-image-to-image"), "nano-banana-pro");
+  assert.equal(kieId("https://docs.kie.ai/market/gpt/gpt-image-2-text-to-image"), "gpt-image-2-text-to-image");
+  assert.equal(kieId("https://docs.kie.ai/market/gpt/gpt-image-2-image-to-image"), "gpt-image-2-image-to-image");
+  assert.equal(kieId("https://docs.kie.ai/market/z-image/z-image"), "z-image");
+  // Scope guard: plain google/nano-banana (and imagen4) are live-verified
+  // working WITH their prefix — the strip must never widen to the folder.
+  assert.equal(kieId("https://docs.kie.ai/market/google/nano-banana"), "google/nano-banana");
+  assert.equal(kieId("https://docs.kie.ai/market/google/nano-banana-edit"), "google/nano-banana-edit");
+  assert.equal(kieId("https://docs.kie.ai/market/google/imagen4"), "google/imagen4");
+});
+
+test("KIE id corrections: dotted-version slugs (image-market.md — Seedream 4.5, GPT-Image 1.5; the folder-index page is Seedream 3.0 = bytedance/seedream)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/seedream/4-5-text-to-image"), "seedream/4.5-text-to-image");
+  assert.equal(kieId("https://docs.kie.ai/market/seedream/4-5-edit"), "seedream/4.5-edit");
+  assert.equal(kieId("https://docs.kie.ai/market/seedream/seedream"), "bytedance/seedream");
+  assert.equal(kieId("https://docs.kie.ai/market/gpt-image/1-5-text-to-image"), "gpt-image/1.5-text-to-image");
+  assert.equal(kieId("https://docs.kie.ai/market/gpt-image/1-5-image-to-image"), "gpt-image/1.5-image-to-image");
+  // 5-lite/5-pro have no decimal point — untouched.
+  assert.equal(kieId("https://docs.kie.ai/market/seedream/5-lite-text-to-image"), "seedream/5-lite-text-to-image");
+});
+
+test("KIE id corrections: grok-imagine/1-5-preview maps to its non-conforming real id (video-market.md)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/grok-imagine/1-5-preview"), "grok-imagine-video-1-5-preview");
+});
+
+// ── M1 fix C: root-level (single-segment) market pages are real models ─────
+// video-market.md: gemini-omni-video/-audio/-character and omnihuman-1-5 are
+// all documented against the real createTask endpoint but were dropped by the
+// old `rest.length < 2` guard. The LLM check must exact-match the FULL
+// segment, so "gemini-omni-video" is never treated as family "gemini".
+test("KIE sync: single-segment market pages (gemini-omni-*, omnihuman-1-5) pass inferKieModelFromUrl with a real capability", () => {
+  const video = inferKieModelFromUrl("https://docs.kie.ai/market/gemini-omni-video");
+  assert.equal(video?.modelId, "gemini-omni-video");
+  assert.equal(video?.capability, "video");
+  const audio = inferKieModelFromUrl("https://docs.kie.ai/market/gemini-omni-audio");
+  assert.equal(audio?.modelId, "gemini-omni-audio");
+  assert.equal(audio?.capability, "audio");
+  const character = inferKieModelFromUrl("https://docs.kie.ai/market/gemini-omni-character");
+  assert.equal(character?.modelId, "gemini-omni-character");
+  assert.equal(character?.capability, "avatar-video");
+  const omnihuman = inferKieModelFromUrl("https://docs.kie.ai/market/omnihuman-1-5");
+  assert.equal(omnihuman?.modelId, "omnihuman-1-5");
+  assert.equal(omnihuman?.capability, "avatar-video");
+});
+
+test("KIE sync: genuinely-LLM market families are still rejected — exact family match, and quickstart stays out", () => {
+  assert.equal(inferKieModelFromUrl("https://docs.kie.ai/market/gemini/gemini-3-flash"), null);
+  assert.equal(inferKieModelFromUrl("https://docs.kie.ai/market/claude/claude-opus-5"), null);
+  assert.equal(inferKieModelFromUrl("https://docs.kie.ai/market/quickstart"), null);
+});
+
+test("KIE sync: MiniMax-H3 URLs pass inferKieModelFromUrl unchanged (video-market.md — vendor absent from catalog; no code gate may eat these)", () => {
+  assert.equal(kieId("https://docs.kie.ai/market/minimax-h3/text-to-video"), "minimax-h3/text-to-video");
+  assert.equal(kieId("https://docs.kie.ai/market/minimax-h3/image-to-video"), "minimax-h3/image-to-video");
+  assert.equal(kieId("https://docs.kie.ai/market/minimax-h3/reference-to-video"), "minimax-h3/reference-to-video");
+});
+
+// ── M1 fix G: output-type misfilings + substring collisions ────────────────
+test("inferCapability: cover-suno outputs IMAGES and create-music-video outputs VIDEO (audio-music.md) — never classified audio", () => {
+  assert.equal(inferCapability("cover-suno"), "image");
+  assert.equal(inferCapability("create-music-video"), "video");
+});
+
+test("inferCapability: lipsync markers beat the video-to-video substring (video-market.md root cause #9 — volcengine/video-to-video-lip-sync)", () => {
+  assert.equal(inferCapability("volcengine/video-to-video-lip-sync"), "avatar-video");
+  // The plain v2v ids the old ordering served are unchanged.
+  assert.equal(inferCapability("wan/2-6-video-to-video"), "video-to-video");
+  assert.equal(inferCapability("wan-2-7-videoedit"), "video-to-video");
+});
+
+test("audioKind: every Suno voice-clone workflow step classifies voice-clone (audio-music.md — old rule caught only the literal 'voice-generate')", () => {
+  for (const id of [
+    "suno-voice-generate",
+    "suno-voice-generate-callback",
+    "suno-voice-validate",
+    "suno-voice-validate-callback",
+    "suno-voice-validate-info",
+    "suno-voice-record-info",
+    "suno-voice-regenerate",
+    "suno-voice-check-voice",
+  ]) {
+    assert.equal(audioKind({ capability: "text-to-speech", modelId: id }), "voice-clone", `${id} should be voice-clone`);
+  }
+});

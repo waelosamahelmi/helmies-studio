@@ -138,3 +138,84 @@ describe("syncKieModels — curated schemas expose each model's real parameters"
     }
   });
 });
+
+// ── M1 fix C: vendors the sync silently dropped ────────────────────────────
+// video-market.md root cause #10: inferModelType's "gemini"/"grok" substring
+// check typed the gemini-omni-* MEDIA pages (and grok-imagine/extend) as
+// "llm", and fetchKieModels unconditionally skips "llm" — so these real,
+// documented generation models never entered the catalog on ANY sync run.
+// MEDIA_EXCEPTIONS (model-catalog-core.mjs) is now consulted by BOTH paths.
+// The sitemap below uses the REAL production URLs (verified against the live
+// https://docs.kie.ai/sitemap.xml on 2026-08-05).
+const DROPPED_VENDORS_SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset>
+  <url><loc>https://docs.kie.ai/market/gemini-omni-video</loc></url>
+  <url><loc>https://docs.kie.ai/market/gemini-omni-audio</loc></url>
+  <url><loc>https://docs.kie.ai/market/gemini-omni-character</loc></url>
+  <url><loc>https://docs.kie.ai/market/omnihuman-1-5</loc></url>
+  <url><loc>https://docs.kie.ai/market/minimax-h3/text-to-video</loc></url>
+  <url><loc>https://docs.kie.ai/market/minimax-h3/image-to-video</loc></url>
+  <url><loc>https://docs.kie.ai/market/minimax-h3/reference-to-video</loc></url>
+  <url><loc>https://docs.kie.ai/market/grok-imagine/extend</loc></url>
+  <url><loc>https://docs.kie.ai/market/google/gemini-3-1-flash-tts</loc></url>
+  <url><loc>https://docs.kie.ai/market/chat/gpt-5-2</loc></url>
+  <url><loc>https://docs.kie.ai/market/gemini/gemini-3-flash</loc></url>
+</urlset>`;
+
+describe("syncKieModels — gemini-omni/omnihuman/minimax-h3/grok-extend survive the sync filter chain", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve(DROPPED_VENDORS_SITEMAP_XML) }),
+    );
+    prismaMock.modelPricing.findMany.mockResolvedValue([]);
+    prismaMock.modelPricing.create.mockResolvedValue({});
+    prismaMock.modelPricing.update.mockResolvedValue({});
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function createdIds() {
+    return prismaMock.modelPricing.create.mock.calls.map(([{ data }]) => data.modelId);
+  }
+
+  it("creates rows for every real media model in the fixture — and still skips genuine LLM chat pages", async () => {
+    const result = await syncKieModels();
+    const ids = createdIds();
+    // Root-level Gemini-Omni media pages (previously typed "llm" and dropped).
+    expect(ids).toContain("gemini-omni-video");
+    expect(ids).toContain("gemini-omni-audio");
+    expect(ids).toContain("gemini-omni-character");
+    // Root-level omnihuman-1-5 (previously dropped by the rest.length < 2 guard).
+    expect(ids).toContain("omnihuman-1-5");
+    // MiniMax-H3 — all 3 documented models pass the chain.
+    expect(ids).toContain("minimax-h3/text-to-video");
+    expect(ids).toContain("minimax-h3/image-to-video");
+    expect(ids).toContain("minimax-h3/reference-to-video");
+    // grok-imagine/extend — previously "grok" → llm before the "extend" rule.
+    expect(ids).toContain("grok-imagine/extend");
+    // Gemini TTS market page keeps working (tts rule already ran first).
+    expect(ids).toContain("google/gemini-3-1-flash-tts");
+    // Genuine LLM pages are still excluded on both paths.
+    expect(ids).not.toContain("chat/gpt-5-2");
+    expect(ids.some((id) => id.includes("gemini-3-flash"))).toBe(false);
+    // 11 fixture URLs − chat/gpt-5-2 (llm) − gemini/gemini-3-flash (LLM family) = 9.
+    expect(result.added).toBe(9);
+  });
+
+  it("types the recovered vendors as media, not llm — capability/modality fields are real", async () => {
+    await syncKieModels();
+    const byId = new Map(prismaMock.modelPricing.create.mock.calls.map(([{ data }]) => [data.modelId, data]));
+    expect(byId.get("gemini-omni-video").capability).toBe("video");
+    expect(byId.get("gemini-omni-audio").capability).toBe("audio");
+    expect(byId.get("gemini-omni-character").capability).toBe("avatar-video");
+    expect(byId.get("omnihuman-1-5").capability).toBe("avatar-video");
+    expect(byId.get("minimax-h3/text-to-video").capability).toBe("text-to-video");
+    expect(byId.get("minimax-h3/image-to-video").capability).toBe("image-to-video");
+    expect(byId.get("minimax-h3/reference-to-video").capability).toBe("reference-to-video");
+    expect(byId.get("grok-imagine/extend").capability).toBe("video-to-video");
+  });
+});

@@ -71,7 +71,42 @@ import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import prisma from "../src/lib/prisma.js";
-import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription, sanitizeDisplayName, curatedSchemaEntry, schemaForModel } from "../src/lib/model-catalog-core.mjs";
+import { modelTypeForCapability, slugToTitle, inferCapability, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription, sanitizeDisplayName, curatedSchemaEntry, schemaForModel, KIE_MODEL_ID_CORRECTIONS } from "../src/lib/model-catalog-core.mjs";
+import { readVerification, writeVerification, verificationAllowsActive } from "../src/lib/catalog-verification.mjs";
+
+// ── M1 fix B: persist the doc-verified model-id corrections on rows synced
+// under the OLD (wrong) ids. KIE_MODEL_ID_CORRECTIONS (model-catalog-core.mjs)
+// maps URL-derived id → real API id; on top of it, production also carries two
+// rows under the sync's OWN manufactured `qwen-2` hyphenation (the blanket
+// `<letters><digits>` rule this branch removes — image-market.md root cause
+// #8), which no URL ever produces again but must still be corrected in place.
+const STORED_KIE_ID_CORRECTIONS = {
+  ...KIE_MODEL_ID_CORRECTIONS,
+  // image-market.md (Qwen section): real vendor segment is unhyphenated
+  // `qwen2`; the correctly-spelled rows sit deactivated as the twins.
+  "qwen-2/text-to-image": "qwen2/text-to-image",
+  "qwen-2/image-edit": "qwen2/image-edit",
+};
+
+// ── M1 fix G: output-type misfilings to persist (docs/model-audit/
+// audio-music.md + video-market.md). The capability each row SHOULD carry is
+// recomputed through the same inferCapability the sync itself uses, so the
+// stored value can never drift from the code's own classification.
+const OUTPUT_TYPE_RECLASSIFY_IDS = new Set([
+  "cover-suno", // outputs album-cover IMAGES, filed as audio
+  "create-music-video", // outputs MP4 VIDEO, filed as audio
+  "volcengine/video-to-video-lip-sync", // lipsync, swallowed by the v2v regex
+]);
+
+// ── M1 fix G: pure webhook-payload documentation pages that synced as model
+// rows. They are not callable models under ANY id — mark them verified
+// not-callable (the same verdict mechanism scripts/verify-catalog.mjs uses,
+// which also stops the nightly sync from ever resurrecting them).
+const CALLBACK_DOC_PAGE_IDS = new Set([
+  "suno-voice-generate-callback",
+  "suno-voice-validate-callback",
+]);
+const CALLBACK_NOT_USABLE_REASON = "webhook payload documentation page, not a callable model";
 
 // Pure planning function — no DB access, so it's directly unit-testable
 // against plain row arrays (tests/unit/fix-model-categories.test.mjs).
@@ -81,11 +116,95 @@ export function planFixes(rows) {
   const capabilityFixes = [];
   const descriptionFixes = [];
   const schemaFixes = [];
+  const idFixes = [];
+  const notUsableFixes = [];
   const needsAttention = [];
+
+  // ── M1 fix B: id corrections. Two shapes:
+  //   · rename — no row exists under the corrected id yet, so the broken row
+  //     itself is re-pointed (modelId/providerModelId/endpoint/displayName).
+  //   · deactivate-in-favor-of-twin — a row with the corrected id ALREADY
+  //     exists (e.g. the deactivated `qwen2/*` pair). The broken row is
+  //     deactivated+deprecated, and the twin inherits the broken row's
+  //     activity — but ONLY if its recorded verification verdict allows it
+  //     (a verified not-callable twin is never resurrected). Never leaves
+  //     both rows active.
+  const byId = new Map(rows.map((r) => [r.modelId, r]));
+  const renameTargets = new Map(); // old modelId -> corrected modelId (rename case only)
+  for (const row of rows) {
+    if (row.providerName !== "KIE") continue;
+    const corrected = STORED_KIE_ID_CORRECTIONS[row.modelId];
+    if (!corrected) continue;
+    const twin = byId.get(corrected);
+    if (twin) {
+      const deactivateOld = row.isActive !== false || row.isDeprecated !== true;
+      const reactivateTwin =
+        row.isActive === true && twin.isActive !== true && verificationAllowsActive(twin.constraints, true);
+      if (deactivateOld || reactivateTwin) {
+        idFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          action: "deactivate-in-favor-of-twin",
+          twinModelId: corrected,
+          deactivateOld,
+          reactivateTwin,
+        });
+      }
+    } else {
+      renameTargets.set(row.modelId, corrected);
+      idFixes.push({
+        modelId: row.modelId,
+        providerName: row.providerName,
+        action: "rename",
+        to: corrected,
+      });
+    }
+  }
 
   for (const row of rows) {
     let capability = row.capability;
     let mappedType = modelTypeForCapability(capability);
+
+    // ── M1 fix G: output-type misfilings — recompute through the SAME
+    // inferCapability the sync uses (now correct for these ids), so e.g.
+    // cover-suno moves audio→image and the Volcengine lip-sync row moves
+    // video-to-video→avatar-video. Idempotent: once stored, recomputing
+    // yields the same value and nothing is reported.
+    if (row.providerName === "KIE" && OUTPUT_TYPE_RECLASSIFY_IDS.has(row.modelId)) {
+      const reclassified = inferCapability(String(row.modelId).toLowerCase());
+      if (reclassified && reclassified !== "media" && reclassified !== capability) {
+        capabilityFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          from: row.capability ?? null,
+          to: reclassified,
+        });
+        capability = reclassified;
+        mappedType = modelTypeForCapability(reclassified);
+      }
+    }
+
+    // ── M1 fix G: pure webhook-payload doc pages are not models — record a
+    // verified not-callable verdict (verificationAllowsActive then keeps
+    // them inactive through every future sync) and deactivate.
+    if (row.providerName === "KIE" && CALLBACK_DOC_PAGE_IDS.has(row.modelId)) {
+      const existing = readVerification(row.constraints);
+      const alreadyMarked =
+        existing?.verdict === "not-callable" && row.isActive === false && row.isDeprecated === true;
+      if (!alreadyMarked) {
+        notUsableFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          constraints: writeVerification(row.constraints, {
+            status: "verified",
+            verdict: "not-callable",
+            callable: false,
+            reason: CALLBACK_NOT_USABLE_REASON,
+            checkedAt: new Date().toISOString(),
+          }),
+        });
+      }
+    }
 
     if (mappedType === null) {
       const inferred = inferCapabilityFromRow(row);
@@ -164,7 +283,10 @@ export function planFixes(rows) {
     // the remainder no longer starts with "<providerName>:" so a second
     // pass reports nothing.
     if (row.providerName === "KIE") {
-      const correctName = slugToTitle(row.modelId, { capability });
+      // A row being renamed (fix B above) derives its display name from the
+      // CORRECTED id — the whole point of the rename is that the old slug
+      // was wrong.
+      const correctName = slugToTitle(renameTargets.get(row.modelId) || row.modelId, { capability });
       if (correctName && correctName !== row.displayName) {
         displayNameFixes.push({
           modelId: row.modelId,
@@ -228,10 +350,36 @@ export function planFixes(rows) {
     }
   }
 
-  return { modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, needsAttention };
+  return { modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, idFixes, notUsableFixes, needsAttention };
 }
 
-function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, needsAttention }, { apply }) {
+function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, idFixes, notUsableFixes, needsAttention }, { apply }) {
+  console.log("");
+  if (idFixes.length === 0) {
+    console.log("modelId: no rows carry a doc-verified id correction.");
+  } else {
+    console.log(`modelId: ${idFixes.length} row(s) ${apply ? "were" : "would be"} corrected to their real API model id:`);
+    for (const f of idFixes) {
+      if (f.action === "rename") {
+        console.log(`  ${f.modelId} (${f.providerName}): renamed in place -> ${f.to}`);
+      } else {
+        console.log(
+          `  ${f.modelId} (${f.providerName}): deactivated in favor of existing twin ${f.twinModelId}${f.reactivateTwin ? " (twin reactivated)" : ""}`,
+        );
+      }
+    }
+  }
+
+  console.log("");
+  if (notUsableFixes.length === 0) {
+    console.log("not-usable: no webhook-payload doc pages need a not-callable verdict.");
+  } else {
+    console.log(`not-usable: ${notUsableFixes.length} webhook-payload doc-page row(s) ${apply ? "were" : "would be"} marked verified not-callable and deactivated:`);
+    for (const f of notUsableFixes) {
+      console.log(`  ${f.modelId} (${f.providerName})`);
+    }
+  }
+
   console.log("");
   if (capabilityFixes.length === 0) {
     console.log("capability: no null/unmapped rows were recoverable from modalities/endpoint.");
@@ -304,7 +452,7 @@ export async function run({ apply, yes }) {
     select: {
       id: true, modelId: true, providerName: true, capability: true, modelType: true, displayName: true,
       description: true, inputModalities: true, outputModalities: true, endpoint: true, providerModelId: true,
-      inputSchema: true,
+      inputSchema: true, isActive: true, isDeprecated: true, constraints: true,
     },
   });
 
@@ -313,7 +461,7 @@ export async function run({ apply, yes }) {
   printPlan(plan, { apply });
 
   if (!apply) {
-    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), ${plan.displayNameFixes.length} displayName fix(es), ${plan.descriptionFixes.length} description fix(es), and ${plan.schemaFixes.length} inputSchema fix(es) above.`);
+    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.idFixes.length} modelId fix(es), ${plan.notUsableFixes.length} not-usable verdict(s), ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), ${plan.displayNameFixes.length} displayName fix(es), ${plan.descriptionFixes.length} description fix(es), and ${plan.schemaFixes.length} inputSchema fix(es) above.`);
     return { ...plan, applied: 0 };
   }
 
@@ -323,6 +471,8 @@ export async function run({ apply, yes }) {
     ...plan.capabilityFixes.map((f) => f.modelId),
     ...plan.descriptionFixes.map((f) => f.modelId),
     ...plan.schemaFixes.map((f) => f.modelId),
+    ...plan.idFixes.map((f) => f.modelId),
+    ...plan.notUsableFixes.map((f) => f.modelId),
   ]);
 
   let applied = 0;
@@ -332,14 +482,41 @@ export async function run({ apply, yes }) {
     const capFix = plan.capabilityFixes.find((f) => f.modelId === modelId);
     const descFix = plan.descriptionFixes.find((f) => f.modelId === modelId);
     const schemaFix = plan.schemaFixes.find((f) => f.modelId === modelId);
+    const idFix = plan.idFixes.find((f) => f.modelId === modelId);
+    const notUsableFix = plan.notUsableFixes.find((f) => f.modelId === modelId);
     const data = {};
     if (typeFix) data.modelType = typeFix.to;
     if (nameFix) data.displayName = nameFix.to;
     if (capFix) data.capability = capFix.to;
     if (descFix) data.description = descFix.to;
     if (schemaFix) data.inputSchema = schemaFix.to;
-    await prisma.modelPricing.update({ where: { modelId }, data });
-    applied++;
+    if (idFix?.action === "rename") {
+      // Re-point the row at its real API id — modelId, providerModelId and
+      // endpoint all carry the same string for KIE market rows.
+      data.modelId = idFix.to;
+      data.providerModelId = idFix.to;
+      data.endpoint = idFix.to;
+    }
+    if (idFix?.action === "deactivate-in-favor-of-twin" && idFix.deactivateOld) {
+      data.isActive = false;
+      data.isDeprecated = true;
+    }
+    if (notUsableFix) {
+      data.constraints = notUsableFix.constraints;
+      data.isActive = false;
+      data.isDeprecated = true;
+    }
+    if (Object.keys(data).length > 0) {
+      await prisma.modelPricing.update({ where: { modelId }, data });
+      applied++;
+    }
+    if (idFix?.action === "deactivate-in-favor-of-twin" && idFix.reactivateTwin) {
+      await prisma.modelPricing.update({
+        where: { modelId: idFix.twinModelId },
+        data: { isActive: true, isDeprecated: false },
+      });
+      applied++;
+    }
   }
 
   console.log(`Applied ${applied} fix(es).`);
