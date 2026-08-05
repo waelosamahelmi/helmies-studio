@@ -103,3 +103,86 @@ describe("syncKieModels — verification-aware activity", () => {
     expect(data.inputSchema.fields.prompt).toBeTruthy();
   });
 });
+
+// ── BUG 1: non-generation documentation endpoints filed as "models" ────────
+// Measured on live production (2026-08-05): five Suno voice-clone doc pages
+// (webhook callback, request validator, status/record lookup) were ACTIVE
+// in the audio pool. classifyNonGenerationEndpoint (catalog-verification.mjs)
+// is a deterministic, zero-network id-pattern classifier the sync now runs
+// on EVERY pass — new or pre-existing row alike — so these are deactivated
+// without waiting for scripts/verify-catalog.mjs's probe sweep.
+describe("syncKieModels — deterministically deactivates non-generation documentation endpoints", () => {
+  const JUNK_SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset>
+  <url><loc>https://docs.kie.ai/suno-api/suno-voice-generate-callback</loc></url>
+  <url><loc>https://docs.kie.ai/suno-api/suno-voice-record-info</loc></url>
+  <url><loc>https://docs.kie.ai/suno-api/suno-voice-validate</loc></url>
+  <url><loc>https://docs.kie.ai/suno-api/suno-voice-validate-callback</loc></url>
+  <url><loc>https://docs.kie.ai/suno-api/suno-voice-validate-info</loc></url>
+  <url><loc>https://docs.kie.ai/suno-api/suno-voice-generate</loc></url>
+</urlset>`;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve(JUNK_SITEMAP_XML) }));
+    prismaMock.modelPricing.create.mockResolvedValue({});
+    prismaMock.modelPricing.update.mockResolvedValue({});
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("creates every one of the five junk endpoints inactive with a not-callable verdict — never merely 'pending'", async () => {
+    prismaMock.modelPricing.findMany.mockResolvedValue([]);
+
+    const result = await syncKieModels();
+
+    expect(result.added).toBe(6); // 5 junk + the real generator
+    for (const [{ data }] of prismaMock.modelPricing.create.mock.calls) {
+      if (data.modelId === "suno-voice-generate") continue;
+      expect(data.isActive, `${data.modelId} should be created inactive`).toBe(false);
+      expect(data.constraints[VERIFICATION_KEY]).toMatchObject({
+        verdict: "not-callable", callable: false, method: "static-id-rule",
+      });
+    }
+  });
+
+  it("never resurrects a junk endpoint that predates this fix and is currently ACTIVE (the measured production state)", async () => {
+    const junkId = "suno-voice-validate";
+    prismaMock.modelPricing.findMany.mockResolvedValue([
+      { modelId: junkId, isActive: true, constraints: {} },
+    ]);
+
+    await syncKieModels();
+
+    const call = prismaMock.modelPricing.update.mock.calls.find(([{ where }]) => where.modelId === junkId);
+    expect(call, "expected an update for the junk id").toBeTruthy();
+    expect(call[0].data.isActive).toBe(false);
+    expect(call[0].data.constraints[VERIFICATION_KEY]).toMatchObject({ verdict: "not-callable", callable: false });
+  });
+
+  it("leaves the real generator these doc pages are about completely unaffected (pending, as any brand-new slug is)", async () => {
+    prismaMock.modelPricing.findMany.mockResolvedValue([]);
+
+    await syncKieModels();
+
+    const call = prismaMock.modelPricing.create.mock.calls.find(([{ data }]) => data.modelId === "suno-voice-generate");
+    expect(call).toBeTruthy();
+    expect(call[0].data.isActive).toBe(false); // brand-new slug: pending, not a rejection
+    expect(call[0].data.constraints[VERIFICATION_KEY]).toMatchObject({ status: STATUS_PENDING, callable: null });
+  });
+
+  it("the static rule OVERRIDES a stale verified-callable verdict a probe once wrote — the id shape is authoritative", async () => {
+    const junkId = "suno-voice-record-info";
+    prismaMock.modelPricing.findMany.mockResolvedValue([{
+      modelId: junkId,
+      isActive: true,
+      constraints: { [VERIFICATION_KEY]: { status: "verified", callable: true, verdict: "callable" } },
+    }]);
+
+    await syncKieModels();
+
+    const call = prismaMock.modelPricing.update.mock.calls.find(([{ where }]) => where.modelId === junkId);
+    expect(call[0].data.isActive).toBe(false);
+    expect(call[0].data.constraints[VERIFICATION_KEY].verdict).toBe("not-callable");
+  });
+});

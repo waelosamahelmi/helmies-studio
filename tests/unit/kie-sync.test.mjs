@@ -138,3 +138,61 @@ describe("syncKieModels — curated schemas expose each model's real parameters"
     }
   });
 });
+
+// ── BUG FIX: video generators filed as image models ────────────────────────
+// Measured on live production (2026-08-05): generate-ai-video, generate-
+// aleph-video, generate-veo-3-video were ACTIVE with modelType "image" /
+// capability "text-to-image". Root cause: these are pages under KIE's
+// "legacy suite" doc paths (runway-api/, veo3-api/) that never go through
+// inferKieModelFromUrl at all — capability instead fell to this file's own,
+// older inferModelType() type-table, which has no bare "video" keyword case
+// and silently defaults every unmatched id to "image".
+const VIDEO_LEGACY_SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset>
+  <url><loc>https://docs.kie.ai/runway-api/generate-ai-video</loc></url>
+  <url><loc>https://docs.kie.ai/runway-api/generate-aleph-video</loc></url>
+  <url><loc>https://docs.kie.ai/veo3-api/generate-veo-3-video</loc></url>
+  <url><loc>https://docs.kie.ai/4o-image-api/generate-4-o-image</loc></url>
+  <url><loc>https://docs.kie.ai/suno-api/create-music-video</loc></url>
+</urlset>`;
+
+describe("syncKieModels — legacy-suite video generators resolve to the video capability, not image", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve(VIDEO_LEGACY_SITEMAP_XML) }));
+    prismaMock.modelPricing.findMany.mockResolvedValue([]);
+    prismaMock.modelPricing.create.mockResolvedValue({});
+    prismaMock.modelPricing.update.mockResolvedValue({});
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  function createdRow(modelId) {
+    const call = prismaMock.modelPricing.create.mock.calls.find(([{ data }]) => data.modelId === modelId);
+    expect(call, `expected a create for ${modelId}`).toBeTruthy();
+    return call[0].data;
+  }
+
+  it("writes capability=text-to-video / modelType=video for all three real video generators", async () => {
+    await syncKieModels();
+    for (const id of ["generate-ai-video", "generate-aleph-video", "generate-veo-3-video"]) {
+      const row = createdRow(id);
+      expect(row.capability, `${id} capability`).toBe("text-to-video");
+      expect(row.modelType, `${id} modelType`).toBe("video");
+    }
+  });
+
+  it("leaves a genuine image endpoint under the same legacy-suite family untouched", async () => {
+    await syncKieModels();
+    const row = createdRow("generate-4-o-image");
+    expect(row.capability).toBe("text-to-image");
+    expect(row.modelType).toBe("image");
+  });
+
+  it("leaves a music-video id classified as audio, never swept up by the trailing '-video' fix", async () => {
+    await syncKieModels();
+    const row = createdRow("create-music-video");
+    expect(row.capability).toBe("audio");
+    expect(row.modelType).toBe("audio");
+  });
+});

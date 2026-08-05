@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 import {
   classifyProbeResponse, effectiveStatus, extractRequiredField, isCallableVerdict,
   readVerification, writeVerification, verificationAllowsActive, withProviderRequired,
+  buildVerification, classifyNonGenerationEndpoint, isNonGenerationEndpoint, nonGenerationEndpointRule,
   VERDICT, STATUS_PENDING, VERIFICATION_KEY,
 } from "@/lib/catalog-verification.mjs";
 import { updateForVerdict, selectTargets, buildProbeParams, parseArgs, summarize } from "../../scripts/verify-catalog.mjs";
@@ -150,6 +151,94 @@ describe("verdict storage — no schema column invented", () => {
     expect(isCallableVerdict(VERDICT.CALLABLE)).toBe(true);
     expect(isCallableVerdict(VERDICT.NOT_CALLABLE)).toBe(false);
     expect(isCallableVerdict(VERDICT.INCONCLUSIVE)).toBe(false);
+  });
+});
+
+// ── BUG 1: non-generation documentation endpoints filed as "models" ────────
+// Measured on live production (2026-08-05): these five Suno voice-clone doc
+// pages were ACTIVE in the audio pool and visible in the Music studio's
+// model picker, even though none of them is a model a generation can be
+// submitted to — they're a webhook receiver, a status/record lookup, and a
+// standalone request validator (with/without its own callback). Checked
+// against the id's own BASENAME with a token-boundary anchor, never a bare
+// substring, specifically so this can never sweep up a real generator that
+// happens to share a word.
+describe("classifyNonGenerationEndpoint / isNonGenerationEndpoint — deterministic, zero-probe classification", () => {
+  const JUNK_IDS = [
+    "suno-voice-generate-callback",
+    "suno-voice-record-info",
+    "suno-voice-validate",
+    "suno-voice-validate-callback",
+    "suno-voice-validate-info",
+  ];
+
+  it("classifies every one of the five production junk ids as not-callable", () => {
+    for (const id of JUNK_IDS) {
+      expect(isNonGenerationEndpoint(id), `${id} should be excluded`).toBe(true);
+      const c = classifyNonGenerationEndpoint(id);
+      expect(c.verdict).toBe(VERDICT.NOT_CALLABLE);
+      expect(c.callable).toBe(false);
+      expect(c.reason).toMatch(/documentation endpoint/i);
+    }
+  });
+
+  it("names the specific rule that matched, for an operator reading the reason", () => {
+    expect(nonGenerationEndpointRule("suno-voice-generate-callback")).toBe("callback");
+    expect(nonGenerationEndpointRule("suno-voice-validate")).toBe("validate");
+    expect(nonGenerationEndpointRule("suno-voice-record-info")).toBe("info");
+  });
+
+  it("never touches the real generator these doc pages are ABOUT, or its sibling actions — no bare 'generate'/'get' substring match", () => {
+    for (const id of ["suno-voice-generate", "suno-voice-regenerate", "suno-voice-check-voice"]) {
+      expect(isNonGenerationEndpoint(id), `${id} must stay usable`).toBe(false);
+      expect(classifyNonGenerationEndpoint(id)).toBeNull();
+    }
+  });
+
+  it("does not fire on a legitimate id that merely CONTAINS 'info' or 'get' inside a longer word, not as an anchored token", () => {
+    for (const id of ["infographic-generator", "vegetable-generator", "get-image-2", "budget-video"]) {
+      expect(isNonGenerationEndpoint(id), `${id} must not be excluded`).toBe(false);
+    }
+  });
+
+  it("leaves real, currently-uncallable generator ids alone — provider-side callability is the probe sweep's job, not this static rule's", () => {
+    // Confirmed via live probing (2026-08-05): all 422 "model name not
+    // supported", yet none of these ids carries a callback/validate/info
+    // token, so this classifier correctly stays silent about them —
+    // scripts/verify-catalog.mjs's network sweep is what decides.
+    for (const id of [
+      "generate-music", "kling/kling-3-0", "kling/text-to-video", "kling/v2-1-standard",
+      "bytedance/seedance-2-fast", "bytedance/seedance-1-5-pro",
+    ]) {
+      expect(isNonGenerationEndpoint(id), `${id} is not a documentation-endpoint pattern`).toBe(false);
+    }
+    // And a sibling under the SAME vendor prefix that IS callable — this
+    // rule was never vendor-prefix-based, so it correctly ignores this
+    // fact too (neither confirms nor denies callability; it only ever
+    // recognizes a structural doc-page id shape).
+    expect(isNonGenerationEndpoint("bytedance/seedance-2")).toBe(false);
+  });
+
+  it("matches against the final '/'-segment only, ignoring any vendor/folder prefix", () => {
+    expect(isNonGenerationEndpoint("suno-api/suno-voice-validate")).toBe(true);
+    expect(isNonGenerationEndpoint("validate/suno-voice-generate")).toBe(false);
+  });
+});
+
+describe("buildVerification — the shared stored-verification shape (probe or static-rule alike)", () => {
+  it("builds the exact shape scripts/verify-catalog.mjs's updateForVerdict writes from a real probe classification", () => {
+    const v = buildVerification(classifyProbeResponse(KIE_NOT_SUPPORTED));
+    expect(v).toMatchObject({ status: "verified", verdict: VERDICT.NOT_CALLABLE, callable: false, providerStatus: 422 });
+    expect(v.checkedAt).toBeTruthy();
+  });
+
+  it("builds a not-callable block from the static id-rule classifier, flagged with its own method so it's never mistaken for a spent probe", () => {
+    const v = buildVerification(classifyNonGenerationEndpoint("suno-voice-validate"));
+    expect(v).toMatchObject({ status: "verified", verdict: VERDICT.NOT_CALLABLE, callable: false, method: "static-id-rule" });
+  });
+
+  it("returns null for null input", () => {
+    expect(buildVerification(null)).toBeNull();
   });
 });
 

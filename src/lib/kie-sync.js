@@ -14,8 +14,11 @@
  */
 
 import prisma from "@/lib/prisma";
-import { CURATED_SCHEMAS, inferKieModelFromUrl, modelTypeForCapability, schemaForModel, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
-import { readVerification, verificationAllowsActive, withProviderRequired, STATUS_PENDING, VERIFICATION_KEY } from "@/lib/catalog-verification.mjs";
+import { CURATED_SCHEMAS, inferKieModelFromUrl, isUnambiguousVideoId, modelTypeForCapability, schemaForModel, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
+import {
+  buildVerification, classifyNonGenerationEndpoint, readVerification, verificationAllowsActive,
+  withProviderRequired, STATUS_PENDING, VERIFICATION_KEY,
+} from "@/lib/catalog-verification.mjs";
 import { calculateCredits } from "@/lib/pricing-engine";
 
 // Curated per-model parameter schemas (EDITSv1 E1.2). The data physically
@@ -348,13 +351,27 @@ export async function fetchKieModels() {
       const provider = extractProvider(urlPath);
       const type = inferModelType(urlPath);
       if (type === "llm") continue;
+      // ── BUG FIX: video generators filed as image models ─────────────────
+      // Legacy-suite pages (suno-api/, veo3-api/, runway-api/, ...) never go
+      // through inferKieModelFromUrl (inferred is null for them), so
+      // capability below falls to this file's own, older inferModelType()
+      // type-table — which has NO bare "video" keyword case at all and
+      // silently defaults every unmatched id to "image". That is how three
+      // real video generators — generate-ai-video, generate-aleph-video,
+      // generate-veo-3-video — were written with capability="text-to-image"
+      // and shown, unrunnable, in the Image studio. isUnambiguousVideoId
+      // (model-catalog-core.mjs) catches exactly that shape — an id whose
+      // own trailing "-video" token this file's type-table has no case for
+      // — and is the SAME rule scripts/fix-model-categories.mjs's backfill
+      // uses to correct any row already stuck this way from before this fix.
+      const effectiveType = (type === "image" || type === "i2i") && isUnambiguousVideoId(modelId) ? "video" : type;
       const capability = inferred?.capability || (
-        type === "image" ? "text-to-image" : type === "i2i" ? "image-to-image" :
-        type === "video" ? "text-to-video" : type === "i2v" ? "image-to-video" :
-        type === "v2v" ? "video-to-video" : type === "lipsync" ? "avatar-video" :
-        type === "audio" ? "audio" : "media"
+        effectiveType === "image" ? "text-to-image" : effectiveType === "i2i" ? "image-to-image" :
+        effectiveType === "video" ? "text-to-video" : effectiveType === "i2v" ? "image-to-video" :
+        effectiveType === "v2v" ? "video-to-video" : effectiveType === "lipsync" ? "avatar-video" :
+        effectiveType === "audio" ? "audio" : "media"
       );
-      
+
       seen.add(modelId);
       models.push({
         modelId,
@@ -367,10 +384,10 @@ export async function fetchKieModels() {
         // ("Bytedance Seedance 1 5 Pro", "Generate 4 O Image") this fixes.
         displayName: inferred?.displayName || slugToTitle(modelId, { capability }),
         provider: provider.charAt(0).toUpperCase() + provider.slice(1),
-        type,
+        type: effectiveType,
         capability,
         inputModalities: inferred?.inputModalities || ["text"],
-        outputModalities: inferred?.outputModalities || [type === "audio" ? "audio" : type.includes("v") || type === "video" || type === "lipsync" ? "video" : "image"],
+        outputModalities: inferred?.outputModalities || [effectiveType === "audio" ? "audio" : effectiveType.includes("v") || effectiveType === "video" || effectiveType === "lipsync" ? "video" : "image"],
         // Curated fields (a model's REAL parameters, see CURATED_SCHEMAS in
         // model-catalog-core.mjs) merged over the generic default for its
         // capability; non-curated models get exactly the default.
@@ -482,10 +499,24 @@ export async function syncKieModels() {
     //   • verification + any provider-required fields the sweep discovered
     //     are carried forward instead of being overwritten by the sync's
     //     freshly-derived blobs.
+    //   • A page that is DETERMINISTICALLY not a generation model at all —
+    //     a webhook callback, a request validator, a status/record-lookup
+    //     page (classifyNonGenerationEndpoint, catalog-verification.mjs;
+    //     measured production example: suno-voice-generate-callback,
+    //     suno-voice-record-info, suno-voice-validate, suno-voice-validate-
+    //     callback, suno-voice-validate-info, all ACTIVE in the audio pool)
+    //     — always gets this verdict, overriding whatever pending/existing
+    //     state the row otherwise carries. No network probe is spent to
+    //     learn this, and the verdict is authoritative: an id matching this
+    //     rule can never be a real generator, so nothing should ever
+    //     resurrect it, including a future probe run against a stale row.
+    const junkClassification = classifyNonGenerationEndpoint(model.modelId);
     const existingVerification = readVerification(existingRow?.constraints);
-    const verification = existingRow
-      ? existingVerification
-      : { status: STATUS_PENDING, callable: null, verdict: null, reason: "awaiting first verification probe", checkedAt: null };
+    const verification = junkClassification
+      ? buildVerification(junkClassification)
+      : existingRow
+        ? existingVerification
+        : { status: STATUS_PENDING, callable: null, verdict: null, reason: "awaiting first verification probe", checkedAt: null };
     const isActive = verificationAllowsActive(
       verification ? { [VERIFICATION_KEY]: verification } : null,
       // Fallback for a pre-existing row with no verdict yet: keep the
