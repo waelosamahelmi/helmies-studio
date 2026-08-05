@@ -131,9 +131,15 @@ describe("syncKieModels — curated schemas expose each model's real parameters"
     expect(row.inputSchema).toEqual(defaultSchemaForCapability("text-to-image"));
   });
 
-  it("CURATED_SCHEMAS only ever ADDS fields over the generic default — the generic prompt field always survives", () => {
+  it("merge-mode CURATED_SCHEMAS only ever ADD fields over the generic default — the generic prompt field always survives", () => {
     for (const [modelId, entry] of Object.entries(CURATED_SCHEMAS)) {
       expect(entry.fields, `${modelId} curated entry must declare fields`).toBeTruthy();
+      // EDITSv1 M2 (audit class D): replace-mode entries declare the model's
+      // COMPLETE real field set (including prompt, or deliberately no prompt
+      // at all — e.g. Recraft/Topaz/Volcengine) and suppress the fabricated
+      // generic default entirely; the prompt-survives invariant only applies
+      // to the original merge-mode audio entries.
+      if (entry.replace === true) continue;
       expect(entry.fields.prompt, `${modelId} must not override the prompt field`).toBeUndefined();
     }
   });
