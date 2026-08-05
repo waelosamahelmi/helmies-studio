@@ -36,6 +36,7 @@ model User {
   projects      Project[]
   purchases     TemplatePurchase[]
   agentSessions AgentSession[]
+  voiceProfiles VoiceProfile[]
 
   announcementDismissals AnnouncementDismissal[]
   promoRedemptions       PromoRedemption[]
@@ -202,6 +203,28 @@ model AgentSession {
   messages  AgentMessage[]
 
   @@index([userId, updatedAt])
+  @@schema("public")
+}
+
+// ── Voice profiles (S2) ──
+// A user's cloned voice, built through the Suno voice-clone wizard
+// (validate recording → generate voice → poll record-info → confirm).
+// `voiceId` is the provider's reusable voice identifier — empty until the
+// generate step reports one. `status` walks pending → validating →
+// generating → ready | failed; only "ready" profiles surface in the TTS /
+// Music vocal pickers.
+model VoiceProfile {
+  id        String   @id @default(cuid())
+  userId    String
+  provider  String   @default("suno")
+  voiceId   String   @default("")
+  name      String
+  status    String   @default("pending") // pending|validating|generating|ready|failed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@schema("public")
 }
 

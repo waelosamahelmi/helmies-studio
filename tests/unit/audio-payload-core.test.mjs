@@ -50,6 +50,16 @@ import {
   SUNO_ADD_VOCALS_PATH,
   SUNO_VOCAL_REMOVAL_SUBMIT_PATH,
   SUNO_VOCAL_REMOVAL_POLL_PATH,
+  buildSunoReplaceSectionBody,
+  buildSunoVoiceValidateBody,
+  buildSunoVoiceGenerateBody,
+  parseSunoVoiceValidatePoll,
+  parseSunoVoiceGeneratePoll,
+  SUNO_REPLACE_SECTION_PATH,
+  SUNO_VOICE_VALIDATE_PATH,
+  SUNO_VOICE_VALIDATE_POLL_PATH,
+  SUNO_VOICE_GENERATE_PATH,
+  SUNO_VOICE_RECORD_INFO_PATH,
 } from "@/lib/audio-payload-core.mjs";
 
 describe("audioProviderFamily", () => {
@@ -88,9 +98,13 @@ describe("audioProviderFamily", () => {
   });
 
   it("leaves the Suno ops that need a UI concept the studio lacks alone — they keep failing honestly", () => {
+    // S2 removed replace-section and suno-voice-generate from this list —
+    // the Music timeline's range selector and the voice-clone wizard now
+    // supply exactly the context those two lacked (see the S2 describes
+    // below). The rest still have no surface and stay unclaimed.
     for (const id of [
-      "extend-music", "replace-section", "generate-persona", "generate-mashup",
-      "convert-to-wav", "cover-suno", "generate-midi", "suno-voice-generate",
+      "extend-music", "generate-persona", "generate-mashup",
+      "convert-to-wav", "cover-suno", "generate-midi",
     ]) {
       expect(audioProviderFamily(id)).toBeNull();
     }
@@ -558,5 +572,125 @@ describe("Suno op poll parsing (model-keyed, checked before the shape-detected m
     // The trap this ordering prevents: a lyrics SUCCESS body has no sunoData,
     // so the shape-detected music parser would claim it and report pending forever.
     expect(parseSunoPoll(lyricsBody).status).toBe("pending");
+  });
+});
+
+// ── S2: replace-section + the voice-clone wizard's two paid steps ──────────
+describe("S2 Suno ops — replace-section", () => {
+  it("routes replace-section to its own path and polls the music record-info (sunoData transformer)", () => {
+    expect(audioProviderFamily("replace-section")).toBe(AUDIO_FAMILY.SUNO_REPLACE_SECTION);
+    expect(audioSubmitPath("replace-section")).toBe(SUNO_REPLACE_SECTION_PATH);
+    expect(audioPollPath("replace-section", "t-1")).toBe(`${SUNO_POLL_PATH}?taskId=t-1`);
+    // sunoData envelope → the shape-detected music parser handles it.
+    expect(parseAudioOpPoll({ status: "SUCCESS" }, "replace-section")).toBeNull();
+  });
+
+  it("fresh-upload branch: uploadUrl + engine model + the infill window from the timeline range", () => {
+    const body = buildSunoReplaceSectionBody("replace-section", "new bridge, half-time feel", {
+      audio_url: "https://app.example/api/media/local/track.mp3",
+      infillStartS: 12.5,
+      infillEndS: 31.2,
+      tags: "synthwave",
+      title: "Night Drive",
+      fullLyrics: "verse one...",
+    });
+    expect(body.uploadUrl).toBe("https://app.example/api/media/local/track.mp3");
+    expect(body.model).toBe(SUNO_DEFAULT_ENGINE);
+    expect(body.infillStartS).toBe(12.5);
+    expect(body.infillEndS).toBe(31.2);
+    expect(body.prompt).toBe("new bridge, half-time feel");
+    expect(body.tags).toBe("synthwave");
+    expect(body.title).toBe("Night Drive");
+    expect(body.fullLyrics).toBe("verse one...");
+    // The upload branch never carries the existing-track pair.
+    expect(body.taskId).toBeUndefined();
+    expect(body.audioId).toBeUndefined();
+  });
+
+  it("existing-track branch: taskId+audioId wins over uploadUrl and drops the engine selector", () => {
+    const body = buildSunoReplaceSectionBody("replace-section", "p", {
+      taskId: "task-9", audioId: "audio-9", audio_url: "https://x/y.mp3", infill_start_s: 6, infill_end_s: 20,
+    });
+    expect(body).toMatchObject({ taskId: "task-9", audioId: "audio-9", infillStartS: 6, infillEndS: 20 });
+    expect(body.uploadUrl).toBeUndefined();
+    expect(body.model).toBeUndefined();
+  });
+
+  it("style is accepted as the canonical spelling of tags", () => {
+    expect(buildSunoReplaceSectionBody("replace-section", "p", { style: "lo-fi" }).tags).toBe("lo-fi");
+  });
+});
+
+describe("S2 Suno voice-clone steps", () => {
+  it("routes both steps to the /voice namespace with their own pollers", () => {
+    expect(audioProviderFamily("suno-voice-validate")).toBe(AUDIO_FAMILY.SUNO_VOICE_VALIDATE);
+    expect(audioProviderFamily("suno-voice-generate")).toBe(AUDIO_FAMILY.SUNO_VOICE_GENERATE);
+    expect(audioSubmitPath("suno-voice-validate")).toBe(SUNO_VOICE_VALIDATE_PATH);
+    expect(audioSubmitPath("suno-voice-generate")).toBe(SUNO_VOICE_GENERATE_PATH);
+    expect(audioPollPath("suno-voice-validate", "t-1")).toBe(`${SUNO_VOICE_VALIDATE_POLL_PATH}?taskId=t-1`);
+    expect(audioPollPath("suno-voice-generate", "t-2")).toBe(`${SUNO_VOICE_RECORD_INFO_PATH}?taskId=t-2`);
+    // The vendor-prefixed spelling is tolerated like everywhere else.
+    expect(audioProviderFamily("suno/suno-voice-validate")).toBe(AUDIO_FAMILY.SUNO_VOICE_VALIDATE);
+  });
+
+  it("validate body: voiceUrl from the studio's canonical audio_url, plus the vocal window", () => {
+    const body = buildSunoVoiceValidateBody("", {
+      audio_url: "https://app.example/api/media/local/rec.mp3",
+      vocalStartS: 2, vocalEndS: 14, language: "en",
+    });
+    expect(body).toEqual({
+      voiceUrl: "https://app.example/api/media/local/rec.mp3",
+      vocalStartS: 2, vocalEndS: 14, language: "en",
+    });
+    // Rule 1: nothing invented — an absent recording stays absent.
+    expect(buildSunoVoiceValidateBody("", {}).voiceUrl).toBeUndefined();
+  });
+
+  it("generate body: taskId + verifyUrl + optional identity fields, nothing else", () => {
+    const body = buildSunoVoiceGenerateBody("", {
+      taskId: "task-7",
+      verifyUrl: "https://app.example/api/media/local/phrase.mp3",
+      voiceName: "My narrator",
+      description: "calm, low",
+      stray_field: "dropped",
+    });
+    expect(body).toEqual({
+      taskId: "task-7",
+      verifyUrl: "https://app.example/api/media/local/phrase.mp3",
+      voiceName: "My narrator",
+      description: "calm, low",
+    });
+    // audio_url doubles as verifyUrl when the wizard submits the recording that way.
+    expect(buildSunoVoiceGenerateBody("", { taskId: "t", audio_url: "https://x/v.mp3" }).verifyUrl).toBe("https://x/v.mp3");
+  });
+
+  it("validate poll: the phrase arrives as a text data: URI; failures are terminal, silence is pending", () => {
+    const done = parseSunoVoiceValidatePoll({ status: "SUCCESS", response: { phrase: "The quick brown fox" } });
+    expect(done.status).toBe("success");
+    expect(done.outputs).toEqual([`data:text/plain;charset=utf-8,${encodeURIComponent("The quick brown fox")}`]);
+    expect(parseSunoVoiceValidatePoll({ status: "PENDING" }).status).toBe("pending");
+    expect(parseSunoVoiceValidatePoll({ status: "CREATE_TASK_FAILED" })).toMatchObject({ status: "failed" });
+    expect(parseSunoVoiceValidatePoll({ successFlag: 2, errorMessage: "bad recording" })).toMatchObject({ status: "failed", error: "bad recording" });
+  });
+
+  it("generate poll: the reusable voiceId arrives as a text data: URI", () => {
+    const done = parseSunoVoiceGeneratePoll({ status: "SUCCESS", response: { voiceId: "voice_abc123" } });
+    expect(done.status).toBe("success");
+    expect(done.outputs).toEqual([`data:text/plain;charset=utf-8,${encodeURIComponent("voice_abc123")}`]);
+    expect(parseSunoVoiceGeneratePoll({ status: "PENDING" }).status).toBe("pending");
+    expect(parseSunoVoiceGeneratePoll({ status: "GENERATE_AUDIO_FAILED" })).toMatchObject({ status: "failed" });
+  });
+
+  it("parseAudioOpPoll claims both voice steps (their envelopes are not sunoData)", () => {
+    const body = { status: "SUCCESS", response: { voiceId: "v-1", phrase: "read me" } };
+    expect(parseAudioOpPoll(body, "suno-voice-validate").status).toBe("success");
+    expect(parseAudioOpPoll(body, "suno-voice-generate").status).toBe("success");
+    expect(parseAudioOpPoll(body, "generate-music")).toBeNull();
+  });
+
+  it("formatAudioRequest dispatches all three new families", () => {
+    expect(formatAudioRequest("replace-section", "p", { audio_url: "https://x/a.mp3" }).path).toBe(SUNO_REPLACE_SECTION_PATH);
+    expect(formatAudioRequest("suno-voice-validate", "", { audio_url: "https://x/a.mp3" }).path).toBe(SUNO_VOICE_VALIDATE_PATH);
+    expect(formatAudioRequest("suno-voice-generate", "", { taskId: "t" }).path).toBe(SUNO_VOICE_GENERATE_PATH);
   });
 });
