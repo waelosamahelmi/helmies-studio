@@ -25,13 +25,23 @@
 // src/lib/template-graph.js's validateGraph only requires the referenced
 // step to be topologically earlier, not the immediate parent.
 //
-// `graph.sampleInputs` is deliberately {} for all twelve: every step's own
+// `graph.sampleInputs` is {} for eleven of the twelve: every step's own
 // `inputs` already supplies every field its model's schema requires, so the
 // publish gate (canPublish, Task 2) can quote successfully with no
-// additional sample overrides. A real user still edits any field per step
-// via the run/quote routes' request-body `inputs[stepId]` override (Task
-// 5's UI) — image_url/images_list fields below carry a placeholder sample
-// URL for exactly that reason (a real run supplies the user's own upload).
+// additional sample overrides. The one exception is
+// real-estate-listing-pack, whose first step requires a REAL user photo —
+// its placeholder sample URL lives in graph.sampleInputs (quote-time only),
+// never baked into the step's own inputs, so a real run can never silently
+// stage the placeholder. A real user still edits any field per step via the
+// run/quote routes' request-body `inputs[stepId]` override (Task 5's UI).
+//
+// Every step input field name below matches the model's REAL schema
+// (CURATED_SCHEMAS in src/lib/model-catalog-core.mjs, transcribed from the
+// vendor docs): qwen/image-edit and qwen/image-to-image take a singular
+// `image_url`; wan/2-6* image-to-video takes an `image_urls` ARRAY (max 1)
+// with string-enum durations ("5"/"10"/"15"); wan/2-7-image-to-video takes
+// `first_frame_url` (numeric duration 2–15); wan/2-7-image[-pro] i2i input
+// is `input_urls`; z-image REQUIRES `aspect_ratio`.
 //
 // toolType "workflows" matches the real "workflows" entry in
 // src/components/studio/kit/tools.js's TOOL_IDS (a multi-step pipeline is
@@ -54,7 +64,7 @@ const linear = (id, dependsOnPrev) => (dependsOnPrev ? [dependsOnPrev] : []);
 // always fails for every real user. Not persisted to the DB (script-only
 // gate) — the reason is still recorded in graph.blockedReason for anyone
 // reading the seeded row directly.
-function template({ slug, name, description, category, safetyNotes, scopeNote, blockedReason, steps }) {
+function template({ slug, name, description, category, safetyNotes, scopeNote, blockedReason, sampleInputs, steps }) {
   return {
     slug,
     name,
@@ -72,7 +82,7 @@ function template({ slug, name, description, category, safetyNotes, scopeNote, b
     config: { workflow: true, stepCount: steps.length },
     graph: {
       steps,
-      sampleInputs: {},
+      sampleInputs: sampleInputs || {},
       ...(safetyNotes ? { safetyNotes } : {}),
       ...(scopeNote ? { scopeNote } : {}),
       ...(blockedReason ? { blockedReason } : {}),
@@ -106,7 +116,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Smooth cinematic camera pan slowly orbiting the product, elegant motion, premium advertising feel.",
-          image_url: "$step1.output",
+          first_frame_url: "$step1.output",
           duration: 5,
           resolution: "720p",
         },
@@ -119,7 +129,7 @@ export const TEMPLATE_SEEDS = [
         inputs: {
           prompt:
             "Recompose this product photo with clean open negative space on the left third for a headline, keep the same product and lighting style.",
-          images_list: ["$step1.output"],
+          image_url: "$step1.output",
         },
       },
     ],
@@ -153,8 +163,8 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Subtle rising steam and gentle light shimmer over the dish, slow cinematic motion, no added text or claims.",
-          image_url: "$step1.output",
-          duration: 5,
+          image_urls: ["$step1.output"],
+          duration: "5",
           resolution: "720p",
         },
       },
@@ -166,7 +176,7 @@ export const TEMPLATE_SEEDS = [
         inputs: {
           prompt:
             "Same dish from a different plating angle, same restaurant ambiance and lighting, no invented price or allergen text overlay.",
-          images_list: ["$step1.output"],
+          image_url: "$step1.output",
         },
       },
     ],
@@ -200,7 +210,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "The original virtual influencer character gestures naturally toward the product and smiles warmly at the camera.",
-          image_url: "$step1.output",
+          first_frame_url: "$step1.output",
           duration: 5,
           resolution: "720p",
         },
@@ -232,8 +242,8 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Subtle handheld camera movement, authentic user-generated-content video feel, natural lighting.",
-          image_url: "$step1.output",
-          duration: 5,
+          image_urls: ["$step1.output"],
+          duration: "5",
           resolution: "720p",
           audio: false,
         },
@@ -260,11 +270,15 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2i",
-        modelId: "qwen/text-to-image",
+        // Was qwen/text-to-image — a pure t2i model whose real schema takes
+        // NO image input at all, so this i2i step's source reference was
+        // silently dropped. qwen/image-to-image is the same vendor's ACTIVE
+        // KIE i2i model (real source field: singular image_url).
+        modelId: "qwen/image-to-image",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "The same product from a three-quarter angle, same pure white background and studio lighting.",
-          images_list: ["$step1.output"],
+          image_url: "$step1.output",
         },
       },
       {
@@ -274,7 +288,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt: "The same product placed in a minimal lifestyle setting with soft natural light, still clearly the hero subject.",
-          images_list: ["$step2.output"],
+          input_urls: ["$step2.output"],
         },
       },
     ],
@@ -305,8 +319,8 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Gentle cinematic push-in on the storefront, warm inviting mood, smooth camera motion.",
-          image_url: "$step1.output",
-          duration: 5,
+          image_urls: ["$step1.output"],
+          duration: "5",
           resolution: "720p",
         },
       },
@@ -338,7 +352,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Slow, hypnotic looping animated motion of the abstract artwork, gentle pulsing and flowing color, seamless loop feel.",
-          image_url: "$step1.output",
+          first_frame_url: "$step1.output",
           duration: 10,
           resolution: "720p",
         },
@@ -372,8 +386,8 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Subtle, slow ambient animation of the background artwork, seamless calm loop, no added text.",
-          image_url: "$step1.output",
-          duration: 5,
+          image_urls: ["$step1.output"],
+          duration: "5",
           resolution: "720p",
           audio: false,
         },
@@ -395,7 +409,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step1"),
         inputs: {
           prompt: "A minimalist abstract brand mark concept, clean vector-like geometric shape, single bold accent color, plain background.",
-          prompt_extend: true,
+          aspect_ratio: "1:1",
         },
       },
       {
@@ -406,7 +420,7 @@ export const TEMPLATE_SEEDS = [
         inputs: {
           prompt:
             "Apply this mark's color palette and mood to a clean lifestyle brand photograph, no logo overlay, same accent color family.",
-          images_list: ["$step1.output"],
+          image_url: "$step1.output",
         },
       },
       {
@@ -416,7 +430,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt: "Gentle animated reveal motion over the brand photograph, elegant and understated, premium brand-sting feel.",
-          image_url: "$step2.output",
+          first_frame_url: "$step2.output",
           duration: 5,
           resolution: "720p",
         },
@@ -434,19 +448,19 @@ export const TEMPLATE_SEEDS = [
       "Every output must be clearly labeled virtual staging — never presented as a photograph of an actually furnished property. Prompts explicitly instruct the model not to alter the room's fixed structure or architecture.",
     ],
     // MINOR-8 (found in review) — UNBLOCKED (Phase 8 Task B1): step1
-    // fundamentally needs a REAL photo of the user's own empty room, and the
-    // images_list value below is only a placeholder sample URL for
-    // canPublish's own quote check. That used to mean a real user clicking
-    // "Use template" would stage the placeholder instead of their own room,
-    // because there was no way to override a step's input from the UI. Task
-    // B1 shipped exactly that — TemplateRunPanel.js now renders a per-step
+    // fundamentally needs a REAL photo of the user's own empty room. The
+    // placeholder sample URL lives in graph.sampleInputs (below) — used by
+    // canPublish's own quote check ONLY — and is deliberately NOT baked into
+    // step1's inputs, so a real run can never silently stage the placeholder
+    // instead of the user's own room. TemplateRunPanel.js renders a per-step
     // input form (src/components/templates/StepInputsForm.js) built from
-    // each step's live model schema, and an image/array-typed field (like
-    // this step's images_list) always starts EMPTY rather than pre-filled
-    // with the graph's own sample URL, so a real run only ever stages a
-    // photo the user actually uploaded through POST /api/upload. No longer
-    // marked non-publishable — publishable defaults to true again now that
-    // the blocking reason is resolved.
+    // each step's live model schema, and an image-typed field (like this
+    // step's image_url — qwen/image-edit's real, singular source field)
+    // always starts EMPTY rather than pre-filled, so a real run only ever
+    // stages a photo the user actually uploaded through POST /api/upload.
+    // No longer marked non-publishable — publishable defaults to true again
+    // now that the blocking reason is resolved.
+    sampleInputs: { step1: { image_url: "https://example.com/sample-empty-room.jpg" } },
     steps: [
       {
         id: "step1",
@@ -456,7 +470,6 @@ export const TEMPLATE_SEEDS = [
         inputs: {
           prompt:
             "Virtually stage this empty room with tasteful, neutral modern furniture appropriate for the room type. This is VIRTUAL STAGING for illustrative purposes only — do not alter the room's fixed structure, windows, walls, or layout, and do not add or remove architectural features.",
-          images_list: ["https://example.com/sample-empty-room.jpg"],
         },
       },
       {
@@ -467,8 +480,8 @@ export const TEMPLATE_SEEDS = [
         inputs: {
           prompt:
             "Slow, smooth virtual walkthrough camera pan across the staged room. Clearly a VIRTUAL STAGING preview, not a photo of real furniture.",
-          image_url: "$step1.output",
-          duration: 5,
+          image_urls: ["$step1.output"],
+          duration: "5",
           resolution: "720p",
         },
       },
@@ -489,7 +502,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step1"),
         inputs: {
           prompt: "A modern, minimalist app icon concept, single bold symbol, vibrant gradient background, rounded-square icon composition.",
-          prompt_extend: true,
+          aspect_ratio: "1:1",
         },
       },
       {
@@ -500,7 +513,7 @@ export const TEMPLATE_SEEDS = [
         inputs: {
           prompt:
             "An app store feature graphic using the same color palette and style as this icon, clean modern composition with open space for a headline.",
-          images_list: ["$step1.output"],
+          input_urls: ["$step1.output"],
         },
       },
       {
@@ -510,7 +523,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt: "Elegant animated reveal of the feature graphic, smooth modern motion, premium app-launch feel.",
-          image_url: "$step2.output",
+          first_frame_url: "$step2.output",
           duration: 5,
           resolution: "720p",
         },
@@ -542,7 +555,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Recompose this hero image into a clean square social-media variant, same subject and visual style.",
-          images_list: ["$step1.output"],
+          image_url: "$step1.output",
         },
       },
       {
@@ -552,7 +565,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt: "Recompose this hero image into a vertical story-format variant, same subject and visual style.",
-          images_list: ["$step1.output"],
+          image_url: "$step1.output",
         },
       },
       {
@@ -562,7 +575,7 @@ export const TEMPLATE_SEEDS = [
         dependsOn: linear("step4", "step3"),
         inputs: {
           prompt: "Cinematic animated teaser based on the hero image, smooth elegant camera movement.",
-          image_url: "$step1.output",
+          first_frame_url: "$step1.output",
           duration: 5,
           resolution: "720p",
         },
