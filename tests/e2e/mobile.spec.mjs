@@ -212,6 +212,31 @@ test.describe("mobile — layout and tap targets", () => {
     });
   }
 
+  // S3: the theme toggle sits in the studio bar, so the sweeps above already
+  // measure it — this pins it explicitly (a sweep can only measure a control
+  // that exists) and proves it WORKS by touch, not just that it is big enough.
+  test("the theme toggle is a 44px touch target and flips the theme on tap", async ({ page }) => {
+    await stubProviders(page);
+    await page.goto("/studio");
+    await settleApp(page);
+
+    const toggle = visible(page.getByTestId("theme-toggle"));
+    await expect(toggle).toBeVisible();
+    const box = await toggle.boundingBox();
+    expect(box.width, `theme toggle is ${box.width}px wide — below the ${TAP_MIN}px floor`).toBeGreaterThanOrEqual(TAP_MIN);
+    expect(box.height, `theme toggle is ${box.height}px tall — below the ${TAP_MIN}px floor`).toBeGreaterThanOrEqual(TAP_MIN);
+
+    // Initial-theme-agnostic (Playwright's default colorScheme is "light",
+    // so with nothing stored the page may already BE light): assert a full
+    // flip-and-back relative to wherever it started.
+    const before = await page.evaluate(() => document.documentElement.dataset.theme);
+    const flipped = before === "light" ? "dark" : "light";
+    await toggle.tap();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", flipped);
+    await toggle.tap();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", before);
+  });
+
   test("/gallery fits the viewport and every control is tappable", async ({ page }) => {
     await page.goto("/gallery");
     await expect(page.getByRole("heading", { name: "Everything you have made." })).toBeVisible();

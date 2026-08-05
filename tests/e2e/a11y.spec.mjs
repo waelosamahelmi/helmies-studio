@@ -41,51 +41,92 @@ async function auditPage(page, label) {
   expect(gating, `${label} — serious/critical violations:\n${gating.map(describeViolation).join("\n")}`).toEqual([]);
 }
 
-test.describe("a11y — anonymous pages", () => {
+// S3 light mode: every core-page audit below runs once per theme. The theme
+// is planted in localStorage before any document script runs (addInitScript
+// fires ahead of the inline theme-init script in src/app/layout.js's <head>,
+// which reads "helmies.theme" and stamps <html data-theme>), so each audit
+// sees the page fully painted in that theme — including axe's contrast
+// checks against the [data-theme="light"] token set in system.css.
+//
+// The LANDING (/) is deliberately excluded from the loop: it is styled by
+// globals.css's own hardcoded palette (off-limits, stays dark by design),
+// so a light-theme pass over it would audit the identical pixels twice.
+const THEMES = ["dark", "light"];
+
+async function useTheme(page, theme) {
+  await page.addInitScript((t) => {
+    try { localStorage.setItem("helmies.theme", t); } catch { /* ignore */ }
+  }, theme);
+}
+
+// Guard: prove the audit really ran in the requested theme, so a regression
+// in the init script can never silently turn the light audits into dark ones.
+async function expectTheme(page, theme) {
+  await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+}
+
+test.describe("a11y — landing (dark by design, single audit)", () => {
   test("/ (landing) has no serious/critical violations", async ({ page }) => {
     await page.goto("/");
     await auditPage(page, "/");
   });
-
-  test("/login has no serious/critical violations", async ({ page }) => {
-    await page.goto("/login");
-    await auditPage(page, "/login");
-  });
-
-  test("/pricing has no serious/critical violations", async ({ page }) => {
-    await page.goto("/pricing");
-    await auditPage(page, "/pricing");
-  });
 });
+
+for (const theme of THEMES) {
+  test.describe(`a11y — anonymous pages [${theme}]`, () => {
+    test.beforeEach(async ({ page }) => { await useTheme(page, theme); });
+
+    test(`/login has no serious/critical violations [${theme}]`, async ({ page }) => {
+      await page.goto("/login");
+      await expectTheme(page, theme);
+      await auditPage(page, `/login [${theme}]`);
+    });
+
+    test(`/pricing has no serious/critical violations [${theme}]`, async ({ page }) => {
+      await page.goto("/pricing");
+      await expectTheme(page, theme);
+      await auditPage(page, `/pricing [${theme}]`);
+    });
+  });
+
+  test.describe(`a11y — authenticated pages [${theme}]`, () => {
+    test.use({ storageState: USER_AUTH_FILE });
+    test.beforeEach(async ({ page }) => { await useTheme(page, theme); });
+
+    test(`/studio has no serious/critical violations [${theme}]`, async ({ page }) => {
+      await stubProviders(page);
+      await page.goto("/studio");
+      await expect(page.locator(".st-app:visible")).toBeVisible();
+      await settle(page, ".st-app");
+      await expectTheme(page, theme);
+      await auditPage(page, `/studio [${theme}]`);
+    });
+
+    test(`/studio/image has no serious/critical violations [${theme}]`, async ({ page }) => {
+      await stubProviders(page);
+      await gotoImageStudioReady(page);
+      await expectTheme(page, theme);
+      await auditPage(page, `/studio/image [${theme}]`);
+    });
+
+    test(`/settings has no serious/critical violations [${theme}]`, async ({ page }) => {
+      await page.goto("/settings");
+      await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
+      await expectTheme(page, theme);
+      await auditPage(page, `/settings [${theme}]`);
+    });
+
+    test(`/gallery has no serious/critical violations [${theme}]`, async ({ page }) => {
+      await page.goto("/gallery");
+      await expect(page.getByRole("heading", { name: "Everything you have made." })).toBeVisible();
+      await expectTheme(page, theme);
+      await auditPage(page, `/gallery [${theme}]`);
+    });
+  });
+}
 
 test.describe("a11y — authenticated pages", () => {
   test.use({ storageState: USER_AUTH_FILE });
-
-  test("/studio has no serious/critical violations", async ({ page }) => {
-    await stubProviders(page);
-    await page.goto("/studio");
-    await expect(page.locator(".st-app:visible")).toBeVisible();
-    await settle(page, ".st-app");
-    await auditPage(page, "/studio");
-  });
-
-  test("/studio/image has no serious/critical violations", async ({ page }) => {
-    await stubProviders(page);
-    await gotoImageStudioReady(page);
-    await auditPage(page, "/studio/image");
-  });
-
-  test("/settings has no serious/critical violations", async ({ page }) => {
-    await page.goto("/settings");
-    await expect(page.getByRole("heading", { name: "Settings" })).toBeVisible();
-    await auditPage(page, "/settings");
-  });
-
-  test("/gallery has no serious/critical violations", async ({ page }) => {
-    await page.goto("/gallery");
-    await expect(page.getByRole("heading", { name: "Everything you have made." })).toBeVisible();
-    await auditPage(page, "/gallery");
-  });
 
   test("studio model-picker sheet has no serious/critical violations", async ({ page }) => {
     // The model-picker sheet only exists below 900px (src/components/
