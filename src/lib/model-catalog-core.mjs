@@ -810,12 +810,1153 @@ export function curatedSchemaEntry(modelId) {
 // The one schema builder every writer (sync + backfill) goes through:
 // curated fields spread OVER the generic default for the capability, so a
 // curated model keeps prompt/etc. and gains its real parameters, and a
-// non-curated model gets exactly the default it always got. Video models
-// keep the generic enums (KIE's documented common set) unless a curated
-// entry says otherwise — no fictional per-model claims.
+// non-curated model gets exactly the default it always got.
+//
+// EDITSv1 M2 (audit class D): an entry can instead declare `replace: true`,
+// meaning its `fields` ARE the model's complete real parameter set and the
+// generic default must NOT bleed through — the audits (docs/model-audit/
+// image-market.md, video-market.md) proved the generic `resolution`/
+// `aspect_ratio`/`num_images` trio is fabricated for essentially every
+// market model, so merging it under a real schema would keep advertising
+// parameters the provider rejects. Every family entry added by the M2 pass
+// is replace-mode; the original audio entries keep the merge behaviour they
+// shipped with.
 export function schemaForModel(modelId, capability) {
   const base = defaultSchemaForCapability(capability);
   const curated = curatedSchemaEntry(modelId);
   if (!curated) return base;
+  if (curated.replace === true) return { fields: { ...curated.fields } };
   return { fields: { ...base.fields, ...curated.fields } };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EDITSv1 M2 — real vendor-family schemas (audit class D)
+// ═══════════════════════════════════════════════════════════════════════════
+// Every entry below is transcribed VERBATIM from the per-family audits in
+// docs/model-audit/image-market.md and docs/model-audit/video-market.md
+// (which were themselves extracted from the live docs.kie.ai pages), plus
+// docs/model-audit/{image,video}-dedicated.md for the dedicated-API rows.
+// Never invent a parameter: extending this block means reading the audit —
+// or the provider doc — first.
+//
+// All entries are `replace: true` (see schemaForModel above): their `fields`
+// are the model's COMPLETE real parameter set, and the generic fabricated
+// default (`resolution: 1k/2k/4k`, 5-value `aspect_ratio`, `num_images`)
+// must not bleed through.
+//
+// Keys use the canonical form curatedSchemaEntry resolves to: lowercase,
+// "/"→"-", hyphenated digit pairs re-dotted ("seedance-1-5-pro" →
+// "seedance-1.5-pro"). Where the live DB row's id differs from the real API
+// model string (wrong vendor prefix, missing version segment — audit classes
+// 1/7/9), the entry is ALSO registered under the current row's key so the
+// row gets its real schema today, before its id is repointed.
+
+// Terse field constructors — schema shape is identical to the hand-written
+// entries above (type/required/enum/min/max/…), these only cut repetition.
+const mkStr = (extra = {}) => ({ type: "string", required: false, ...extra });
+const mkNum = (extra = {}) => ({ type: "number", required: false, ...extra });
+const mkBool = (extra = {}) => ({ type: "boolean", required: false, ...extra });
+const mkArr = (extra = {}) => ({ type: "array", required: false, ...extra });
+const mkUri = (extra = {}) => ({ type: "string", format: "uri", required: false, ...extra });
+const mkEnum = (values, extra = {}) => ({
+  type: typeof values[0] === "number" ? "number" : "string",
+  required: false,
+  enum: values,
+  ...extra,
+});
+
+// Shared enum sets, exactly as the audits list them.
+const SEEDREAM_IMAGE_SIZES = ["square", "square_hd", "portrait_4_3", "portrait_3_2", "portrait_16_9", "landscape_4_3", "landscape_3_2", "landscape_16_9", "landscape_21_9"];
+const SEEDREAM_45_ASPECTS = ["1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2", "21:9"];
+const NANO_BANANA_ASPECTS_11 = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "auto"];
+const NANO_BANANA_2_ASPECTS_15 = ["1:1", "2:3", "3:2", "1:4", "4:1", "3:4", "4:3", "4:5", "5:4", "1:8", "8:1", "9:16", "16:9", "21:9", "auto"];
+const GPT_IMAGE_2_ASPECTS_16 = ["auto", "1:1", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5", "16:9", "9:16", "2:1", "1:2", "3:1", "1:3", "21:9", "9:21"];
+const FLUX2_ASPECTS = ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"];
+const IDEOGRAM_SPEEDS = ["TURBO", "BALANCED", "QUALITY"];
+const IDEOGRAM_V3_STYLES = ["AUTO", "GENERAL", "REALISTIC", "DESIGN"];
+const IDEOGRAM_CHARACTER_STYLES = ["AUTO", "REALISTIC", "FICTION"];
+const IDEOGRAM_IMAGE_SIZES = ["square", "square_hd", "portrait_4_3", "portrait_16_9", "landscape_4_3", "landscape_16_9"];
+const QWEN_RATIO_SIZES = ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"];
+const RES_1K2K = ["1K", "2K"];
+const RES_1K2K4K = ["1K", "2K", "4K"];
+const WAN_VIDEO_RES = ["720p", "1080p"];
+const WAN_ASPECTS_5 = ["16:9", "9:16", "1:1", "4:3", "3:4"];
+const KLING_ASPECTS = ["1:1", "16:9", "9:16"];
+const PIXVERSE_QUALITIES = ["360p", "540p", "720p", "1080p"];
+const PIXVERSE_ASPECTS = ["16:9", "4:3", "1:1", "3:4", "9:16", "2:3", "3:2", "21:9"];
+const MINIMAX_RES = ["768P", "2K"];
+const UPSCALE_FACTORS = ["1", "2", "4"];
+
+// ── Image families ─────────────────────────────────────────────────────────
+const SEEDREAM_SCHEMAS = {
+  // Seedream 3.0 — real model field `bytedance/seedream`.
+  "bytedance-seedream": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    image_size: mkEnum(SEEDREAM_IMAGE_SIZES),
+    guidance_scale: mkNum({ minimum: 1, maximum: 10 }),
+    seed: mkNum(),
+  } },
+  "bytedance-seedream-v4-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    image_size: mkEnum(SEEDREAM_IMAGE_SIZES),
+    image_resolution: mkEnum(RES_1K2K4K),
+    max_images: mkNum({ minimum: 1, maximum: 6 }),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "bytedance-seedream-v4-edit": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    image_urls: mkArr({ required: true, maxItems: 10 }),
+    image_size: mkEnum(SEEDREAM_IMAGE_SIZES),
+    image_resolution: mkEnum(RES_1K2K4K),
+    max_images: mkNum({ minimum: 1, maximum: 6 }),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "seedream-4.5-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 3000 }),
+    aspect_ratio: mkEnum(SEEDREAM_45_ASPECTS, { required: true }),
+    quality: mkEnum(["basic", "high"], { required: true }),
+    nsfw_checker: mkBool(),
+  } },
+  "seedream-4.5-edit": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 3000 }),
+    image_urls: mkArr({ required: true, maxItems: 14 }),
+    aspect_ratio: mkEnum(SEEDREAM_45_ASPECTS, { required: true }),
+    quality: mkEnum(["basic", "high"], { required: true }),
+    nsfw_checker: mkBool(),
+  } },
+  "seedream-5-lite-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, minLength: 3, maxLength: 3000 }),
+    aspect_ratio: mkEnum(SEEDREAM_45_ASPECTS, { required: true }),
+    quality: mkEnum(["basic", "high", "ultra"], { required: true }),
+    output_format: mkEnum(["png", "jpeg"]),
+    nsfw_checker: mkBool(),
+  } },
+  "seedream-5-pro-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, minLength: 3, maxLength: 5000 }),
+    aspect_ratio: mkEnum(SEEDREAM_45_ASPECTS, { required: true }),
+    quality: mkEnum(["basic", "high"], { required: true }),
+    output_format: mkEnum(["png", "jpeg"]),
+    nsfw_checker: mkBool(),
+  } },
+  "seedream-5-pro-image-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_urls: mkArr({ required: true, maxItems: 10 }),
+    aspect_ratio: mkEnum(SEEDREAM_45_ASPECTS, { required: true }),
+    quality: mkEnum(["basic", "high"], { required: true }),
+    output_format: mkEnum(["png", "jpeg"], { default: "png" }),
+    nsfw_checker: mkBool(),
+  } },
+};
+
+const IMAGEN4_FIELDS = (defaultAspect) => ({
+  prompt: mkStr({ required: true, maxLength: 5000 }),
+  negative_prompt: mkStr(),
+  aspect_ratio: mkEnum(["1:1", "16:9", "9:16", "3:4", "4:3", "auto"], { default: defaultAspect }),
+  seed: mkNum(),
+});
+
+const GOOGLE_IMAGE_SCHEMAS = {
+  "google-imagen4": { replace: true, fields: IMAGEN4_FIELDS("1:1") },
+  "google-imagen4-fast": { replace: true, fields: IMAGEN4_FIELDS("16:9") },
+  "google-imagen4-ultra": { replace: true, fields: IMAGEN4_FIELDS("1:1") },
+  "google-nano-banana": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    output_format: mkEnum(["png", "jpeg"]),
+    aspect_ratio: mkEnum(NANO_BANANA_ASPECTS_11),
+    image_size: mkEnum(NANO_BANANA_ASPECTS_11),
+    nsfw_checker: mkBool(),
+  } },
+  "google-nano-banana-edit": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_urls: mkArr({ required: true, maxItems: 10 }),
+    output_format: mkEnum(["png", "jpeg"]),
+    aspect_ratio: mkEnum(NANO_BANANA_ASPECTS_11),
+  } },
+  // Real model field is the BARE `nano-banana-2` (no google/ prefix).
+  "nano-banana-2": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 20000 }),
+    image_input: mkArr({ maxItems: 14 }),
+    aspect_ratio: mkEnum(NANO_BANANA_2_ASPECTS_15),
+    resolution: mkEnum(RES_1K2K4K),
+    output_format: mkEnum(["png", "jpg"]),
+  } },
+  "nano-banana-2-lite": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 20000 }),
+    aspect_ratio: mkEnum(NANO_BANANA_2_ASPECTS_15, { required: true }),
+    image_urls: mkArr({ maxItems: 10 }),
+  } },
+  "nano-banana-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 10000 }),
+    image_input: mkArr({ maxItems: 8 }),
+    aspect_ratio: mkEnum(NANO_BANANA_ASPECTS_11),
+    resolution: mkEnum(RES_1K2K4K),
+    output_format: mkEnum(["png", "jpg"]),
+  } },
+};
+
+const FLUX2_T2I_FIELDS = {
+  prompt: mkStr({ required: true, minLength: 3, maxLength: 5000 }),
+  aspect_ratio: mkEnum(FLUX2_ASPECTS, { required: true }),
+  resolution: mkEnum(RES_1K2K, { required: true, default: "1K" }),
+  nsfw_checker: mkBool(),
+};
+const FLUX2_I2I_FIELDS = {
+  prompt: mkStr({ required: true }),
+  input_urls: mkArr({ required: true, minItems: 1, maxItems: 8 }),
+  aspect_ratio: mkEnum([...FLUX2_ASPECTS, "auto"], { required: true }),
+  resolution: mkEnum(RES_1K2K, { required: true, default: "1K" }),
+  nsfw_checker: mkBool(),
+};
+const FLUX2_SCHEMAS = {
+  "flux-2-pro-text-to-image": { replace: true, fields: FLUX2_T2I_FIELDS },
+  "flux-2-pro-image-to-image": { replace: true, fields: FLUX2_I2I_FIELDS },
+  "flux-2-flex-text-to-image": { replace: true, fields: FLUX2_T2I_FIELDS },
+  "flux-2-flex-image-to-image": { replace: true, fields: FLUX2_I2I_FIELDS },
+};
+
+const GROK_IMAGINE_SCHEMAS = {
+  "grok-imagine-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    aspect_ratio: mkEnum(["2:3", "3:2", "1:1", "16:9", "9:16"], { default: "1:1" }),
+    enable_pro: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "grok-imagine-image-to-image": { replace: true, fields: {
+    image_urls: mkArr({ required: true, maxItems: 1 }),
+    prompt: mkStr(), // genuinely optional on this model per the doc
+    nsfw_checker: mkBool(),
+  } },
+  "grok-imagine-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    aspect_ratio: mkEnum(["2:3", "3:2", "1:1", "16:9", "9:16"], { default: "2:3" }),
+    mode: mkEnum(["fun", "normal", "spicy"], { default: "normal" }),
+    duration: mkNum({ minimum: 6, maximum: 30 }),
+    resolution: mkEnum(["480p", "720p", "1080p"], { default: "480p" }),
+    nsfw_checker: mkBool(),
+  } },
+  "grok-imagine-image-to-video": { replace: true, fields: {
+    image_urls: mkArr({ maxItems: 7 }),
+    task_id: mkStr(),
+    index: mkNum({ minimum: 0, maximum: 5 }),
+    prompt: mkStr({ maxLength: 5000 }),
+    mode: mkEnum(["fun", "normal", "spicy"]),
+    duration: mkNum({ minimum: 6, maximum: 30 }),
+    resolution: mkEnum(["480p", "720p", "1080p"]),
+    aspect_ratio: mkEnum(["2:3", "3:2", "1:1", "16:9", "9:16"], { default: "16:9" }),
+    nsfw_checker: mkBool(),
+  } },
+  "grok-imagine-upscale": { replace: true, fields: {
+    task_id: mkStr({ required: true }),
+    resolution: mkEnum(["720p", "1080p"], { default: "720p" }),
+  } },
+  "grok-imagine-extend": { replace: true, fields: {
+    task_id: mkStr({ required: true }),
+    prompt: mkStr({ required: true }),
+    extend_at: mkNum({ minimum: 2 }),
+    extend_times: mkStr({ required: true }),
+  } },
+};
+
+const GPT_IMAGE_SCHEMAS = {
+  "gpt-image-1.5-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    aspect_ratio: mkEnum(["1:1", "2:3", "3:2"], { required: true }),
+    quality: mkEnum(["medium", "high"], { required: true }),
+  } },
+  "gpt-image-1.5-image-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    input_urls: mkArr({ required: true, maxItems: 16 }),
+    aspect_ratio: mkEnum(["1:1", "2:3", "3:2"], { required: true }),
+    quality: mkEnum(["medium", "high"], { required: true }),
+  } },
+  // Real model fields are BARE `gpt-image-2-*` (no gpt/ prefix).
+  "gpt-image-2-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 20000 }),
+    aspect_ratio: mkEnum(GPT_IMAGE_2_ASPECTS_16),
+    resolution: mkEnum(RES_1K2K4K),
+  } },
+  "gpt-image-2-image-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 20000 }),
+    input_urls: mkArr({ required: true, maxItems: 16 }),
+    aspect_ratio: mkEnum(GPT_IMAGE_2_ASPECTS_16),
+    resolution: mkEnum(RES_1K2K4K),
+  } },
+};
+
+const IDEOGRAM_SCHEMAS = {
+  "ideogram-v3-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    rendering_speed: mkEnum(IDEOGRAM_SPEEDS),
+    style: mkEnum(IDEOGRAM_V3_STYLES),
+    expand_prompt: mkBool(),
+    image_size: mkEnum(IDEOGRAM_IMAGE_SIZES),
+    seed: mkNum(),
+    negative_prompt: mkStr(),
+  } },
+  "ideogram-v3-edit": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    mask_url: mkUri({ required: true }),
+    rendering_speed: mkEnum(IDEOGRAM_SPEEDS),
+    expand_prompt: mkBool(),
+    seed: mkNum(),
+  } },
+  "ideogram-v3-remix": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    rendering_speed: mkEnum(IDEOGRAM_SPEEDS),
+    style: mkEnum(IDEOGRAM_V3_STYLES),
+    expand_prompt: mkBool(),
+    image_size: mkEnum(IDEOGRAM_IMAGE_SIZES),
+    num_images: mkEnum(["1", "2", "3", "4"]), // string enum per the real API
+    seed: mkNum(),
+    strength: mkNum({ minimum: 0.01, maximum: 1 }),
+    negative_prompt: mkStr(),
+  } },
+  "ideogram-character": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    reference_image_urls: mkArr({ required: true }),
+    rendering_speed: mkEnum(IDEOGRAM_SPEEDS),
+    style: mkEnum(IDEOGRAM_CHARACTER_STYLES),
+    expand_prompt: mkBool(),
+    num_images: mkEnum(["1", "2", "3", "4"]),
+    image_size: mkEnum(IDEOGRAM_IMAGE_SIZES),
+    seed: mkNum(),
+    negative_prompt: mkStr(),
+  } },
+  "ideogram-character-edit": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    mask_url: mkUri({ required: true }),
+    reference_image_urls: mkArr({ required: true }),
+    rendering_speed: mkEnum(IDEOGRAM_SPEEDS),
+    style: mkEnum(IDEOGRAM_CHARACTER_STYLES),
+    expand_prompt: mkBool(),
+    num_images: mkEnum(["1", "2", "3", "4"]),
+  } },
+  "ideogram-character-remix": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    reference_image_urls: mkArr({ required: true }),
+    rendering_speed: mkEnum(IDEOGRAM_SPEEDS),
+    style: mkEnum(IDEOGRAM_CHARACTER_STYLES),
+    expand_prompt: mkBool(),
+    image_size: mkEnum(IDEOGRAM_IMAGE_SIZES),
+    num_images: mkEnum(["1", "2", "3", "4"]),
+    seed: mkNum(),
+    strength: mkNum({ minimum: 0.01, maximum: 1 }),
+    negative_prompt: mkStr(),
+  } },
+};
+
+const QWEN_SCHEMAS = {
+  "qwen-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_size: mkStr(), // named presets (doc lists no closed enum)
+    num_inference_steps: mkNum({ minimum: 2, maximum: 250 }),
+    seed: mkNum(),
+    guidance_scale: mkNum({ minimum: 0, maximum: 20 }),
+    enable_safety_checker: mkBool(),
+    output_format: mkStr(),
+    negative_prompt: mkStr(),
+    acceleration: mkEnum(["none", "regular", "high"]),
+    nsfw_checker: mkBool(),
+  } },
+  "qwen-image-edit": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    acceleration: mkEnum(["none", "regular", "high"]),
+    image_size: mkStr(),
+    num_inference_steps: mkNum({ minimum: 2, maximum: 250 }),
+    seed: mkNum(),
+    guidance_scale: mkNum({ minimum: 0, maximum: 20 }),
+    sync_mode: mkBool(),
+    num_images: mkEnum(["1", "2", "3", "4"]),
+    enable_safety_checker: mkBool(),
+    output_format: mkStr(),
+    negative_prompt: mkStr(),
+    nsfw_checker: mkBool(),
+  } },
+  "qwen-image-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    strength: mkNum({ minimum: 0, maximum: 1 }),
+    output_format: mkStr(),
+    acceleration: mkEnum(["none", "regular", "high"]),
+    negative_prompt: mkStr(),
+    seed: mkNum(),
+    num_inference_steps: mkNum({ minimum: 2, maximum: 250 }),
+    guidance_scale: mkNum({ minimum: 0, maximum: 20 }),
+    enable_safety_checker: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  // Vendor segment is `qwen2` (never `qwen-2`) per every live qwen2 doc page.
+  "qwen2-image-edit": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 800 }),
+    image_url: mkUri({ required: true }),
+    image_size: mkEnum(QWEN_RATIO_SIZES, { default: "16:9" }),
+    seed: mkNum(),
+    output_format: mkStr(),
+    nsfw_checker: mkBool(),
+  } },
+  "qwen3-text-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 800 }),
+    resolution: mkEnum(RES_1K2K),
+    image_size: mkEnum(QWEN_RATIO_SIZES, { default: "16:9" }),
+    output_format: mkStr(),
+    prompt_extend: mkBool({ default: true }),
+    nsfw_checker: mkBool(),
+    negative_prompt: mkStr(),
+    seed: mkNum(),
+  } },
+  "qwen3-image-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_urls: mkArr({ required: true, minItems: 1, maxItems: 3 }),
+    resolution: mkEnum(RES_1K2K),
+    image_size: mkEnum(QWEN_RATIO_SIZES),
+    output_format: mkStr(),
+    prompt_extend: mkBool({ default: true }),
+    nsfw_checker: mkBool(),
+    negative_prompt: mkStr(),
+    seed: mkNum(),
+  } },
+};
+
+const Z_IMAGE_SCHEMAS = {
+  // Real model field is BARE `z-image`.
+  "z-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 1000 }),
+    aspect_ratio: mkEnum(["1:1", "4:3", "3:4", "16:9", "9:16"], { required: true }),
+    nsfw_checker: mkBool(),
+  } },
+};
+
+const TOPAZ_SCHEMAS = {
+  "topaz-image-upscale": { replace: true, fields: {
+    image_url: mkUri({ required: true }),
+    upscale_factor: mkEnum(UPSCALE_FACTORS, { required: true, default: "2" }),
+  } },
+  "topaz-video-upscale": { replace: true, fields: {
+    video_url: mkUri({ required: true }),
+    upscale_factor: mkEnum(UPSCALE_FACTORS, { default: "2" }),
+  } },
+};
+
+const RECRAFT_SCHEMAS = {
+  // Recraft's required field is literally named `image` — not `image_url`.
+  "recraft-remove-background": { replace: true, fields: {
+    image: mkUri({ required: true }),
+  } },
+  "recraft-crisp-upscale": { replace: true, fields: {
+    image: mkUri({ required: true }),
+  } },
+};
+
+// ── KIE-Wan (all 18 market combos; providerName=KIE, generic job route —
+// entirely separate from the retired alibaba:wan* rows) ────────────────────
+const WAN_SCHEMAS = {
+  "wan-2.2-a14b-image-to-video-turbo": { replace: true, fields: {
+    image_url: mkUri({ required: true }),
+    prompt: mkStr({ required: true }),
+    resolution: mkEnum(["480p", "720p"], { default: "720p" }),
+    enable_prompt_expansion: mkBool(),
+    seed: mkNum(),
+    acceleration: mkEnum(["none", "regular"]),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.2-a14b-text-to-video-turbo": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    resolution: mkEnum(["480p", "720p"]),
+    aspect_ratio: mkEnum(["16:9", "9:16"]),
+    enable_prompt_expansion: mkBool(),
+    seed: mkNum(),
+    acceleration: mkEnum(["none", "regular"]),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.2-a14b-speech-to-video-turbo": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    audio_url: mkUri({ required: true }),
+    num_frames: mkNum({ minimum: 40, maximum: 120 }),
+    frames_per_second: mkNum({ minimum: 4, maximum: 60 }),
+    resolution: mkEnum(["480p", "580p", "720p"]),
+    negative_prompt: mkStr(),
+    seed: mkNum(),
+    num_inference_steps: mkNum(),
+    guidance_scale: mkNum(),
+    shift: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.2-animate-move": { replace: true, fields: {
+    video_url: mkUri({ required: true }),
+    image_url: mkUri({ required: true }),
+    resolution: mkEnum(["480p", "580p", "720p"]),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.2-animate-replace": { replace: true, fields: {
+    video_url: mkUri({ required: true }),
+    image_url: mkUri({ required: true }),
+    resolution: mkEnum(["480p", "580p", "720p"], { default: "480p" }),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.5-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 800 }),
+    image_url: mkUri({ required: true }),
+    duration: mkEnum(["5", "10"], { required: true }),
+    resolution: mkEnum(WAN_VIDEO_RES),
+    negative_prompt: mkStr(),
+    enable_prompt_expansion: mkBool(),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.5-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 800 }),
+    duration: mkEnum(["5", "10"], { required: true }),
+    aspect_ratio: mkEnum(["16:9", "9:16", "1:1"]),
+    resolution: mkEnum(WAN_VIDEO_RES),
+    negative_prompt: mkStr(),
+    enable_prompt_expansion: mkBool(),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.6-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    image_urls: mkArr({ required: true, maxItems: 1 }),
+    duration: mkEnum(["5", "10", "15"], { default: "5" }),
+    resolution: mkEnum(WAN_VIDEO_RES, { default: "1080p" }),
+    multi_shots: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.6-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    duration: mkEnum(["5", "10", "15"]),
+    resolution: mkEnum(WAN_VIDEO_RES),
+    multi_shots: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.6-video-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    video_urls: mkArr({ required: true, maxItems: 3 }),
+    duration: mkEnum(["5", "10"]),
+    resolution: mkEnum(WAN_VIDEO_RES),
+    multi_shots: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.6-flash-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 1500 }),
+    image_urls: mkArr({ required: true, maxItems: 1 }),
+    // Pricing-relevant per the doc; defaulted false (no audio) so a studio
+    // submit that never surfaces the control quotes the cheaper tier.
+    audio: mkBool({ required: true, default: false }),
+    duration: mkEnum(["5", "10", "15"]),
+    resolution: mkEnum(WAN_VIDEO_RES),
+    multi_shots: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.6-flash-video-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 1500 }),
+    video_urls: mkArr({ required: true, maxItems: 3 }),
+    duration: mkEnum(["5", "10"]),
+    resolution: mkEnum(WAN_VIDEO_RES),
+    audio: mkBool({ default: false }),
+    multi_shots: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.7-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    negative_prompt: mkStr(),
+    audio_url: mkUri(),
+    resolution: mkEnum(WAN_VIDEO_RES, { default: "1080p" }),
+    // The field is literally named `ratio` on this model — NOT aspect_ratio.
+    ratio: mkEnum(WAN_ASPECTS_5, { default: "16:9" }),
+    duration: mkNum({ minimum: 2, maximum: 15, default: 5 }),
+    prompt_extend: mkBool({ default: true }),
+    watermark: mkBool({ default: false }),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.7-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    negative_prompt: mkStr(),
+    first_frame_url: mkUri(),
+    last_frame_url: mkUri(),
+    first_clip_url: mkUri(),
+    driving_audio_url: mkUri(),
+    resolution: mkEnum(WAN_VIDEO_RES, { default: "1080p" }),
+    duration: mkNum({ minimum: 2, maximum: 15, default: 5 }),
+    prompt_extend: mkBool(),
+    watermark: mkBool(),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.7-videoedit": { replace: true, fields: {
+    video_url: mkUri({ required: true }),
+    prompt: mkStr({ maxLength: 5000 }), // genuinely optional here
+    negative_prompt: mkStr(),
+    reference_image: mkUri(),
+    resolution: mkEnum(WAN_VIDEO_RES),
+    aspect_ratio: mkEnum(WAN_ASPECTS_5),
+    duration: mkNum({ minimum: 0, maximum: 10, default: 0 }),
+    audio_setting: mkEnum(["auto", "origin"]),
+    prompt_extend: mkBool(),
+    watermark: mkBool(),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.7-r2v": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    negative_prompt: mkStr(),
+    reference_image: mkArr({ maxItems: 5 }),
+    reference_video: mkArr({ maxItems: 5 }),
+    first_frame: mkUri(),
+    reference_voice: mkUri(),
+    resolution: mkEnum(WAN_VIDEO_RES),
+    aspect_ratio: mkEnum(WAN_ASPECTS_5, { default: "16:9" }),
+    duration: mkNum({ minimum: 2, maximum: 10, default: 5 }),
+    prompt_extend: mkBool(),
+    watermark: mkBool(),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.7-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    input_urls: mkArr(),
+    aspect_ratio: mkEnum(["1:1", "16:9", "4:3", "21:9", "3:4", "9:16", "8:1", "1:8"]),
+    enable_sequential: mkBool(),
+    n: mkNum({ minimum: 1 }),
+    resolution: mkEnum(RES_1K2K4K),
+    thinking_mode: { required: false },
+    color_palette: { required: false },
+    bbox_list: { required: false },
+    watermark: mkBool(),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+  "wan-2.7-image-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    input_urls: mkArr({ maxItems: 9 }),
+    aspect_ratio: mkEnum(["1:1", "16:9", "4:3", "21:9", "3:4", "9:16", "8:1", "1:8"]),
+    enable_sequential: mkBool(),
+    n: mkNum({ minimum: 1 }),
+    resolution: mkEnum(RES_1K2K4K),
+    thinking_mode: { required: false },
+    color_palette: { required: false },
+    bbox_list: { required: false },
+    watermark: mkBool(),
+    seed: mkNum(),
+    nsfw_checker: mkBool(),
+  } },
+};
+
+// ── Kling ──────────────────────────────────────────────────────────────────
+const KLING_SCHEMAS = {
+  // Real model field is version-prefixed `kling-2.6/text-to-video`.
+  "kling-2.6-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    sound: mkBool({ required: true, default: false }),
+    aspect_ratio: mkEnum(KLING_ASPECTS, { required: true }),
+    duration: mkEnum([5, 10], { required: true }),
+  } },
+  "kling-2.6-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_urls: mkArr({ required: true }),
+    sound: mkBool({ required: true, default: false }),
+    duration: mkEnum(["5", "10"], { required: true }),
+  } },
+  "kling-v2.5-turbo-image-to-video-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    tail_image_url: mkUri(),
+    duration: mkEnum(["5", "10"], { default: "5" }),
+    negative_prompt: mkStr(),
+    cfg_scale: mkNum({ minimum: 0, maximum: 1 }),
+  } },
+  "kling-v2.5-turbo-text-to-video-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    duration: mkEnum([5, 10]),
+    aspect_ratio: mkEnum(["16:9", "9:16", "1:1"]),
+    negative_prompt: mkStr(),
+    cfg_scale: mkNum({ minimum: 0, maximum: 1, default: 0.5 }),
+  } },
+  // The avatar pair takes NO duration/resolution/aspect_ratio at all.
+  "kling-ai-avatar-standard": { replace: true, fields: {
+    image_url: mkUri({ required: true }),
+    audio_url: mkUri({ required: true }),
+    prompt: mkStr({ required: true }),
+  } },
+  "kling-ai-avatar-pro": { replace: true, fields: {
+    image_url: mkUri({ required: true }),
+    audio_url: mkUri({ required: true }),
+    prompt: mkStr({ required: true }),
+  } },
+  "kling-v2.1-master-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    duration: mkEnum([5, 10]),
+    negative_prompt: mkStr(),
+    cfg_scale: mkNum({ minimum: 0, maximum: 1, default: 0.5 }),
+  } },
+  "kling-v2.1-master-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    duration: mkEnum([5, 10], { default: 5 }),
+    aspect_ratio: mkEnum(["16:9", "9:16", "1:1"], { default: "16:9" }),
+    negative_prompt: mkStr(),
+    cfg_scale: mkNum({ minimum: 0, maximum: 1 }),
+  } },
+  "kling-v2.1-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    duration: mkEnum([5, 10]),
+    negative_prompt: mkStr(),
+    cfg_scale: mkNum({ minimum: 0, maximum: 1 }),
+    tail_image_url: mkUri(),
+  } },
+  "kling-v2.1-standard": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    duration: mkEnum([5, 10]),
+    negative_prompt: mkStr(),
+    cfg_scale: mkNum({ minimum: 0, maximum: 1 }),
+  } },
+  // Real model `kling-2.6/motion-control`.
+  "kling-2.6-motion-control": { replace: true, fields: {
+    prompt: mkStr(),
+    input_urls: mkArr({ required: true }),
+    video_urls: mkArr({ required: true }),
+    character_orientation: mkEnum(["image", "video"], { required: true }),
+    mode: mkEnum(["720p", "1080p"], { required: true }),
+  } },
+  // Real model `kling-3.0/motion-control`.
+  "kling-3.0-motion-control": { replace: true, fields: {
+    prompt: mkStr(),
+    input_urls: mkArr({ required: true }),
+    video_urls: mkArr({ required: true }),
+    mode: mkEnum(["std", "pro"]),
+    character_orientation: mkEnum(["image", "video"]),
+    background_source: mkEnum(["input_video", "input_image"]),
+  } },
+  // Real model `kling-3.0/video` (stored row: kling/kling-3-0).
+  "kling-3.0-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_urls: mkArr(),
+    sound: mkBool({ default: false }),
+    duration: mkEnum(["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"]),
+    aspect_ratio: mkEnum(["16:9", "9:16", "1:1"]),
+    mode: mkEnum(["std", "pro", "4K"]),
+    multi_shots: mkBool(),
+    multi_prompt: { required: false },
+    kling_elements: { required: false },
+  } },
+  "kling-v3-turbo-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    duration: mkNum({ required: true, minimum: 3, maximum: 15, default: 5 }),
+    aspect_ratio: mkEnum(["1:1", "9:16", "16:9"], { required: true }),
+    resolution: mkEnum(["720p", "1080p"], { required: true }),
+  } },
+  "kling-v3-turbo-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_urls: mkArr({ required: true }),
+    duration: mkNum({ required: true, minimum: 3, maximum: 15, default: 5 }),
+    resolution: mkEnum(["720p", "1080p"], { required: true, default: "720p" }),
+  } },
+};
+
+// ── Bytedance Seedance ─────────────────────────────────────────────────────
+const SEEDANCE_2_BASE_FIELDS = {
+  prompt: mkStr({ required: true }),
+  first_frame_url: mkUri(),
+  last_frame_url: mkUri(),
+  reference_image_urls: mkArr(),
+  reference_video_urls: mkArr(),
+  reference_audio_urls: mkArr(),
+  generate_audio: mkBool(),
+  aspect_ratio: mkEnum(["1:1", "4:3", "3:4", "16:9", "9:16", "21:9", "adaptive"]),
+  duration: mkNum({ minimum: 4, maximum: 15, default: 5 }),
+  web_search: mkBool(),
+  nsfw_checker: mkBool(),
+};
+const SEEDANCE_SCHEMAS = {
+  "bytedance-seedance-2": { replace: true, fields: {
+    ...SEEDANCE_2_BASE_FIELDS,
+    return_last_frame: mkBool(),
+    resolution: mkEnum(["480p", "720p", "1080p", "4k"]),
+  } },
+  "bytedance-seedance-2-fast": { replace: true, fields: {
+    ...SEEDANCE_2_BASE_FIELDS,
+    return_last_frame: mkBool(),
+    resolution: mkEnum(["480p", "720p"]),
+  } },
+  "bytedance-seedance-2-mini": { replace: true, fields: {
+    ...SEEDANCE_2_BASE_FIELDS,
+    resolution: mkEnum(["480p", "720p"]),
+  } },
+  // Real model field uses a DOT: `bytedance/seedance-1.5-pro`.
+  "bytedance-seedance-1.5-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    input_urls: mkArr(),
+    aspect_ratio: mkEnum(["1:1", "4:3", "3:4", "16:9", "9:16", "21:9"], { required: true }),
+    resolution: mkEnum(["480p", "720p", "1080p"]),
+    duration: mkNum({ required: true, minimum: 4, maximum: 12 }),
+    fixed_lens: mkBool(),
+    generate_audio: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "bytedance-v1-pro-fast-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    resolution: mkEnum(["720p", "1080p"]),
+    duration: mkEnum(["5", "10"]),
+    nsfw_checker: mkBool(),
+  } },
+  "bytedance-v1-pro-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    resolution: mkEnum(["480p", "720p", "1080p"]),
+    duration: mkEnum([5, 10]),
+    camera_fixed: mkBool(),
+    seed: mkNum(),
+    enable_safety_checker: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "bytedance-v1-pro-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    aspect_ratio: mkEnum(["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"]),
+    resolution: mkEnum(["480p", "720p", "1080p"]),
+    duration: mkEnum([5, 10]),
+    camera_fixed: mkBool(),
+    seed: mkNum(),
+    enable_safety_checker: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "bytedance-v1-lite-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    resolution: mkEnum(["480p", "720p", "1080p"]),
+    duration: mkEnum(["5", "10"]),
+    camera_fixed: mkBool(),
+    seed: mkNum(),
+    enable_safety_checker: mkBool(),
+    end_image_url: mkUri(),
+    nsfw_checker: mkBool(),
+  } },
+  "bytedance-v1-lite-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 10000 }),
+    aspect_ratio: mkEnum(["16:9", "4:3", "1:1", "3:4", "9:16", "9:21"], { default: "16:9" }),
+    resolution: mkEnum(["480p", "720p", "1080p"], { default: "720p" }),
+    duration: mkEnum([5, 10], { default: 5 }),
+    camera_fixed: mkBool(),
+    seed: mkNum({ default: -1 }),
+    enable_safety_checker: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+};
+
+// ── Hailuo (the 02 pro tiers take NO video-shape fields at all) ───────────
+const HAILUO_SCHEMAS = {
+  "hailuo-2.3-image-to-video-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    image_url: mkUri({ required: true }),
+    duration: mkEnum(["6", "10"], { default: "6" }),
+    resolution: mkEnum(["768P", "1080P"]), // uppercase P — the real enum
+    nsfw_checker: mkBool(),
+  } },
+  "hailuo-2.3-image-to-video-standard": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    image_url: mkUri({ required: true }),
+    duration: mkEnum(["6", "10"], { default: "6" }),
+    resolution: mkEnum(["768P", "1080P"]),
+    nsfw_checker: mkBool(),
+  } },
+  "hailuo-02-text-to-video-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 1500 }),
+    prompt_optimizer: mkBool(),
+    nsfw_checker: mkBool({ default: false }),
+  } },
+  "hailuo-02-image-to-video-pro": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 1500 }),
+    image_url: mkUri({ required: true }),
+    end_image_url: mkUri(),
+    prompt_optimizer: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "hailuo-02-text-to-video-standard": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    duration: mkEnum(["6", "10"]),
+    prompt_optimizer: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+  "hailuo-02-image-to-video-standard": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_url: mkUri({ required: true }),
+    end_image_url: mkUri(),
+    duration: mkEnum(["6", "10"], { default: "10" }),
+    resolution: mkEnum(["512P", "768P"], { default: "768P" }),
+    prompt_optimizer: mkBool(),
+    nsfw_checker: mkBool(),
+  } },
+};
+
+// ── PixVerse (`quality`, never `resolution`; real ids carry `-v6`) ─────────
+const PIXVERSE_SCHEMAS = {
+  "pixverse-v6-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    aspect_ratio: mkEnum(PIXVERSE_ASPECTS, { default: "16:9" }),
+    quality: mkEnum(PIXVERSE_QUALITIES, { default: "720p" }),
+    duration: mkNum({ required: true, minimum: 1, maximum: 15 }),
+    generate_audio_switch: mkBool(),
+    generate_multi_clip_switch: mkBool(),
+    seed: mkNum(),
+  } },
+  "pixverse-v6-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, minLength: 3, maxLength: 5000 }),
+    image_urls: mkArr({ required: true, maxItems: 2 }),
+    quality: mkEnum(PIXVERSE_QUALITIES, { required: true }),
+    duration: mkNum({ minimum: 1, maximum: 15 }),
+    template_id: mkStr(),
+    generate_audio_switch: mkBool(),
+    generate_multi_clip_switch: mkBool(),
+    seed: mkNum(),
+  } },
+  "pixverse-v6-transition": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    first_frame_image_url: mkUri({ required: true }),
+    last_frame_image_url: mkUri({ required: true }),
+    quality: mkEnum(PIXVERSE_QUALITIES, { required: true }),
+    duration: mkNum({ required: true, minimum: 1, maximum: 15 }),
+    generate_audio_switch: mkBool(),
+    seed: mkNum(),
+  } },
+  "pixverse-v6-extend": { replace: true, fields: {
+    prompt: mkStr({ required: true, minLength: 3, maxLength: 5000 }),
+    duration: mkNum({ required: true, minimum: 1, maximum: 15 }),
+    quality: mkEnum(PIXVERSE_QUALITIES, { required: true }),
+    taskId: mkStr(),
+    video_url: mkUri(),
+    generate_audio_switch: mkBool(),
+    seed: mkNum(),
+  } },
+  "pixverse-v6-reference-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, minLength: 3, maxLength: 5000 }),
+    image_references: mkArr({ required: true, minItems: 1, maxItems: 7 }),
+    aspect_ratio: mkEnum(PIXVERSE_ASPECTS, { default: "16:9" }),
+    quality: mkEnum(PIXVERSE_QUALITIES, { default: "720p" }),
+    duration: mkNum({ minimum: 1, maximum: 15, default: 5 }),
+    generate_audio_switch: mkBool(),
+    seed: mkNum(),
+  } },
+};
+
+// ── MiniMax-H3 (uppercase `768P`/`2K` — no lowercase variant exists) ───────
+const MINIMAX_H3_SCHEMAS = {
+  "minimax-h3-text-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 7000 }),
+    aspect_ratio: mkEnum(["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"], { required: true }),
+    duration: mkNum({ required: true, minimum: 4, maximum: 15 }),
+    resolution: mkEnum(MINIMAX_RES, { default: "2K" }),
+  } },
+  "minimax-h3-image-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 7000 }),
+    duration: mkNum({ required: true, minimum: 4, maximum: 15 }),
+    first_frame_url: mkUri(),
+    last_frame_url: mkUri(),
+    resolution: mkEnum(MINIMAX_RES),
+  } },
+  "minimax-h3-reference-to-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 7000 }),
+    duration: mkNum({ required: true, minimum: 4, maximum: 15 }),
+    reference_image_urls: mkArr({ maxItems: 9 }),
+    reference_video_urls: mkArr({ maxItems: 3 }),
+    reference_audio_urls: mkArr({ maxItems: 3 }),
+    aspect_ratio: mkStr({ default: "adaptive" }),
+    resolution: mkEnum(MINIMAX_RES, { default: "2K" }),
+  } },
+};
+
+// ── Infinitalk / Gemini-Omni / OmniHuman / Volcengine ─────────────────────
+const AVATAR_MISC_SCHEMAS = {
+  "infinitalk-from-audio": { replace: true, fields: {
+    image_url: mkUri({ required: true }),
+    audio_url: mkUri({ required: true }),
+    prompt: mkStr({ required: true, maxLength: 5000 }),
+    resolution: mkEnum(["480p", "720p"], { default: "480p" }),
+    seed: mkNum({ minimum: 10000, maximum: 1000000 }),
+  } },
+  "gemini-omni-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    duration: mkEnum(["4", "6", "8", "10"], { required: true }),
+    image_urls: mkArr(),
+    audio_ids: mkArr(),
+    video_list: mkArr(),
+    character_ids: mkArr(),
+    aspect_ratio: mkEnum(["16:9", "9:16"]),
+    seed: mkNum(),
+    resolution: mkEnum(["720p", "1080p", "4k"]),
+  } },
+  "gemini-omni-audio": { replace: true, fields: {
+    // audio_id is one of ~30 preset voice ids the doc enumerates on its own
+    // page — left un-enumed rather than transcribing a partial list.
+    audio_id: mkStr({ required: true }),
+    name: mkStr({ required: true, maxLength: 210 }),
+    voice_description: mkStr({ maxLength: 20000 }),
+    example_dialogue: mkStr({ maxLength: 120 }),
+  } },
+  "gemini-omni-character": { replace: true, fields: {
+    descriptions: mkStr({ required: true }),
+    image_urls: mkArr({ required: true, maxItems: 1 }),
+    audio_ids: mkArr(),
+    character_name: mkStr(),
+  } },
+  "omnihuman-1.5": { replace: true, fields: {
+    image_url: mkUri({ required: true }),
+    audio_url: mkUri({ required: true }),
+    mask_url: mkArr({ maxItems: 5 }),
+    prompt: mkStr({ maxLength: 300 }),
+    // Bare numbers, not "720p"/"1080p".
+    output_resolution: mkEnum(["720", "1080"], { default: "1080" }),
+    pe_fast_mode: mkBool(),
+    seed: mkNum({ default: -1 }),
+  } },
+  "omnihuman-1.5-human-identification": { replace: true, fields: {
+    image_url: mkUri({ required: true }),
+  } },
+  "omnihuman-1.5-subject-detection": { replace: true, fields: {
+    image_url: mkUri({ required: true }),
+  } },
+  // Volcengine lipsync has NO prompt field at all.
+  "volcengine-video-to-video-lip-sync": { replace: true, fields: {
+    mode: mkEnum(["lite", "basic"], { required: true }),
+    video_url: mkUri({ required: true }),
+    audio_url: mkUri({ required: true }),
+    separate_vocal: mkBool(),
+    open_scenedet: mkBool(),
+    align_audio: mkBool({ default: true }),
+    align_audio_reverse: mkBool(),
+    templ_start_seconds: mkNum(),
+  } },
+};
+
+// ── Dedicated-API rows (audit class E; adapters in image-payload-core.mjs /
+// video-payload-core.mjs own the field-name translation to the wire) ───────
+const DEDICATED_API_SCHEMAS = {
+  "generate-4-o-image": { replace: true, fields: {
+    // At least one of prompt/filesUrl is required — neither alone is.
+    prompt: mkStr(),
+    size: mkEnum(["1:1", "3:2", "2:3"], { required: true, default: "1:1" }),
+    filesUrl: mkArr({ maxItems: 5 }),
+    maskUrl: mkUri(),
+    nVariants: mkEnum([1, 2, 4]),
+    isEnhance: mkBool({ default: false }),
+    enableFallback: mkBool({ default: false }),
+    fallbackModel: mkEnum(["FLUX_MAX", "GPT_IMAGE_1"]),
+  } },
+  "generate-or-edit-image": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    // Tier selector (canonical name; the adapter sends it as `model`).
+    model_tier: mkEnum(["flux-kontext-pro", "flux-kontext-max"], { default: "flux-kontext-pro" }),
+    aspect_ratio: mkEnum(["21:9", "16:9", "4:3", "1:1", "3:4", "9:16", "16:21"], { default: "16:9" }),
+    image_url: mkUri(), // optional — edit mode only when present
+    output_format: mkEnum(["jpeg", "png"], { default: "jpeg" }),
+    prompt_upsampling: mkBool({ default: false }),
+    safety_tolerance: mkNum({ minimum: 0, maximum: 6, default: 2 }),
+    watermark: mkStr(),
+  } },
+  "generate-ai-video": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 1800 }),
+    duration: mkEnum([5, 10], { required: true, default: 5 }),
+    quality: mkEnum(["720p", "1080p"], { required: true, default: "720p" }),
+    image_url: mkUri(), // presence flips the endpoint into i2v mode
+    aspect_ratio: mkEnum(["16:9", "4:3", "1:1", "3:4", "9:16"], { default: "16:9" }),
+    watermark: mkStr(),
+  } },
+  "extend-ai-video": { replace: true, fields: {
+    task_id: mkStr({ required: true }), // a prior Runway generation's taskId
+    prompt: mkStr({ required: true }),
+    quality: mkEnum(["720p", "1080p"], { required: true, default: "720p" }),
+    watermark: mkStr(),
+  } },
+  "generate-aleph-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    video_url: mkUri({ required: true }),
+    aspect_ratio: mkEnum(["16:9", "9:16", "4:3", "3:4", "1:1", "21:9"]),
+    seed: mkNum(),
+    reference_image: mkUri(),
+    watermark: mkStr(),
+  } },
+  "generate-veo-3-video": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    image_urls: mkArr({ maxItems: 2 }),
+    model_tier: mkEnum(["veo3", "veo3_fast", "veo3_lite"], { default: "veo3_fast" }),
+    generation_type: mkEnum(["TEXT_2_VIDEO", "FIRST_AND_LAST_FRAMES_2_VIDEO", "REFERENCE_2_VIDEO"]),
+    aspect_ratio: mkEnum(["16:9", "9:16", "Auto"], { default: "16:9" }),
+    resolution: mkEnum(["720p", "1080p", "4k"], { default: "720p" }),
+    duration: mkEnum([4, 6, 8], { default: 8 }),
+    watermark: mkStr(),
+    enable_translation: mkBool({ default: false }),
+  } },
+  "extend-video": { replace: true, fields: {
+    task_id: mkStr({ required: true }), // a prior Veo3 generation's taskId
+    prompt: mkStr({ required: true }),
+    seeds: mkNum({ minimum: 10000, maximum: 99999 }),
+    model_tier: mkEnum(["fast", "quality", "lite"], { default: "fast" }),
+    watermark: mkStr(),
+  } },
+};
+
+export const M2_FAMILY_SCHEMAS = {
+  ...SEEDREAM_SCHEMAS,
+  ...GOOGLE_IMAGE_SCHEMAS,
+  ...FLUX2_SCHEMAS,
+  ...GROK_IMAGINE_SCHEMAS,
+  ...GPT_IMAGE_SCHEMAS,
+  ...IDEOGRAM_SCHEMAS,
+  ...QWEN_SCHEMAS,
+  ...Z_IMAGE_SCHEMAS,
+  ...TOPAZ_SCHEMAS,
+  ...RECRAFT_SCHEMAS,
+  ...WAN_SCHEMAS,
+  ...KLING_SCHEMAS,
+  ...SEEDANCE_SCHEMAS,
+  ...HAILUO_SCHEMAS,
+  ...PIXVERSE_SCHEMAS,
+  ...MINIMAX_H3_SCHEMAS,
+  ...AVATAR_MISC_SCHEMAS,
+  ...DEDICATED_API_SCHEMAS,
+};
+
+// Current-DB-row aliases: where the live row's id differs from the real API
+// model string (wrong vendor prefix / missing version segment / sync's own
+// hyphenation bug — audit classes 1/7/8/9), the same schema object is also
+// reachable under the row's CURRENT key, so the row gets its real schema
+// today, before its id is repointed by the backfill.
+const M2_SCHEMA_ALIASES = {
+  "seedream-seedream": "bytedance-seedream",
+  "seedream-seedream-v4-text-to-image": "bytedance-seedream-v4-text-to-image",
+  "seedream-seedream-v4-edit": "bytedance-seedream-v4-edit",
+  "google-nanobanana2": "nano-banana-2",
+  "google-nano-banana-2-lite": "nano-banana-2-lite",
+  "google-pro-image-to-image": "nano-banana-pro",
+  "gpt-gpt-image-2-text-to-image": "gpt-image-2-text-to-image",
+  "gpt-gpt-image-2-image-to-image": "gpt-image-2-image-to-image",
+  "qwen-2-image-edit": "qwen2-image-edit",
+  "z-image-z-image": "z-image",
+  "kling-text-to-video": "kling-2.6-text-to-video",
+  "kling-image-to-video": "kling-2.6-image-to-video",
+  "kling-v25-turbo-image-to-video-pro": "kling-v2.5-turbo-image-to-video-pro",
+  "kling-v25-turbo-text-to-video-pro": "kling-v2.5-turbo-text-to-video-pro",
+  "kling-motion-control": "kling-2.6-motion-control",
+  "kling-motion-control-v3": "kling-3.0-motion-control",
+  "kling-kling-3.0": "kling-3.0-video",
+  "pixverse-text-to-video": "pixverse-v6-text-to-video",
+  "pixverse-image-to-video": "pixverse-v6-image-to-video",
+  "pixverse-transition": "pixverse-v6-transition",
+  "pixverse-extend": "pixverse-v6-extend",
+  "pixverse-reference-to-video": "pixverse-v6-reference-to-video",
+};
+
+for (const [aliasKey, canonicalKey] of Object.entries(M2_SCHEMA_ALIASES)) {
+  M2_FAMILY_SCHEMAS[aliasKey] = M2_FAMILY_SCHEMAS[canonicalKey];
+}
+
+Object.assign(CURATED_SCHEMAS, M2_FAMILY_SCHEMAS);

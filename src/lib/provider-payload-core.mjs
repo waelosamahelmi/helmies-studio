@@ -48,6 +48,22 @@ export const FILLABLE_FIELDS = new Set([
   "mode",
   "output_format",
   "prompt_extend",
+  // EDITSv1 M2 (audit class D): additional pure rendering/pricing settings
+  // several real vendor schemas hard-require (see CURATED_SCHEMAS in
+  // model-catalog-core.mjs) — Kling's `sound`, Wan flash's pricing-relevant
+  // `audio` (defaulted false = cheaper tier), Topaz's `upscale_factor`,
+  // Kling motion-control's `character_orientation`, Wan 2.7's `ratio`
+  // (its literal field name for aspect ratio), and the Seedream family's
+  // `image_size`/`image_resolution`/`max_images`. Still no *_url/prompt/
+  // text/seed — content is never invented.
+  "sound",
+  "audio",
+  "upscale_factor",
+  "character_orientation",
+  "ratio",
+  "image_size",
+  "image_resolution",
+  "max_images",
 ]);
 
 // Canonical value preferred when a field's schema offers a choice. Used ONLY

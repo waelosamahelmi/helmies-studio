@@ -11,6 +11,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 //
 // Fix: put `name` AFTER the spread in every return statement so the
 // adapter key wins: `{ ...p, name, apiKey: p.getKey() }`.
+//
+// UPDATED for the Alibaba retirement (EDITSv1 M2 — owner decision KIE-only):
+// resolution never returns the Alibaba adapter any more; an Alibaba-priced
+// row now resolves to KIE, and the fallback chain is KIE-only. The
+// spread-order invariant is still asserted — on the KIE entries.
 
 vi.mock("@/lib/prisma", () => {
   const models = {
@@ -30,7 +35,22 @@ beforeEach(() => {
 });
 
 describe("resolveProvider — the adapter key must survive the PROVIDERS spread", () => {
-  it("returns .name === 'alibaba' (not the display name 'Alibaba') and the Alibaba adapter's baseUrl", async () => {
+  it("returns a lowercase, directly-indexable adapter key (never a display name)", async () => {
+    prisma.modelPricing.findUnique.mockResolvedValue({
+      modelId: "kling/text-to-video",
+      providerName: "KIE",
+    });
+
+    const result = await resolveProvider("kling/text-to-video");
+
+    expect(result.name).toBe("kie");
+    expect(result.baseUrl).toBe(PROVIDERS.kie.baseUrl);
+    // The invariant that was violated: the returned name must be a real,
+    // directly-indexable PROVIDERS key.
+    expect(PROVIDERS[result.name]).toBeDefined();
+  });
+
+  it("resolves an Alibaba-providerName row to KIE — the retired adapter never serves new work", async () => {
     prisma.modelPricing.findUnique.mockResolvedValue({
       modelId: "wan2.5-t2v",
       providerName: "Alibaba",
@@ -38,10 +58,8 @@ describe("resolveProvider — the adapter key must survive the PROVIDERS spread"
 
     const result = await resolveProvider("wan2.5-t2v");
 
-    expect(result.name).toBe("alibaba");
-    expect(result.baseUrl).toBe(PROVIDERS.alibaba.baseUrl);
-    // The invariant that was violated: the returned name must be a real,
-    // directly-indexable PROVIDERS key.
+    expect(result.name).toBe("kie");
+    expect(result.baseUrl).toBe(PROVIDERS.kie.baseUrl);
     expect(PROVIDERS[result.name]).toBeDefined();
   });
 
@@ -56,23 +74,22 @@ describe("resolveProvider — the adapter key must survive the PROVIDERS spread"
     expect(PROVIDERS[result.name]).toBeDefined();
   });
 
-  // URGENT fix, requirement 4: the public catalog now hands back
-  // "qwen-image-max" instead of the real "alibaba:qwen-image-max" — routing
-  // still has to land on the Alibaba adapter for it.
-  it("resolves a public (provider-prefix-stripped) id to the same adapter its real, prefixed row maps to", async () => {
+  // URGENT fix, requirement 4: the public catalog hands back a stripped id
+  // ("qwen-image-max" instead of "alibaba:qwen-image-max") — routing must
+  // still resolve the real row (and, post-retirement, land on KIE).
+  it("resolves a public (provider-prefix-stripped) id via its real, prefixed row", async () => {
     prisma.modelPricing.findUnique.mockResolvedValue(null); // no exact match on the stripped id
     prisma.modelPricing.findFirst.mockResolvedValue({ modelId: "alibaba:qwen-image-max", providerName: "Alibaba" });
 
     const result = await resolveProvider("qwen-image-max");
 
-    expect(result.name).toBe("alibaba");
-    expect(result.baseUrl).toBe(PROVIDERS.alibaba.baseUrl);
+    expect(result.name).toBe("kie"); // retired provider → default adapter
     expect(prisma.modelPricing.findFirst).toHaveBeenCalledWith({ where: { modelId: { endsWith: ":qwen-image-max" } } });
   });
 });
 
-describe("resolveProviderWithFallback — the Alibaba primary must not be dropped from the chain", () => {
-  it("keeps a non-empty chain with the Alibaba adapter first for a managedBySync Alibaba model", async () => {
+describe("resolveProviderWithFallback — retirement-era chain shape", () => {
+  it("keeps a non-empty, KIE-only chain for a managedBySync Alibaba model", async () => {
     prisma.modelPricing.findUnique.mockImplementation(() =>
       Promise.resolve({ modelId: "wan2.5-t2v", providerName: "Alibaba", managedBySync: true })
     );
@@ -80,25 +97,26 @@ describe("resolveProviderWithFallback — the Alibaba primary must not be droppe
     const chain = await resolveProviderWithFallback("wan2.5-t2v");
 
     expect(chain.length).toBeGreaterThan(0);
-    // Assert on adapter identity (baseUrl), not on a string that could pass
-    // for the wrong reason.
-    expect(chain[0].baseUrl).toBe(PROVIDERS.alibaba.baseUrl);
+    expect(chain[0].baseUrl).toBe(PROVIDERS.kie.baseUrl);
+    expect(chain.map((p) => p.name)).not.toContain("alibaba");
     expect(PROVIDERS[chain[0].name]).toBeDefined();
   });
 });
 
 describe("resolveProviderWithFallback — provider kill switch (Phase 7 Task 3)", () => {
-  it("filters a provider explicitly disabled via ProviderConfig.isActive:false out of the chain", async () => {
+  it("throws a clear error naming the model when KIE — the only live provider — is disabled", async () => {
     prisma.modelPricing.findUnique.mockResolvedValue(null); // default provider ("kie"), non-managedBySync
     prisma.providerConfig.findMany.mockResolvedValue([{ name: "kie", isActive: false }]);
 
-    const chain = await resolveProviderWithFallback("some-model");
-
-    expect(chain.map((p) => p.name)).not.toContain("kie");
-    expect(chain.map((p) => p.name)).toContain("alibaba");
+    // Pre-retirement this fell through to the Alibaba fallback; with Alibaba
+    // retired there is nowhere left to go, and the honest answer is the
+    // operator-facing failure, not a silent submit to a dead provider.
+    await expect(resolveProviderWithFallback("some-model")).rejects.toThrow(
+      /some-model.*disabled/i
+    );
   });
 
-  it("throws a clear error naming the model when every provider for it is disabled", async () => {
+  it("throws the same clear error when every provider is disabled", async () => {
     prisma.modelPricing.findUnique.mockResolvedValue(null);
     prisma.providerConfig.findMany.mockResolvedValue([
       { name: "kie", isActive: false },

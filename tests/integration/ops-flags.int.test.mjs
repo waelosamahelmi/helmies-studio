@@ -148,16 +148,18 @@ describe("isProviderDisabled / setProviderDisabled against real Postgres", () =>
 });
 
 describe("resolveProviderWithFallback — kill switch against real ProviderConfig rows", () => {
-  it("a provider disabled via setProviderDisabled is absent from the resolved chain", async () => {
+  it("disabling KIE — the only live provider post-retirement — fails fast instead of resolving a chain", async () => {
     const { setProviderDisabled } = await import("@/lib/ops-flags");
     const { resolveProviderWithFallback } = await import("@/lib/providers");
     const admin = await prisma.user.create({ data: { email: `ops-admin-${randomUUID()}@test.local`, role: "admin" } });
 
     await setProviderDisabled("kie", true, admin.id, "provider outage");
 
-    const chain = await resolveProviderWithFallback("some-unpriced-model");
-    expect(chain.map((p) => p.name)).not.toContain("kie");
-    expect(chain.map((p) => p.name)).toContain("alibaba");
+    // Pre-retirement this asserted the chain fell back to Alibaba; with
+    // Alibaba retired (EDITSv1 M2, RETIRED_ADAPTERS in providers.js) there
+    // is no fallback left, and the honest outcome is the operator-facing
+    // failure — never a submit to a retired provider.
+    await expect(resolveProviderWithFallback("some-unpriced-model")).rejects.toThrow(/disabled/i);
   });
 
   it("disabling every provider makes generation submission fail fast with a clear message", async () => {

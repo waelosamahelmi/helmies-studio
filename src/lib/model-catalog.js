@@ -73,8 +73,32 @@ function toDbData(model, markup = DEFAULT_MARKUP) {
   };
 }
 
+// ── Alibaba retirement guard (EDITSv1 M2 — owner decision: KIE-only) ───────
+// scripts/retire-alibaba.mjs deactivates every Alibaba row AND flips the
+// Alibaba ProviderConfig row to isActive:false. Before this guard, the very
+// next cron/admin sync run would upsert (and thereby REACTIVATE) every
+// ALIBABA_MEDIA_MODELS entry — silently undoing the retirement with no
+// operator action. A retired (explicitly deactivated) ProviderConfig now
+// switches this sync into converge-on-retirement mode: never create/update,
+// only deactivate whatever is still active. An ABSENT config row keeps the
+// original sync behaviour (env-only/dev/test databases). Old Generation
+// rows keep resolving/polling fine — see providers.js's RETIRED_ADAPTERS.
 export async function syncAlibabaModels() {
   const config = await prisma.providerConfig.findUnique({ where: { name: "Alibaba" } }).catch(() => null);
+  if (config && config.isActive === false) {
+    const stillActive = await prisma.modelPricing.findMany({
+      where: { providerName: "Alibaba", isActive: true },
+      select: { id: true },
+    });
+    if (stillActive.length) {
+      await prisma.modelPricing.updateMany({
+        where: { id: { in: stillActive.map((row) => row.id) } },
+        data: { isActive: false, isDeprecated: true },
+      });
+    }
+    return { provider: "Alibaba", retired: true, added: 0, updated: 0, deactivated: stillActive.length, total: 0 };
+  }
+
   const markup = config?.markup || DEFAULT_MARKUP;
   const existing = await prisma.modelPricing.findMany({ where: { providerName: "Alibaba", managedBySync: true } });
   const existingIds = new Set(existing.map((row) => row.modelId));

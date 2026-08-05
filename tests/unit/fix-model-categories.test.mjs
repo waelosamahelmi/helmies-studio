@@ -6,6 +6,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import prisma from "@/lib/prisma";
 import { planFixes, run } from "../../scripts/fix-model-categories.mjs";
+import { schemaForModel } from "../../src/lib/model-catalog-core.mjs";
 
 // planFixes is the pure planning core of scripts/fix-model-categories.mjs —
 // no DB access, so it's tested directly against plain row arrays here.
@@ -214,7 +215,10 @@ describe("run() — dry-run vs apply (mocked DB)", () => {
     vi.clearAllMocks();
     prisma.modelPricing.findMany.mockResolvedValue([
       { modelId: "seedance-1-5-pro", providerName: "KIE", modelType: "image", capability: "video", displayName: "Bytedance Seedance 1 5 Pro" },
-      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2v" },
+      // wan/2-7-r2v gained a curated (replace-mode) schema in the M2 pass —
+      // the fixture carries the already-correct stored schema so this
+      // describe stays about the modelType/capability backfill only.
+      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2v", inputSchema: schemaForModel("wan/2-7-r2v", "reference-to-video") },
       { modelId: "flux-2", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Flux 2" },
       {
         modelId: "mystery-image-1", providerName: "KIE", modelType: "uncategorized", capability: null,
@@ -450,7 +454,13 @@ describe("run() — coarse-'video' direction backfill (dry-run / apply / idempot
   });
 
   const v2vRow = { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 V2v" };
-  const noSignalRow = { modelId: "bytedance/seedance-2", providerName: "KIE", modelType: "video", capability: "video", displayName: "Seedance 2" };
+  // seedance-2 gained a curated (replace-mode) schema in the M2 pass — give
+  // the fixture the already-correct stored schema so this describe stays
+  // purely about the capability backfill, as originally intended.
+  const noSignalRow = {
+    modelId: "bytedance/seedance-2", providerName: "KIE", modelType: "video", capability: "video",
+    displayName: "Seedance 2", inputSchema: schemaForModel("bytedance/seedance-2", "video"),
+  };
 
   it("dry run reports the recovered direction but writes nothing, and leaves the markerless row alone", async () => {
     prisma.modelPricing.findMany.mockResolvedValue([v2vRow, noSignalRow]);
