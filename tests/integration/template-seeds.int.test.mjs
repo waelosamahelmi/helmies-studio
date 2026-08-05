@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { resetDb } from "./setup.mjs";
 import { TEMPLATE_SEEDS } from "@/lib/template-seeds";
 import { validateGraph } from "@/lib/template-graph";
+import { schemaForModel } from "@/lib/model-catalog-core.mjs";
 
 let prisma;
 
@@ -46,6 +47,14 @@ const KIE_SEED_FIXTURES = [
 
 async function seedCatalog() {
   for (const m of KIE_SEED_FIXTURES) {
+    // Each fixture carries the model's REAL curated schema (CURATED_SCHEMAS
+    // via schemaForModel, model-catalog-core.mjs) — the same inputSchema the
+    // production sync writes — so canPublish here validates every seed step
+    // against the exact field names/requirements production enforces
+    // (image_url vs image_urls vs input_urls vs first_frame_url, required
+    // aspect_ratio on z-image, string-enum wan-2.6 durations, ...), not a
+    // generic fabricated schema that lets a mismatched seed slip through.
+    const inputSchema = schemaForModel(m.modelId, m.capability);
     const data = {
       modelType: m.modelType,
       providerName: "KIE",
@@ -53,6 +62,7 @@ async function seedCatalog() {
       endpoint: m.modelId,
       displayName: m.modelId,
       capability: m.capability,
+      inputSchema,
       providerCost: 0.02,
       creditsCost: m.modelType === "i2v" ? 12 : 3,
       pricingRules: { currency: "USD", unit: "fixed", rules: [{ price: 0.02 }] },
