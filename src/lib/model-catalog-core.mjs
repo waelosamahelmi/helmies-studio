@@ -1614,7 +1614,10 @@ const KLING_SCHEMAS = {
     duration: mkEnum(["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"]),
     aspect_ratio: mkEnum(["16:9", "9:16", "1:1"]),
     mode: mkEnum(["std", "pro", "4K"]),
-    multi_shots: mkBool(),
+    // Probe round 3 (2026-08-05): 422 "multi_shots cannot be empty" once
+    // the other settings were supplied — required with a single-shot
+    // default so applyRequiredDefaults can fill it.
+    multi_shots: mkBool({ required: true, default: false }),
     multi_prompt: { required: false },
     kling_elements: { required: false },
   } },

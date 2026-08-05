@@ -133,7 +133,9 @@ describe("providerRequiredFields — fields the provider requires but the schema
     expect(providerRequiredFields("kling-3.0/video", null)).toContain("sound");
     // A follow-up probe WITH sound failed identically, so the remaining
     // doc-listed rendering settings are treated as required too.
-    expect(providerRequiredFields("kling-3.0/video", null)).toEqual(expect.arrayContaining(["aspect_ratio", "mode"]));
+    // ...and probe round 3 named the last one: "multi_shots cannot be empty".
+    expect(providerRequiredFields("kling-3.0/video", null)).toEqual(expect.arrayContaining(["aspect_ratio", "mode", "multi_shots"]));
+    expect(FILLABLE_FIELDS.has("multi_shots")).toBe(true);
     expect(providerRequiredFields("pixverse-v6/text-to-video", null)).toContain("aspect_ratio");
     // …and the curated schema's required+default(false) means it actually
     // gets filled on a prompt-only submit rather than 500ing.
