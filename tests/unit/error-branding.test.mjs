@@ -80,6 +80,19 @@ describe("brandError bare moderation tokens", () => {
   });
 });
 
+describe("brandError upstream outages", () => {
+  it("brands the provider's bare 'internal error' failMsg as a retryable server problem", () => {
+    // Live terminal body, every ElevenLabs generation on 2026-08-05:
+    // {"state":"fail","failCode":"500","failMsg":"internal error, please try
+    //  again later.","creditsConsumed":0}
+    const branded = brandError("internal error, please try again later.");
+    expect(branded).toBe("Something went wrong on our end. Please try again.");
+    // job-runner.js's RETRYABLE_PATTERNS keys off this exact wording, so
+    // branding it correctly is what makes the job retry instead of dying.
+    expect(branded).toMatch(/something went wrong on our end/i);
+  });
+});
+
 describe("brandForUser idempotence", () => {
   it("passes an already-branded message through unchanged", () => {
     const branded = brandError("invalid_api_key");

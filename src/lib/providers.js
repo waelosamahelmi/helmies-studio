@@ -65,7 +65,13 @@ export function brandError(providerError) {
   if (lower.includes("timeout") || lower.includes("timed out")) return BRANDED_ERRORS.timeout;
   if (lower.includes("content") || lower.includes("filter") || lower.includes("safety") || MODERATION_TOKEN_RE.test(lower)) return BRANDED_ERRORS.content_filter;
   if (lower.includes("balance") || lower.includes("credit") || lower.includes("insufficient")) return BRANDED_ERRORS.insufficient_balance;
-  if (lower.includes("500") || lower.includes("502") || lower.includes("503") || lower.includes("server")) return BRANDED_ERRORS.server_error;
+  // "internal error, please try again later." is the provider's terminal
+  // failMsg for an upstream outage (observed on every ElevenLabs generation,
+  // 2026-08-05, each with creditsConsumed 0). It carries no digits and no
+  // "server", so it used to land on `unknown` — telling the user nothing and,
+  // worse, missing job-runner.js's RETRYABLE_PATTERNS, which DOES match the
+  // branded server_error string. Branding it correctly makes the retry happen.
+  if (lower.includes("500") || lower.includes("502") || lower.includes("503") || lower.includes("server") || lower.includes("internal error")) return BRANDED_ERRORS.server_error;
   return BRANDED_ERRORS.unknown;
 }
 
