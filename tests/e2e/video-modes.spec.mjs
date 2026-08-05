@@ -1,11 +1,13 @@
-// Helmies Studio — separate Text-to-Video and Image-to-Video tools (EDITSv1 E1.3)
+// Helmies Studio — the consolidated Video studio's generation modes (S1)
 //
-// Written FIRST, against a registry/VideoStudio shape that does not exist
-// yet: two rail entries ("Text to Video" at /studio/video, "Image to Video"
-// at /studio/i2v) both mounting VideoStudio with a fixed mode — the
-// in-component mode Segmented disappears, the i2v surface requires a source
-// image, and the ttv model pool includes the coarse-"video"-capability
-// models that E1.1's group fix made visible.
+// EDITSv1 E1.3 split text→video and image→video into two rail tools; S1
+// re-joins them as URL-driven modes (`?mode=ttv` / `?mode=i2v`) of ONE
+// "Video" rail entry, alongside Edit and Clips. What this file protects is
+// unchanged: the two generation surfaces keep disjoint capability pools
+// (ttv includes the coarse-"video" rows E1.1 made visible; i2v is
+// image-to-video only), the i2v surface requires a source image, and no
+// surface leaks an upstream provider name. The mode-switcher/redirect
+// behavior itself is covered in studio-modes.spec.mjs.
 import { test, expect } from "@playwright/test";
 import { stubProviders } from "./fixtures/intercept.mjs";
 import { withTestDb } from "./fixtures/db.mjs";
@@ -84,18 +86,23 @@ test.beforeEach(async ({ page }) => {
   await stubProviders(page);
 });
 
-test("the instrument rail lists Text to Video and Image to Video as separate tools", async ({ page }) => {
+test("the instrument rail lists ONE Video tool, and its mode strip carries all four modes", async ({ page }) => {
   await page.goto("/studio/video");
   const rail = page.getByRole("navigation", { name: "Instruments" });
-  await expect(rail.getByRole("button", { name: "Text to Video" })).toBeVisible();
-  await expect(rail.getByRole("button", { name: "Image to Video" })).toBeVisible();
+  await expect(rail.getByRole("button", { name: "Video", exact: true })).toBeVisible();
+  // The E1.3-era separate rail entries are gone — they are modes now.
+  await expect(rail.getByRole("button", { name: "Text to Video" })).toHaveCount(0);
+  await expect(rail.getByRole("button", { name: "Image to Video" })).toHaveCount(0);
+
+  const modes = page.getByRole("group", { name: "Video mode" });
+  for (const name of ["Text to Video", "Image to Video", "Edit", "Clips"]) {
+    await expect(modes.getByRole("button", { name })).toBeVisible();
+  }
 });
 
-test("Text to Video: no mode switcher, no image requirement, and the pool includes coarse-video models", async ({ page }) => {
+test("Text to Video: no image requirement, and the pool includes coarse-video models", async ({ page }) => {
   await page.goto("/studio/video");
 
-  // The in-component Segmented is gone when the mode is fixed by the tool.
-  await expect(page.getByRole("group", { name: "Generation mode" })).toHaveCount(0);
   await expect(page.getByText("Source image")).toHaveCount(0);
 
   // Model pool: the proper text-to-video model AND the coarse-"video" model
@@ -113,9 +120,7 @@ test("Text to Video: no mode switcher, no image requirement, and the pool includ
 });
 
 test("Image to Video: requires a source image before the brief unlocks, pool is i2v-only", async ({ page }) => {
-  await page.goto("/studio/i2v");
-
-  await expect(page.getByRole("group", { name: "Generation mode" })).toHaveCount(0);
+  await page.goto("/studio/video?mode=i2v");
 
   // The source-image uploader is the gate: with nothing loaded the brief
   // (and therefore Generate) stays locked.
@@ -129,8 +134,8 @@ test("Image to Video: requires a source image before the brief unlocks, pool is 
   expect(await picker.locator(".st-model").count()).toBeGreaterThanOrEqual(1);
 });
 
-test("neither video surface leaks an upstream provider name", async ({ page }) => {
-  for (const path of ["/studio/video", "/studio/i2v"]) {
+test("neither video generation surface leaks an upstream provider name", async ({ page }) => {
+  for (const path of ["/studio/video", "/studio/video?mode=i2v"]) {
     await page.goto(path);
     await expect(page.locator(".st-work__inspector .st-model").first()).toBeVisible();
     // `:visible` + .first(): React 19's streaming SSR briefly renders the

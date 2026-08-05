@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Workspace, Brief, ModelPicker, Stage, Idle,
+  Workspace, Brief, ModelPicker, Stage, Idle, SpendMeter,
   Field, Group, Segmented, Chips, RatioPicker, Dropzone, Specs,
-  IcScissors,
+  IcScissors, IcSwap, IcBolt, IcClose,
 } from "@/components/studio/kit";
 import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
@@ -62,7 +62,23 @@ const JOBS = {
       "Ease into the slow section rather than cutting to it",
     ],
   },
+  /* S1: the retired RecastStudio folded in as a fourth job — one identity
+     photo placed into one scene clip. The clip keeps its timing, blocking
+     and performance; only the identity changes. */
+  recast: {
+    label: "Recast",
+    title: "Pair an identity with a scene",
+    idle: "Load one photo of the face you want and the clip it should appear in. The clip keeps its timing, blocking and performance — only the identity changes.",
+    placeholder: "Optional. Anything the recast should hold on to.",
+    examples: [],
+  },
 };
+
+const ORIENTATIONS = [
+  { value: "", label: "Auto" },
+  { value: "left", label: "Faces left" },
+  { value: "right", label: "Faces right" },
+];
 
 const SPEEDS = [
   { value: "0.25", label: "0.25×", prompt: "extreme slow motion, quarter speed, smooth interpolation" },
@@ -74,14 +90,16 @@ const SPEEDS = [
 
 const FALLBACK_RATIOS = ["16:9", "9:16", "1:1"];
 
-export default function VideoEditStudio({ initialModel, templateConfig, onCreditsChanged }) {
-  const [job, setJob] = useState("restyle");
+export default function VideoEditStudio({ initialModel, templateConfig, onCreditsChanged, initialJob }) {
+  const [job, setJob] = useState(initialJob && JOBS[initialJob] ? initialJob : "restyle");
   const [modelId, setModelId] = useState(initialModel || null);
   const [prompt, setPrompt] = useState("");
   const [source, setSource] = useState(null);
   const [ratio, setRatio] = useState("16:9");
   const [duration, setDuration] = useState(0);
   const [speed, setSpeed] = useState("0.5");
+  const [identity, setIdentity] = useState(null);
+  const [orientation, setOrientation] = useState("");
 
   const { models, loading: loadingModels } = useModelCatalog({});
   const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
@@ -125,16 +143,25 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
     if (!durations.includes(Number(duration))) setDuration(durations[0]);
   }, [durations, duration]);
 
-  const { cost, affordable, balance, shortfall } = useCreditCost("v2v", model?.id || "", {
-    duration: duration || undefined,
-    aspect_ratio: ratio,
-    video_url: source?.url,
-  });
+  const recasting = job === "recast";
+
+  /* Same tool string in the quote and the submission — a mismatch would
+     quote one price and charge another. Recast prices as its own tool, the
+     way the standalone RecastStudio always did. */
+  const { cost, affordable, balance, shortfall } = useCreditCost(
+    recasting ? "recast" : "v2v",
+    model?.id || "",
+    recasting
+      ? { image_url: identity?.url, video_url: source?.url, aspect_ratio: ratio }
+      : { duration: duration || undefined, aspect_ratio: ratio, video_url: source?.url },
+  );
 
   useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const copy = JOBS[job];
   const missingSource = !source?.url;
+  const paired = !!identity?.url && !!source?.url;
+  const recastReady = paired && !!model && affordable && !generating;
   const speedNote = job === "retime" ? SPEEDS.find((s) => s.value === speed)?.prompt : "";
 
   const brief = useMemo(
@@ -143,6 +170,19 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
   );
 
   const generate = useCallback(() => {
+    if (recasting) {
+      if (!model || !paired) return;
+      const params = {
+        endpoint: model.endpoint || model.id,
+        image_url: identity.url,
+        video_url: source.url,
+        aspect_ratio: ratio,
+      };
+      if (orientation) params.character_orientation = orientation;
+      if (prompt.trim()) params.prompt = prompt.trim();
+      submit("recast", model.id, params);
+      return;
+    }
     if (!model || missingSource) return;
     const params = {
       endpoint: model.endpoint || model.id,
@@ -152,7 +192,7 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
     };
     if (duration) params.duration = Number(duration);
     submit("v2v", model.id, params);
-  }, [model, missingSource, submit, brief, source, ratio, duration]);
+  }, [recasting, model, paired, identity, orientation, prompt, missingSource, submit, brief, source, ratio, duration]);
 
   /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
@@ -166,19 +206,49 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
         />
       </Field>
 
+      {recasting && (
+        <Field
+          label="Identity"
+          hint={identity ? "A clear, front-lit face reads best." : "One photo of the face to carry across."}
+        >
+          <Dropzone
+            value={identity}
+            onChange={setIdentity}
+            accept="image/*"
+            label="Drop the face or browse"
+            hint="JPG, PNG or WebP"
+          />
+        </Field>
+      )}
+
       <Field
-        label="Source clip"
-        hint={missingSource ? "Everything here works on one clip." : source.name}
-        error={missingSource && prompt.trim() ? "Load a clip before generating." : undefined}
+        label={recasting ? "Scene" : "Source clip"}
+        hint={
+          recasting
+            ? (source ? "Timing and framing come from this clip." : "The clip the identity is placed into.")
+            : (missingSource ? "Everything here works on one clip." : source.name)
+        }
+        error={!recasting && missingSource && prompt.trim() ? "Load a clip before generating." : undefined}
       >
         <Dropzone
           value={source}
           onChange={setSource}
           accept="video/*"
-          label="Drop a clip or browse"
+          label={recasting ? "Drop the footage or browse" : "Drop a clip or browse"}
           hint="MP4, MOV or WebM"
         />
       </Field>
+
+      {recasting && (
+        <Field label="Head direction" hint="Auto leaves it to the model. Set it when the identity photo is a profile.">
+          <Segmented
+            label="Head direction"
+            value={orientation}
+            onChange={setOrientation}
+            options={ORIENTATIONS}
+          />
+        </Field>
+      )}
 
       {job === "retime" && (
         <Field label="Speed" hint="Written into the brief so the model retimes rather than resamples.">
@@ -186,7 +256,7 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
         </Field>
       )}
 
-      {durations.length > 1 && (
+      {!recasting && durations.length > 1 && (
         <Field
           label={job === "extend" ? "Added length" : "Output length"}
           hint={job === "extend" ? "How much further the shot runs." : "Lengths this model renders."}
@@ -223,9 +293,11 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
         <Specs
           rows={[
             { k: "Job", v: copy.label },
-            { k: "Clip", v: source ? "Loaded" : "None" },
+            { k: "Identity", v: recasting ? (identity ? "Loaded" : "Missing") : null },
+            { k: "Clip", v: source ? "Loaded" : recasting ? "Missing" : "None" },
+            { k: "Head", v: recasting ? ORIENTATIONS.find((o) => o.value === orientation)?.label : null },
             { k: "Ratio", v: ratio },
-            { k: "Length", v: duration ? `${duration}s` : "Model default" },
+            { k: "Length", v: recasting ? null : duration ? `${duration}s` : "Model default" },
             { k: "Speed", v: job === "retime" ? `${speed}×` : null },
           ]}
         />
@@ -235,12 +307,56 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
 
   const idle = (
     <Idle
-      icon={<IcScissors />}
+      icon={recasting ? <IcSwap /> : <IcScissors />}
       title={copy.title}
       description={copy.idle}
       examples={copy.examples}
       onExample={(e) => setPrompt((p) => (p ? `${p}. ${e}` : e))}
     />
+  );
+
+  /* ── Recast dock ──────────────────────────────────────────────────────
+     Recast has no required brief, so the action gates on the pairing
+     rather than on text — the same dock the standalone RecastStudio had.
+     Same meter, same button, different condition. */
+  const recastDock = (
+    <div className="st-dock-prompt">
+      <div className="st-spend">
+        <SpendMeter
+          cost={cost || 0}
+          balance={balance}
+          affordable={affordable}
+          shortfall={shortfall}
+          label="Cost"
+        />
+
+        {generating ? (
+          <button type="button" className="hs-btn hs-btn--outline hs-btn--lg" onClick={cancel}>
+            <span className="hs-spin" />
+            {stage ? String(stage).replace(/_/g, " ") : "Working"}
+            <IcClose className="hs-icon-sm" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="hs-btn hs-btn--primary hs-btn--lg"
+            onClick={generate}
+            disabled={!recastReady}
+            title={
+              !model ? "No recast model available"
+                : !identity ? "Add the identity photo first"
+                  : !source ? "Add the scene footage first"
+                    : !affordable ? "Not enough credits"
+                      : "Recast"
+            }
+          >
+            <IcBolt className="hs-icon-sm" />
+            Recast
+            {cost > 0 && <span className="hs-btn__cost">{cost}</span>}
+          </button>
+        )}
+      </div>
+    </div>
   );
 
   return (
@@ -264,21 +380,23 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
         />
       </div>
 
-      <Brief
-        value={prompt}
-        onChange={setPrompt}
-        onSubmit={generate}
-        onCancel={cancel}
-        generating={generating}
-        stage={stage}
-        disabled={!model || missingSource}
-        cost={cost || 0}
-        balance={balance}
-        affordable={affordable}
-        shortfall={shortfall}
-        placeholder={copy.placeholder}
-        submitLabel={copy.label}
-      />
+      {recasting ? recastDock : (
+        <Brief
+          value={prompt}
+          onChange={setPrompt}
+          onSubmit={generate}
+          onCancel={cancel}
+          generating={generating}
+          stage={stage}
+          disabled={!model || missingSource}
+          cost={cost || 0}
+          balance={balance}
+          affordable={affordable}
+          shortfall={shortfall}
+          placeholder={copy.placeholder}
+          submitLabel={copy.label}
+        />
+      )}
     </Workspace>
   );
 }

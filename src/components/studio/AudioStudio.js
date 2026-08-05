@@ -3,13 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Brief, ModelPicker, Sheet, Fault,
-  Field, Group, Segmented, Chips, Slider, Dropzone, Specs,
+  Field, Group, Chips, Slider, Dropzone, Specs,
   clock, mediaUrl,
   IcMic, IcPlay, IcPause, IcSettings, IcDownload, IcExternal, IcRefresh,
 } from "@/components/studio/kit";
 import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useStudioMode } from "./useStudioMode";
+import ModeBar from "./ModeBar";
+import AudioToolsStudio from "./AudioToolsStudio";
 import { matchesGroup } from "@/lib/capability-groups";
 import { audioKind } from "@/lib/model-catalog-core.mjs";
 
@@ -375,8 +378,7 @@ const MODES = {
   },
 };
 
-export default function AudioStudio({ initialModel, templateConfig, onCreditsChanged }) {
-  const [mode, setMode] = useState("speech");
+function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) {
   const [modelId, setModelId] = useState(initialModel || null);
   const [text, setText] = useState("");
   const [voice, setVoice] = useState("");
@@ -409,11 +411,8 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
     if (templateConfig.prompt) setText(templateConfig.prompt);
     if (templateConfig.voice) setVoice(templateConfig.voice);
     if (templateConfig.model) setModelId(templateConfig.model);
-    if (templateConfig.mode) {
-      /* Legacy templates say "sound" for what is now the sfx segment. */
-      const next = templateConfig.mode === "sound" ? "sfx" : templateConfig.mode;
-      if (MODES[next]) setMode(next);
-    }
+    /* templateConfig.mode is honored by the AudioStudio wrapper below —
+       the mode lives in the URL now (S1). */
   }, [templateConfig]);
 
   /* `durations` is always an array — [] when the model does not offer a
@@ -465,15 +464,6 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
   /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
     <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
-      <Field label="Job">
-        <Segmented
-          label="Audio job"
-          value={mode}
-          onChange={setMode}
-          options={Object.entries(MODES).map(([value, m]) => ({ value, label: m.label }))}
-        />
-      </Field>
-
       <ModelPicker
         models={available}
         value={model?.id}
@@ -703,6 +693,50 @@ export default function AudioStudio({ initialModel, templateConfig, onCreditsCha
       <Sheet open={sheet} onClose={() => setSheet(false)} title="Settings">
         {controls}
       </Sheet>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   S1 — the studio: mode strip + the active mode's body
+   ──────────────────────────────────────────────────────────────────────────
+   The four speech jobs stay exactly as they were (AudioGenBody above); the
+   mode switch moves from an in-controls Segmented to the URL-driven strip
+   every consolidated studio wears, and gains a fifth mode: Tools, mounting
+   the AudioToolsStudio body (isolate, clean, convert, reshape) whole —
+   /studio/audio-tools redirects here. Each body is keyed by mode, so one
+   mode's state never bleeds into another.
+   ══════════════════════════════════════════════════════════════════════════ */
+const MODE_IDS = ["speech", "dialogue", "voice", "sfx", "tools"];
+const MODE_OPTIONS = [
+  ...Object.entries(MODES).map(([value, m]) => ({ value, label: m.label })),
+  { value: "tools", label: "Tools" },
+];
+
+export default function AudioStudio(props) {
+  const { mode, setMode } = useStudioMode({ modes: MODE_IDS, fallback: "speech" });
+
+  /* Legacy templates carry a mode ("sound" for what is now sfx) — honor it
+     once by moving it into the URL. */
+  const appliedTemplateMode = useRef(false);
+  useEffect(() => {
+    const wanted = props.templateConfig?.mode;
+    if (!wanted || appliedTemplateMode.current) return;
+    appliedTemplateMode.current = true;
+    const next = wanted === "sound" ? "sfx" : wanted;
+    if (MODE_IDS.includes(next) && next !== mode) setMode(next);
+  }, [props.templateConfig, mode, setMode]);
+
+  return (
+    <div className="st-moded">
+      <ModeBar label="Audio job" value={mode} onChange={setMode} options={MODE_OPTIONS} />
+      <div className="st-moded__body" key={mode}>
+        {mode === "tools" ? (
+          <AudioToolsStudio {...props} />
+        ) : (
+          <AudioGenBody {...props} mode={mode} />
+        )}
+      </div>
     </div>
   );
 }

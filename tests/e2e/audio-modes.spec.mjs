@@ -139,11 +139,15 @@ test("Music studio: composition pool only, with genre/duration/instrumental cont
   await expect(lengths.getByRole("button", { name: "90s", exact: true })).toHaveCount(0);
 });
 
-test("Audio Tools: utilities live here, not in Music — and the rail lists the tool", async ({ page }) => {
+test("Audio Tools: utilities live in Audio's Tools mode, not in Music — and the legacy slug lands there", async ({ page }) => {
+  // S1: /studio/audio-tools is a legacy slug now — it redirects into the
+  // consolidated Audio studio's Tools mode, where the utility pool lives.
   await page.goto("/studio/audio-tools");
+  await expect(page).toHaveURL(/\/studio\/audio\?.*mode=tools/);
 
   const rail = page.getByRole("navigation", { name: "Instruments" });
-  await expect(rail.getByRole("button", { name: "Audio Tools" })).toBeVisible();
+  await expect(rail.getByRole("button", { name: "Audio", exact: true })).toBeVisible();
+  await expect(rail.getByRole("button", { name: "Audio Tools" })).toHaveCount(0);
 
   await expect(page.getByRole("button", { name: /E2E Audio Cleanup Model/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /E2E Audio Convert Model/ })).toBeVisible();

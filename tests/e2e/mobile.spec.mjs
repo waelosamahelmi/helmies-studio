@@ -191,6 +191,11 @@ test.describe("mobile — layout and tap targets", () => {
     { path: "/studio/image", label: "/studio/image" },
     { path: "/studio/director", label: "/studio/director" },
     { path: "/studio/workflows", label: "/studio/workflows" },
+    // S1: the consolidated studios' mode strips and folded-in surfaces run
+    // under the same overflow/44px sweeps as everything else.
+    { path: "/studio/video?mode=edit", label: "/studio/video (edit)" },
+    { path: "/studio/audio", label: "/studio/audio" },
+    { path: "/studio/perform", label: "/studio/perform" },
   ];
 
   for (const { path, label } of STUDIO_PAGES) {

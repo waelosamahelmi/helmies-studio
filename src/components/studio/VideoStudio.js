@@ -3,37 +3,60 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Workspace, Brief, ModelPicker, Stage, Idle,
-  Field, Group, Segmented, Chips, RatioPicker, Dropzone, Specs,
-  IcVideo,
+  Field, Group, Chips, RatioPicker, Dropzone, Specs,
+  IcVideo, IcFilm,
 } from "@/components/studio/kit";
 import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { useStudioMode } from "./useStudioMode";
+import ModeBar from "./ModeBar";
+import VideoEditStudio from "./VideoEditStudio";
+import ClippingStudio from "./ClippingStudio";
 import { matchesGroup } from "@/lib/capability-groups";
 
 /* ══════════════════════════════════════════════════════════════════════════
-   VIDEO — text, a still, or existing footage becomes motion
+   VIDEO — one studio, four modes (S1 consolidation)
    ──────────────────────────────────────────────────────────────────────────
-   Fixed in this rebuild:
-   · The model list filtered on `!model.durations`. The catalog always emits
-     an array and `![]` is false, so every mode rendered an empty picker.
-     It now filters with matchesGroup(model, "ttv" | "i2v" | "v2v").
-   · The start/end frame uploaders only rendered under
-     `currentModel.hasStartEndFrame` — a flag that exists on the static
-     fallback list and is never emitted by the live catalog, so the controls
-     were permanently unreachable. They now show whenever a source is in play,
-     which is a condition that is actually true.
-   · `error` was computed and never rendered, so a failed render looked like
-     nothing happened. It goes to <Stage> now.
-   · Duration, resolution and ratio follow the selected model instead of
-     keeping a value the model does not offer.
+   · Text to Video  — the t2v pool, with a Motion preset chip carrying the
+                      retired MotionStudio's craft (loops, backgrounds,
+                      title beds): motion-named models float to the top and
+                      the copy talks about movement, not pictures.
+   · Image to Video — the i2v pool; the still becomes the first frame.
+   · Edit           — VideoEditStudio folded in as the mode body; its job
+                      chips now include Recast (the retired RecastStudio's
+                      identity-into-scene pairing).
+   · Clips          — ClippingStudio mounted whole: timeline trim of an
+                      uploaded or generated clip.
+
+   Mode and preset live in the URL (useStudioMode), so the retired slugs
+   (/studio/i2v, /studio/vibe-motion, /studio/video-edit, /studio/body-swap,
+   /studio/clipping) redirect here and land on the right surface. Each mode
+   body is keyed by mode — state is isolated per mode, the same contract
+   StudioClient's ErrorBoundary applies per tool.
    ══════════════════════════════════════════════════════════════════════════ */
+
+const MODES = ["ttv", "i2v", "edit", "clips"];
+const MODE_OPTIONS = [
+  { value: "ttv", label: "Text to Video" },
+  { value: "i2v", label: "Image to Video" },
+  { value: "edit", label: "Edit" },
+  { value: "clips", label: "Clips" },
+];
+const PRESETS = ["motion", "recast"];
 
 const EXAMPLES = [
   "Drone push over a ridge at first light, mist sitting in the valley",
   "Product turns slowly on wet slate, one hard key from the left",
   "Handheld follow through a night market, neon spill across faces",
   "Locked-off wide of an empty diner, rain on the glass, no people",
+];
+
+const MOTION_EXAMPLES = [
+  "Slow iridescent liquid folding over itself, dark field, seamless loop",
+  "Thin geometric lines drifting apart and re-forming, single accent colour",
+  "Soft gradient bloom pulsing at a slow tempo, grain over the top",
+  "Paper-cut shapes sliding in from the edges, flat colour, no gradients",
 ];
 
 const MOVES = [
@@ -50,34 +73,24 @@ const NONE = [];
 
 const MODE_COPY = {
   ttv: {
-    label: "From text",
     empty: "No text-to-video models in the catalog yet.",
     placeholder: "Describe the shot: subject, camera, light, and what moves.",
     idle: "Describe one shot. Say what moves and how the camera behaves — a list of nouns renders as a slideshow.",
   },
   i2v: {
-    label: "From image",
     empty: "No image-to-video models in the catalog yet.",
     placeholder: "Describe what should move, and how the camera behaves.",
     idle: "Load the still you want to animate, then describe the motion. What stays still matters as much as what moves.",
   },
-  v2v: {
-    label: "From video",
-    empty: "No video-to-video models in the catalog yet.",
-    placeholder: "Describe the treatment to apply to the footage.",
-    idle: "Load the footage, then describe the treatment. The cut and timing stay; the look changes.",
-  },
 };
 
-export default function VideoStudio({ initialModel, templateConfig, onCreditsChanged, fixedMode }) {
-  /* EDITSv1 E1.3: the tool registry mounts this studio twice — "video"
-     (fixedMode="ttv") and "i2v" (fixedMode="i2v") — so the mode is a
-     property of the TOOL, not an in-component toggle. When fixedMode is
-     set the Segmented below disappears and template/state mode changes are
-     ignored. v2v lives in Video Edit. Without fixedMode (no known mount
-     today) the old switchable behavior remains. */
-  const [modeState, setModeState] = useState("ttv");
-  const mode = fixedMode || modeState;
+const MOTION_COPY = {
+  placeholder: "Describe the movement: what forms, how it travels, what tempo.",
+  idle: "Describe the movement, not just the picture. Tempo, direction and what repeats are what make a loop work.",
+};
+
+/* ── Text→Video / Image→Video — the generation body ─────────────────────── */
+function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, onCreditsChanged }) {
   const [modelId, setModelId] = useState(initialModel || null);
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("16:9");
@@ -86,18 +99,24 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
   const [move, setMove] = useState("static");
 
   const [sourceImage, setSourceImage] = useState(null);
-  const [sourceVideo, setSourceVideo] = useState(null);
   const [startFrame, setStartFrame] = useState(null);
   const [endFrame, setEndFrame] = useState(null);
 
   const { models, loading: loadingModels } = useModelCatalog({});
   const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
 
-  /* Capability groups, not truthiness of an array that is never falsy */
-  const available = useMemo(
-    () => (models || []).filter((m) => matchesGroup(m, mode)),
-    [models, mode],
-  );
+  const motion = mode === "ttv" && preset === "motion";
+
+  /* Capability groups, not truthiness of an array that is never falsy.
+     Under the Motion preset the pool is the same t2v group, but models that
+     name themselves for designed movement float to the top — the retired
+     MotionStudio's ordering, without its silent fallback. */
+  const available = useMemo(() => {
+    const pool = (models || []).filter((m) => matchesGroup(m, mode));
+    if (!motion) return pool;
+    const named = pool.filter((m) => /motion|graphic|animate|loop/i.test(`${m.displayName || ""} ${m.id || ""}`));
+    return named.length ? [...named, ...pool.filter((m) => !named.includes(m))] : pool;
+  }, [models, mode, motion]);
 
   const model = available.find((m) => m.id === modelId) || available[0] || null;
 
@@ -116,8 +135,7 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
     if (templateConfig.duration) setDuration(Number(templateConfig.duration));
     if (templateConfig.camera_motion) setMove(templateConfig.camera_motion);
     if (templateConfig.model) setModelId(templateConfig.model);
-    if (templateConfig.mode && !fixedMode) setModeState(templateConfig.mode);
-  }, [templateConfig, fixedMode]);
+  }, [templateConfig]);
 
   const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
   const resolutions = model?.resolutions?.length ? model.resolutions : NONE;
@@ -147,14 +165,12 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
     resolution: resolution || undefined,
     aspect_ratio: ratio,
     image_url: sourceImage?.url,
-    video_url: sourceVideo?.url,
   });
 
   useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const needsImage = mode === "i2v";
-  const needsVideo = mode === "v2v";
-  const missingSource = (needsImage && !sourceImage?.url) || (needsVideo && !sourceVideo?.url);
+  const missingSource = needsImage && !sourceImage?.url;
 
   const generate = useCallback(() => {
     if (!model || missingSource) return;
@@ -167,13 +183,12 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
     if (duration) params.duration = Number(duration);
     if (move !== "static") params.camera_motion = move;
     if (needsImage && sourceImage?.url) params.image_url = sourceImage.url;
-    if (needsVideo && sourceVideo?.url) params.video_url = sourceVideo.url;
     if (startFrame?.url) params.first_frame_url = startFrame.url;
     if (endFrame?.url) params.last_frame_url = endFrame.url;
     submit("video", model.id, params);
   }, [
     model, missingSource, submit, prompt, ratio, resolution, duration, move,
-    needsImage, needsVideo, sourceImage, sourceVideo, startFrame, endFrame,
+    needsImage, sourceImage, startFrame, endFrame,
   ]);
 
   const copy = MODE_COPY[mode];
@@ -181,13 +196,16 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
   /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
     <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
-      {!fixedMode && (
-        <Field label="Source">
-          <Segmented
-            label="Generation mode"
-            value={mode}
-            onChange={setModeState}
-            options={Object.entries(MODE_COPY).map(([value, m]) => ({ value, label: m.label }))}
+      {mode === "ttv" && (
+        <Field label="Preset" hint="Motion favours models built for loops, backgrounds and title beds.">
+          <Chips
+            label="Video preset"
+            options={[
+              { value: "", label: "None" },
+              { value: "motion", label: "Motion" },
+            ]}
+            value={preset || ""}
+            onChange={(v) => onPreset?.(v || null)}
           />
         </Field>
       )}
@@ -208,23 +226,7 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
         </Field>
       )}
 
-      {needsVideo && (
-        <Field
-          label="Source footage"
-          hint="The cut and timing are kept."
-          error={missingSource && prompt.trim() ? "Load a clip to restyle before generating." : undefined}
-        >
-          <Dropzone
-            value={sourceVideo}
-            onChange={setSourceVideo}
-            accept="video/*"
-            label="Drop a clip or browse"
-            hint="MP4, MOV or WebM"
-          />
-        </Field>
-      )}
-
-      {mode !== "ttv" && (
+      {needsImage && (
         <Group label="Frame anchors">
           <p className="hs-hint" style={{ margin: 0 }}>
             Optional. Pin the first or last frame to control where the shot starts and lands.
@@ -299,6 +301,7 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
       <Group label="This take">
         <Specs
           rows={[
+            { k: "Preset", v: motion ? "Motion" : null },
             { k: "Ratio", v: ratio },
             { k: "Length", v: duration ? `${duration}s` : "Model default" },
             { k: "Res", v: resolution ? String(resolution).toUpperCase() : "Model default" },
@@ -313,10 +316,10 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
   /* ── Stage ────────────────────────────────────────────────────────────── */
   const idle = (
     <Idle
-      icon={<IcVideo />}
-      title="Direct a shot"
-      description={copy.idle}
-      examples={EXAMPLES}
+      icon={motion ? <IcFilm /> : <IcVideo />}
+      title={motion ? "Compose a loop" : "Direct a shot"}
+      description={motion ? MOTION_COPY.idle : copy.idle}
+      examples={motion ? MOTION_EXAMPLES : EXAMPLES}
       onExample={(e) => setPrompt((p) => (p ? `${p}. ${e}` : e))}
     />
   );
@@ -358,8 +361,32 @@ export default function VideoStudio({ initialModel, templateConfig, onCreditsCha
         balance={balance}
         affordable={affordable}
         shortfall={shortfall}
-        placeholder={copy.placeholder}
+        placeholder={motion ? MOTION_COPY.placeholder : copy.placeholder}
       />
     </Workspace>
+  );
+}
+
+/* ── The studio: mode strip + the active mode's body ────────────────────── */
+export default function VideoStudio(props) {
+  const { mode, preset, setMode, setPreset } = useStudioMode({
+    modes: MODES,
+    fallback: "ttv",
+    presets: PRESETS,
+  });
+
+  return (
+    <div className="st-moded">
+      <ModeBar label="Video mode" value={mode} onChange={setMode} options={MODE_OPTIONS} />
+      <div className="st-moded__body" key={mode}>
+        {mode === "clips" ? (
+          <ClippingStudio onCreditsChanged={props.onCreditsChanged} />
+        ) : mode === "edit" ? (
+          <VideoEditStudio {...props} initialJob={preset === "recast" ? "recast" : undefined} />
+        ) : (
+          <VideoGenMode {...props} mode={mode} preset={preset} onPreset={setPreset} />
+        )}
+      </div>
+    </div>
   );
 }
