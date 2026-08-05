@@ -28,7 +28,7 @@ const PROMPT_FIELD = { prompt: { type: "string", required: true, maxLength: 5000
 const MODELS = [
   // Image
   { modelId: "e2e-sm-tti-model", modelType: "image", capability: "text-to-image", displayName: "E2E SM Create Model" },
-  { modelId: "e2e-sm-edit-model", modelType: "image", capability: "image-edit", displayName: "E2E SM Edit Model" },
+  { modelId: "e2e-sm-edit-model", modelType: "i2i", capability: "image-to-image", displayName: "E2E SM Edit Model" },
   { modelId: "e2e-sm-upscale-model", modelType: "image", capability: "image-upscale", displayName: "E2E SM Upscale Model" },
   // Video
   { modelId: "e2e-sm-ttv-model", modelType: "video", capability: "text-to-video", displayName: "E2E SM Text Video Model" },
@@ -37,8 +37,10 @@ const MODELS = [
   // Audio
   { modelId: "e2e-sm-tts-model", modelType: "audio", capability: "text-to-speech", displayName: "E2E SM Speech Model" },
   { modelId: "e2e-sm-audio-isolation-model", modelType: "audio", capability: "audio", displayName: "E2E SM Cleanup Model" },
-  // Perform
-  { modelId: "e2e-sm-lipsync-model", modelType: "lipsync", capability: "lipsync", displayName: "E2E SM Sync Model" },
+  // Perform — the real catalog files both lip-sync and avatar rows under
+  // capability "avatar-video" (inferCapability's lip-sync/avatar marker);
+  // the Lip Sync and Avatar modes genuinely share that pool.
+  { modelId: "e2e-sm-lipsync-model", modelType: "lipsync", capability: "avatar-video", displayName: "E2E SM Sync Model" },
   { modelId: "e2e-sm-avatar-model", modelType: "lipsync", capability: "avatar-video", displayName: "E2E SM Avatar Model" },
 ];
 
@@ -190,14 +192,14 @@ test("Perform: Lip Sync, Avatar and Persona each mount their own surface and poo
   await page.goto("/studio/perform");
   const modes = page.getByRole("group", { name: "Perform mode" });
 
-  // Lip Sync (default) — the sync pool.
-  await expect(visible(page.getByText("Sync model"))).toBeVisible();
+  // Lip Sync (default) — the avatar-video pool.
+  await expect(visible(page.getByText("Sync model", { exact: true }))).toBeVisible();
   await expect(visible(page.getByRole("button", { name: /E2E SM Sync Model/ }))).toBeVisible();
 
-  // Avatar — the avatar pool.
+  // Avatar — its own surface over the shared avatar-video pool.
   await modes.getByRole("button", { name: "Avatar" }).click();
   await expect(page).toHaveURL(/mode=avatar/);
-  await expect(visible(page.getByText("Avatar model"))).toBeVisible();
+  await expect(visible(page.getByText("Avatar model", { exact: true }))).toBeVisible();
   await expect(visible(page.getByRole("button", { name: /E2E SM Avatar Model/ }))).toBeVisible();
 
   // Persona — the held-steady character flow, pooling t2i.
