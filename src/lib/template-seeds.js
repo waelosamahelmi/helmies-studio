@@ -92,7 +92,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:qwen-image-max",
+        modelId: "qwen/text-to-image",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -102,7 +102,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2v",
-        modelId: "alibaba:wan2.7-i2v",
+        modelId: "wan/2-7-image-to-video",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Smooth cinematic camera pan slowly orbiting the product, elegant motion, premium advertising feel.",
@@ -114,7 +114,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step3",
         tool: "i2i",
-        modelId: "alibaba:qwen-image-edit-plus",
+        modelId: "qwen/image-edit",
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt:
@@ -139,7 +139,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:wan2.7-image",
+        modelId: "wan/2-7-image",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -149,7 +149,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2v",
-        modelId: "alibaba:wan2.6-i2v",
+        modelId: "wan/2-6-image-to-video",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Subtle rising steam and gentle light shimmer over the dish, slow cinematic motion, no added text or claims.",
@@ -161,7 +161,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step3",
         tool: "i2i",
-        modelId: "alibaba:qwen-image-edit-plus",
+        modelId: "qwen/image-edit",
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt:
@@ -186,7 +186,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:wan2.7-image-pro",
+        modelId: "wan/2-7-image-pro",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -196,7 +196,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2v",
-        modelId: "alibaba:wan2.7-i2v",
+        modelId: "wan/2-7-image-to-video",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "The original virtual influencer character gestures naturally toward the product and smiles warmly at the camera.",
@@ -218,7 +218,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:wan2.7-image",
+        modelId: "wan/2-7-image",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -228,7 +228,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2v",
-        modelId: "alibaba:wan2.6-i2v-flash",
+        modelId: "wan/2-6-flash-image-to-video",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Subtle handheld camera movement, authentic user-generated-content video feel, natural lighting.",
@@ -251,7 +251,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:qwen-image-plus",
+        modelId: "qwen/text-to-image",
         dependsOn: linear("step1"),
         inputs: {
           prompt: "Clean e-commerce product photograph on a pure white background, front-facing angle, even studio lighting, sharp focus.",
@@ -260,7 +260,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2i",
-        modelId: "alibaba:qwen-image-2.0",
+        modelId: "qwen/text-to-image",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "The same product from a three-quarter angle, same pure white background and studio lighting.",
@@ -270,7 +270,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step3",
         tool: "i2i",
-        modelId: "alibaba:wan2.6-image",
+        modelId: "wan/2-7-image",
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt: "The same product placed in a minimal lifestyle setting with soft natural light, still clearly the hero subject.",
@@ -291,7 +291,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:wan2.7-image",
+        modelId: "wan/2-7-image",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -301,7 +301,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2v",
-        modelId: "alibaba:wan2.6-i2v",
+        modelId: "wan/2-6-image-to-video",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Gentle cinematic push-in on the storefront, warm inviting mood, smooth camera motion.",
@@ -325,7 +325,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:wan2.7-image-pro",
+        modelId: "wan/2-7-image-pro",
         dependsOn: linear("step1"),
         inputs: {
           prompt: "Abstract, vibrant flowing artwork suitable for a music album cover, rich color gradients, no text, no logos.",
@@ -334,7 +334,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2v",
-        modelId: "alibaba:wan2.7-i2v",
+        modelId: "wan/2-7-image-to-video",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Slow, hypnotic looping animated motion of the abstract artwork, gentle pulsing and flowing color, seamless loop feel.",
@@ -358,7 +358,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:qwen-image-max",
+        modelId: "qwen/text-to-image",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -368,7 +368,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2v",
-        modelId: "alibaba:wan2.6-i2v-flash",
+        modelId: "wan/2-6-flash-image-to-video",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Subtle, slow ambient animation of the background artwork, seamless calm loop, no added text.",
@@ -391,7 +391,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:z-image-turbo",
+        modelId: "z-image",
         dependsOn: linear("step1"),
         inputs: {
           prompt: "A minimalist abstract brand mark concept, clean vector-like geometric shape, single bold accent color, plain background.",
@@ -401,7 +401,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2i",
-        modelId: "alibaba:qwen-image-edit-max",
+        modelId: "qwen/image-edit",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt:
@@ -412,7 +412,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step3",
         tool: "i2v",
-        modelId: "alibaba:wan2.7-i2v",
+        modelId: "wan/2-7-image-to-video",
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt: "Gentle animated reveal motion over the brand photograph, elegant and understated, premium brand-sting feel.",
@@ -451,7 +451,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "i2i",
-        modelId: "alibaba:qwen-image-edit-max",
+        modelId: "qwen/image-edit",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -462,7 +462,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2v",
-        modelId: "alibaba:wan2.6-i2v",
+        modelId: "wan/2-6-image-to-video",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt:
@@ -485,7 +485,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:z-image-turbo",
+        modelId: "z-image",
         dependsOn: linear("step1"),
         inputs: {
           prompt: "A modern, minimalist app icon concept, single bold symbol, vibrant gradient background, rounded-square icon composition.",
@@ -495,7 +495,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2i",
-        modelId: "alibaba:wan2.6-image",
+        modelId: "wan/2-7-image",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt:
@@ -506,7 +506,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step3",
         tool: "i2v",
-        modelId: "alibaba:wan2.7-i2v",
+        modelId: "wan/2-7-image-to-video",
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt: "Elegant animated reveal of the feature graphic, smooth modern motion, premium app-launch feel.",
@@ -528,7 +528,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "alibaba:wan2.7-image-pro",
+        modelId: "wan/2-7-image-pro",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -538,7 +538,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "i2i",
-        modelId: "alibaba:qwen-image-edit-plus",
+        modelId: "qwen/image-edit",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt: "Recompose this hero image into a clean square social-media variant, same subject and visual style.",
@@ -548,7 +548,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step3",
         tool: "i2i",
-        modelId: "alibaba:qwen-image-2.0-pro",
+        modelId: "qwen/image-to-image",
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt: "Recompose this hero image into a vertical story-format variant, same subject and visual style.",
@@ -558,7 +558,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step4",
         tool: "i2v",
-        modelId: "alibaba:wan2.7-i2v",
+        modelId: "wan/2-7-image-to-video",
         dependsOn: linear("step4", "step3"),
         inputs: {
           prompt: "Cinematic animated teaser based on the hero image, smooth elegant camera movement.",

@@ -27,9 +27,40 @@ beforeEach(async () => {
   );
 });
 
+// The seeds were repointed from alibaba: models to KIE market models when the
+// Alibaba provider was retired (owner decision, 2026-08-05). KIE rows normally
+// arrive via the network sitemap sync, so this offline fixture upserts exactly
+// the rows the seeds reference — ids and capabilities verified against the
+// LIVE production catalog the day of the repoint.
+const KIE_SEED_FIXTURES = [
+  { modelId: "qwen/text-to-image", capability: "text-to-image", modelType: "image" },
+  { modelId: "qwen/image-to-image", capability: "image-to-image", modelType: "i2i" },
+  { modelId: "qwen/image-edit", capability: "image-to-image", modelType: "i2i" },
+  { modelId: "wan/2-7-image", capability: "image", modelType: "image" },
+  { modelId: "wan/2-7-image-pro", capability: "image", modelType: "image" },
+  { modelId: "wan/2-6-image-to-video", capability: "image-to-video", modelType: "i2v" },
+  { modelId: "wan/2-6-flash-image-to-video", capability: "image-to-video", modelType: "i2v" },
+  { modelId: "wan/2-7-image-to-video", capability: "image-to-video", modelType: "i2v" },
+  { modelId: "z-image", capability: "image", modelType: "image" },
+];
+
 async function seedCatalog() {
-  const { syncAlibabaModels } = await import("@/lib/model-catalog");
-  return syncAlibabaModels(); // real ModelPricing rows, real pricingRules — no network
+  for (const m of KIE_SEED_FIXTURES) {
+    const data = {
+      modelType: m.modelType,
+      providerName: "KIE",
+      providerModelId: m.modelId,
+      endpoint: m.modelId,
+      displayName: m.modelId,
+      capability: m.capability,
+      providerCost: 0.02,
+      creditsCost: m.modelType === "i2v" ? 12 : 3,
+      pricingRules: { currency: "USD", unit: "fixed", rules: [{ price: 0.02 }] },
+      isActive: true,
+      isDeprecated: false,
+    };
+    await prisma.modelPricing.upsert({ where: { modelId: m.modelId }, update: data, create: { modelId: m.modelId, ...data } });
+  }
 }
 
 async function createDraftVersion(seed) {
