@@ -5,7 +5,7 @@ const DEFAULT_PROVIDER = "kie";
 async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   const provider = payload._provider || getProvider(DEFAULT_PROVIDER);
   const { _provider, ...rest } = payload;
-  const { requestId, submitData, immediateResult } = await submitOnly(provider, endpoint, { model: endpoint, ...rest });
+  const { requestId, submitData, immediateResult, providerModel } = await submitOnly(provider, endpoint, { model: endpoint, ...rest });
 
   if (immediateResult) {
     const outputs = immediateResult.outputs || [];
@@ -13,7 +13,10 @@ async function submitAndPoll(endpoint, payload, maxAttempts = 60) {
   }
   if (!requestId) return submitData;
 
-  const result = await pollProviderResult(provider, requestId, maxAttempts, 2000);
+  // providerModel (submitOnly's own resolved id) rather than `endpoint`: a
+  // model whose results live on a different poll path — KIE's Suno music API
+  // — must be polled on the SAME identifier its submit was routed on.
+  const result = await pollProviderResult(provider, requestId, maxAttempts, 2000, providerModel);
   const outputUrl = result.outputs?.[0] || result.url;
   return { ...result, url: outputUrl, requestId };
 }

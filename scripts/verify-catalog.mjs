@@ -136,7 +136,10 @@ export async function probeModel(row, { assetUrl, fetchImpl = fetch } = {}) {
   const headers = typeof provider.headers === "function" ? provider.headers(endpoint) : provider.headers;
 
   try {
-    const res = await fetchImpl(`${provider.baseUrl}${provider.buildUrl(endpoint)}`, {
+    // Same (endpoint, providerModelId) pair submitOnly hands buildUrl, so the
+    // sweep probes a per-model route (KIE's Suno music API) exactly the way
+    // production would rather than judging the model on a route it never uses.
+    const res = await fetchImpl(`${provider.baseUrl}${provider.buildUrl(endpoint, providerModelId)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}`, ...(headers || {}) },
       body: JSON.stringify(body),

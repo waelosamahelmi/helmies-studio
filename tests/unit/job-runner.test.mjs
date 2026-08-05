@@ -101,7 +101,11 @@ describe("runJob — happy path", () => {
       where: { id: "job1" },
       data: { providerRequestId: "req_1" },
     });
-    expect(pollProviderResult).toHaveBeenCalledWith(PROVIDER_OBJ, "req_1");
+    // The trailing argument is the provider model id the poll must route on
+    // — a model whose results live on a non-default path (KIE's Suno music
+    // API) is unpollable without it. It comes from the DURABLE job row, not
+    // from the submit's return value, so the resume case below gets it too.
+    expect(pollProviderResult).toHaveBeenCalledWith(PROVIDER_OBJ, "req_1", undefined, undefined, "flux");
     expect(ingestFromUrl).toHaveBeenCalledWith("https://provider/out.png");
 
     const transitionCall = prisma.generation.updateMany.mock.calls[0][0];
@@ -155,8 +159,33 @@ describe("runJob — happy path", () => {
     expect(result).toEqual({ outcome: "succeeded" });
     expect(submitOnly).not.toHaveBeenCalled();
     expect(getProvider).toHaveBeenCalledWith("kie");
-    expect(pollProviderResult).toHaveBeenCalledWith(PROVIDER_OBJ, "req_existing");
+    // Crash-resume rebuilds the adapter from job.providerName alone, so the
+    // per-model poll route has to come from the persisted payload.
+    expect(pollProviderResult).toHaveBeenCalledWith(PROVIDER_OBJ, "req_existing", undefined, undefined, "flux");
     expect(completeJob).toHaveBeenCalledWith("job1", { providerRequestId: "req_existing" });
+  });
+
+  it("resumes a music job on the model id the submit routed on, falling back to the endpoint", async () => {
+    // Regression guard for the audio fix: without a model id on the resumed
+    // poll, a Suno music task is polled on the market route, which never
+    // reports it as finished.
+    const job = makeJob({ providerRequestId: "req_music", payload: { prompt: "lofi", model: "generate-music" } });
+    prisma.generation.findUnique.mockResolvedValue(makeGeneration({ model: "generate-music" }));
+    getProvider.mockReturnValue(PROVIDER_OBJ);
+    pollProviderResult.mockResolvedValue({ outputs: ["https://provider/track.mp3"] });
+    ingestFromUrl.mockResolvedValue(ingestResult("/api/media/local/track.mp3"));
+    prisma.generation.updateMany.mockResolvedValue({ count: 1 });
+    settleReservation.mockResolvedValue({});
+    completeJob.mockResolvedValue({});
+
+    await runJob(job, { workerId: "worker-1" });
+    expect(pollProviderResult).toHaveBeenCalledWith(PROVIDER_OBJ, "req_music", undefined, undefined, "generate-music");
+
+    // A payload with no model at all falls back to the job's endpoint.
+    vi.mocked(pollProviderResult).mockClear();
+    const legacy = makeJob({ providerRequestId: "req_legacy", payload: { prompt: "lofi" }, endpoint: "generate-music" });
+    await runJob(legacy, { workerId: "worker-1" });
+    expect(pollProviderResult).toHaveBeenCalledWith(PROVIDER_OBJ, "req_legacy", undefined, undefined, "generate-music");
   });
 
   it("uses job.payload.creditsUsed over generation.creditsUsed for settlement amount when actually charging — settle always uses the generation's recorded cost, not the estimate", async () => {

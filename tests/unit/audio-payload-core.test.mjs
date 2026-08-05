@@ -1,0 +1,314 @@
+// Audio generation was 0-for-30 in production. Every assertion below is
+// pinned to a REAL response from the live KIE account (2026-08-05) — the
+// exact strings are quoted in src/lib/audio-payload-core.mjs's header:
+//
+//   input:{prompt}            → {"code":500,"msg":"text is required"}
+//   input:{text}              → {"code":422,"msg":"voiceId cannot be empty"}
+//   input:{text,voiceId}      → {"code":422,"msg":"voiceId cannot be empty"}   ← the trap
+//   input:{text,voice}        → {"code":200,"msg":"success"}
+//   createTask generate-music → {"code":422,"msg":"…model name…not supported"}
+//   POST /api/v1/generate     → {"code":200,"msg":"success"} → real .mp3
+import { describe, it, expect } from "vitest";
+
+import {
+  AUDIO_FAMILY,
+  audioProviderFamily,
+  audioSubmitPath,
+  audioPollPath,
+  formatAudioRequest,
+  buildSunoMusicBody,
+  resolveSunoEngine,
+  resolveElevenLabsVoice,
+  resolveGeminiVoice,
+  parseSunoPoll,
+  isSunoPollBody,
+  SUNO_SUBMIT_PATH,
+  SUNO_POLL_PATH,
+  SUNO_DEFAULT_ENGINE,
+  ELEVENLABS_VOICE_IDS,
+  GEMINI_VOICE_NAMES,
+} from "@/lib/audio-payload-core.mjs";
+
+describe("audioProviderFamily", () => {
+  it("classifies the ElevenLabs speech models", () => {
+    expect(audioProviderFamily("elevenlabs/text-to-speech-multilingual-v2")).toBe(AUDIO_FAMILY.ELEVENLABS_TTS);
+    expect(audioProviderFamily("elevenlabs/text-to-speech-turbo-2-5")).toBe(AUDIO_FAMILY.ELEVENLABS_TTS);
+    expect(audioProviderFamily("elevenlabs-text-to-speech-turbo-2.5")).toBe(AUDIO_FAMILY.ELEVENLABS_TTS);
+  });
+
+  it("classifies dialogue BEFORE plain speech (it is a different body shape)", () => {
+    expect(audioProviderFamily("elevenlabs/text-to-dialogue-v3")).toBe(AUDIO_FAMILY.ELEVENLABS_DIALOGUE);
+  });
+
+  it("classifies Google's multi-speaker TTS", () => {
+    expect(audioProviderFamily("google/gemini-3-1-flash-tts")).toBe(AUDIO_FAMILY.GEMINI_TTS);
+    expect(audioProviderFamily("gemini-2-5-pro-tts")).toBe(AUDIO_FAMILY.GEMINI_TTS);
+  });
+
+  it("claims ONLY the from-scratch music composers", () => {
+    expect(audioProviderFamily("generate-music")).toBe(AUDIO_FAMILY.SUNO_MUSIC);
+    expect(audioProviderFamily("suno-v5")).toBe(AUDIO_FAMILY.SUNO_MUSIC);
+    expect(audioProviderFamily("suno-v4.5-plus")).toBe(AUDIO_FAMILY.SUNO_MUSIC);
+  });
+
+  it("leaves every other Suno-suite slug alone — they need a source track the studio cannot supply", () => {
+    for (const id of [
+      "extend-music", "replace-section", "generate-persona", "generate-mashup",
+      "add-instrumental", "add-vocals", "convert-to-wav", "cover-suno",
+      "boost-music-style", "generate-lyrics", "separate-vocals", "generate-midi",
+    ]) {
+      expect(audioProviderFamily(id)).toBeNull();
+    }
+  });
+
+  it("leaves non-audio and already-working models alone", () => {
+    // audio-isolation already works on the generic route with a plain
+    // audio_url (live: {"code":500,"msg":"audio_url is required"} → it is
+    // reachable and correctly shaped) — remapping it would be a regression.
+    expect(audioProviderFamily("elevenlabs/audio-isolation")).toBeNull();
+    expect(audioProviderFamily("flux-2/pro-text-to-image")).toBeNull();
+    expect(audioProviderFamily("")).toBeNull();
+    expect(audioProviderFamily(null)).toBeNull();
+  });
+});
+
+describe("ElevenLabs TTS body (the shape that was 422-ing)", () => {
+  it("sends `text`, never `prompt` — the exact field the provider demanded", () => {
+    const { body } = formatAudioRequest("elevenlabs/text-to-speech-multilingual-v2", "Read this aloud.", {});
+    expect(body.input.text).toBe("Read this aloud.");
+    expect(body.input.prompt).toBeUndefined();
+  });
+
+  it("sends the voice as `voice` — `voiceId` is the provider's ERROR wording, not its field", () => {
+    const { body } = formatAudioRequest("elevenlabs/text-to-speech-multilingual-v2", "hi", { voice: "bella" });
+    expect(body.input.voice).toBe(ELEVENLABS_VOICE_IDS.bella);
+    expect(body.input.voiceId).toBeUndefined();
+    expect(body.input.voice_id).toBeUndefined();
+  });
+
+  it("keeps the market envelope: { model, input } on the default route", () => {
+    const req = formatAudioRequest("elevenlabs/text-to-speech-multilingual-v2", "hi", {});
+    expect(req.path).toBeNull(); // caller's default createTask path
+    expect(req.body.model).toBe("elevenlabs/text-to-speech-multilingual-v2");
+    expect(Object.keys(req.body)).toEqual(["model", "input"]);
+  });
+
+  it("forwards the delivery controls the studio actually offers", () => {
+    const { body } = formatAudioRequest("elevenlabs/text-to-speech-turbo-2-5", "hi", {
+      voice: "sam", stability: 0.3, similarity_boost: 0.9, speed: 1.1,
+    });
+    expect(body.input).toMatchObject({ stability: 0.3, similarity_boost: 0.9, speed: 1.1 });
+  });
+
+  it("DROPS fields the model has no idea about instead of posting them", () => {
+    // /api/generate/async injects negative_prompt into every payload.
+    const { body } = formatAudioRequest("elevenlabs/text-to-speech-multilingual-v2", "hi", {
+      negative_prompt: "blurry", aspect_ratio: "16:9", duration: 30, callBackUrl: "https://x/y",
+    });
+    expect(body.input.negative_prompt).toBeUndefined();
+    expect(body.input.aspect_ratio).toBeUndefined();
+    expect(body.input.duration).toBeUndefined();
+    expect(body.input.callBackUrl).toBeUndefined();
+  });
+
+  it("never invents the script — an absent text stays absent", () => {
+    const { body } = formatAudioRequest("elevenlabs/text-to-speech-multilingual-v2", "", {});
+    expect(body.input.text).toBeUndefined();
+    expect("text" in body.input).toBe(false);
+  });
+});
+
+describe("voice resolution", () => {
+  it("translates every studio voice slug to a provider-accepted identifier", () => {
+    // Live 422: "Invalid voice parameter: rachel. Please refer to the
+    // documentation for the list of supported voices."
+    for (const slug of ["rachel", "domi", "bella", "elli", "antoni", "josh", "arnold", "sam"]) {
+      expect(resolveElevenLabsVoice({ voice: slug })).toBe(ELEVENLABS_VOICE_IDS[slug]);
+      expect(resolveElevenLabsVoice({ voice: slug })).not.toBe(slug);
+      expect(resolveGeminiVoice({ voice: slug })).toBe(GEMINI_VOICE_NAMES[slug]);
+    }
+  });
+
+  it("passes an unknown value straight through (a real provider voice id)", () => {
+    expect(resolveElevenLabsVoice({ voice: "EkK5I93UQWFDigLMpZcX" })).toBe("EkK5I93UQWFDigLMpZcX");
+    expect(resolveGeminiVoice({ voice: "Fenrir" })).toBe("Fenrir");
+  });
+
+  it("accepts the voice under any of the names callers use", () => {
+    expect(resolveElevenLabsVoice({ voice_id: "sam" })).toBe(ELEVENLABS_VOICE_IDS.sam);
+    expect(resolveElevenLabsVoice({ voiceId: "sam" })).toBe(ELEVENLABS_VOICE_IDS.sam);
+    expect(resolveGeminiVoice({ voice_name: "sam" })).toBe(GEMINI_VOICE_NAMES.sam);
+  });
+
+  it("fills a default when none was picked — both providers hard-reject an empty voice", () => {
+    // "voiceId cannot be empty" / "The voice_name parameter cannot be empty"
+    expect(resolveElevenLabsVoice({})).toBe(ELEVENLABS_VOICE_IDS.rachel);
+    expect(resolveGeminiVoice({})).toBe(GEMINI_VOICE_NAMES.rachel);
+  });
+});
+
+describe("ElevenLabs dialogue body", () => {
+  it("wraps a plain studio submit into a single turn", () => {
+    const { body } = formatAudioRequest("elevenlabs/text-to-dialogue-v3", "Two lines.", { voice: "josh" });
+    expect(body.input.dialogue).toEqual([{ text: "Two lines.", voice: ELEVENLABS_VOICE_IDS.josh }]);
+    expect(body.input.text).toBeUndefined();
+  });
+
+  it("keeps caller-built turns and resolves each turn's own voice", () => {
+    const { body } = formatAudioRequest("elevenlabs/text-to-dialogue-v3", "ignored", {
+      dialogue: [{ text: "A", voice: "bella" }, { text: "B", voiceId: "arnold" }],
+      stability: 0.5,
+    });
+    expect(body.input.dialogue).toEqual([
+      { text: "A", voice: ELEVENLABS_VOICE_IDS.bella },
+      { text: "B", voice: ELEVENLABS_VOICE_IDS.arnold },
+    ]);
+    expect(body.input.stability).toBe(0.5);
+  });
+});
+
+describe("Google TTS body", () => {
+  it("builds the speakers/dialogue_turns pair the model demands", () => {
+    // Live 422s: "The speakers parameter cannot be empty" for a `prompt`
+    // payload; a 200 + real .wav for this shape.
+    const { body } = formatAudioRequest("google/gemini-3-1-flash-tts", "Testing one two three.", { voice: "arnold" });
+    expect(body.input.speakers).toEqual([{ speaker_id: "Speaker 1", voice_name: GEMINI_VOICE_NAMES.arnold }]);
+    expect(body.input.dialogue_turns).toEqual([{ speaker_id: "Speaker 1", text: "Testing one two three." }]);
+    expect(body.input.prompt).toBeUndefined();
+  });
+
+  it("never invents a script", () => {
+    const { body } = formatAudioRequest("google/gemini-3-1-flash-tts", "", {});
+    expect(body.input.dialogue_turns).toBeUndefined();
+  });
+
+  it("keeps a caller's own multi-speaker cast untouched", () => {
+    const speakers = [{ speaker_id: "S1", voice_name: "Fenrir" }, { speaker_id: "S2", voice_name: "Puck" }];
+    const dialogue_turns = [{ speaker_id: "S1", text: "A" }, { speaker_id: "S2", text: "B" }];
+    const { body } = formatAudioRequest("google/gemini-3-1-flash-tts", "x", { speakers, dialogue_turns });
+    expect(body.input.speakers).toBe(speakers);
+    expect(body.input.dialogue_turns).toBe(dialogue_turns);
+  });
+});
+
+describe("Suno music route", () => {
+  it("routes music to its own path — the market route rejects the model outright", () => {
+    expect(audioSubmitPath("generate-music")).toBe(SUNO_SUBMIT_PATH);
+    expect(audioSubmitPath("suno-v4.5")).toBe(SUNO_SUBMIT_PATH);
+    expect(audioSubmitPath("elevenlabs/text-to-speech-turbo-2-5")).toBeNull();
+    expect(audioSubmitPath("flux-2/pro-text-to-image")).toBeNull();
+  });
+
+  it("polls music on its own record-info path, everything else on the default", () => {
+    expect(audioPollPath("generate-music", "abc123")).toBe(`${SUNO_POLL_PATH}?taskId=abc123`);
+    expect(audioPollPath("flux-2/pro-text-to-image", "abc123")).toBeNull();
+    expect(audioPollPath(null, "abc123")).toBeNull();
+  });
+
+  it("posts a FLAT body whose `model` is the engine selector, not the slug", () => {
+    const req = formatAudioRequest("generate-music", "a calm lofi piano loop", {});
+    expect(req.path).toBe(SUNO_SUBMIT_PATH);
+    expect(req.body.model).toBe(SUNO_DEFAULT_ENGINE);
+    expect(req.body.prompt).toBe("a calm lofi piano loop");
+    expect(req.body.input).toBeUndefined();
+    expect(req.body.customMode).toBe(false);
+    expect(req.body.instrumental).toBe(false);
+  });
+
+  it("reads the engine off a version-pinned catalog id", () => {
+    expect(resolveSunoEngine("suno-v4")).toBe("V4");
+    expect(resolveSunoEngine("suno-v4.5")).toBe("V4_5");
+    expect(resolveSunoEngine("suno-v4-5-plus")).toBe("V4_5PLUS");
+    expect(resolveSunoEngine("suno-v4.5-all")).toBe("V4_5ALL");
+    expect(resolveSunoEngine("suno-v5")).toBe("V5");
+    expect(resolveSunoEngine("suno-v5.5")).toBe("V5_5");
+    expect(resolveSunoEngine("generate-music")).toBe(SUNO_DEFAULT_ENGINE);
+    expect(resolveSunoEngine("generate-music", { engine: "v4_5" })).toBe("V4_5");
+  });
+
+  it("camelCases the studio's snake_case music params", () => {
+    const body = buildSunoMusicBody("generate-music", "hopeful theme", {
+      style: "lofi, piano", title: "Paper Rain", negative_tags: "heavy metal", vocal_gender: "f",
+    });
+    expect(body.negativeTags).toBe("heavy metal");
+    expect(body.vocalGender).toBe("f");
+    expect(body.negative_tags).toBeUndefined();
+    expect(body.vocal_gender).toBeUndefined();
+  });
+
+  it("turns custom mode on exactly when a custom-only field survived the mapping", () => {
+    expect(buildSunoMusicBody("generate-music", "x", {}).customMode).toBe(false);
+    expect(buildSunoMusicBody("generate-music", "x", { style: "lofi" }).customMode).toBe(true);
+    expect(buildSunoMusicBody("generate-music", "x", { title: "T" }).customMode).toBe(true);
+    // Dropped for this engine (see below) → it must not switch the mode.
+    expect(buildSunoMusicBody("suno-v5", "x", { duration: 60 }).customMode).toBe(false);
+    expect(buildSunoMusicBody("generate-music", "x", { style: "lofi", custom_mode: false }).customMode).toBe(false);
+  });
+
+  it("forwards duration ONLY where the provider accepts it", () => {
+    // Live 422: "duration is only supported when customMode is true and
+    // model is V5_5".
+    const v55 = buildSunoMusicBody("generate-music", "x", { duration: 60 });
+    expect(v55.model).toBe("V5_5");
+    expect(v55.duration).toBe(60);
+    expect(v55.customMode).toBe(true);
+
+    const v5 = buildSunoMusicBody("suno-v5", "x", { duration: 60 });
+    expect(v5.duration).toBeUndefined();
+  });
+
+  it("drops junk the studio pipeline adds, and never invents a brief", () => {
+    const body = buildSunoMusicBody("generate-music", "", { negative_prompt: "blurry", aspect_ratio: "16:9" });
+    expect(body.negative_prompt).toBeUndefined();
+    expect(body.aspect_ratio).toBeUndefined();
+    expect(body.prompt).toBeUndefined();
+  });
+
+  it("passes a boolean instrumental through and coerces the string form", () => {
+    expect(buildSunoMusicBody("generate-music", "x", { instrumental: true }).instrumental).toBe(true);
+    expect(buildSunoMusicBody("generate-music", "x", { instrumental: "true" }).instrumental).toBe(true);
+    expect(buildSunoMusicBody("generate-music", "x", { instrumental: false }).instrumental).toBe(false);
+  });
+});
+
+describe("Suno poll parsing (the failure branch included)", () => {
+  const success = {
+    taskId: "t1",
+    status: "SUCCESS",
+    response: { sunoData: [{ id: "a", audioUrl: "https://cdn/x.mp3", streamAudioUrl: "https://cdn/stream" }] },
+  };
+
+  it("recognises the music envelope by shape, not by model id", () => {
+    expect(isSunoPollBody(success)).toBe(true);
+    expect(isSunoPollBody({ state: "success", resultJson: "{}" })).toBe(false);
+    expect(isSunoPollBody(null)).toBe(false);
+  });
+
+  it("returns the finished track", () => {
+    expect(parseSunoPoll(success)).toEqual({ status: "success", outputs: ["https://cdn/x.mp3"], error: undefined });
+  });
+
+  it("stays pending while the audio url is still empty", () => {
+    // Real intermediate body: audioUrl "" with a stream url already present.
+    const partial = { status: "FIRST_SUCCESS", response: { sunoData: [{ audioUrl: "", streamAudioUrl: "https://cdn/s" }] } };
+    expect(parseSunoPoll(partial).status).toBe("pending");
+    expect(parseSunoPoll({ status: "PENDING", response: null }).status).toBe("pending");
+  });
+
+  it("fails terminally on every provider failure status", () => {
+    for (const status of ["CREATE_TASK_FAILED", "GENERATE_AUDIO_FAILED", "CALLBACK_EXCEPTION", "SENSITIVE_WORD_ERROR"]) {
+      const parsed = parseSunoPoll({ status, response: null, errorMessage: null, errorCode: null });
+      expect(parsed.status).toBe("failed");
+      expect(parsed.error).toBe(status);
+    }
+  });
+
+  it("prefers the provider's own message when it gives one", () => {
+    const parsed = parseSunoPoll({ status: "GENERATE_AUDIO_FAILED", errorMessage: "upstream refused" });
+    expect(parsed.error).toBe("upstream refused");
+  });
+
+  it("declines a body that is not the music envelope, so the generic parser still runs", () => {
+    expect(parseSunoPoll({ state: "success", resultJson: '{"resultUrls":["https://x/y.png"]}' })).toBeNull();
+  });
+});
