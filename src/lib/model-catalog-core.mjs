@@ -785,6 +785,63 @@ export const CURATED_SCHEMAS = {
   "suno-v4.5": { fields: SUNO_MUSIC_FIELDS },
   "suno-v4.5-all": { fields: SUNO_MUSIC_FIELDS },
   "suno-v4": { fields: SUNO_MUSIC_FIELDS },
+  // ── Suno-suite operations (EDITSv1 M3; docs/model-audit/audio-music.md).
+  // Replace-mode: every one of these rows shipped with the fabricated
+  // `{ prompt }` stub (audit root cause #2); these are the REAL parameter
+  // sets, in the studio's canonical spellings — audio-payload-core.mjs owns
+  // the wire translation (prompt→content, audio_url→uploadUrl/audioUrl,
+  // style→tags, snake→camel).
+  // Route-only text ops:
+  "boost-music-style": { replace: true, fields: {
+    // Wire field is `content` — the style description to boost.
+    prompt: { type: "string", required: true, maxLength: 1000 },
+  } },
+  "generate-lyrics": { replace: true, fields: {
+    prompt: { type: "string", required: true, maxLength: 200 },
+  } },
+  "generate-sounds": { replace: true, fields: {
+    prompt: { type: "string", required: true, maxLength: 500 },
+    engine: { type: "string", required: false, enum: ["V5", "V5_5"], default: "V5_5" },
+  } },
+  // Upload-driven ops — `audio_url` is the studio's canonical upload field
+  // (AudioToolsStudio's Dropzone already supplies it).
+  "upload-and-cover-audio": { replace: true, fields: {
+    prompt: { type: "string", required: true, maxLength: 5000 },
+    audio_url: { type: "string", format: "uri", required: true },
+    instrumental: { type: "boolean", required: false },
+    style: { type: "string", required: false, maxLength: 1000 },
+    title: { type: "string", required: false, maxLength: 100 },
+    negative_tags: { type: "string", required: false, maxLength: 500 },
+    vocal_gender: { type: "string", required: false, enum: ["m", "f"] },
+  } },
+  "upload-and-extend-audio": { replace: true, fields: {
+    audio_url: { type: "string", format: "uri", required: true },
+    // Seconds into the uploaded track the extension continues from;
+    // supplying one switches the op into custom-parameter mode.
+    continue_at: { type: "number", required: false, minimum: 0 },
+    prompt: { type: "string", required: false, maxLength: 5000 },
+    style: { type: "string", required: false, maxLength: 1000 },
+    title: { type: "string", required: false, maxLength: 100 },
+  } },
+  "add-instrumental": { replace: true, fields: {
+    audio_url: { type: "string", format: "uri", required: true },
+    title: { type: "string", required: true, maxLength: 100 },
+    // Wire field is `tags` — style tags for the generated instrumental.
+    style: { type: "string", required: true, maxLength: 500 },
+    negative_tags: { type: "string", required: true, maxLength: 500 },
+  } },
+  "add-vocals": { replace: true, fields: {
+    audio_url: { type: "string", format: "uri", required: true },
+    prompt: { type: "string", required: true, maxLength: 5000 },
+    title: { type: "string", required: true, maxLength: 100 },
+    style: { type: "string", required: true, maxLength: 1000 },
+    negative_tags: { type: "string", required: true, maxLength: 500 },
+  } },
+  "separate-vocals": { replace: true, fields: {
+    // Wire field is `audioUrl` (camelCase — the casing WAS the bug).
+    audio_url: { type: "string", format: "uri", required: true },
+    type: { type: "string", required: false, enum: ["separate_vocal", "split_stem", "split_stem_advanced"], default: "separate_vocal" },
+  } },
   // ElevenLabs speech.
   "elevenlabs-text-to-speech-turbo-2.5": { fields: ELEVENLABS_TTS_FIELDS },
   "elevenlabs-text-to-speech-multilingual-v2": { fields: ELEVENLABS_TTS_FIELDS },
@@ -1451,13 +1508,20 @@ const WAN_SCHEMAS = {
 };
 
 // ── Kling ──────────────────────────────────────────────────────────────────
+// Duration typing (M-straggler, live probe 2026-08-05): `kling-2.6/
+// text-to-video` answered 500 "duration it must be a string" when sent a
+// NUMBER — the whole Kling family takes its 5/10 enum as STRINGS ("5"/"10"),
+// which video-market.md already records for the image-to-video and
+// v2.5-turbo-image siblings. Every fixed 5/10 enum below is therefore a
+// string enum; only the v3-turbo pair keeps a numeric duration (the doc
+// gives it a free 3–15s RANGE, not an enum — no string evidence there).
 const KLING_SCHEMAS = {
   // Real model field is version-prefixed `kling-2.6/text-to-video`.
   "kling-2.6-text-to-video": { replace: true, fields: {
     prompt: mkStr({ required: true }),
     sound: mkBool({ required: true, default: false }),
     aspect_ratio: mkEnum(KLING_ASPECTS, { required: true }),
-    duration: mkEnum([5, 10], { required: true }),
+    duration: mkEnum(["5", "10"], { required: true, default: "5" }),
   } },
   "kling-2.6-image-to-video": { replace: true, fields: {
     prompt: mkStr({ required: true }),
@@ -1475,7 +1539,7 @@ const KLING_SCHEMAS = {
   } },
   "kling-v2.5-turbo-text-to-video-pro": { replace: true, fields: {
     prompt: mkStr({ required: true }),
-    duration: mkEnum([5, 10]),
+    duration: mkEnum(["5", "10"]),
     aspect_ratio: mkEnum(["16:9", "9:16", "1:1"]),
     negative_prompt: mkStr(),
     cfg_scale: mkNum({ minimum: 0, maximum: 1, default: 0.5 }),
@@ -1494,13 +1558,13 @@ const KLING_SCHEMAS = {
   "kling-v2.1-master-image-to-video": { replace: true, fields: {
     prompt: mkStr({ required: true }),
     image_url: mkUri({ required: true }),
-    duration: mkEnum([5, 10]),
+    duration: mkEnum(["5", "10"]),
     negative_prompt: mkStr(),
     cfg_scale: mkNum({ minimum: 0, maximum: 1, default: 0.5 }),
   } },
   "kling-v2.1-master-text-to-video": { replace: true, fields: {
     prompt: mkStr({ required: true }),
-    duration: mkEnum([5, 10], { default: 5 }),
+    duration: mkEnum(["5", "10"], { default: "5" }),
     aspect_ratio: mkEnum(["16:9", "9:16", "1:1"], { default: "16:9" }),
     negative_prompt: mkStr(),
     cfg_scale: mkNum({ minimum: 0, maximum: 1 }),
@@ -1508,7 +1572,7 @@ const KLING_SCHEMAS = {
   "kling-v2.1-pro": { replace: true, fields: {
     prompt: mkStr({ required: true }),
     image_url: mkUri({ required: true }),
-    duration: mkEnum([5, 10]),
+    duration: mkEnum(["5", "10"]),
     negative_prompt: mkStr(),
     cfg_scale: mkNum({ minimum: 0, maximum: 1 }),
     tail_image_url: mkUri(),
@@ -1516,7 +1580,7 @@ const KLING_SCHEMAS = {
   "kling-v2.1-standard": { replace: true, fields: {
     prompt: mkStr({ required: true }),
     image_url: mkUri({ required: true }),
-    duration: mkEnum([5, 10]),
+    duration: mkEnum(["5", "10"]),
     negative_prompt: mkStr(),
     cfg_scale: mkNum({ minimum: 0, maximum: 1 }),
   } },
@@ -1538,10 +1602,15 @@ const KLING_SCHEMAS = {
     background_source: mkEnum(["input_video", "input_image"]),
   } },
   // Real model `kling-3.0/video` (stored row: kling/kling-3-0).
+  // `sound` is provider-required: the live probe (2026-08-05) answered
+  // 500 "This field is required" on a payload without it — see
+  // PROVIDER_REQUIRED_FIELDS in provider-payload-core.mjs. required+default
+  // lets applyRequiredDefaults fill it (sound is a FILLABLE rendering
+  // setting) instead of every prompt-only submit failing.
   "kling-3.0-video": { replace: true, fields: {
     prompt: mkStr({ required: true }),
     image_urls: mkArr(),
-    sound: mkBool({ default: false }),
+    sound: mkBool({ required: true, default: false }),
     duration: mkEnum(["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"]),
     aspect_ratio: mkEnum(["16:9", "9:16", "1:1"]),
     mode: mkEnum(["std", "pro", "4K"]),
@@ -1700,10 +1769,15 @@ const HAILUO_SCHEMAS = {
 
 // ── PixVerse (`quality`, never `resolution`; real ids carry `-v6`) ─────────
 const PIXVERSE_SCHEMAS = {
+  // `quality` is provider-required on text-to-video despite the doc marking
+  // it optional-with-default: the live probe (2026-08-05) answered 500
+  // "This field is required" on a payload without it — see
+  // PROVIDER_REQUIRED_FIELDS in provider-payload-core.mjs. required+default
+  // lets applyRequiredDefaults fill "720p".
   "pixverse-v6-text-to-video": { replace: true, fields: {
     prompt: mkStr({ required: true }),
     aspect_ratio: mkEnum(PIXVERSE_ASPECTS, { default: "16:9" }),
-    quality: mkEnum(PIXVERSE_QUALITIES, { default: "720p" }),
+    quality: mkEnum(PIXVERSE_QUALITIES, { required: true, default: "720p" }),
     duration: mkNum({ required: true, minimum: 1, maximum: 15 }),
     generate_audio_switch: mkBool(),
     generate_multi_clip_switch: mkBool(),
@@ -1887,7 +1961,12 @@ const DEDICATED_API_SCHEMAS = {
   "generate-veo-3-video": { replace: true, fields: {
     prompt: mkStr({ required: true }),
     image_urls: mkArr({ maxItems: 2 }),
-    model_tier: mkEnum(["veo3", "veo3_fast", "veo3_lite"], { default: "veo3_fast" }),
+    // M-straggler (probe 2026-08-05): the endpoint is the Veo3.1 API and
+    // rejects the bare veo3/veo3_fast/veo3_lite spellings with 422 "Invalid
+    // model" — the accepted engine selectors are version-suffixed. The
+    // adapter (video-payload-core.mjs resolveVeoTier) still normalizes any
+    // stored legacy spelling to these.
+    model_tier: mkEnum(["veo3.1", "veo3.1-fast", "veo3.1-lite"], { default: "veo3.1-fast" }),
     generation_type: mkEnum(["TEXT_2_VIDEO", "FIRST_AND_LAST_FRAMES_2_VIDEO", "REFERENCE_2_VIDEO"]),
     aspect_ratio: mkEnum(["16:9", "9:16", "Auto"], { default: "16:9" }),
     resolution: mkEnum(["720p", "1080p", "4k"], { default: "720p" }),

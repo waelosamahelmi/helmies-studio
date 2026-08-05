@@ -89,6 +89,16 @@ export const CANONICAL_FIELD_DEFAULTS = {
 // bootstrap for what has already been proved by hand.
 export const PROVIDER_REQUIRED_FIELDS = {
   "flux-2/pro-text-to-image": ["aspect_ratio"],
+  //   kling-3.0/video → {"code":500,"msg":"This field is required"} (nameless)
+  //     (live KIE probe, 2026-08-05, payload without `sound`; the doc's
+  //     param list — docs/model-audit/video-market.md, kling/kling-3-0 —
+  //     names `sound` as the one rendering field the probe omitted)
+  "kling-3.0/video": ["sound"],
+  //   pixverse-v6/text-to-video → {"code":500,"msg":"This field is required"}
+  //     (live KIE probe, 2026-08-05, payload without `quality`; the doc —
+  //     docs/model-audit/video-market.md, pixverse/text-to-video — marks
+  //     `quality` optional-with-default, but the provider hard-requires it)
+  "pixverse-v6/text-to-video": ["quality"],
 };
 
 function normalizeKey(modelId) {

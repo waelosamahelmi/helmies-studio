@@ -129,6 +129,23 @@ describe("providerRequiredFields — fields the provider requires but the schema
     expect(filled).toEqual({});
   });
 
+  it("knows kling-3.0/video requires `sound` (observed nameless 500 'This field is required', probe 2026-08-05)", () => {
+    expect(providerRequiredFields("kling-3.0/video", null)).toContain("sound");
+    // …and the curated schema's required+default(false) means it actually
+    // gets filled on a prompt-only submit rather than 500ing.
+    const schema = { fields: { sound: { type: "boolean", required: true, default: false } } };
+    const { params, filled } = applyRequiredDefaults({ prompt: "x" }, schema, { modelId: "kling-3.0/video" });
+    expect(params.sound).toBe(false);
+    expect(filled).toEqual({ sound: false });
+  });
+
+  it("knows pixverse-v6/text-to-video requires `quality` (same nameless 500, probe 2026-08-05)", () => {
+    expect(providerRequiredFields("pixverse-v6/text-to-video", null)).toContain("quality");
+    const schema = { fields: { quality: { type: "string", required: true, enum: ["360p", "540p", "720p", "1080p"], default: "720p" } } };
+    const { params } = applyRequiredDefaults({ prompt: "x" }, schema, { modelId: "pixverse-v6/text-to-video" });
+    expect(params.quality).toBe("720p");
+  });
+
   it("reads a field the verification sweep recorded on the row (inputSchema.providerRequired)", () => {
     const schema = { fields: { resolution: { type: "string", required: false, enum: ["720p", "1080p"] } }, providerRequired: ["resolution"] };
     expect(applyRequiredDefaults({}, schema).params.resolution).toBe("720p");

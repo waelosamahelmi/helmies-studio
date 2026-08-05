@@ -160,13 +160,25 @@ describe("M2 family schemas — video market", () => {
   it("Kling: sound required on 2.6, avatar pair takes exactly image/audio/prompt, kling-3.0/video mode std/pro/4K", () => {
     const t2v = fieldsOf("kling/text-to-video", "text-to-video");
     expect(t2v.sound).toMatchObject({ required: true });
-    expect(t2v.duration.enum).toEqual([5, 10]);
+    // STRING durations — live probe 2026-08-05: a numeric duration got
+    // 500 "duration it must be a string" from kling-2.6/text-to-video.
+    expect(t2v.duration.enum).toEqual(["5", "10"]);
     expect(t2v.resolution).toBeUndefined();
     const avatar = fieldsOf("kling/ai-avatar-pro", "avatar-video");
     expect(Object.keys(avatar).sort()).toEqual(["audio_url", "image_url", "prompt"]);
     const k30 = fieldsOf("kling/kling-3-0", "video");
     expect(k30.mode.enum).toEqual(["std", "pro", "4K"]);
     expect(k30.multi_shots).toBeDefined();
+    // Provider-required `sound` (probe 2026-08-05: nameless 500 "This field
+    // is required" without it) — required+default so it gets auto-filled.
+    expect(k30.sound).toMatchObject({ required: true, default: false });
+    // Every fixed Kling duration enum is strings, same probe evidence.
+    expect(k30.duration.enum).toEqual(["3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"]);
+    expect(fieldsOf("kling/v25-turbo-text-to-video-pro", "text-to-video").duration.enum).toEqual(["5", "10"]);
+    expect(fieldsOf("kling/v2-1-master-text-to-video", "text-to-video").duration.enum).toEqual(["5", "10"]);
+    expect(fieldsOf("kling/v2-1-pro", "video").duration.enum).toEqual(["5", "10"]);
+    expect(fieldsOf("kling/v2-1-standard", "video").duration.enum).toEqual(["5", "10"]);
+    expect(fieldsOf("kling/v2-1-master-image-to-video", "image-to-video").duration.enum).toEqual(["5", "10"]);
     const motion = fieldsOf("kling/motion-control", "video");
     expect(motion.character_orientation).toMatchObject({ required: true });
     expect(motion.video_urls.required).toBe(true);
@@ -201,6 +213,9 @@ describe("M2 family schemas — video market", () => {
   it("PixVerse: `quality` not resolution, image_urls arrays, transition's dual frames, extend's taskId|video_url", () => {
     const t2v = fieldsOf("pixverse/text-to-video", "text-to-video");
     expect(t2v.quality.enum).toEqual(["360p", "540p", "720p", "1080p"]);
+    // Provider-required despite the doc's optional-with-default (probe
+    // 2026-08-05: nameless 500 "This field is required" without it).
+    expect(t2v.quality).toMatchObject({ required: true, default: "720p" });
     expect(t2v.resolution).toBeUndefined();
     expect(t2v.duration).toMatchObject({ required: true });
     const i2v = fieldsOf("pixverse/image-to-video", "image-to-video");
@@ -306,7 +321,10 @@ describe("M2 dedicated-API schemas", () => {
 
   it("Veo3: tier/generationType/resolution incl 4k, duration 4|6|8; extend has its own tier enum + task_id", () => {
     const f = fieldsOf("generate-veo-3-video", "text-to-video");
-    expect(f.model_tier.enum).toEqual(["veo3", "veo3_fast", "veo3_lite"]);
+    // Veo3.1 engine selectors (probe 2026-08-05: the bare veo3* spellings
+    // 422 "Invalid model" — see video-payload-core.mjs resolveVeoTier).
+    expect(f.model_tier.enum).toEqual(["veo3.1", "veo3.1-fast", "veo3.1-lite"]);
+    expect(f.model_tier.default).toBe("veo3.1-fast");
     expect(f.resolution.enum).toEqual(["720p", "1080p", "4k"]);
     expect(f.duration.enum).toEqual([4, 6, 8]);
     expect(f.aspect_ratio.enum).toEqual(["16:9", "9:16", "Auto"]);

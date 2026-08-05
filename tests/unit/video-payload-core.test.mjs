@@ -107,11 +107,11 @@ describe("Aleph", () => {
 });
 
 describe("Veo3 generate + extend bodies", () => {
-  it("posts the real flat body with snake_case aspect_ratio and a tier under `model`", () => {
+  it("posts the real flat body with snake_case aspect_ratio and a Veo3.1 engine under `model`", () => {
     expect(videoSubmitPath("generate-veo-3-video")).toBe("/api/v1/veo/generate");
     const req = formatVideoRequest("generate-veo-3-video", "sunset timelapse", {
       image_urls: ["https://cdn.example/a.png", "https://cdn.example/b.png", "https://cdn.example/c.png"],
-      model_tier: "veo3_fast",
+      model_tier: "veo3.1-fast",
       generation_type: "FIRST_AND_LAST_FRAMES_2_VIDEO",
       aspect_ratio: "16:9",
       resolution: "1080p",
@@ -121,12 +121,24 @@ describe("Veo3 generate + extend bodies", () => {
     expect(req.body).toEqual({
       prompt: "sunset timelapse",
       imageUrls: ["https://cdn.example/a.png", "https://cdn.example/b.png"], // capped at 2 per doc
-      model: "veo3_fast",
+      model: "veo3.1-fast",
       generationType: "FIRST_AND_LAST_FRAMES_2_VIDEO",
       aspect_ratio: "16:9",
       resolution: "1080p",
       duration: 8,
     });
+  });
+
+  // M-straggler (live probe 2026-08-05): a submit with NO `model` at all
+  // 422'd "Invalid model" — the engine selector is effectively required and
+  // wants the Veo3.1 spellings, so the body always carries one and legacy
+  // tier names stored in templates/schemas are normalized rather than sent.
+  it("always sends a model, defaulting the fast Veo3.1 engine and normalizing legacy tier spellings", () => {
+    expect(buildVeoBody("x", {}).model).toBe("veo3.1-fast");
+    expect(buildVeoBody("x", { model_tier: "veo3_fast" }).model).toBe("veo3.1-fast");
+    expect(buildVeoBody("x", { model_tier: "veo3" }).model).toBe("veo3.1");
+    expect(buildVeoBody("x", { model_tier: "veo3_lite" }).model).toBe("veo3.1-lite");
+    expect(buildVeoBody("x", { model_tier: "VEO3.1" }).model).toBe("veo3.1");
   });
 
   it("extend posts taskId with its OWN tier enum (fast|quality|lite)", () => {
@@ -139,7 +151,9 @@ describe("Veo3 generate + extend bodies", () => {
     expect(req.body).toEqual({ taskId: "veo_task_123", prompt: "continue the shot", seeds: 12345, model: "quality" });
     // generate's enum values are NOT valid on extend.
     expect(buildVeoExtendBody("x", { model_tier: "veo3_fast" }).model).toBeUndefined();
-    expect(buildVeoBody("x", { model_tier: "quality" }).model).toBeUndefined();
+    // ...and an unknown/extend-flavoured tier on generate falls back to the
+    // default engine rather than leaking an invalid value onto the wire.
+    expect(buildVeoBody("x", { model_tier: "quality" }).model).toBe("veo3.1-fast");
   });
 });
 

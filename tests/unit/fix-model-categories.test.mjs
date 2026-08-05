@@ -391,9 +391,12 @@ describe("run() — curated schema backfill (dry-run / apply / idempotent second
     displayName: "Generate Music",
     inputSchema: { fields: { prompt: { type: "string", required: true, maxLength: 5000 } } },
   };
+  // convert-to-wav needs a prior generation's taskId/audioId (no UI yet) and
+  // deliberately has NO curated schema — it must never be touched. (The old
+  // exemplar here, generate-lyrics, GAINED a curated schema in EDITSv1 M3.)
   const nonCuratedAudioRow = {
-    modelId: "generate-lyrics", providerName: "KIE", modelType: "audio", capability: "audio",
-    displayName: "Generate Lyrics",
+    modelId: "convert-to-wav", providerName: "KIE", modelType: "audio", capability: "audio",
+    displayName: "Convert To Wav",
     inputSchema: { fields: { prompt: { type: "string", required: true, maxLength: 5000 } } },
   };
 
@@ -424,7 +427,7 @@ describe("run() — curated schema backfill (dry-run / apply / idempotent second
     expect(call).toBeTruthy();
     expect(call[0].data.inputSchema.fields.vocal_gender).toMatchObject({ enum: ["m", "f"] });
     expect(prisma.modelPricing.update).not.toHaveBeenCalledWith(
-      expect.objectContaining({ where: { modelId: "generate-lyrics" } }),
+      expect.objectContaining({ where: { modelId: "convert-to-wav" } }),
     );
   });
 

@@ -51,6 +51,19 @@
 
 export const AUDIO_FAMILY = {
   SUNO_MUSIC: "suno-music",
+  // EDITSv1 M3 — the Suno-suite quick wins (docs/model-audit/audio-music.md).
+  // Route-only (pure text in, no source audio):
+  SUNO_STYLE: "suno-style", // boost-music-style — `content`, not `prompt`
+  SUNO_LYRICS: "suno-lyrics", // generate-lyrics — its own /lyrics path
+  SUNO_SOUNDS: "suno-sounds", // generate-sounds — /generate/sounds + engine
+  // Upload-driven (AudioToolsStudio's Dropzone already supplies `audio_url`;
+  // each op's real field name differs — uploadUrl vs audioUrl — and the
+  // builders below own that translation):
+  SUNO_UPLOAD_COVER: "suno-upload-cover",
+  SUNO_UPLOAD_EXTEND: "suno-upload-extend",
+  SUNO_ADD_INSTRUMENTAL: "suno-add-instrumental",
+  SUNO_ADD_VOCALS: "suno-add-vocals",
+  SUNO_VOCAL_SEPARATION: "suno-vocal-separation",
   ELEVENLABS_TTS: "elevenlabs-tts",
   ELEVENLABS_DIALOGUE: "elevenlabs-dialogue",
   GEMINI_TTS: "gemini-tts",
@@ -60,6 +73,24 @@ export const AUDIO_FAMILY = {
 // /suno-api/get-music-details; both verified with live calls.
 export const SUNO_SUBMIT_PATH = "/api/v1/generate";
 export const SUNO_POLL_PATH = "/api/v1/generate/record-info";
+
+// The Suno-suite operation paths, per docs/model-audit/audio-music.md (each
+// op's "Doc says" line). The /generate/* transformer ops (upload-cover,
+// upload-extend, add-instrumental, add-vocals, sounds) all produce ordinary
+// sunoData tracks and are polled at the SAME music record-info; lyrics,
+// style-boost and vocal-removal live on their own namespaces and follow
+// KIE's uniform <namespace>/record-info?taskId= poll convention.
+export const SUNO_STYLE_SUBMIT_PATH = "/api/v1/style/generate";
+export const SUNO_STYLE_POLL_PATH = "/api/v1/style/record-info";
+export const SUNO_LYRICS_SUBMIT_PATH = "/api/v1/lyrics";
+export const SUNO_LYRICS_POLL_PATH = "/api/v1/lyrics/record-info";
+export const SUNO_SOUNDS_SUBMIT_PATH = "/api/v1/generate/sounds";
+export const SUNO_UPLOAD_COVER_PATH = "/api/v1/generate/upload-cover";
+export const SUNO_UPLOAD_EXTEND_PATH = "/api/v1/generate/upload-extend";
+export const SUNO_ADD_INSTRUMENTAL_PATH = "/api/v1/generate/add-instrumental";
+export const SUNO_ADD_VOCALS_PATH = "/api/v1/generate/add-vocals";
+export const SUNO_VOCAL_REMOVAL_SUBMIT_PATH = "/api/v1/vocal-removal/generate";
+export const SUNO_VOCAL_REMOVAL_POLL_PATH = "/api/v1/vocal-removal/record-info";
 
 // Normalization ladder shared with model-catalog-core.mjs's
 // curatedSchemaEntry: a sitemap-derived id keeps its vendor folder and
@@ -82,6 +113,36 @@ function normalizeId(modelId) {
 // no surface to supply, so it is deliberately NOT claimed here and keeps
 // falling through to the generic market route that honestly rejects it.
 const SUNO_MUSIC_RE = /(^|[^a-z])generate-music($|[^a-z])|(^|[^a-z])suno-v[\d.]+/;
+
+// EDITSv1 M3 — the 8 Suno-suite operations that ARE implementable today
+// (3 route-only + 5 upload-driven; docs/model-audit/audio-music.md's
+// "Summary for the caller"). Matched by exact id — every one of these DB
+// rows stores the bare doc-page slug — with the vendor-prefixed spelling
+// ("suno/boost-music-style" → "suno-boost-music-style") tolerated the same
+// way normalizeId tolerates it everywhere else. The ops that need a UI
+// concept the studio lacks (extend-music's prior-generation audioId,
+// replace-section's time range, mashup's 2 files, the voice-clone chain,
+// convert-to-wav/generate-midi's chained taskIds) are deliberately still
+// NOT claimed and keep failing honestly on the generic route.
+const SUNO_OP_FAMILY_BY_ID = {
+  "boost-music-style": AUDIO_FAMILY.SUNO_STYLE,
+  "generate-lyrics": AUDIO_FAMILY.SUNO_LYRICS,
+  "generate-sounds": AUDIO_FAMILY.SUNO_SOUNDS,
+  "upload-and-cover-audio": AUDIO_FAMILY.SUNO_UPLOAD_COVER,
+  "upload-and-extend-audio": AUDIO_FAMILY.SUNO_UPLOAD_EXTEND,
+  "add-instrumental": AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL,
+  "add-vocals": AUDIO_FAMILY.SUNO_ADD_VOCALS,
+  "separate-vocals": AUDIO_FAMILY.SUNO_VOCAL_SEPARATION,
+};
+
+function sunoOpFamily(modelId) {
+  const { raw, slashless } = normalizeId(modelId);
+  if (!raw) return null;
+  for (const key of [raw, slashless, slashless.replace(/^suno-/, "")]) {
+    if (SUNO_OP_FAMILY_BY_ID[key]) return SUNO_OP_FAMILY_BY_ID[key];
+  }
+  return null;
+}
 const ELEVENLABS_TTS_RE = /elevenlabs[/-]text-to-speech/;
 const ELEVENLABS_DIALOGUE_RE = /elevenlabs[/-]text-to-dialogue/;
 // google/gemini-3-1-flash-tts, gemini-2-5-pro-tts — Google's multi-speaker
@@ -97,6 +158,8 @@ const GEMINI_TTS_RE = /gemini[a-z0-9.\-]*-tts($|[^a-z])/;
 export function audioProviderFamily(modelId) {
   const { raw, slashless, dotted } = normalizeId(modelId);
   if (!raw) return null;
+  const op = sunoOpFamily(modelId);
+  if (op) return op;
   const probe = `${raw} ${slashless} ${dotted}`;
   if (ELEVENLABS_DIALOGUE_RE.test(probe)) return AUDIO_FAMILY.ELEVENLABS_DIALOGUE;
   if (ELEVENLABS_TTS_RE.test(probe)) return AUDIO_FAMILY.ELEVENLABS_TTS;
@@ -365,6 +428,187 @@ export function buildSunoMusicBody(modelId, prompt, params = {}) {
   return body;
 }
 
+// ── Suno-suite operation bodies (EDITSv1 M3) ───────────────────────────────
+// Every builder below forwards a WHITELIST (rule 2) and never invents
+// content (rule 1): a doc-required field the caller did not supply is left
+// absent so the provider's own validator answers honestly. The studio's
+// canonical upload field is `audio_url` (AudioToolsStudio's Dropzone);
+// each op's real wire name (`uploadUrl` on the /generate/* transformers,
+// `audioUrl` on vocal-removal) is translated HERE and nowhere else.
+function uploadUrlOf(params) {
+  return firstStringOf(params?.uploadUrl, params?.upload_url, params?.audio_url, params?.audioUrl);
+}
+
+function firstStringOf(...candidates) {
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim()) return c.trim();
+  }
+  return null;
+}
+
+/**
+ * boost-music-style: `POST /api/v1/style/generate`, ONE field — `content`
+ * (the style description). Text-in/text-out; the studio's prompt IS the
+ * content, only the field name differs (audit root cause #4).
+ */
+export function buildSunoStyleBody(prompt, params = {}) {
+  const body = {};
+  const content = firstStringOf(params.content) || textOf(prompt, params);
+  if (content !== null) body.content = content;
+  return body;
+}
+
+/** generate-lyrics: `POST /api/v1/lyrics` — `prompt` (≤200 chars). */
+export function buildSunoLyricsBody(prompt, params = {}) {
+  const body = {};
+  const text = textOf(prompt, params);
+  if (text !== null) body.prompt = text;
+  return body;
+}
+
+// generate-sounds only speaks the two newest engines (doc: enum V5|V5_5) —
+// an engine resolved from anywhere else collapses to the default.
+export const SUNO_SOUNDS_ENGINES = ["V5", "V5_5"];
+
+/**
+ * generate-sounds: `POST /api/v1/generate/sounds` — `prompt` (≤500, req) +
+ * `model` (req, V5|V5_5); optional soundLoop/soundTempo/soundKey/grabLyrics.
+ */
+export function buildSunoSoundsBody(modelId, prompt, params = {}) {
+  const engine = resolveSunoEngine(modelId, params);
+  const body = { model: SUNO_SOUNDS_ENGINES.includes(engine) ? engine : SUNO_DEFAULT_ENGINE };
+  const text = textOf(prompt, params);
+  if (text !== null) body.prompt = text;
+  mapFields(params, {
+    sound_loop: "soundLoop",
+    soundLoop: "soundLoop",
+    sound_tempo: "soundTempo",
+    soundTempo: "soundTempo",
+    sound_key: "soundKey",
+    soundKey: "soundKey",
+    grab_lyrics: "grabLyrics",
+    grabLyrics: "grabLyrics",
+  }, body);
+  return body;
+}
+
+/**
+ * upload-and-cover-audio: `POST /api/v1/generate/upload-cover` — the
+ * generate-music body plus the source track's `uploadUrl`. `duration` is a
+ * generate-only field (the cover keeps its source's length) and is dropped.
+ */
+export function buildSunoUploadCoverBody(modelId, prompt, params = {}) {
+  const body = buildSunoMusicBody(modelId, prompt, params);
+  delete body.duration;
+  const uploadUrl = uploadUrlOf(params);
+  if (uploadUrl) body.uploadUrl = uploadUrl;
+  return body;
+}
+
+/**
+ * upload-and-extend-audio: `POST /api/v1/generate/upload-extend` —
+ * `uploadUrl` + `defaultParamFlag` + `model`; custom mode (defaultParamFlag
+ * true) additionally carries `continueAt`/`prompt`/`style`/`title`. Custom
+ * is inferred from a supplied continueAt — the one field that makes custom
+ * mode meaningful; a bare upload extends with the provider's defaults.
+ */
+export function buildSunoUploadExtendBody(modelId, prompt, params = {}) {
+  const body = { model: resolveSunoEngine(modelId, params) };
+  const uploadUrl = uploadUrlOf(params);
+  if (uploadUrl) body.uploadUrl = uploadUrl;
+  const continueAt = Number(params.continueAt ?? params.continue_at);
+  const explicit = params.defaultParamFlag ?? params.default_param_flag;
+  const custom = typeof explicit === "boolean" ? explicit : Number.isFinite(continueAt) && continueAt > 0;
+  body.defaultParamFlag = custom;
+  if (custom) {
+    if (Number.isFinite(continueAt) && continueAt > 0) body.continueAt = continueAt;
+    const text = textOf(prompt, params);
+    if (text !== null) body.prompt = text;
+    mapFields(params, { style: "style", title: "title" }, body);
+  }
+  return body;
+}
+
+/**
+ * add-instrumental: `POST /api/v1/generate/add-instrumental` — `uploadUrl`,
+ * `title`, `tags`, `negativeTags` (all doc-required). `tags` accepts the
+ * studio's canonical `style` spelling — same "style tags" semantic, this
+ * op just names the field differently.
+ */
+export function buildSunoAddInstrumentalBody(prompt, params = {}) {
+  const body = {};
+  const uploadUrl = uploadUrlOf(params);
+  if (uploadUrl) body.uploadUrl = uploadUrl;
+  const tags = firstStringOf(params.tags, params.style);
+  if (tags) body.tags = tags;
+  mapFields(params, { title: "title", negative_tags: "negativeTags", negativeTags: "negativeTags" }, body);
+  return body;
+}
+
+/**
+ * add-vocals: `POST /api/v1/generate/add-vocals` — `prompt`, `title`,
+ * `negativeTags`, `style`, `uploadUrl` (all doc-required).
+ */
+export function buildSunoAddVocalsBody(prompt, params = {}) {
+  const body = {};
+  const uploadUrl = uploadUrlOf(params);
+  if (uploadUrl) body.uploadUrl = uploadUrl;
+  const text = textOf(prompt, params);
+  if (text !== null) body.prompt = text;
+  mapFields(params, { title: "title", style: "style", negative_tags: "negativeTags", negativeTags: "negativeTags" }, body);
+  return body;
+}
+
+export const SUNO_VOCAL_REMOVAL_TYPES = ["separate_vocal", "split_stem", "split_stem_advanced"];
+
+/**
+ * separate-vocals: `POST /api/v1/vocal-removal/generate` — `audioUrl`
+ * (NOT the studio's snake_case `audio_url` — the casing was the bug, audit
+ * root cause #4) or a prior generation's `taskId`+`audioId`; `type` picks
+ * the 10/50/20-credit mode and defaults to the cheapest.
+ */
+export function buildSunoVocalRemovalBody(prompt, params = {}) {
+  const body = {};
+  const taskId = firstStringOf(params.taskId, params.task_id);
+  if (taskId) body.taskId = taskId;
+  const audioId = firstStringOf(params.audioId, params.audio_id);
+  if (audioId) body.audioId = audioId;
+  const audioUrl = uploadUrlOf(params);
+  if (audioUrl) body.audioUrl = audioUrl;
+  const type = firstStringOf(params.type)?.toLowerCase();
+  body.type = SUNO_VOCAL_REMOVAL_TYPES.includes(type) ? type : SUNO_VOCAL_REMOVAL_TYPES[0];
+  return body;
+}
+
+// Family → submit path. The three speech families stay on the generic
+// market route (null path).
+const AUDIO_SUBMIT_PATHS = {
+  [AUDIO_FAMILY.SUNO_MUSIC]: SUNO_SUBMIT_PATH,
+  [AUDIO_FAMILY.SUNO_STYLE]: SUNO_STYLE_SUBMIT_PATH,
+  [AUDIO_FAMILY.SUNO_LYRICS]: SUNO_LYRICS_SUBMIT_PATH,
+  [AUDIO_FAMILY.SUNO_SOUNDS]: SUNO_SOUNDS_SUBMIT_PATH,
+  [AUDIO_FAMILY.SUNO_UPLOAD_COVER]: SUNO_UPLOAD_COVER_PATH,
+  [AUDIO_FAMILY.SUNO_UPLOAD_EXTEND]: SUNO_UPLOAD_EXTEND_PATH,
+  [AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL]: SUNO_ADD_INSTRUMENTAL_PATH,
+  [AUDIO_FAMILY.SUNO_ADD_VOCALS]: SUNO_ADD_VOCALS_PATH,
+  [AUDIO_FAMILY.SUNO_VOCAL_SEPARATION]: SUNO_VOCAL_REMOVAL_SUBMIT_PATH,
+};
+
+// Family → poll path. The /generate/* transformer ops all report through
+// the music record-info (same sunoData envelope parseSunoPoll already
+// reads); lyrics/style/vocal-removal poll their own namespaces.
+const AUDIO_POLL_PATHS = {
+  [AUDIO_FAMILY.SUNO_MUSIC]: SUNO_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_SOUNDS]: SUNO_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_UPLOAD_COVER]: SUNO_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_UPLOAD_EXTEND]: SUNO_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL]: SUNO_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_ADD_VOCALS]: SUNO_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_STYLE]: SUNO_STYLE_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_LYRICS]: SUNO_LYRICS_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_VOCAL_SEPARATION]: SUNO_VOCAL_REMOVAL_POLL_PATH,
+};
+
 /**
  * The complete provider request for one audio submit, or null when this
  * model is not one of the mapped families (the caller then keeps its
@@ -379,8 +623,27 @@ export function formatAudioRequest(modelId, prompt, params = {}) {
   const family = audioProviderFamily(modelId);
   if (!family) return null;
 
-  if (family === AUDIO_FAMILY.SUNO_MUSIC) {
-    return { family, path: SUNO_SUBMIT_PATH, body: buildSunoMusicBody(modelId, prompt, params) };
+  switch (family) {
+    case AUDIO_FAMILY.SUNO_MUSIC:
+      return { family, path: SUNO_SUBMIT_PATH, body: buildSunoMusicBody(modelId, prompt, params) };
+    case AUDIO_FAMILY.SUNO_STYLE:
+      return { family, path: SUNO_STYLE_SUBMIT_PATH, body: buildSunoStyleBody(prompt, params) };
+    case AUDIO_FAMILY.SUNO_LYRICS:
+      return { family, path: SUNO_LYRICS_SUBMIT_PATH, body: buildSunoLyricsBody(prompt, params) };
+    case AUDIO_FAMILY.SUNO_SOUNDS:
+      return { family, path: SUNO_SOUNDS_SUBMIT_PATH, body: buildSunoSoundsBody(modelId, prompt, params) };
+    case AUDIO_FAMILY.SUNO_UPLOAD_COVER:
+      return { family, path: SUNO_UPLOAD_COVER_PATH, body: buildSunoUploadCoverBody(modelId, prompt, params) };
+    case AUDIO_FAMILY.SUNO_UPLOAD_EXTEND:
+      return { family, path: SUNO_UPLOAD_EXTEND_PATH, body: buildSunoUploadExtendBody(modelId, prompt, params) };
+    case AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL:
+      return { family, path: SUNO_ADD_INSTRUMENTAL_PATH, body: buildSunoAddInstrumentalBody(prompt, params) };
+    case AUDIO_FAMILY.SUNO_ADD_VOCALS:
+      return { family, path: SUNO_ADD_VOCALS_PATH, body: buildSunoAddVocalsBody(prompt, params) };
+    case AUDIO_FAMILY.SUNO_VOCAL_SEPARATION:
+      return { family, path: SUNO_VOCAL_REMOVAL_SUBMIT_PATH, body: buildSunoVocalRemovalBody(prompt, params) };
+    default:
+      break;
   }
 
   const input =
@@ -395,13 +658,14 @@ export function formatAudioRequest(modelId, prompt, params = {}) {
 
 /** The submit path a model needs, or null for "the caller's default". */
 export function audioSubmitPath(modelId) {
-  return audioProviderFamily(modelId) === AUDIO_FAMILY.SUNO_MUSIC ? SUNO_SUBMIT_PATH : null;
+  return AUDIO_SUBMIT_PATHS[audioProviderFamily(modelId)] || null;
 }
 
 /** The poll path a model needs, or null for "the caller's default". */
 export function audioPollPath(modelId, requestId) {
-  if (audioProviderFamily(modelId) !== AUDIO_FAMILY.SUNO_MUSIC) return null;
-  return `${SUNO_POLL_PATH}?taskId=${encodeURIComponent(requestId)}`;
+  const path = AUDIO_POLL_PATHS[audioProviderFamily(modelId)];
+  if (!path) return null;
+  return `${path}?taskId=${encodeURIComponent(requestId)}`;
 }
 
 // ── Suno poll parsing ──────────────────────────────────────────────────────
@@ -448,4 +712,102 @@ export function parseSunoPoll(data) {
   // arrive with an empty audioUrl and a stream url that is still filling.
   if (raw === "SUCCESS" && outputs.length) return { status: "success", outputs, error: undefined };
   return { status: "pending", outputs: [], error: undefined };
+}
+
+// ── Suno-op poll parsing (EDITSv1 M3) ──────────────────────────────────────
+// Lyrics and style-boost produce TEXT, not audio files. The app's whole
+// output pipeline (job-runner's ingestFirstOutput, the generation record's
+// outputUrl) speaks URLs, so text results are carried as data: URIs — a
+// display concern downstream, exactly as the audit notes; the submit/poll
+// contract stays uniform. Vocal-removal answers with named stem URLs, not
+// sunoData tracks.
+//
+// These three families MUST be parsed model-keyed (parseAudioOpPoll below)
+// BEFORE the shape-detected parseSunoPoll: their record-info envelopes also
+// carry `status: "SUCCESS"` strings, which isSunoPollBody would claim and
+// misread as "pending forever" (no sunoData).
+function textAsDataUri(text) {
+  return `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`;
+}
+
+function terminalFailure(data) {
+  const raw = String(data?.status || "");
+  if (SUNO_TERMINAL_FAILURES.has(raw)) {
+    return { status: "failed", outputs: [], error: data.errorMessage || data.errorCode || raw };
+  }
+  const flag = Number(data?.successFlag);
+  if (flag === 2 || flag === 3) {
+    return { status: "failed", outputs: [], error: data.errorMessage || data.errorCode || "generation failed" };
+  }
+  return null;
+}
+
+/** generate-lyrics record-info: `data.response.lyricsData[]` of `{ text, title, status }`. */
+export function parseSunoLyricsPoll(data) {
+  if (!data || typeof data !== "object") return { status: "pending", outputs: [], error: undefined };
+  const failed = terminalFailure(data);
+  if (failed) return failed;
+  const entries = [data.response?.lyricsData, data.response?.data, data.lyricsData]
+    .find(Array.isArray) || [];
+  const outputs = entries
+    .map((e) => (typeof e?.text === "string" && e.text.trim() ? textAsDataUri(e.text) : null))
+    .filter(Boolean);
+  const raw = String(data.status || "");
+  if ((raw === "SUCCESS" || Number(data.successFlag) === 1) && outputs.length) {
+    return { status: "success", outputs, error: undefined };
+  }
+  return { status: "pending", outputs: [], error: undefined };
+}
+
+/** boost-music-style record-info: the boosted style text at `data.response.result` (or flat `result`). */
+export function parseSunoStylePoll(data) {
+  if (!data || typeof data !== "object") return { status: "pending", outputs: [], error: undefined };
+  const failed = terminalFailure(data);
+  if (failed) return failed;
+  const result = firstStringOf(data.response?.result, data.result);
+  if (result) return { status: "success", outputs: [textAsDataUri(result)], error: undefined };
+  return { status: "pending", outputs: [], error: undefined };
+}
+
+/**
+ * separate-vocals record-info: `data.successFlag` (0 pending / 1 success /
+ * 2-3 failed) with stem URLs under `data.response` — `vocalUrl`,
+ * `instrumentalUrl`, and per-stem urls in the split modes. Every *Url is
+ * collected EXCEPT origin* (that is the caller's own input echoed back).
+ */
+export function parseSunoVocalRemovalPoll(data) {
+  if (!data || typeof data !== "object") return { status: "pending", outputs: [], error: undefined };
+  const failed = terminalFailure(data);
+  if (failed) return failed;
+  const resp = data.response && typeof data.response === "object" ? data.response : {};
+  const info = resp.vocal_removal_info && typeof resp.vocal_removal_info === "object" ? resp.vocal_removal_info : resp;
+  const outputs = [];
+  for (const [key, value] of Object.entries(info)) {
+    if (!/url$/i.test(key) || /^origin/i.test(key)) continue;
+    if (typeof value === "string" && value) outputs.push(value);
+  }
+  const raw = String(data.status || "");
+  if ((Number(data.successFlag) === 1 || raw === "SUCCESS") && outputs.length) {
+    return { status: "success", outputs, error: undefined };
+  }
+  return { status: "pending", outputs: [], error: undefined };
+}
+
+/**
+ * Model-keyed poll dispatch for the Suno ops whose record-info envelope is
+ * NOT the music sunoData shape — or null when the model isn't one of them
+ * (the caller then falls through to the shape-detected parseSunoPoll: the
+ * /generate/* transformer ops answer with ordinary sunoData tracks).
+ */
+export function parseAudioOpPoll(data, modelId) {
+  switch (audioProviderFamily(modelId)) {
+    case AUDIO_FAMILY.SUNO_LYRICS:
+      return parseSunoLyricsPoll(data);
+    case AUDIO_FAMILY.SUNO_STYLE:
+      return parseSunoStylePoll(data);
+    case AUDIO_FAMILY.SUNO_VOCAL_SEPARATION:
+      return parseSunoVocalRemovalPoll(data);
+    default:
+      return null;
+  }
 }

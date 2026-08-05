@@ -157,12 +157,41 @@ export function buildAlephBody(prompt, params = {}) {
 }
 
 // ── Veo3 generate ──────────────────────────────────────────────────────────
-// prompt (req), imageUrls (opt, ≤2), model (tier selector veo3|veo3_fast|
-// veo3_lite — canonical studio name is `model_tier`, because submitOnly's
-// payload destructuring reserves `model` for the catalog id), generationType,
-// aspect_ratio (snake_case here, unlike Runway!), resolution (720p|1080p|4k),
+// prompt (req), imageUrls (opt, ≤2), model (engine selector — canonical
+// studio name is `model_tier`, because submitOnly's payload destructuring
+// reserves `model` for the catalog id), generationType, aspect_ratio
+// (snake_case here, unlike Runway!), resolution (720p|1080p|4k),
 // duration (4|6|8), watermark, enableTranslation.
-export const VEO_TIERS = ["veo3", "veo3_fast", "veo3_lite"];
+//
+// M-straggler fix (live probe 2026-08-05): the endpoint is the Veo3.1 API
+// (docs/model-audit/video-dedicated.md's family title) and 422'd
+// "Invalid model" on a submit that carried no `model` at all — the engine
+// selector is effectively REQUIRED and its accepted values are the
+// version-suffixed `veo3.1` / `veo3.1-fast` / `veo3.1-lite` spellings, not
+// the bare `veo3` / `veo3_fast` / `veo3_lite` names the older doc page
+// listed. The body therefore ALWAYS carries a `model` (fast tier when the
+// caller named none — same default the doc gives), and every legacy tier
+// spelling a stored template/schema may still hold is normalized to its
+// 3.1 equivalent rather than rejected.
+export const VEO_TIERS = ["veo3.1", "veo3.1-fast", "veo3.1-lite"];
+export const VEO_DEFAULT_TIER = "veo3.1-fast";
+const VEO_TIER_ALIASES = {
+  "veo3": "veo3.1",
+  "veo3.1": "veo3.1",
+  "veo3_1": "veo3.1",
+  "veo3_fast": "veo3.1-fast",
+  "veo3-fast": "veo3.1-fast",
+  "veo3.1-fast": "veo3.1-fast",
+  "veo3.1_fast": "veo3.1-fast",
+  "veo3_lite": "veo3.1-lite",
+  "veo3-lite": "veo3.1-lite",
+  "veo3.1-lite": "veo3.1-lite",
+  "veo3.1_lite": "veo3.1-lite",
+};
+export function resolveVeoTier(value) {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return VEO_TIER_ALIASES[raw] || null;
+}
 export const VEO_EXTEND_TIERS = ["fast", "quality", "lite"];
 
 export function buildVeoBody(prompt, params = {}) {
@@ -171,8 +200,8 @@ export function buildVeoBody(prompt, params = {}) {
   if (text !== null) body.prompt = text;
   const imageUrls = asUrlArray(params.imageUrls ?? params.image_urls ?? params.image_url, 2);
   if (imageUrls) body.imageUrls = imageUrls;
-  const tier = firstString(params.model_tier, params.modelTier, params.veo_model)?.toLowerCase();
-  if (tier && VEO_TIERS.includes(tier)) body.model = tier;
+  const tier = resolveVeoTier(firstString(params.model_tier, params.modelTier, params.veo_model));
+  body.model = tier || VEO_DEFAULT_TIER;
   const generationType = firstString(params.generationType, params.generation_type);
   if (generationType) body.generationType = generationType;
   const aspect = firstString(params.aspect_ratio, params.aspectRatio);

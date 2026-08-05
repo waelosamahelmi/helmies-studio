@@ -27,6 +27,29 @@ import {
   SUNO_DEFAULT_ENGINE,
   ELEVENLABS_VOICE_IDS,
   GEMINI_VOICE_NAMES,
+  buildSunoStyleBody,
+  buildSunoLyricsBody,
+  buildSunoSoundsBody,
+  buildSunoUploadCoverBody,
+  buildSunoUploadExtendBody,
+  buildSunoAddInstrumentalBody,
+  buildSunoAddVocalsBody,
+  buildSunoVocalRemovalBody,
+  parseSunoLyricsPoll,
+  parseSunoStylePoll,
+  parseSunoVocalRemovalPoll,
+  parseAudioOpPoll,
+  SUNO_STYLE_SUBMIT_PATH,
+  SUNO_STYLE_POLL_PATH,
+  SUNO_LYRICS_SUBMIT_PATH,
+  SUNO_LYRICS_POLL_PATH,
+  SUNO_SOUNDS_SUBMIT_PATH,
+  SUNO_UPLOAD_COVER_PATH,
+  SUNO_UPLOAD_EXTEND_PATH,
+  SUNO_ADD_INSTRUMENTAL_PATH,
+  SUNO_ADD_VOCALS_PATH,
+  SUNO_VOCAL_REMOVAL_SUBMIT_PATH,
+  SUNO_VOCAL_REMOVAL_POLL_PATH,
 } from "@/lib/audio-payload-core.mjs";
 
 describe("audioProviderFamily", () => {
@@ -51,11 +74,23 @@ describe("audioProviderFamily", () => {
     expect(audioProviderFamily("suno-v4.5-plus")).toBe(AUDIO_FAMILY.SUNO_MUSIC);
   });
 
-  it("leaves every other Suno-suite slug alone — they need a source track the studio cannot supply", () => {
+  it("claims the 8 implementable Suno ops (EDITSv1 M3) under their own families", () => {
+    expect(audioProviderFamily("boost-music-style")).toBe(AUDIO_FAMILY.SUNO_STYLE);
+    expect(audioProviderFamily("generate-lyrics")).toBe(AUDIO_FAMILY.SUNO_LYRICS);
+    expect(audioProviderFamily("generate-sounds")).toBe(AUDIO_FAMILY.SUNO_SOUNDS);
+    expect(audioProviderFamily("upload-and-cover-audio")).toBe(AUDIO_FAMILY.SUNO_UPLOAD_COVER);
+    expect(audioProviderFamily("upload-and-extend-audio")).toBe(AUDIO_FAMILY.SUNO_UPLOAD_EXTEND);
+    expect(audioProviderFamily("add-instrumental")).toBe(AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL);
+    expect(audioProviderFamily("add-vocals")).toBe(AUDIO_FAMILY.SUNO_ADD_VOCALS);
+    expect(audioProviderFamily("separate-vocals")).toBe(AUDIO_FAMILY.SUNO_VOCAL_SEPARATION);
+    // Vendor-prefixed spellings resolve the same way.
+    expect(audioProviderFamily("suno/boost-music-style")).toBe(AUDIO_FAMILY.SUNO_STYLE);
+  });
+
+  it("leaves the Suno ops that need a UI concept the studio lacks alone — they keep failing honestly", () => {
     for (const id of [
       "extend-music", "replace-section", "generate-persona", "generate-mashup",
-      "add-instrumental", "add-vocals", "convert-to-wav", "cover-suno",
-      "boost-music-style", "generate-lyrics", "separate-vocals", "generate-midi",
+      "convert-to-wav", "cover-suno", "generate-midi", "suno-voice-generate",
     ]) {
       expect(audioProviderFamily(id)).toBeNull();
     }
@@ -310,5 +345,218 @@ describe("Suno poll parsing (the failure branch included)", () => {
 
   it("declines a body that is not the music envelope, so the generic parser still runs", () => {
     expect(parseSunoPoll({ state: "success", resultJson: '{"resultUrls":["https://x/y.png"]}' })).toBeNull();
+  });
+});
+
+// ── EDITSv1 M3 — Suno-suite operations ─────────────────────────────────────
+// Shapes pinned to docs/model-audit/audio-music.md's per-op "Doc says" lines.
+describe("Suno op submit routing", () => {
+  it("routes each op to its own dedicated path", () => {
+    expect(audioSubmitPath("boost-music-style")).toBe(SUNO_STYLE_SUBMIT_PATH);
+    expect(audioSubmitPath("generate-lyrics")).toBe(SUNO_LYRICS_SUBMIT_PATH);
+    expect(audioSubmitPath("generate-sounds")).toBe(SUNO_SOUNDS_SUBMIT_PATH);
+    expect(audioSubmitPath("upload-and-cover-audio")).toBe(SUNO_UPLOAD_COVER_PATH);
+    expect(audioSubmitPath("upload-and-extend-audio")).toBe(SUNO_UPLOAD_EXTEND_PATH);
+    expect(audioSubmitPath("add-instrumental")).toBe(SUNO_ADD_INSTRUMENTAL_PATH);
+    expect(audioSubmitPath("add-vocals")).toBe(SUNO_ADD_VOCALS_PATH);
+    expect(audioSubmitPath("separate-vocals")).toBe(SUNO_VOCAL_REMOVAL_SUBMIT_PATH);
+  });
+
+  it("polls the /generate/* transformer ops at the shared music record-info, and the rest at their own", () => {
+    for (const id of ["generate-sounds", "upload-and-cover-audio", "upload-and-extend-audio", "add-instrumental", "add-vocals"]) {
+      expect(audioPollPath(id, "t-1")).toBe(`${SUNO_POLL_PATH}?taskId=t-1`);
+    }
+    expect(audioPollPath("boost-music-style", "t-2")).toBe(`${SUNO_STYLE_POLL_PATH}?taskId=t-2`);
+    expect(audioPollPath("generate-lyrics", "t-3")).toBe(`${SUNO_LYRICS_POLL_PATH}?taskId=t-3`);
+    expect(audioPollPath("separate-vocals", "t-4")).toBe(`${SUNO_VOCAL_REMOVAL_POLL_PATH}?taskId=t-4`);
+  });
+});
+
+describe("boost-music-style — content, not prompt (audit root cause #4)", () => {
+  it("maps the studio prompt onto the doc's one required field `content`", () => {
+    const req = formatAudioRequest("boost-music-style", "dreamy synthwave with heavy bass", {});
+    expect(req.path).toBe("/api/v1/style/generate");
+    expect(req.body).toEqual({ content: "dreamy synthwave with heavy bass" });
+  });
+
+  it("never invents content — an empty submit stays empty for the provider's own validator", () => {
+    expect(buildSunoStyleBody("", {})).toEqual({});
+  });
+});
+
+describe("generate-lyrics — its own /lyrics path (field name already matched)", () => {
+  it("posts { prompt } to /api/v1/lyrics", () => {
+    const req = formatAudioRequest("generate-lyrics", "a song about the sea", {});
+    expect(req.path).toBe("/api/v1/lyrics");
+    expect(req.body).toEqual({ prompt: "a song about the sea" });
+    expect(buildSunoLyricsBody("x", { negative_prompt: "injected" })).toEqual({ prompt: "x" });
+  });
+});
+
+describe("generate-sounds — /generate/sounds with the V5|V5_5 engine enum", () => {
+  it("defaults the newest engine and forwards the optional sound settings camelCased", () => {
+    const body = buildSunoSoundsBody("generate-sounds", "rain on a tin roof", {
+      sound_loop: true, sound_tempo: "slow", sound_key: "C minor", grab_lyrics: false,
+    });
+    expect(body).toEqual({
+      model: SUNO_DEFAULT_ENGINE,
+      prompt: "rain on a tin roof",
+      soundLoop: true, soundTempo: "slow", soundKey: "C minor", grabLyrics: false,
+    });
+  });
+
+  it("collapses an engine outside the doc's V5|V5_5 enum to the default", () => {
+    expect(buildSunoSoundsBody("generate-sounds", "x", { engine: "V4" }).model).toBe(SUNO_DEFAULT_ENGINE);
+    expect(buildSunoSoundsBody("generate-sounds", "x", { engine: "V5" }).model).toBe("V5");
+  });
+});
+
+describe("upload-and-cover-audio — the Dropzone's audio_url becomes the doc's uploadUrl", () => {
+  it("builds the generate-music shape plus uploadUrl, without generate-only duration", () => {
+    const req = formatAudioRequest("upload-and-cover-audio", "make it orchestral", {
+      audio_url: "https://cdn.example/track.mp3",
+      style: "orchestral",
+      title: "Covered",
+      instrumental: false,
+      duration: 120,
+    });
+    expect(req.path).toBe("/api/v1/generate/upload-cover");
+    expect(req.body.uploadUrl).toBe("https://cdn.example/track.mp3");
+    expect(req.body.prompt).toBe("make it orchestral");
+    expect(req.body.style).toBe("orchestral");
+    expect(req.body.title).toBe("Covered");
+    expect(req.body.customMode).toBe(true);
+    expect(req.body.instrumental).toBe(false);
+    expect(req.body.duration).toBeUndefined(); // cover keeps its source's length
+    expect(req.body.model).toBe(SUNO_DEFAULT_ENGINE);
+  });
+});
+
+describe("upload-and-extend-audio — defaultParamFlag keyed off continueAt", () => {
+  it("a bare upload extends with provider defaults (defaultParamFlag false, nothing else)", () => {
+    const body = buildSunoUploadExtendBody("upload-and-extend-audio", "ignored in default mode", {
+      audio_url: "https://cdn.example/track.mp3",
+    });
+    expect(body).toEqual({
+      model: SUNO_DEFAULT_ENGINE,
+      uploadUrl: "https://cdn.example/track.mp3",
+      defaultParamFlag: false,
+    });
+  });
+
+  it("a supplied continue_at switches to custom mode and carries prompt/style/title", () => {
+    const body = buildSunoUploadExtendBody("upload-and-extend-audio", "carry the chorus onward", {
+      audio_url: "https://cdn.example/track.mp3",
+      continue_at: 45,
+      style: "synthpop",
+      title: "Extended",
+    });
+    expect(body.defaultParamFlag).toBe(true);
+    expect(body.continueAt).toBe(45);
+    expect(body.prompt).toBe("carry the chorus onward");
+    expect(body.style).toBe("synthpop");
+    expect(body.title).toBe("Extended");
+  });
+});
+
+describe("add-instrumental / add-vocals — uploadUrl + the doc-required text fields", () => {
+  it("add-instrumental sends uploadUrl/title/tags/negativeTags (style is the canonical spelling of tags)", () => {
+    const req = formatAudioRequest("add-instrumental", "unused", {
+      audio_url: "https://cdn.example/vocals.mp3",
+      title: "Backing",
+      style: "lofi hiphop",
+      negative_tags: "metal",
+    });
+    expect(req.path).toBe("/api/v1/generate/add-instrumental");
+    expect(req.body).toEqual({
+      uploadUrl: "https://cdn.example/vocals.mp3",
+      title: "Backing",
+      tags: "lofi hiphop",
+      negativeTags: "metal",
+    });
+  });
+
+  it("add-vocals sends prompt/title/style/negativeTags/uploadUrl", () => {
+    const req = formatAudioRequest("add-vocals", "soulful vocals about rain", {
+      audio_url: "https://cdn.example/instrumental.mp3",
+      title: "Voiced",
+      style: "soul",
+      negative_tags: "screamo",
+    });
+    expect(req.path).toBe("/api/v1/generate/add-vocals");
+    expect(req.body).toEqual({
+      uploadUrl: "https://cdn.example/instrumental.mp3",
+      prompt: "soulful vocals about rain",
+      title: "Voiced",
+      style: "soul",
+      negativeTags: "screamo",
+    });
+  });
+
+  it("a doc-required field the caller omitted stays absent — the provider's validator answers honestly", () => {
+    const body = buildSunoAddInstrumentalBody("x", { audio_url: "https://cdn.example/a.mp3" });
+    expect(body.title).toBeUndefined();
+    expect(body.tags).toBeUndefined();
+  });
+});
+
+describe("separate-vocals — camelCase audioUrl (the casing was the bug) + priced type modes", () => {
+  it("sends audioUrl from the Dropzone's audio_url and defaults the cheapest type", () => {
+    const req = formatAudioRequest("separate-vocals", "unused", { audio_url: "https://cdn.example/song.mp3" });
+    expect(req.path).toBe("/api/v1/vocal-removal/generate");
+    expect(req.body).toEqual({ audioUrl: "https://cdn.example/song.mp3", type: "separate_vocal" });
+  });
+
+  it("forwards a prior generation's taskId/audioId and a valid type; an unknown type collapses to the default", () => {
+    const body = buildSunoVocalRemovalBody("x", { task_id: "t-9", audio_id: "a-9", type: "split_stem" });
+    expect(body).toEqual({ taskId: "t-9", audioId: "a-9", type: "split_stem" });
+    expect(buildSunoVocalRemovalBody("x", { type: "bogus" }).type).toBe("separate_vocal");
+  });
+});
+
+describe("Suno op poll parsing (model-keyed, checked before the shape-detected music branch)", () => {
+  it("lyrics: SUCCESS with lyricsData becomes text data: URIs; empty stays pending", () => {
+    const done = parseSunoLyricsPoll({
+      status: "SUCCESS",
+      response: { lyricsData: [{ text: "Verse one\nline two", title: "A" }, { text: "Alt take", title: "B" }] },
+    });
+    expect(done.status).toBe("success");
+    expect(done.outputs).toHaveLength(2);
+    expect(done.outputs[0]).toBe(`data:text/plain;charset=utf-8,${encodeURIComponent("Verse one\nline two")}`);
+    expect(parseSunoLyricsPoll({ status: "PENDING" }).status).toBe("pending");
+    expect(parseSunoLyricsPoll({ status: "CREATE_TASK_FAILED" }).status).toBe("failed");
+  });
+
+  it("style boost: the boosted style text at response.result completes the task", () => {
+    const done = parseSunoStylePoll({ status: "SUCCESS", response: { result: "dreamy synthwave, heavy bass, retro" } });
+    expect(done.status).toBe("success");
+    expect(done.outputs).toEqual([`data:text/plain;charset=utf-8,${encodeURIComponent("dreamy synthwave, heavy bass, retro")}`]);
+    expect(parseSunoStylePoll({ status: "PENDING" }).status).toBe("pending");
+    expect(parseSunoStylePoll({ successFlag: 2, errorMessage: "no" }).status).toBe("failed");
+  });
+
+  it("vocal removal: successFlag 1 collects stem URLs but never echoes the origin input back", () => {
+    const done = parseSunoVocalRemovalPoll({
+      successFlag: 1,
+      response: {
+        originUrl: "https://cdn.example/input.mp3",
+        vocalUrl: "https://cdn.example/vocal.mp3",
+        instrumentalUrl: "https://cdn.example/instrumental.mp3",
+      },
+    });
+    expect(done.status).toBe("success");
+    expect(done.outputs).toEqual(["https://cdn.example/vocal.mp3", "https://cdn.example/instrumental.mp3"]);
+    expect(parseSunoVocalRemovalPoll({ successFlag: 0 }).status).toBe("pending");
+    expect(parseSunoVocalRemovalPoll({ successFlag: 2, errorMessage: "bad file" })).toMatchObject({ status: "failed", error: "bad file" });
+  });
+
+  it("parseAudioOpPoll claims ONLY the three own-envelope ops — sunoData transformers fall through to parseSunoPoll", () => {
+    const lyricsBody = { status: "SUCCESS", response: { lyricsData: [{ text: "hi" }] } };
+    expect(parseAudioOpPoll(lyricsBody, "generate-lyrics").status).toBe("success");
+    expect(parseAudioOpPoll(lyricsBody, "upload-and-cover-audio")).toBeNull();
+    expect(parseAudioOpPoll(lyricsBody, "generate-music")).toBeNull();
+    // The trap this ordering prevents: a lyrics SUCCESS body has no sunoData,
+    // so the shape-detected music parser would claim it and report pending forever.
+    expect(parseSunoPoll(lyricsBody).status).toBe("pending");
   });
 });
