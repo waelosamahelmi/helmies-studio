@@ -111,6 +111,24 @@ describe("scripts/retire-alibaba.mjs", () => {
     expect(prisma.providerConfig.update).toHaveBeenCalledTimes(1);
   });
 
+  it("syncAlibabaModels converges on retirement once the ProviderConfig row is deactivated (cron can never resurrect rows)", async () => {
+    const { syncAlibabaModels } = await import("@/lib/model-catalog");
+    prisma.modelPricing.findMany.mockResolvedValue([{ id: "1" }]);
+    prisma.modelPricing.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    prisma.modelPricing.upsert = vi.fn();
+    prisma.providerConfig.findUnique = vi.fn().mockResolvedValue({ name: "Alibaba", isActive: false });
+
+    const result = await syncAlibabaModels();
+
+    expect(result.retired).toBe(true);
+    expect(result.deactivated).toBe(1);
+    expect(prisma.modelPricing.upsert).not.toHaveBeenCalled();
+    expect(prisma.modelPricing.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["1"] } },
+      data: { isActive: false, isDeprecated: true },
+    });
+  });
+
   it("retirementUpdate preserves unrelated constraint keys", () => {
     const data = retirementUpdate({ constraints: { ui: { foo: 1 } } });
     expect(data.constraints.ui).toEqual({ foo: 1 });
