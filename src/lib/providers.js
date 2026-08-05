@@ -281,6 +281,17 @@ const LLM_PROVIDER = {
 
 export const DEFAULT_PROVIDER = "kie";
 
+// ── Alibaba retirement (EDITSv1 M2 — owner decision: KIE-only) ─────────────
+// Alibaba/DashScope no longer serves NEW generations: resolveProvider and
+// resolveProviderWithFallback below never hand back its adapter, so every
+// user-facing submit routes to KIE regardless of what a (now-deactivated —
+// see scripts/retire-alibaba.mjs) ModelPricing row's providerName says.
+// PROVIDERS.alibaba itself deliberately STAYS: old Generation rows and any
+// in-flight job the durable runner resumes still rebuild the adapter via
+// getProvider("alibaba") to poll/parse their existing tasks, and that must
+// never crash. Retirement is a resolution-time gate, not an adapter delete.
+export const RETIRED_ADAPTERS = new Set(["alibaba"]);
+
 // Map any providerName (DB ModelPricing.providerName, ProviderConfig.name) to an adapter key.
 // Unknown names resolve to KIE (the primary provider) — never to a removed provider.
 //
@@ -329,8 +340,12 @@ export async function resolveProvider(modelId) {
     const pricing = await resolveModelPricingRow(prisma, modelId);
     if (pricing?.providerName) {
       const name = resolveAdapterKey(pricing.providerName);
-      const p = PROVIDERS[name];
-      return { ...p, name, apiKey: p.getKey() };
+      // A retired provider is never resolved for NEW work — fall through to
+      // the default (KIE). Old rows still poll via getProvider("alibaba").
+      if (!RETIRED_ADAPTERS.has(name)) {
+        const p = PROVIDERS[name];
+        return { ...p, name, apiKey: p.getKey() };
+      }
     }
   } catch {}
   const p = PROVIDERS[DEFAULT_PROVIDER];
@@ -695,8 +710,10 @@ export async function llmStream(messages, options = {}) {
   return res.body;
 }
 
-// Media provider fallback order: KIE primary, Alibaba secondary.
-const FALLBACK_CHAIN = ["kie", "alibaba"];
+// Media provider fallback order. Alibaba was removed on retirement (EDITSv1
+// M2, owner decision KIE-only) — see RETIRED_ADAPTERS above; the chain-level
+// filter below is defense in depth so no path can re-add it.
+const FALLBACK_CHAIN = ["kie"];
 
 // Maps a ProviderConfig.name to the canonical adapter key it represents, or
 // null if it isn't a known media adapter (e.g. "OpenRouter"). Case-
@@ -755,6 +772,7 @@ export async function resolveProviderWithFallback(modelId) {
   // Keep legacy fallback behavior only for old provider-agnostic rows.
   const chain = catalogModel?.managedBySync ? [primary.name] : [primary.name, ...FALLBACK_CHAIN.filter((n) => n !== primary.name)];
   const resolved = chain
+    .filter((name) => !RETIRED_ADAPTERS.has(name))
     .filter((name) => !activity || activity[name] !== false)
     .map((name) => {
       const p = PROVIDERS[name];

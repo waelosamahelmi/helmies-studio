@@ -226,10 +226,13 @@ export async function handleGeneration(req, tool, cost, apiFn) {
       console.error(`[handleGeneration] paramsWithPrompt:`, { model: paramsWithPrompt.model, endpoint: paramsWithPrompt.endpoint, tool });
 
       // If the provider chain is empty (e.g., all providers disabled in DB),
-      // fall back to a direct KIE + Alibaba chain so users can still generate.
+      // fall back to a direct KIE chain so users can still generate.
+      // (Alibaba was removed from this last-resort list on retirement —
+      // EDITSv1 M2, owner decision KIE-only; see providers.js's
+      // RETIRED_ADAPTERS.)
       if (providers.length === 0) {
-        console.error(`[handleGeneration] WARNING: empty provider chain. Falling back to [kie, alibaba].`);
-        const fallbackNames = [DEFAULT_PROVIDER, "alibaba"].filter((n) => PROVIDERS[n]);
+        console.error(`[handleGeneration] WARNING: empty provider chain. Falling back to [kie].`);
+        const fallbackNames = [DEFAULT_PROVIDER].filter((n) => PROVIDERS[n]);
         providers = fallbackNames.map((n) => ({ name: n, ...PROVIDERS[n], apiKey: PROVIDERS[n].getKey() }));
       }
 
