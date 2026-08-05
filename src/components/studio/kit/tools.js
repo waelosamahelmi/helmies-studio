@@ -1,14 +1,21 @@
 import {
-  IcSpark, IcImage, IcVideo, IcFilm, IcMusic, IcMic, IcScissors, IcMegaphone,
-  IcPersona, IcSwap, IcLayers, IcCamera, IcFlow, IcPalette, IcArchive, IcBrain,
+  IcSpark, IcImage, IcVideo, IcFilm, IcMusic, IcMegaphone,
+  IcPersona, IcFlow, IcPalette, IcArchive, IcBrain,
 } from "./Icons";
 
 /* ══════════════════════════════════════════════════════════════════════════
    TOOL REGISTRY — the single source of truth
    ──────────────────────────────────────────────────────────────────────────
    The studio shell, the mobile dock, the command palette and the /studio/[tool]
-   route metadata all read from here. Previously the registry was duplicated in
-   StudioClient and again in the phone app, and the two had already drifted.
+   route metadata all read from here.
+
+   S1 (2026-08-05): the 20-tool rail consolidated into mode-switching
+   studios. Image absorbs Canvas/Cinema/Influencer (modes + Create presets),
+   Video absorbs Image-to-Video/Motion/Video-Edit/Recast/Clipping (modes +
+   presets), Audio gains a Tools mode, and the new Perform studio absorbs
+   Lip Sync/Avatar/Persona as modes. Every retired slug redirects to its new
+   studio + `?mode=` in src/app/studio/[tool]/page.js — bookmarks keep
+   working.
 
    `group` orders the rail. `dock` marks the four that get a bottom-nav slot.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -28,59 +35,22 @@ export const TOOLS = [
   // ── Make ────────────────────────────────────────────────────────────────
   { id: "image",        label: "Image",      icon: IcImage,     group: "make", dock: true,
     title: "Image",
-    blurb: "Generate or transform a still with a precise brief." },
-  // Text→video and image→video are separate tools (EDITSv1 E1.3): they have
-  // different requirements (i2v cannot run without a source image), largely
-  // disjoint model pools, and burying the split in an in-component toggle
-  // hid the second job entirely. Both mount VideoStudio with a fixed mode;
-  // /studio/video keeps working (text mode) for old links.
-  { id: "video",        label: "Text to Video", icon: IcVideo,  group: "make", dock: true,
-    title: "Text to Video",
-    blurb: "Generate motion from a written brief." },
-  { id: "i2v",          label: "Image to Video", icon: IcVideo, group: "make",
-    title: "Image to Video",
-    blurb: "Animate a still — your image becomes the first frame." },
-  { id: "canvas",       label: "Canvas",     icon: IcLayers,    group: "make",
-    title: "Canvas",
-    blurb: "Compose layers, mask regions, and direct the edit visually." },
-  { id: "cinema",       label: "Cinema",     icon: IcCamera,    group: "make",
-    title: "Cinema",
-    blurb: "Direct the camera: lens, movement, and light." },
+    blurb: "Create, edit, upscale, or compose a still — one studio, four modes." },
+  { id: "video",        label: "Video",      icon: IcVideo,     group: "make", dock: true,
+    title: "Video",
+    blurb: "Text or a still becomes motion; edit and clip what you have." },
   { id: "audio",        label: "Audio",      icon: IcMusic,     group: "make",
     title: "Audio",
-    blurb: "Speech, dialogue, voice cloning, and sound effects." },
+    blurb: "Speech, dialogue, voice cloning, sound effects, and audio tools." },
   { id: "music",        label: "Music",      icon: IcMusic,     group: "make",
     title: "Music",
     blurb: "Compose a track from a description or a reference." },
 
   // ── Perform ─────────────────────────────────────────────────────────────
-  { id: "lipsync",      label: "Lip Sync",   icon: IcMic,       group: "perform",
-    title: "Lip Sync",
-    blurb: "Match a performance to a voice track." },
-  { id: "avatar",       label: "Avatar",     icon: IcPersona,   group: "perform",
-    title: "Avatar",
-    blurb: "Make a portrait speak from a driving audio track." },
-  { id: "body-swap",    label: "Recast",     icon: IcSwap,      group: "perform",
-    title: "Recast",
-    blurb: "Place an identity into another scene." },
-  { id: "influencer",   label: "Persona",    icon: IcPersona,   group: "perform",
-    title: "Persona",
-    blurb: "Build a character that stays consistent across shots." },
-
-  // ── Edit ────────────────────────────────────────────────────────────────
-  { id: "vibe-motion",  label: "Motion",     icon: IcFilm,      group: "edit",
-    title: "Motion",
-    blurb: "Animate a still or restyle existing motion." },
-  { id: "video-edit",   label: "Video Edit", icon: IcVideo,     group: "edit",
-    title: "Video Edit",
-    blurb: "Extend, retime, and restyle footage." },
-  { id: "clipping",     label: "Clipping",   icon: IcScissors,  group: "edit",
-    title: "Clipping",
-    blurb: "Find the moments worth keeping and cut them out." },
-  { id: "audio-tools",  label: "Audio Tools", icon: IcMusic,    group: "edit",
-    title: "Audio Tools",
-    blurb: "Isolate, clean, convert, and reshape existing audio." },
-  { id: "marketing",    label: "Marketing",  icon: IcMegaphone, group: "edit",
+  { id: "perform",      label: "Perform",    icon: IcPersona,   group: "perform",
+    title: "Perform",
+    blurb: "Lip sync, speaking avatars, and consistent personas." },
+  { id: "marketing",    label: "Marketing",  icon: IcMegaphone, group: "perform",
     title: "Marketing",
     blurb: "Produce campaign deliverables from a single brief." },
 
@@ -100,7 +70,6 @@ export const GROUPS = [
   { id: "direct",  label: "Direct" },
   { id: "make",    label: "Make" },
   { id: "perform", label: "Perform" },
-  { id: "edit",    label: "Edit" },
   { id: "library", label: "Library" },
 ];
 

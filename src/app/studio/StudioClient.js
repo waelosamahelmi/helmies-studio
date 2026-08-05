@@ -15,47 +15,27 @@ import ImageStudio from "@/components/studio/ImageStudio";
 import VideoStudio from "@/components/studio/VideoStudio";
 import DirectorStudio from "@/components/studio/DirectorStudio";
 import AudioStudio from "@/components/studio/AudioStudio";
-import AudioToolsStudio from "@/components/studio/AudioToolsStudio";
 import MusicStudio from "@/components/studio/MusicStudio";
-import LipSyncStudio from "@/components/studio/LipSyncStudio";
-import RecastStudio from "@/components/studio/RecastStudio";
-import InfluencerStudio from "@/components/studio/InfluencerStudio";
-import AvatarStudio from "@/components/studio/AvatarStudio";
-import CanvasStudio from "@/components/studio/CanvasStudio";
-import CinemaStudio from "@/components/studio/CinemaStudio";
-import MotionStudio from "@/components/studio/MotionStudio";
-import VideoEditStudio from "@/components/studio/VideoEditStudio";
-import ClippingStudio from "@/components/studio/ClippingStudio";
+import PerformStudio from "@/components/studio/PerformStudio";
 import MarketingStudio from "@/components/studio/MarketingStudio";
 import WorkflowStudio from "@/components/studio/WorkflowStudio";
 import BrandKitStudio from "@/components/studio/BrandKitStudio";
 import MemoryStudio from "@/components/studio/MemoryStudio";
 import AssetLibraryStudio from "@/components/studio/AssetLibraryStudio";
 
-/* EDITSv1 E1.3: text→video and image→video are separate tools with a fixed
-   mode each — module-scope wrappers keep a stable component identity across
-   renders (an inline arrow here would remount the studio on every render). */
-const TextToVideoStudio = (props) => <VideoStudio {...props} fixedMode="ttv" />;
-const ImageToVideoStudio = (props) => <VideoStudio {...props} fixedMode="i2v" />;
-
+/* S1: the 20-tool map consolidated into mode-switching studios. The retired
+   slugs (canvas, cinema, influencer, i2v, vibe-motion, video-edit,
+   body-swap, clipping, audio-tools, lipsync, avatar) redirect in
+   src/app/studio/[tool]/page.js to their new studio + `?mode=` — the old
+   surfaces live on as modes, not rail entries. */
 const TOOL_COMPONENTS = {
   orchestrator: OrchestratorStudio,
   image: ImageStudio,
-  video: TextToVideoStudio,
-  i2v: ImageToVideoStudio,
+  video: VideoStudio,
   director: DirectorStudio,
   audio: AudioStudio,
-  "audio-tools": AudioToolsStudio,
   music: MusicStudio,
-  lipsync: LipSyncStudio,
-  "body-swap": RecastStudio,
-  influencer: InfluencerStudio,
-  avatar: AvatarStudio,
-  canvas: CanvasStudio,
-  cinema: CinemaStudio,
-  "vibe-motion": MotionStudio,
-  "video-edit": VideoEditStudio,
-  clipping: ClippingStudio,
+  perform: PerformStudio,
   marketing: MarketingStudio,
   workflows: WorkflowStudio,
   brands: BrandKitStudio,

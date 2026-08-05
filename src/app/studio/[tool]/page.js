@@ -1,4 +1,40 @@
+import { redirect } from "next/navigation";
 import StudioClient from "../StudioClient";
+
+/* ══════════════════════════════════════════════════════════════════════════
+   S1 — legacy-slug redirects
+   ──────────────────────────────────────────────────────────────────────────
+   The 20-tool rail consolidated into mode-switching studios. Every retired
+   slug 307s to its new studio + `?mode=` (and `?preset=` where the old tool
+   became a preset), so bookmarks and template deep-links keep working; any
+   other query params (template, model) are carried across.
+   ══════════════════════════════════════════════════════════════════════════ */
+const LEGACY_REDIRECTS = {
+  cinema:       { tool: "image",   mode: "create",  preset: "cinematic" },
+  canvas:       { tool: "image",   mode: "canvas" },
+  i2v:          { tool: "video",   mode: "i2v" },
+  "vibe-motion": { tool: "video",  mode: "ttv",     preset: "motion" },
+  "video-edit": { tool: "video",   mode: "edit" },
+  "body-swap":  { tool: "video",   mode: "edit",    preset: "recast" },
+  clipping:     { tool: "video",   mode: "clips" },
+  "audio-tools": { tool: "audio",  mode: "tools" },
+  lipsync:      { tool: "perform", mode: "lipsync" },
+  avatar:       { tool: "perform", mode: "avatar" },
+  influencer:   { tool: "perform", mode: "persona" },
+};
+
+function legacyTarget(tool, sp = {}) {
+  const target = LEGACY_REDIRECTS[tool];
+  if (!target) return null;
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (k === "mode" || k === "preset" || v == null) continue;
+    q.set(k, Array.isArray(v) ? v[0] : v);
+  }
+  q.set("mode", target.mode);
+  if (target.preset) q.set("preset", target.preset);
+  return `/studio/${target.tool}?${q.toString()}`;
+}
 
 const TOOLS = {
   orchestrator: {
@@ -12,64 +48,24 @@ const TOOLS = {
     keywords: ["AI image generator", "Flux AI", "Midjourney", "text to image", "image generation", "AI art"],
   },
   video: {
-    title: "AI Text to Video Generator",
-    description: "Create videos from a written brief with Sora 2, Kling, Veo & other leading AI video models.",
-    keywords: ["AI video generator", "Sora 2", "Kling AI", "Veo 3", "text to video", "AI video"],
-  },
-  i2v: {
-    title: "AI Image to Video Generator",
-    description: "Animate a still image into motion — your image becomes the first frame. Kling, Veo, Wan & 20+ image-to-video models.",
-    keywords: ["AI image to video", "animate image", "image to video generator", "still to video"],
+    title: "AI Video Generator",
+    description: "Create videos from text or a still, edit and restyle footage, and cut clips — Sora 2, Kling, Veo & other leading AI video models.",
+    keywords: ["AI video generator", "Sora 2", "Kling AI", "Veo 3", "text to video", "image to video", "AI video editor"],
   },
   audio: {
     title: "AI Audio Generator — Speech, Dialogue & SFX",
     description: "Generate speech, multi-speaker dialogue, cloned voices, and sound effects with leading AI audio models.",
     keywords: ["AI voice generator", "AI text to speech", "AI dialogue", "voice cloning", "AI sound effects"],
   },
-  "audio-tools": {
-    title: "AI Audio Tools",
-    description: "Isolate vocals, clean tracks, convert formats, and reshape existing audio with AI utilities.",
-    keywords: ["AI audio tools", "vocal isolation", "audio cleanup", "audio converter", "stem separation"],
-  },
-  cinema: {
-    title: "AI Cinema Studio",
-    description: "Cinematic camera controls for AI-generated video. Professional shot composition and film-style direction.",
-    keywords: ["AI cinema", "cinematic AI", "camera controls AI", "film AI"],
-  },
-  "vibe-motion": {
-    title: "AI Motion Graphics",
-    description: "Motion graphics and remix tools for AI-generated content. Animate and transform your creations.",
-    keywords: ["AI motion graphics", "AI animation", "motion design", "AI remix"],
-  },
-  clipping: {
-    title: "AI Highlight Extraction",
-    description: "Extract highlights and key moments from video with AI-powered clipping tools.",
-    keywords: ["AI video clipping", "highlight extraction", "AI video editing"],
-  },
   marketing: {
     title: "AI Marketing Studio",
     description: "Create UGC video ads, product shots, and marketing content with AI. No studio needed.",
     keywords: ["AI marketing", "UGC video ads", "AI product shots", "AI advertising"],
   },
-  lipsync: {
-    title: "AI Lip Sync Studio",
-    description: "Sync audio to portraits or video with 8 AI lip sync models. Perfect mouth movement every time.",
-    keywords: ["AI lip sync", "lip sync AI", "face sync", "audio to face"],
-  },
-  "body-swap": {
-    title: "AI Body Swap Studio",
-    description: "Recast faces into any scene with AI body swap technology. Seamless face replacement.",
-    keywords: ["AI body swap", "face swap AI", "face replacement", "deepfake AI"],
-  },
-  influencer: {
-    title: "AI Influencer Studio",
-    description: "Build AI personas and virtual influencers. Create consistent AI characters for social media.",
-    keywords: ["AI influencer", "virtual influencer", "AI persona", "AI character"],
-  },
-  canvas: {
-    title: "AI Canvas Editor",
-    description: "Visual composition editor with mask tools, semantic roles, and AI-aware layout. Design visual instructions for generation.",
-    keywords: ["AI canvas", "visual editor", "mask tools", "AI composition", "inpainting"],
+  perform: {
+    title: "AI Performance Studio — Lip Sync, Avatars & Personas",
+    description: "Sync audio to portraits or video, make portraits speak, and build consistent AI personas — one performance studio.",
+    keywords: ["AI lip sync", "AI avatar", "talking portrait", "AI persona", "virtual influencer"],
   },
   director: {
     title: "AI Director — Multi-Shot Production",
@@ -83,12 +79,6 @@ const TOOLS = {
   },
   music: {
     title: "AI Music Studio", description: "Compose music, speech, and sound effects with controllable AI audio models.", keywords: ["AI music", "AI speech", "sound effects"],
-  },
-  avatar: {
-    title: "AI Avatar Studio", description: "Create speaking avatar videos from portraits and driving audio.", keywords: ["AI avatar", "talking portrait", "avatar video"],
-  },
-  "video-edit": {
-    title: "AI Video Editor", description: "Transform, extend, and restyle footage with AI video editing models.", keywords: ["AI video editor", "video transformation", "video extension"],
   },
   workflows: {
     title: "Creative Workflows", description: "Build and run repeatable multi-step creative generation workflows.", keywords: ["AI workflow", "creative automation", "generation pipeline"],
@@ -140,8 +130,13 @@ export const dynamic = "force-dynamic";
 
 export default async function StudioToolPage({ params, searchParams }) {
   const { tool } = await params;
-  const initialTool = VALID_TOOLS.includes(tool) ? tool : "image";
   const sp = await searchParams;
+
+  /* S1: retired slugs 307 to their new studio + mode before anything renders */
+  const legacy = legacyTarget(tool, sp || {});
+  if (legacy) redirect(legacy);
+
+  const initialTool = VALID_TOOLS.includes(tool) ? tool : "image";
   const initialModel = sp?.model || null;
   return <StudioClient initialTool={initialTool} initialModel={initialModel} />;
 }

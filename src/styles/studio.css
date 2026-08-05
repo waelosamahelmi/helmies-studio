@@ -2517,3 +2517,39 @@ select.st-layer__role option {
   .st-canvas__topbar > * { flex: none; }
   .st-canvas__surface { min-height: 200px; }
 }
+
+/* ── S1 studios ── */
+/* The consolidated studios (Image, Video, Audio, Perform) wear a thin mode
+   strip above the active mode's body. The strip reuses the kit's Segmented —
+   so the 44px coarse-pointer floor in system.css applies to its buttons
+   untouched — and scrolls sideways on a phone instead of wrapping into the
+   work area or widening the page. */
+.st-moded {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.st-modes {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.st-modes::-webkit-scrollbar { display: none; }
+.st-modes .hs-segmented { flex: none; }
+.st-moded__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Whatever archetype the mode body uses (.st-work grid, .st-wave, the
+   canvas or clipping layouts), it fills the remaining height exactly as it
+   filled .st-work-area before the strip existed. */
+.st-moded__body > * { flex: 1; min-height: 0; }
