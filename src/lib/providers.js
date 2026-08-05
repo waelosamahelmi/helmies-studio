@@ -10,6 +10,8 @@ import { formatAlibabaPayload, getAlibabaApiPath, getAlibabaHeaders, parseAlibab
 import { resolveModelPricingRow } from "./model-catalog-core.mjs";
 import { applyRequiredDefaults, absolutizeMediaUrls } from "./provider-payload-core.mjs";
 import { audioSubmitPath, audioPollPath, formatAudioRequest, parseSunoPoll } from "./audio-payload-core.mjs";
+import { imageSubmitPath, imagePollPath, formatImageRequest, parseImagePoll } from "./image-payload-core.mjs";
+import { videoSubmitPath, videoPollTarget, formatVideoRequest, parseVideoPoll } from "./video-payload-core.mjs";
 import { log } from "./log.js";
 
 const BRANDED_ERRORS = {
@@ -155,16 +157,27 @@ export const PROVIDERS = {
     // asks. `model` is submitOnly's already-resolved provider model id
     // (`payload.model || endpoint`), so submit and poll route on the SAME
     // identifier and can never disagree about which shape is in flight.
-    buildUrl: (endpoint, model) => audioSubmitPath(model || endpoint) || "/api/v1/jobs/createTask",
+    buildUrl: (endpoint, model) =>
+      audioSubmitPath(model || endpoint)
+      || imageSubmitPath(model || endpoint)
+      || videoSubmitPath(model || endpoint)
+      || "/api/v1/jobs/createTask",
     formatPayload: (model, prompt, params) => {
       const { endpoint: _ep, ...rest } = params;
       const callBackUrl = params.callBackUrl || params.webhook_url || `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
       // Audio models take their OWN field names (`text` not `prompt`, `voice`
       // not `voiceId`, a flat camelCase body for music) — see
       // audio-payload-core.mjs's header for the live probes that proved it.
-      // Every non-audio model keeps the exact generic envelope it always had.
+      // The dedicated image (4o Image, Flux Kontext) and video (Runway,
+      // Aleph, Veo3) families likewise post FLAT bodies to their own routes —
+      // see image-payload-core.mjs / video-payload-core.mjs. Every other
+      // model keeps the exact generic Market envelope it always had.
       const audio = formatAudioRequest(model, prompt, rest);
       if (audio) return { ...audio.body, callBackUrl };
+      const image = formatImageRequest(model, prompt, rest);
+      if (image) return { ...image.body, callBackUrl };
+      const video = formatVideoRequest(model, prompt, rest);
+      if (video) return { ...video.body, callBackUrl };
       return { model, input: { prompt, ...rest }, callBackUrl };
     },
     parseResult: (data) => ({
@@ -172,8 +185,24 @@ export const PROVIDERS = {
       status: data.state || data.data?.state || data.status,
       outputs: [],
     }),
-    buildPollUrl: (requestId, model) => audioPollPath(model, requestId) || `/api/v1/jobs/recordInfo?taskId=${requestId}`,
-    parsePoll: (data) => {
+    buildPollUrl: (requestId, model, pollState) =>
+      audioPollPath(model, requestId)
+      || imagePollPath(model, requestId)
+      || videoPollTarget(model, requestId, pollState)
+      || `/api/v1/jobs/recordInfo?taskId=${requestId}`,
+    parsePoll: (data, model, pollState) => {
+      // Dedicated image/video families are MODEL-keyed (their poll routes
+      // were chosen from the same identifier in buildPollUrl above, so the
+      // pair can never disagree about which shape is in flight), and they
+      // MUST be checked before the shape-detected Suno branch: 4o Image's
+      // poll body also carries a `status: "SUCCESS"` string, which
+      // isSunoPollBody would otherwise claim and misread as "pending
+      // forever" (no sunoData). Veo3's two-stage 1080p/4K retrieval keeps
+      // its progress on pollState — see video-payload-core.mjs.
+      const image = parseImagePoll(data, model);
+      if (image) return image;
+      const video = parseVideoPoll(data, model, pollState);
+      if (video) return video;
       // The music route answers with a completely different envelope
       // (`status` + `response.sunoData[]` instead of `state` + `resultJson`),
       // which the generic branch below reads as "no outputs, still pending"
@@ -525,26 +554,43 @@ function defaultParsePoll(data) {
 export async function pollProviderResult(provider, requestId, maxAttempts = 900, interval = 2000, providerModel = null) {
   const key = provider.apiKey || provider.getKey();
 
+  // Per-poll-loop scratch state, threaded through buildPollUrl/parsePoll so
+  // a multi-stage retrieval (Veo3's separate 1080p/4K fetch — see
+  // video-payload-core.mjs) can remember which stage it is in. Rebuilt empty
+  // on a crash-resume; every stage decision is re-derivable from the
+  // provider's own poll bodies, so that is safe.
+  const pollState = {};
+
   let pollInterval = interval;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await new Promise((r) => setTimeout(r, pollInterval));
     try {
-      const pollPath = provider.buildPollUrl
-        ? provider.buildPollUrl(requestId, providerModel)
+      const pollTarget = provider.buildPollUrl
+        ? provider.buildPollUrl(requestId, providerModel, pollState)
         : `/api/v1/jobs/recordInfo?taskId=${requestId}`;
+      // A poll target is normally a GET path string; Veo3's 4K retrieval is
+      // a POST with its own tiny body, described as { path, method, body }.
+      const isDescriptor = pollTarget && typeof pollTarget === "object";
+      const pollPath = isDescriptor ? pollTarget.path : pollTarget;
       const pollRes = await fetch(`${provider.baseUrl}${pollPath}`, {
+        method: isDescriptor ? pollTarget.method || "GET" : "GET",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        ...(isDescriptor && pollTarget.body ? { body: JSON.stringify(pollTarget.body) } : {}),
         signal: AbortSignal.timeout(30000),
       });
       if (!pollRes.ok) {
         if (pollRes.status >= 500) continue;
+        // A hi-res retrieval endpoint answers non-200 while the tier is
+        // still rendering (documented for Veo3's get-1080p window) — the
+        // adapter sets this flag when entering such a stage.
+        if (pollState.retryHttpErrors) continue;
         const txt = await pollRes.text();
         logRawProviderError("provider_poll_http_error", { provider: provider?.name, requestId, status: pollRes.status, attempt, body: txt });
         throw brandedError(txt);
       }
       const body = await pollRes.json();
       const data = body.data || body;
-      const parsed = provider.parsePoll ? provider.parsePoll(data) : defaultParsePoll(data);
+      const parsed = provider.parsePoll ? provider.parsePoll(data, providerModel, pollState) : defaultParsePoll(data);
       const status = (parsed.status || "").toLowerCase();
       if (status === "completed" || status === "succeeded" || status === "success") {
         const outputs = parsed.outputs || [];
