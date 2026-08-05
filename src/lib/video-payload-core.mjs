@@ -163,30 +163,30 @@ export function buildAlephBody(prompt, params = {}) {
 // (snake_case here, unlike Runway!), resolution (720p|1080p|4k),
 // duration (4|6|8), watermark, enableTranslation.
 //
-// M-straggler fix (live probe 2026-08-05): the endpoint is the Veo3.1 API
-// (docs/model-audit/video-dedicated.md's family title) and 422'd
-// "Invalid model" on a submit that carried no `model` at all — the engine
-// selector is effectively REQUIRED and its accepted values are the
-// version-suffixed `veo3.1` / `veo3.1-fast` / `veo3.1-lite` spellings, not
-// the bare `veo3` / `veo3_fast` / `veo3_lite` names the older doc page
-// listed. The body therefore ALWAYS carries a `model` (fast tier when the
-// caller named none — same default the doc gives), and every legacy tier
-// spelling a stored template/schema may still hold is normalized to its
-// 3.1 equivalent rather than rejected.
-export const VEO_TIERS = ["veo3.1", "veo3.1-fast", "veo3.1-lite"];
-export const VEO_DEFAULT_TIER = "veo3.1-fast";
+// M-straggler fix (live probes 2026-08-05): the endpoint 422'd
+// "Invalid model" on a submit that carried no `model` at all (the old
+// builder omitted the field whenever the caller named no tier — which is
+// every studio submit), and a follow-up probe proved the version-suffixed
+// "veo3.1-fast" spelling is ALSO rejected with the same 422 — the accepted
+// engine selectors are exactly the doc's `veo3` / `veo3_fast` / `veo3_lite`
+// (docs/model-audit/video-dedicated.md, generate-veo-3-video entry). The
+// body therefore ALWAYS carries a `model` (fast tier when the caller named
+// none — the doc's own default), and any Veo3.1-style marketing spelling a
+// caller supplies is normalized DOWN to the wire enum rather than rejected.
+export const VEO_TIERS = ["veo3", "veo3_fast", "veo3_lite"];
+export const VEO_DEFAULT_TIER = "veo3_fast";
 const VEO_TIER_ALIASES = {
-  "veo3": "veo3.1",
-  "veo3.1": "veo3.1",
-  "veo3_1": "veo3.1",
-  "veo3_fast": "veo3.1-fast",
-  "veo3-fast": "veo3.1-fast",
-  "veo3.1-fast": "veo3.1-fast",
-  "veo3.1_fast": "veo3.1-fast",
-  "veo3_lite": "veo3.1-lite",
-  "veo3-lite": "veo3.1-lite",
-  "veo3.1-lite": "veo3.1-lite",
-  "veo3.1_lite": "veo3.1-lite",
+  "veo3": "veo3",
+  "veo3.1": "veo3",
+  "veo3_1": "veo3",
+  "veo3_fast": "veo3_fast",
+  "veo3-fast": "veo3_fast",
+  "veo3.1-fast": "veo3_fast",
+  "veo3.1_fast": "veo3_fast",
+  "veo3_lite": "veo3_lite",
+  "veo3-lite": "veo3_lite",
+  "veo3.1-lite": "veo3_lite",
+  "veo3.1_lite": "veo3_lite",
 };
 export function resolveVeoTier(value) {
   const raw = typeof value === "string" ? value.trim().toLowerCase() : "";

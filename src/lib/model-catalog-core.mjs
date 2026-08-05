@@ -1961,12 +1961,11 @@ const DEDICATED_API_SCHEMAS = {
   "generate-veo-3-video": { replace: true, fields: {
     prompt: mkStr({ required: true }),
     image_urls: mkArr({ maxItems: 2 }),
-    // M-straggler (probe 2026-08-05): the endpoint is the Veo3.1 API and
-    // rejects the bare veo3/veo3_fast/veo3_lite spellings with 422 "Invalid
-    // model" — the accepted engine selectors are version-suffixed. The
-    // adapter (video-payload-core.mjs resolveVeoTier) still normalizes any
-    // stored legacy spelling to these.
-    model_tier: mkEnum(["veo3.1", "veo3.1-fast", "veo3.1-lite"], { default: "veo3.1-fast" }),
+    // M-straggler (probes 2026-08-05): the doc's veo3/veo3_fast/veo3_lite
+    // enum IS the accepted wire enum (a "veo3.1-fast" probe 422'd "Invalid
+    // model") — the original 422 came from OMITTING `model` entirely; the
+    // adapter (video-payload-core.mjs buildVeoBody) now always sends one.
+    model_tier: mkEnum(["veo3", "veo3_fast", "veo3_lite"], { default: "veo3_fast" }),
     generation_type: mkEnum(["TEXT_2_VIDEO", "FIRST_AND_LAST_FRAMES_2_VIDEO", "REFERENCE_2_VIDEO"]),
     aspect_ratio: mkEnum(["16:9", "9:16", "Auto"], { default: "16:9" }),
     resolution: mkEnum(["720p", "1080p", "4k"], { default: "720p" }),

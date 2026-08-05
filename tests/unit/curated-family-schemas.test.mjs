@@ -321,10 +321,11 @@ describe("M2 dedicated-API schemas", () => {
 
   it("Veo3: tier/generationType/resolution incl 4k, duration 4|6|8; extend has its own tier enum + task_id", () => {
     const f = fieldsOf("generate-veo-3-video", "text-to-video");
-    // Veo3.1 engine selectors (probe 2026-08-05: the bare veo3* spellings
-    // 422 "Invalid model" — see video-payload-core.mjs resolveVeoTier).
-    expect(f.model_tier.enum).toEqual(["veo3.1", "veo3.1-fast", "veo3.1-lite"]);
-    expect(f.model_tier.default).toBe("veo3.1-fast");
+    // The doc's engine enum IS the wire enum (probes 2026-08-05: absent
+    // model AND "veo3.1-fast" both 422 "Invalid model"); the adapter always
+    // sends one — see video-payload-core.mjs resolveVeoTier/buildVeoBody.
+    expect(f.model_tier.enum).toEqual(["veo3", "veo3_fast", "veo3_lite"]);
+    expect(f.model_tier.default).toBe("veo3_fast");
     expect(f.resolution.enum).toEqual(["720p", "1080p", "4k"]);
     expect(f.duration.enum).toEqual([4, 6, 8]);
     expect(f.aspect_ratio.enum).toEqual(["16:9", "9:16", "Auto"]);

@@ -90,15 +90,18 @@ export const CANONICAL_FIELD_DEFAULTS = {
 export const PROVIDER_REQUIRED_FIELDS = {
   "flux-2/pro-text-to-image": ["aspect_ratio"],
   //   kling-3.0/video → {"code":500,"msg":"This field is required"} (nameless)
-  //     (live KIE probe, 2026-08-05, payload without `sound`; the doc's
-  //     param list — docs/model-audit/video-market.md, kling/kling-3-0 —
-  //     names `sound` as the one rendering field the probe omitted)
-  "kling-3.0/video": ["sound"],
+  //     (live KIE probes, 2026-08-05: prompt+duration failed; adding `sound`
+  //     alone STILL failed the same way, so every rendering setting the doc
+  //     lists — docs/model-audit/video-market.md, kling/kling-3-0: sound,
+  //     aspect_ratio, and mode (resolution is derived from mode+aspect) —
+  //     is treated as provider-required and filled from the schema defaults)
+  "kling-3.0/video": ["sound", "aspect_ratio", "mode"],
   //   pixverse-v6/text-to-video → {"code":500,"msg":"This field is required"}
-  //     (live KIE probe, 2026-08-05, payload without `quality`; the doc —
-  //     docs/model-audit/video-market.md, pixverse/text-to-video — marks
-  //     `quality` optional-with-default, but the provider hard-requires it)
-  "pixverse-v6/text-to-video": ["quality"],
+  //     (live KIE probes, 2026-08-05: prompt+duration failed; adding
+  //     `quality` alone STILL failed identically — so `aspect_ratio` (the
+  //     one remaining doc-listed rendering setting with a default) is
+  //     hard-required too, same pattern as flux-2/pro-text-to-image)
+  "pixverse-v6/text-to-video": ["quality", "aspect_ratio"],
 };
 
 function normalizeKey(modelId) {

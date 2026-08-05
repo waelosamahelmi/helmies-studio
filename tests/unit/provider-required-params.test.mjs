@@ -131,12 +131,18 @@ describe("providerRequiredFields — fields the provider requires but the schema
 
   it("knows kling-3.0/video requires `sound` (observed nameless 500 'This field is required', probe 2026-08-05)", () => {
     expect(providerRequiredFields("kling-3.0/video", null)).toContain("sound");
+    // A follow-up probe WITH sound failed identically, so the remaining
+    // doc-listed rendering settings are treated as required too.
+    expect(providerRequiredFields("kling-3.0/video", null)).toEqual(expect.arrayContaining(["aspect_ratio", "mode"]));
+    expect(providerRequiredFields("pixverse-v6/text-to-video", null)).toContain("aspect_ratio");
     // …and the curated schema's required+default(false) means it actually
     // gets filled on a prompt-only submit rather than 500ing.
-    const schema = { fields: { sound: { type: "boolean", required: true, default: false } } };
+    const schema = { fields: { sound: { type: "boolean", required: true, default: false }, mode: { type: "string", enum: ["std", "pro", "4K"] } } };
     const { params, filled } = applyRequiredDefaults({ prompt: "x" }, schema, { modelId: "kling-3.0/video" });
     expect(params.sound).toBe(false);
-    expect(filled).toEqual({ sound: false });
+    // aspect_ratio (canonical 16:9) and mode (enum's first entry, std) are
+    // filled too — the follow-up probe proved sound alone is not enough.
+    expect(filled).toEqual({ sound: false, aspect_ratio: "16:9", mode: "std" });
   });
 
   it("knows pixverse-v6/text-to-video requires `quality` (same nameless 500, probe 2026-08-05)", () => {
