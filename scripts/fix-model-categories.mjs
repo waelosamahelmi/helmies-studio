@@ -71,7 +71,8 @@ import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import prisma from "../src/lib/prisma.js";
-import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription, sanitizeDisplayName, curatedSchemaEntry, schemaForModel } from "../src/lib/model-catalog-core.mjs";
+import { modelTypeForCapability, slugToTitle, inferCapabilityFromRow, isUnambiguousVideoId, UNCATEGORIZED_MODEL_TYPE, sanitizeCatalogDescription, sanitizeDisplayName, curatedSchemaEntry, schemaForModel } from "../src/lib/model-catalog-core.mjs";
+import { buildVerification, classifyNonGenerationEndpoint, readVerification, VERDICT, writeVerification } from "../src/lib/catalog-verification.mjs";
 
 // Pure planning function — no DB access, so it's directly unit-testable
 // against plain row arrays (tests/unit/fix-model-categories.test.mjs).
@@ -81,6 +82,7 @@ export function planFixes(rows) {
   const capabilityFixes = [];
   const descriptionFixes = [];
   const schemaFixes = [];
+  const nonGenerationFixes = [];
   const needsAttention = [];
 
   for (const row of rows) {
@@ -126,6 +128,37 @@ export function planFixes(rows) {
         });
         capability = refined;
         mappedType = modelTypeForCapability(refined);
+      }
+    } else if (mappedType === "image") {
+      // BUG FIX: video generators filed as image models (measured
+      // production example: generate-ai-video, generate-aleph-video,
+      // generate-veo-3-video — all ACTIVE with capability="text-to-image").
+      // A capability that cleanly maps to modelType "image" is never
+      // re-examined by the null-capability branch above (mappedType is
+      // non-null) or the coarse-"video" branch above (capability isn't
+      // "video") — a row can be stuck under a WRONG-but-cleanly-mapped
+      // capability forever. isUnambiguousVideoId (model-catalog-core.mjs —
+      // the SAME rule kie-sync.js's fetchKieModels uses going forward) is
+      // deliberately narrow: it only fires when the row's own endpoint/
+      // providerModelId/modelId ends in a trailing "-video" token, so this
+      // can never reclassify a genuine image model that merely mentions
+      // "video" (there are none in the live catalog — see
+      // tests/unit/model-catalog-core.test.mjs's real-catalog regression
+      // pin). Corrected to "text-to-video" rather than the even-coarser
+      // "video", matching kie-sync.js's OWN convention for every other
+      // legacy-suite id whose type resolves to the bare "video" bucket
+      // (e.g. extend-ai-video, extend-video) — not a new, inconsistent
+      // third bucket for the exact same id shape.
+      const text = row.endpoint || row.providerModelId || row.modelId;
+      if (isUnambiguousVideoId(text)) {
+        capabilityFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          from: row.capability ?? null,
+          to: "text-to-video",
+        });
+        capability = "text-to-video";
+        mappedType = modelTypeForCapability("text-to-video");
       }
     }
 
@@ -226,12 +259,46 @@ export function planFixes(rows) {
         });
       }
     }
+
+    // ── BUG FIX: non-generation documentation endpoints filed as models ────
+    // kie-sync.js turns every docs.kie.ai page into a candidate model id, so
+    // a webhook callback, a request validator, or a status/record-lookup
+    // page can end up ACTIVE and picked as "usable" — measured production
+    // example: suno-voice-generate-callback, suno-voice-record-info,
+    // suno-voice-validate, suno-voice-validate-callback, suno-voice-
+    // validate-info, all ACTIVE in the audio pool. classifyNonGeneration
+    // Endpoint (catalog-verification.mjs) is the SAME deterministic,
+    // zero-cost id-pattern classifier kie-sync.js's own sync now runs on
+    // every pass; this is the persistent backfill for a row that predates
+    // that fix (or hasn't been re-synced since) — no probe sweep required.
+    // Idempotent: once a row's stored verification already carries this
+    // exact not-callable verdict AND isActive is already false, nothing is
+    // planned for it again (checkedAt is deliberately excluded from that
+    // comparison — it moves on every run by design, the way a real probe's
+    // timestamp would too, and must never itself cause a "still needs
+    // fixing" report).
+    const junkClassification = classifyNonGenerationEndpoint(row.modelId);
+    if (junkClassification) {
+      const existingVerification = readVerification(row.constraints);
+      const alreadyRecorded =
+        existingVerification?.verdict === VERDICT.NOT_CALLABLE && existingVerification?.callable === false;
+      const alreadyInactive = row.isActive === false;
+      if (!alreadyRecorded || !alreadyInactive) {
+        nonGenerationFixes.push({
+          modelId: row.modelId,
+          providerName: row.providerName,
+          reason: junkClassification.reason,
+          fromIsActive: row.isActive ?? null,
+          constraints: writeVerification(row.constraints, buildVerification(junkClassification)),
+        });
+      }
+    }
   }
 
-  return { modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, needsAttention };
+  return { modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, nonGenerationFixes, needsAttention };
 }
 
-function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, needsAttention }, { apply }) {
+function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descriptionFixes, schemaFixes, nonGenerationFixes, needsAttention }, { apply }) {
   console.log("");
   if (capabilityFixes.length === 0) {
     console.log("capability: no null/unmapped rows were recoverable from modalities/endpoint.");
@@ -284,6 +351,16 @@ function printPlan({ modelTypeFixes, displayNameFixes, capabilityFixes, descript
   }
 
   console.log("");
+  if (nonGenerationFixes.length === 0) {
+    console.log("non-generation endpoints: none found — no row's id matches a callback/validator/status-lookup pattern.");
+  } else {
+    console.log(`non-generation endpoints: ${nonGenerationFixes.length} row(s) ${apply ? "were" : "would be"} marked not-usable (documentation page, not a generation model) — no probe spent:`);
+    for (const f of nonGenerationFixes) {
+      console.log(`  ${f.modelId} (${f.providerName}): isActive ${JSON.stringify(f.fromIsActive)} -> false — ${f.reason}`);
+    }
+  }
+
+  console.log("");
   if (needsAttention.length === 0) {
     console.log("needs attention: none — every row's capability maps to a modelType (directly or via recovery).");
   } else {
@@ -304,7 +381,7 @@ export async function run({ apply, yes }) {
     select: {
       id: true, modelId: true, providerName: true, capability: true, modelType: true, displayName: true,
       description: true, inputModalities: true, outputModalities: true, endpoint: true, providerModelId: true,
-      inputSchema: true,
+      inputSchema: true, isActive: true, constraints: true,
     },
   });
 
@@ -313,7 +390,7 @@ export async function run({ apply, yes }) {
   printPlan(plan, { apply });
 
   if (!apply) {
-    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), ${plan.displayNameFixes.length} displayName fix(es), ${plan.descriptionFixes.length} description fix(es), and ${plan.schemaFixes.length} inputSchema fix(es) above.`);
+    console.log(`Dry run only — no changes made. Re-run with --apply --yes to write the ${plan.capabilityFixes.length} capability fix(es), ${plan.modelTypeFixes.length} modelType fix(es), ${plan.displayNameFixes.length} displayName fix(es), ${plan.descriptionFixes.length} description fix(es), ${plan.schemaFixes.length} inputSchema fix(es), and ${plan.nonGenerationFixes.length} non-generation-endpoint deactivation(s) above.`);
     return { ...plan, applied: 0 };
   }
 
@@ -323,6 +400,7 @@ export async function run({ apply, yes }) {
     ...plan.capabilityFixes.map((f) => f.modelId),
     ...plan.descriptionFixes.map((f) => f.modelId),
     ...plan.schemaFixes.map((f) => f.modelId),
+    ...plan.nonGenerationFixes.map((f) => f.modelId),
   ]);
 
   let applied = 0;
@@ -332,12 +410,21 @@ export async function run({ apply, yes }) {
     const capFix = plan.capabilityFixes.find((f) => f.modelId === modelId);
     const descFix = plan.descriptionFixes.find((f) => f.modelId === modelId);
     const schemaFix = plan.schemaFixes.find((f) => f.modelId === modelId);
+    const nonGenFix = plan.nonGenerationFixes.find((f) => f.modelId === modelId);
     const data = {};
     if (typeFix) data.modelType = typeFix.to;
     if (nameFix) data.displayName = nameFix.to;
     if (capFix) data.capability = capFix.to;
     if (descFix) data.description = descFix.to;
     if (schemaFix) data.inputSchema = schemaFix.to;
+    if (nonGenFix) {
+      data.isActive = false;
+      // A non-generation endpoint's constraints may ALSO be touched by
+      // descFix (provider-identity scrub) above — writeVerification only
+      // ever adds/replaces the `verification` key, so merge over whatever
+      // constraints this row already has rather than clobbering it.
+      data.constraints = nonGenFix.constraints;
+    }
     await prisma.modelPricing.update({ where: { modelId }, data });
     applied++;
   }

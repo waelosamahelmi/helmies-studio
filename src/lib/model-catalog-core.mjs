@@ -508,6 +508,49 @@ const IMAGE_TO_VIDEO_MARKERS = /image-to-video|-i2v\b|img2vid/;
 const TEXT_TO_VIDEO_MARKERS = /text-to-video|-t2v\b/;
 const VIDEO_TO_VIDEO_MARKERS = /video-to-video|videoedit|video-edit|style-transform|-v2v\b|\/extend\b/;
 
+// Precise "ends in a trailing -video token" shape (BUG FIX: three real KIE
+// video generators — generate-ai-video, generate-aleph-video, generate-veo-
+// 3-video — measured ACTIVE in production with modelType "image"/capability
+// "text-to-image"). Their ids carry no "market/" vendor folder and none of
+// the specific direction markers above, so the only signal available is the
+// id's own trailing "-video" token. Root cause: these are legacy-suite doc
+// pages (kie-sync.js's suno-api/veo3-api/runway-api branch) that never even
+// reach THIS function — kie-sync.js's own separate, older inferModelType()
+// has no bare "video" keyword case at all and silently defaults every
+// unmatched id to "image", so inferCapability was never consulted for them
+// in the first place. Named explicitly here (rather than left as an
+// accident of the generic image/video keyword fallback further down) so
+// both kie-sync.js (going forward) and scripts/fix-model-categories.mjs
+// (backfilling rows synced before this fix) can share ONE precise,
+// independently-testable rule via isUnambiguousVideoId, exported below —
+// used there to recover a row whose STORED capability already cleanly
+// mapped to an image modelType (so the null-capability recovery path never
+// re-examines it) but is provably wrong.
+//
+// Anchored to the FINAL "-"/"/"-separated token, matching the discipline
+// every other marker above already follows. A word that merely CONTAINS
+// "video" without ENDING in it (e.g. a hypothetical "videowall-backdrop"
+// image tool, if one ever existed) is left alone.
+const TRAILING_VIDEO_MARKER = /(?:^|[-/])video$/;
+
+// "create-music-video" also ends in a trailing "-video" token — but a music
+// video is a track's visual accompaniment (audioKind's "music" family), not
+// this app's own video-generation surface, so it must NOT be swept up by
+// isUnambiguousVideoId (used standalone by scripts/fix-model-categories.mjs
+// to recover a row already stuck under a wrongly-but-cleanly-mapped image
+// capability — that caller has no ordering to fall back on the way
+// inferCapability's own if-chain does, since it isn't re-deriving the
+// capability from scratch). Mirrors inferCapability's OWN audio rule
+// verbatim (checked before the trailing-video rule in that function's
+// ordering) so both agree on what "audio family" means, in exactly one
+// place each independently defines its half of the check.
+const AUDIO_FAMILY_MARKER = /audio|music|suno|sound/;
+
+export function isUnambiguousVideoId(id) {
+  const text = String(id || "").toLowerCase();
+  return TRAILING_VIDEO_MARKER.test(text) && !AUDIO_FAMILY_MARKER.test(text);
+}
+
 export function inferCapability(path) {
   if (/text-to-image|text2image/.test(path)) return "text-to-image";
   if (/image-to-image|image-edit|edit-image|remix|character-edit/.test(path)) return "image-to-image";
@@ -520,6 +563,7 @@ export function inferCapability(path) {
   if (/remove-background/.test(path)) return "background-removal";
   if (/text-to-speech|tts|dialogue|voice/.test(path)) return "text-to-speech";
   if (/audio|music|suno|sound/.test(path)) return "audio";
+  if (TRAILING_VIDEO_MARKER.test(path)) return "video";
   if (/image|imagen|seedream|flux|ideogram|qwen|recraft|gpt-image|nano-banana|z-image/.test(path)) return "image";
   if (/video|kling|wan|seedance|hailuo|pixverse|happyhorse|runway|veo/.test(path)) return "video";
   return "media";

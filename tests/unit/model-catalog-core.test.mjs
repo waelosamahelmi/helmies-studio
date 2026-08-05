@@ -1,6 +1,6 @@
 import { test } from "vitest";
 import assert from "node:assert/strict";
-import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription, sanitizeDisplayName, audioKind, inferCapability } from "@/lib/model-catalog-core.mjs";
+import { calculateProviderQuote, validateModelInput, inferKieModelFromUrl, sanitizeCatalogDescription, sanitizeDisplayName, audioKind, inferCapability, isUnambiguousVideoId } from "@/lib/model-catalog-core.mjs";
 import { CAPABILITY_GROUPS, matchesGroup } from "@/lib/capability-groups";
 import { formatAlibabaPayload, getAlibabaApiPath } from "@/lib/alibaba-provider-core.mjs";
 
@@ -109,6 +109,48 @@ test("inferCapability: an id with NO direction marker at all still falls through
 
 test("inferCapability: an id with no signal whatsoever falls through to the last-resort 'media'", () => {
   assert.equal(inferCapability("some-totally-unrecognized-thing"), "media");
+});
+
+// ── BUG FIX: video generators filed as image models ────────────────────────
+// Measured on live production (2026-08-05): generate-ai-video,
+// generate-aleph-video, generate-veo-3-video were ACTIVE with
+// modelType="image"/capability="text-to-image" — legacy-suite doc pages
+// (kie-sync.js's suno-api/veo3-api/runway-api branch) that never reach
+// inferCapability at all; the real bug lived in that file's OWN separate,
+// older type-guesser, which has no bare "video" case and silently defaults
+// to "image". inferCapability itself already resolved these correctly via
+// its generic bottom-of-list "video" keyword fallback — this pins the new,
+// EXPLICIT trailing-"-video" rule that documents that behavior directly
+// instead of leaving it an accident of fallback ordering, and the
+// isUnambiguousVideoId helper both kie-sync.js and scripts/fix-model-
+// categories.mjs now share to recover a row already stuck under a
+// cleanly-mapped-but-wrong image capability.
+test("inferCapability: an id ending in a trailing '-video' token resolves to the video capability (the three production generators)", () => {
+  for (const id of ["generate-ai-video", "generate-aleph-video", "generate-veo-3-video"]) {
+    assert.equal(inferCapability(id), "video", `${id} should be video`);
+  }
+});
+
+test("inferCapability: 'create-music-video' stays audio — the music rule wins before the trailing-video marker is ever checked", () => {
+  assert.equal(inferCapability("create-music-video"), "audio");
+});
+
+test("inferCapability: 'video' appearing mid-token (not as the trailing segment) does not trigger the new marker on its own — existing rules still decide", () => {
+  assert.equal(inferCapability("videoedit"), "video-to-video"); // VIDEO_TO_VIDEO_MARKERS, unaffected
+  assert.equal(inferCapability("extend-ai-video"), "video"); // trailing "-video", correctly video via either rule
+});
+
+test("isUnambiguousVideoId: matches only a TRAILING '-video' (or '/video') token, never a bare mid-word substring", () => {
+  for (const id of ["generate-ai-video", "generate-aleph-video", "generate-veo-3-video", "runway-api/generate-ai-video", "extend-ai-video", "extend-video"]) {
+    assert.equal(isUnambiguousVideoId(id), true, `${id} should be an unambiguous video id`);
+  }
+  for (const id of ["create-music-video", "videoedit", "wan-2-7-videoedit", "kling/v25-turbo-text-to-video-pro", "generate-4-o-image", "generate-or-edit-image", null, undefined, ""]) {
+    assert.equal(isUnambiguousVideoId(id), false, `${id} should NOT be an unambiguous video id`);
+  }
+});
+
+test("isUnambiguousVideoId: case-insensitive", () => {
+  assert.equal(isUnambiguousVideoId("Generate-Aleph-Video"), true);
 });
 
 test("Group membership: no image-to-video/video-to-video model ends up in the ttv group; markers route to i2v/v2v", () => {

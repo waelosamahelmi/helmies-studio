@@ -244,3 +244,107 @@ export function withProviderRequired(inputSchema, fields) {
   if (merged.length === existing.length) return base;
   return { ...base, providerRequired: merged };
 }
+
+// ── Non-generation documentation endpoints (BUG 1: junk "models") ─────────
+// kie-sync.js turns every docs.kie.ai PAGE into a candidate model id, but a
+// provider's doc site also carries pages for polling a task's status,
+// running a separate request validator, or receiving a webhook callback —
+// none of those are a model a generation can ever be submitted to. Measured
+// on live production (2026-08-05), ACTIVE in the audio pool and visible in
+// the Music studio's model picker:
+//   suno-voice-generate-callback, suno-voice-record-info, suno-voice-validate,
+//   suno-voice-validate-callback, suno-voice-validate-info
+//
+// This is checked against the model's own id BEFORE any network probe runs
+// — free and deterministic, unlike scripts/verify-catalog.mjs's sweep, which
+// spends a real provider request per model. classifyNonGenerationEndpoint
+// (below) returns the SAME shape classifyProbeResponse does, carrying the
+// SAME VERDICT.NOT_CALLABLE this file already defines, so "not usable" has
+// exactly one definition regardless of which mechanism decided it — a
+// caller feeds either classifier's output through verificationAllowsActive
+// (or buildVerification, below) identically.
+//
+// Each rule is checked against the id's own BASENAME (the final "/"
+// segment, lowercased) and anchored to a token boundary, never a bare
+// substring — so a genuinely-named generator is never caught by
+// coincidence:
+//   "-callback"  a SUFFIX only — a model that merely mentions "callback"
+//                mid-name (none exist today) would be untouched
+//   "validate"   bounded by hyphens/string-edges on both sides — does not
+//                fire on a hypothetical "invalidated-frames" tool
+//   "-info"      a SUFFIX only — "info" appearing mid-word (e.g. a
+//                hypothetical "infographic-maker") is left alone; this
+//                also covers "record-info" (get/query a stored record) as
+//                one case of the same suffix, without a redundant rule
+// Real, currently-active generators that a naive "contains generate/info/
+// get" rule would have wrongly swept up (kept OUT of this list on purpose):
+// "suno-voice-generate" (the actual voice-cloning generator — the callback/
+// validate/info pages above are ABOUT this same generator, not it) and
+// "suno-voice-regenerate"/"suno-voice-check-voice" (no "-callback" suffix,
+// no "validate" token, no "-info" suffix — real actions, not doc-only
+// pages, so this rule correctly leaves them alone; extend this list with a
+// new named rule, never a broadened existing one, if either ever turns out
+// to be a documentation-only page too).
+const NON_GENERATION_ENDPOINT_RULES = [
+  ["callback", /-callback$/],
+  ["validate", /(?:^|-)validate(?:-|$)/],
+  ["info", /-info$/],
+];
+
+// The name of the first rule that matches, or null. Exposed separately from
+// the boolean check below so a verdict's `reason` can name exactly which
+// rule fired, for an operator reading scripts/fix-model-categories.mjs's
+// output or ModelPricing.constraints.verification directly.
+export function nonGenerationEndpointRule(modelId) {
+  const basename = String(modelId || "").toLowerCase().split("/").pop();
+  for (const [name, re] of NON_GENERATION_ENDPOINT_RULES) {
+    if (re.test(basename)) return name;
+  }
+  return null;
+}
+
+export function isNonGenerationEndpoint(modelId) {
+  return nonGenerationEndpointRule(modelId) !== null;
+}
+
+// The classification a real submit probe would eventually reach for one of
+// these pages anyway (KIE would answer "model name not supported", exactly
+// classifyProbeResponse's own NOT_CALLABLE case) — produced here in the
+// IDENTICAL shape { verdict, callable, status, missingField, reason } so
+// every consumer (kie-sync.js, scripts/fix-model-categories.mjs) builds the
+// stored verification block through the same buildVerification (below) a
+// real probe result would, never a parallel "not usable" representation.
+export function classifyNonGenerationEndpoint(modelId) {
+  const rule = nonGenerationEndpointRule(modelId);
+  if (!rule) return null;
+  return {
+    verdict: VERDICT.NOT_CALLABLE,
+    callable: false,
+    status: 0,
+    missingField: null,
+    reason: `documentation endpoint, not a generation model (matched rule: "${rule}")`,
+  };
+}
+
+// The ModelPricing.constraints.verification block a classification implies
+// — the SAME shape scripts/verify-catalog.mjs's updateForVerdict already
+// writes from a real probe's classifyProbeResponse output (status:
+// "verified", verdict, callable, reason, providerStatus, checkedAt), so a
+// row deactivated by a static id rule and a row deactivated by a live probe
+// are indistinguishable to verificationAllowsActive and every reader of
+// this column. `method` additionally records HOW the verdict was reached —
+// "static-id-rule" here, so an operator looking at a deactivated row never
+// mistakes a zero-cost pattern match for a probe that actually spent a
+// provider request.
+export function buildVerification(classification, { now = new Date(), method = "static-id-rule" } = {}) {
+  if (!classification) return null;
+  return {
+    status: "verified",
+    verdict: classification.verdict,
+    callable: isCallableVerdict(classification.verdict),
+    reason: classification.reason,
+    providerStatus: classification.status,
+    checkedAt: now.toISOString(),
+    method,
+  };
+}

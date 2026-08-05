@@ -6,6 +6,7 @@ vi.mock("@/lib/prisma", () => ({
 
 import prisma from "@/lib/prisma";
 import { planFixes, run } from "../../scripts/fix-model-categories.mjs";
+import { VERDICT, VERIFICATION_KEY } from "@/lib/catalog-verification.mjs";
 
 // planFixes is the pure planning core of scripts/fix-model-categories.mjs —
 // no DB access, so it's tested directly against plain row arrays here.
@@ -482,5 +483,169 @@ describe("run() — coarse-'video' direction backfill (dry-run / apply / idempot
     expect(prisma.modelPricing.update).not.toHaveBeenCalled();
     expect(result.applied).toBe(0);
     expect(result.capabilityFixes).toEqual([]);
+  });
+});
+
+// ── BUG FIX: video generators filed as image models — measured production
+// example: generate-ai-video, generate-aleph-video, generate-veo-3-video,
+// all ACTIVE with capability="text-to-image". Unlike the coarse-"video"
+// backfill above, these rows have a capability that ALREADY cleanly maps to
+// modelType "image" — the null-capability branch never runs (mappedType
+// isn't null) and the coarse-"video" branch never runs (capability isn't
+// "video"), so without this dedicated recovery they would be stuck forever.
+describe("planFixes / run() — image-mapped-but-unambiguously-video backfill (dry-run / apply / idempotent second run)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const videoRows = [
+    { modelId: "generate-ai-video", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Generate AI Video" },
+    { modelId: "generate-aleph-video", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Generate Aleph Video" },
+    { modelId: "generate-veo-3-video", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Generate Veo 3 Video" },
+  ];
+  // A similar-looking real catalog id that must NOT be touched: an actual
+  // image endpoint under the same legacy-suite family, no trailing "-video".
+  const realImageSibling = { modelId: "generate-4-o-image", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "GPT-4o Image" };
+  // A real audio row whose id happens to end in "-video" — must stay audio,
+  // never swept into this recovery (mappedType is "audio", not "image", so
+  // the branch never even runs for it; pinned here as a regression guard).
+  const musicVideoRow = { modelId: "create-music-video", providerName: "KIE", modelType: "audio", capability: "audio", displayName: "Create Music Video" };
+
+  it("planFixes recovers all three video generators to capability text-to-video / modelType video, and leaves the similar-looking rows alone", () => {
+    const { capabilityFixes, modelTypeFixes } = planFixes([...videoRows, realImageSibling, musicVideoRow]);
+    expect(capabilityFixes).toEqual([
+      { modelId: "generate-ai-video", providerName: "KIE", from: "text-to-image", to: "text-to-video" },
+      { modelId: "generate-aleph-video", providerName: "KIE", from: "text-to-image", to: "text-to-video" },
+      { modelId: "generate-veo-3-video", providerName: "KIE", from: "text-to-image", to: "text-to-video" },
+    ]);
+    expect(modelTypeFixes.filter((f) => f.providerName === "KIE" && f.to === "video")).toHaveLength(3);
+    expect(capabilityFixes.some((f) => f.modelId === "generate-4-o-image")).toBe(false);
+    expect(capabilityFixes.some((f) => f.modelId === "create-music-video")).toBe(false);
+  });
+
+  it("dry run reports the three fixes but writes nothing", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([...videoRows, realImageSibling, musicVideoRow]);
+    const result = await run({ apply: false, yes: false });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.capabilityFixes).toHaveLength(3);
+  });
+
+  it("--apply --yes writes modelType+capability for the three video rows only", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([...videoRows, realImageSibling, musicVideoRow]);
+    const result = await run({ apply: true, yes: true });
+    for (const id of ["generate-ai-video", "generate-aleph-video", "generate-veo-3-video"]) {
+      expect(prisma.modelPricing.update).toHaveBeenCalledWith({
+        where: { modelId: id },
+        data: { modelType: "video", capability: "text-to-video" },
+      });
+    }
+    expect(prisma.modelPricing.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { modelId: "generate-4-o-image" } }));
+    expect(prisma.modelPricing.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { modelId: "create-music-video" } }));
+    expect(result.applied).toBe(3);
+  });
+
+  it("is idempotent: a second run against the already-recovered rows writes nothing", async () => {
+    const fixedRows = videoRows.map((r) => ({ ...r, modelType: "video", capability: "text-to-video" }));
+    prisma.modelPricing.findMany.mockResolvedValue([...fixedRows, realImageSibling, musicVideoRow]);
+    const result = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.capabilityFixes).toEqual([]);
+  });
+});
+
+// ── BUG FIX: non-generation documentation endpoints filed as models —
+// measured production example: suno-voice-generate-callback, suno-voice-
+// record-info, suno-voice-validate, suno-voice-validate-callback, suno-
+// voice-validate-info, all ACTIVE in the audio pool. This is the persistent
+// production remediation path for existing rows — no probe sweep required:
+// DATABASE_URL="postgresql://postgres:test@localhost:55432/test" node
+// scripts/fix-model-categories.mjs --apply --yes.
+describe("planFixes / run() — non-generation endpoint backfill (dry-run / apply / idempotent second run)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const JUNK_IDS = [
+    "suno-voice-generate-callback",
+    "suno-voice-record-info",
+    "suno-voice-validate",
+    "suno-voice-validate-callback",
+    "suno-voice-validate-info",
+  ];
+  const JUNK_DISPLAY_NAMES = {
+    "suno-voice-generate-callback": "Suno Voice Generate Callback",
+    "suno-voice-record-info": "Suno Voice Record Info",
+    "suno-voice-validate": "Suno Voice Validate",
+    "suno-voice-validate-callback": "Suno Voice Validate Callback",
+    "suno-voice-validate-info": "Suno Voice Validate Info",
+  };
+  const junkRows = JUNK_IDS.map((modelId) => ({
+    modelId, providerName: "KIE", modelType: "audio", capability: "audio", displayName: JUNK_DISPLAY_NAMES[modelId],
+    isActive: true, constraints: {},
+  }));
+  // The real generator these doc pages are ABOUT — must stay untouched and
+  // active throughout every scenario below.
+  const realGeneratorRow = {
+    modelId: "suno-voice-generate", providerName: "KIE", modelType: "audio", capability: "text-to-speech",
+    displayName: "Suno Voice Generate", isActive: true, constraints: {},
+  };
+
+  it("planFixes marks all five junk ids not-usable and leaves the real generator alone", () => {
+    const { nonGenerationFixes } = planFixes([...junkRows, realGeneratorRow]);
+    const ids = nonGenerationFixes.map((f) => f.modelId).sort();
+    expect(ids).toEqual([...JUNK_IDS].sort());
+    expect(nonGenerationFixes.every((f) => f.constraints[VERIFICATION_KEY].verdict === VERDICT.NOT_CALLABLE)).toBe(true);
+    expect(nonGenerationFixes.every((f) => f.constraints[VERIFICATION_KEY].callable === false)).toBe(true);
+  });
+
+  it("dry run reports all five fixes but writes nothing", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([...junkRows, realGeneratorRow]);
+    const result = await run({ apply: false, yes: false });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.nonGenerationFixes).toHaveLength(5);
+  });
+
+  it("--apply --yes deactivates all five junk rows and records why, never touching the real generator", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([...junkRows, realGeneratorRow]);
+    const result = await run({ apply: true, yes: true });
+    for (const id of JUNK_IDS) {
+      const call = prisma.modelPricing.update.mock.calls.find(([args]) => args.where.modelId === id);
+      expect(call, `expected an update for ${id}`).toBeTruthy();
+      expect(call[0].data.isActive).toBe(false);
+      expect(call[0].data.constraints[VERIFICATION_KEY]).toMatchObject({
+        verdict: VERDICT.NOT_CALLABLE, callable: false, method: "static-id-rule",
+      });
+    }
+    expect(prisma.modelPricing.update).not.toHaveBeenCalledWith(
+      expect.objectContaining({ where: { modelId: "suno-voice-generate" } }),
+    );
+    expect(result.applied).toBe(5);
+  });
+
+  it("is idempotent: a second run against the already-deactivated rows writes nothing", async () => {
+    const fixedRows = junkRows.map((r) => ({
+      ...r,
+      isActive: false,
+      constraints: { [VERIFICATION_KEY]: { status: "verified", verdict: VERDICT.NOT_CALLABLE, callable: false, reason: "x", method: "static-id-rule", checkedAt: new Date().toISOString() } },
+    }));
+    prisma.modelPricing.findMany.mockResolvedValue([...fixedRows, realGeneratorRow]);
+    const result = await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).not.toHaveBeenCalled();
+    expect(result.applied).toBe(0);
+    expect(result.nonGenerationFixes).toEqual([]);
+  });
+
+  it("re-flags a row an admin reactivated by hand even though the recorded verdict is still correct (verification is authoritative, not isActive)", () => {
+    const reactivated = {
+      ...junkRows[0],
+      isActive: true,
+      constraints: { [VERIFICATION_KEY]: { status: "verified", verdict: VERDICT.NOT_CALLABLE, callable: false, reason: "x", method: "static-id-rule", checkedAt: new Date().toISOString() } },
+    };
+    const { nonGenerationFixes } = planFixes([reactivated]);
+    expect(nonGenerationFixes).toHaveLength(1);
+    expect(nonGenerationFixes[0].modelId).toBe(reactivated.modelId);
   });
 });

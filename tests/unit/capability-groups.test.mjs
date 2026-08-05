@@ -76,3 +76,19 @@ test("a markerless video id stays coarse 'video' and correctly stays IN ttv (not
   assert.equal(multiModel.capability, "video");
   assert.equal(matchesGroup(multiModel, "ttv"), true);
 });
+
+// ── BUG FIX: video generators filed as image models ────────────────────────
+// Measured on live production (2026-08-05): generate-ai-video,
+// generate-aleph-video, generate-veo-3-video were ACTIVE with
+// capability="text-to-image" — placing them in the tti group (Image studio)
+// where none of them can run. inferCapability's new trailing-"-video" rule
+// (model-catalog-core.mjs) resolves them to the coarse "video" capability,
+// which routes into ttv, never tti.
+test("the three legacy-suite video generators resolve out of tti and into ttv, not the image pool", () => {
+  for (const id of ["generate-ai-video", "generate-aleph-video", "generate-veo-3-video"]) {
+    const model = { capability: inferCapability(id) };
+    assert.equal(model.capability, "video", `${id} should carry the video capability`);
+    assert.equal(matchesGroup(model, "tti"), false, `${id} must not be in tti (the image pool)`);
+    assert.equal(matchesGroup(model, "ttv"), true, `${id} must be in ttv (the video pool)`);
+  }
+});
