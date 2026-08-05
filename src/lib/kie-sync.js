@@ -14,7 +14,7 @@
  */
 
 import prisma from "@/lib/prisma";
-import { CURATED_SCHEMAS, inferKieModelFromUrl, modelTypeForCapability, schemaForModel, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
+import { CURATED_SCHEMAS, inferKieModelFromUrl, MEDIA_EXCEPTIONS, modelTypeForCapability, schemaForModel, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
 import { readVerification, verificationAllowsActive, withProviderRequired, STATUS_PENDING, VERIFICATION_KEY } from "@/lib/catalog-verification.mjs";
 import { calculateCredits } from "@/lib/pricing-engine";
 
@@ -256,7 +256,23 @@ function inferModelType(path) {
   if (p.includes("music") || p.includes("suno") || p.includes("vocals") || p.includes("midi") || p.includes("audio-isolation") || p.includes("sounds")) return "audio";
   if (p.includes("upscale") && p.includes("video")) return "v2v";
   if (p.includes("upscale")) return "i2i";
-  if (p.includes("chat") || p.includes("claude") || p.includes("gemini") || p.includes("grok") || p.includes("codex")) return "llm";
+  // Root-level Gemini-Omni MEDIA pages, typed before the LLM-vendor check
+  // below would swallow them ("gemini-omni-character" is already caught by
+  // the "omni-character" lipsync rule above).
+  if (p.includes("gemini-omni-video")) return "video";
+  if (p.includes("gemini-omni-audio")) return "audio";
+  // MEDIA_EXCEPTIONS guard (video-market.md root cause #10): this substring
+  // check used to type EVERY path containing "gemini"/"grok" as "llm", and
+  // fetchKieModels unconditionally skips "llm" — silently dropping the
+  // gemini-omni-* media models (and grok-imagine/extend, whose "extend" rule
+  // sits BELOW this line) from every sync run. The exceptions list already
+  // existed in model-catalog-core.mjs but only guarded inferKieModelFromUrl's
+  // separate LLM_SEGMENTS check — it was never consulted here, where the
+  // actual drop happened.
+  if (
+    !MEDIA_EXCEPTIONS.some((item) => p.includes(item)) &&
+    (p.includes("chat") || p.includes("claude") || p.includes("gemini") || p.includes("grok") || p.includes("codex"))
+  ) return "llm";
   if (p.includes("avatar")) return "video";
   if (p.includes("animate")) return "video";
   if (p.includes("extend")) return "video";

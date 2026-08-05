@@ -146,6 +146,43 @@ export function defaultForField(name, field) {
  * @param {{ modelId?: string }} opts
  * @returns {{ params: object, filled: Record<string, unknown> }}
  */
+// ── Media-URL absolutization (audit class A) ────────────────────────────────
+// Our upload route deliberately returns APP-RELATIVE URLs (/api/media/local/<key>
+// — see src/lib/storage/index.js: presigned URLs expire, app-relative ones
+// don't). But a provider's servers cannot fetch a relative path, so any fresh
+// user upload used as an i2i/i2v/v2v source silently failed at the provider
+// while a re-used PRIOR OUTPUT (already an absolute CDN URL) worked — which is
+// exactly why this bug survived testing for so long.
+//
+// Applied at the single submit choke point (providers.js submitOnly), so the
+// studio, async-worker, agent, director and template paths all inherit it.
+// Rules: only values starting with "/api/" are rewritten (never absolute URLs,
+// never data: URIs, never provider task ids); every media-ish field is covered
+// generically — any *_url string, any *_urls / *_list array of strings.
+const APP_RELATIVE_PREFIX = "/api/";
+
+export function publicBaseUrl() {
+  const base = process.env.NEXTAUTH_URL || "https://studio.helmies.fi";
+  return base.replace(/\/+$/, "");
+}
+
+function absolutizeValue(value, base) {
+  return typeof value === "string" && value.startsWith(APP_RELATIVE_PREFIX) ? `${base}${value}` : value;
+}
+
+export function absolutizeMediaUrls(params = {}) {
+  if (!params || typeof params !== "object") return params;
+  const base = publicBaseUrl();
+  const next = { ...params };
+  for (const [name, value] of Object.entries(next)) {
+    const mediaish = /_url$/.test(name) || /_urls$/.test(name) || /_list$/.test(name) || name === "reference_images";
+    if (!mediaish) continue;
+    if (Array.isArray(value)) next[name] = value.map((v) => absolutizeValue(v, base));
+    else next[name] = absolutizeValue(value, base);
+  }
+  return next;
+}
+
 export function applyRequiredDefaults(params = {}, schema = null, opts = {}) {
   const fields = schema && typeof schema === "object" && schema.fields && typeof schema.fields === "object" ? schema.fields : {};
   const required = new Set();

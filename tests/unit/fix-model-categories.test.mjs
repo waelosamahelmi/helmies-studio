@@ -484,3 +484,166 @@ describe("run() — coarse-'video' direction backfill (dry-run / apply / idempot
     expect(result.capabilityFixes).toEqual([]);
   });
 });
+
+// ── M1 fix B: persisting the doc-verified id corrections on production rows
+// (docs/model-audit/image-market.md #8/#9, video-market.md #7).
+describe("planFixes — modelId corrections (fix B)", () => {
+  it("renames a broken-id row in place when no corrected twin exists", () => {
+    const rows = [
+      { modelId: "kling/kling-3-0", providerName: "KIE", modelType: "video", capability: "video", displayName: "Kling 3 0", isActive: true, isDeprecated: false },
+    ];
+    const { idFixes } = planFixes(rows);
+    expect(idFixes).toEqual([
+      { modelId: "kling/kling-3-0", providerName: "KIE", action: "rename", to: "kling-3.0/video" },
+    ]);
+  });
+
+  it("deactivates the broken qwen-2 row and reactivates its correctly-spelled deactivated twin — never leaves both active", () => {
+    const rows = [
+      { modelId: "qwen-2/image-edit", providerName: "KIE", modelType: "i2i", capability: "image-to-image", displayName: "Qwen2 Image Edit", isActive: true, isDeprecated: false },
+      { modelId: "qwen2/image-edit", providerName: "KIE", modelType: "i2i", capability: "image-to-image", displayName: "Qwen2 Image Edit", isActive: false, isDeprecated: true },
+    ];
+    const { idFixes } = planFixes(rows);
+    expect(idFixes).toEqual([
+      {
+        modelId: "qwen-2/image-edit",
+        providerName: "KIE",
+        action: "deactivate-in-favor-of-twin",
+        twinModelId: "qwen2/image-edit",
+        deactivateOld: true,
+        reactivateTwin: true,
+      },
+    ]);
+  });
+
+  it("never resurrects a twin whose recorded verification verdict is not-callable", () => {
+    const rows = [
+      { modelId: "qwen-2/image-edit", providerName: "KIE", modelType: "i2i", capability: "image-to-image", displayName: "Qwen2 Image Edit", isActive: true, isDeprecated: false },
+      {
+        modelId: "qwen2/image-edit", providerName: "KIE", modelType: "i2i", capability: "image-to-image",
+        displayName: "Qwen2 Image Edit", isActive: false, isDeprecated: true,
+        constraints: { verification: { status: "verified", verdict: "not-callable", callable: false } },
+      },
+    ];
+    const { idFixes } = planFixes(rows);
+    expect(idFixes).toHaveLength(1);
+    expect(idFixes[0].reactivateTwin).toBe(false);
+    expect(idFixes[0].deactivateOld).toBe(true);
+  });
+
+  it("is idempotent: a renamed row (now under its corrected id) and a settled twin pair report nothing", () => {
+    const rows = [
+      { modelId: "kling-3.0/video", providerName: "KIE", modelType: "video", capability: "video", displayName: "Kling 3.0 Video", isActive: true, isDeprecated: false },
+      { modelId: "qwen-2/image-edit", providerName: "KIE", modelType: "i2i", capability: "image-to-image", displayName: "Qwen2 Image Edit", isActive: false, isDeprecated: true },
+      { modelId: "qwen2/image-edit", providerName: "KIE", modelType: "i2i", capability: "image-to-image", displayName: "Qwen2 Image Edit", isActive: true, isDeprecated: false },
+    ];
+    const { idFixes } = planFixes(rows);
+    expect(idFixes).toEqual([]);
+  });
+
+  it("--apply --yes rewrites modelId/providerModelId/endpoint together on a rename, and deactivates+reactivates on a twin pair", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([
+      { modelId: "bytedance/seedance-1-5-pro", providerName: "KIE", modelType: "video", capability: "video", displayName: "Bytedance Seedance 1.5 Pro", isActive: true, isDeprecated: false },
+      { modelId: "qwen-2/text-to-image", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Qwen2 Text To Image", isActive: true, isDeprecated: false },
+      { modelId: "qwen2/text-to-image", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Qwen2 Text To Image", isActive: false, isDeprecated: true },
+    ]);
+    await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { modelId: "bytedance/seedance-1-5-pro" },
+        data: expect.objectContaining({
+          modelId: "bytedance/seedance-1.5-pro",
+          providerModelId: "bytedance/seedance-1.5-pro",
+          endpoint: "bytedance/seedance-1.5-pro",
+        }),
+      }),
+    );
+    expect(prisma.modelPricing.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { modelId: "qwen-2/text-to-image" },
+        data: expect.objectContaining({ isActive: false, isDeprecated: true }),
+      }),
+    );
+    expect(prisma.modelPricing.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { modelId: "qwen2/text-to-image" },
+        data: { isActive: true, isDeprecated: false },
+      }),
+    );
+  });
+});
+
+// ── M1 fix G: output-type misfilings + webhook-payload doc pages ───────────
+describe("planFixes — G reclassifications and callback-page verdicts", () => {
+  it("reclassifies cover-suno (audio→image), create-music-video (audio→video) and the Volcengine lip-sync row (video-to-video→avatar-video)", () => {
+    const rows = [
+      { modelId: "cover-suno", providerName: "KIE", modelType: "audio", capability: "audio", displayName: "Cover Suno", isActive: true, isDeprecated: false },
+      { modelId: "create-music-video", providerName: "KIE", modelType: "audio", capability: "audio", displayName: "Create Music Video", isActive: true, isDeprecated: false },
+      { modelId: "volcengine/video-to-video-lip-sync", providerName: "KIE", modelType: "v2v", capability: "video-to-video", displayName: "Volcengine Lip Sync", isActive: true, isDeprecated: false },
+    ];
+    const { capabilityFixes, modelTypeFixes } = planFixes(rows);
+    expect(capabilityFixes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ modelId: "cover-suno", to: "image" }),
+        expect.objectContaining({ modelId: "create-music-video", to: "video" }),
+        expect.objectContaining({ modelId: "volcengine/video-to-video-lip-sync", to: "avatar-video" }),
+      ]),
+    );
+    expect(modelTypeFixes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ modelId: "cover-suno", to: "image" }),
+        expect.objectContaining({ modelId: "create-music-video", to: "video" }),
+        expect.objectContaining({ modelId: "volcengine/video-to-video-lip-sync", to: "lipsync" }),
+      ]),
+    );
+  });
+
+  it("is idempotent for the reclassified rows: once stored, nothing is reported", () => {
+    const rows = [
+      { modelId: "cover-suno", providerName: "KIE", modelType: "image", capability: "image", displayName: "Cover Suno", isActive: true, isDeprecated: false },
+      { modelId: "volcengine/video-to-video-lip-sync", providerName: "KIE", modelType: "lipsync", capability: "avatar-video", displayName: "Volcengine Lip Sync", isActive: true, isDeprecated: false },
+    ];
+    const { capabilityFixes, modelTypeFixes } = planFixes(rows);
+    expect(capabilityFixes).toEqual([]);
+    expect(modelTypeFixes).toEqual([]);
+  });
+
+  it("marks the two pure-callback rows verified not-callable (webhook payload docs, not models) and skips already-marked rows", () => {
+    const rows = [
+      { modelId: "suno-voice-generate-callback", providerName: "KIE", modelType: "audio", capability: "text-to-speech", displayName: "Suno Voice Generate Callback", isActive: true, isDeprecated: false },
+      {
+        modelId: "suno-voice-validate-callback", providerName: "KIE", modelType: "audio", capability: "text-to-speech",
+        displayName: "Suno Voice Validate Callback", isActive: false, isDeprecated: true,
+        constraints: { verification: { status: "verified", verdict: "not-callable", callable: false, reason: "webhook payload documentation page, not a callable model" } },
+      },
+    ];
+    const { notUsableFixes } = planFixes(rows);
+    expect(notUsableFixes).toHaveLength(1);
+    expect(notUsableFixes[0].modelId).toBe("suno-voice-generate-callback");
+    expect(notUsableFixes[0].constraints.verification).toMatchObject({
+      status: "verified",
+      verdict: "not-callable",
+      callable: false,
+    });
+  });
+
+  it("--apply --yes deactivates a callback row and writes its verdict into constraints", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([
+      { modelId: "suno-voice-generate-callback", providerName: "KIE", modelType: "audio", capability: "text-to-speech", displayName: "Suno Voice Generate Callback", isActive: true, isDeprecated: false, constraints: { maxOutputs: 1 } },
+    ]);
+    await run({ apply: true, yes: true });
+    expect(prisma.modelPricing.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { modelId: "suno-voice-generate-callback" },
+        data: expect.objectContaining({
+          isActive: false,
+          isDeprecated: true,
+          constraints: expect.objectContaining({
+            maxOutputs: 1,
+            verification: expect.objectContaining({ verdict: "not-callable", callable: false }),
+          }),
+        }),
+      }),
+    );
+  });
+});

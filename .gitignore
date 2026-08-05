@@ -52,3 +52,4 @@ public/media/assembled_*.mp4
 public/media/_seg_*.mp4
 public/media/_tmp_*
 public/media/_concat_*.txt
+.claude/

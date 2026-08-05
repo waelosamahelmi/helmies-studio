@@ -1,5 +1,78 @@
 const LLM_SEGMENTS = new Set(["claude", "codex", "grok", "gemini"]);
-const MEDIA_EXCEPTIONS = ["grok-imagine", "gemini-omni-video", "gemini-omni-audio", "gemini-omni-character"];
+// Market doc paths that CONTAIN an LLM-vendor token ("grok", "gemini") but are
+// real MEDIA generation models, not chat models. Exported because kie-sync.js's
+// own inferModelType has an independent "gemini"/"grok" substring → "llm" check
+// that was silently dropping gemini-omni-* and grok-imagine/extend from every
+// sync run (docs/model-audit/video-market.md root cause #10) — that file must
+// consult the SAME list, not a private copy.
+export const MEDIA_EXCEPTIONS = ["grok-imagine", "gemini-omni-video", "gemini-omni-audio", "gemini-omni-character"];
+
+// ── KIE sitemap-slug → real API model-id normalization (fix class B) ───────
+// The sync used to hyphenate EVERY `<letters><digits>` family segment
+// (`rest[0].replace(/^([a-z]+)(\d+)$/, "$1-$2")`) on the theory that KIE's API
+// wants the hyphenated form. Live/doc verification (docs/model-audit/
+// image-market.md, root cause #8) proved that rule is per-family, not global:
+//   · flux2 → flux-2   CORRECT (live-verified: `flux-2/pro-text-to-image` is
+//                      the real model field — image-market.md, Flux 2 section)
+//   · qwen2 → qwen-2   WRONG — the real API id is unhyphenated `qwen2/*`
+//                      (image-market.md documents the broken active `qwen-2/*`
+//                      pair vs the correct deactivated `qwen2/*` rows)
+//   · qwen3 → qwen-3   WRONG for the same reason (`qwen3/text-to-image` /
+//                      `qwen3/image-to-image` are the documented real ids)
+// So: an EXPLICIT per-family mapping. A family absent from this table keeps
+// its original sitemap segment verbatim.
+export const KIE_FAMILY_SEGMENT_MAP = {
+  // image-market.md, Flux 2 section: real model field is `flux-2/…` — the one
+  // family where the old hyphenation rule was verified correct.
+  flux2: "flux-2",
+};
+
+// Full-id corrections where the real `model` string differs from the doc-page
+// URL slug in a way no segment rule can derive (version dots, version-prefixed
+// vendor folders, missing version segments, bare ids with no folder prefix).
+// Keyed by the URL-derived id (after KIE_FAMILY_SEGMENT_MAP), value = the
+// doc-verified real API model id. Each entry cites its audit source.
+export const KIE_MODEL_ID_CORRECTIONS = {
+  // video-market.md (Bytedance): real id uses a version DOT — the stored
+  // dash form 422s ("seedance-1-5-pro" confirmed live-422'd).
+  "bytedance/seedance-1-5-pro": "bytedance/seedance-1.5-pro",
+  // video-market.md (Kling): real ids are version-prefixed vendor folders.
+  "kling/text-to-video": "kling-2.6/text-to-video",
+  "kling/image-to-video": "kling-2.6/image-to-video",
+  "kling/kling-3-0": "kling-3.0/video", // confirmed live-422'd under the slug form
+  "kling/motion-control": "kling-2.6/motion-control",
+  "kling/motion-control-v3": "kling-3.0/motion-control",
+  "kling/v25-turbo-image-to-video-pro": "kling/v2-5-turbo-image-to-video-pro",
+  "kling/v25-turbo-text-to-video-pro": "kling/v2-5-turbo-text-to-video-pro",
+  // video-market.md (PixVerse): every real id carries a `-v6` version segment
+  // the URL slug omits.
+  "pixverse/text-to-video": "pixverse-v6/text-to-video",
+  "pixverse/image-to-video": "pixverse-v6/image-to-video",
+  "pixverse/transition": "pixverse-v6/transition",
+  "pixverse/extend": "pixverse-v6/extend",
+  "pixverse/reference-to-video": "pixverse-v6/reference-to-video",
+  // video-market.md (Grok Imagine 1.5 preview): real model string breaks the
+  // vendor/action slug pattern entirely — dashes, no slash.
+  "grok-imagine/1-5-preview": "grok-imagine-video-1-5-preview",
+  // image-market.md root cause #9 (bare-model prefix drift): these exact ids
+  // are BARE — no `google/`/`gpt/`/`z-image/` folder prefix. Scoped to the
+  // precise ids the audit names; plain `google/nano-banana` (and imagen4 etc.)
+  // IS live-verified working WITH its prefix and must not be touched.
+  "google/nanobanana2": "nano-banana-2",
+  "google/nano-banana-2-lite": "nano-banana-2-lite",
+  "google/pro-image-to-image": "nano-banana-pro",
+  "gpt/gpt-image-2-text-to-image": "gpt-image-2-text-to-image",
+  "gpt/gpt-image-2-image-to-image": "gpt-image-2-image-to-image",
+  "z-image/z-image": "z-image",
+  // image-market.md (Seedream / GPT-Image 1.5): dot-vs-hyphen version slugs;
+  // the folder-index page `market/seedream/seedream` documents Seedream 3.0,
+  // whose real id is `bytedance/seedream`.
+  "seedream/seedream": "bytedance/seedream",
+  "seedream/4-5-text-to-image": "seedream/4.5-text-to-image",
+  "seedream/4-5-edit": "seedream/4.5-edit",
+  "gpt-image/1-5-text-to-image": "gpt-image/1.5-text-to-image",
+  "gpt-image/1-5-image-to-image": "gpt-image/1.5-image-to-image",
+};
 
 function normalizeScalar(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : value;
@@ -457,7 +530,12 @@ export function runnableProviderModelId(row) {
 const AUDIO_KIND_RULES = [
   ["dialogue", /text-to-dialogue|dialogue/],
   ["tts", /text-to-speech|tts/],
-  ["voice-clone", /voice-generate|voice-clone|persona/],
+  // `suno-voice-` prefixes the ENTIRE 8-step Suno voice-clone workflow
+  // (validate, validate-info, record-info, regenerate, check-voice, generate
+  // + the two callbacks) — the old rule only matched the literal token
+  // "voice-generate", scattering 6 of the 8 steps into the generic "utility"
+  // bucket and across two studio surfaces (docs/model-audit/audio-music.md).
+  ["voice-clone", /suno-voice-|voice-generate|voice-clone|persona/],
   ["sfx", /generate-sounds|sound-effect|sfx/],
   ["enhancement", /audio-isolation|boost-music|separate-vocals|enhance/],
   ["conversion", /convert-to-wav|to-wav|convert|generate-midi/],
@@ -509,13 +587,28 @@ const TEXT_TO_VIDEO_MARKERS = /text-to-video|-t2v\b/;
 const VIDEO_TO_VIDEO_MARKERS = /video-to-video|videoedit|video-edit|style-transform|-v2v\b|\/extend\b/;
 
 export function inferCapability(path) {
+  // Output-type misfilings (docs/model-audit/audio-music.md): despite their
+  // Suno-family tokens, `cover-suno` generates album-cover IMAGES
+  // (`/api/v1/suno/cover/generate` — "Generate personalized cover images")
+  // and `create-music-video` renders an MP4 VIDEO (`/api/v1/mp4/generate`).
+  // Both must be classified by what comes OUT, before the suno/music tokens
+  // below would sweep them into "audio".
+  if (/cover-suno/.test(path)) return "image";
+  if (/create-music-video/.test(path)) return "video";
   if (/text-to-image|text2image/.test(path)) return "text-to-image";
   if (/image-to-image|image-edit|edit-image|remix|character-edit/.test(path)) return "image-to-image";
+  // Lip-sync/avatar markers must win over the generic video-direction
+  // markers: `volcengine/video-to-video-lip-sync` contains the literal
+  // substring "video-to-video", so with the old ordering it was filed as
+  // plain video-to-video and landed in the V2V studio instead of lipsync
+  // (video-market.md root cause #9). "omni-character" covers the root-level
+  // gemini-omni-character page (a character/avatar asset constructor —
+  // video-market.md, Gemini Omni section).
+  if (/lip-sync|avatar|omnihuman|infinitalk|from-audio|omni-character/.test(path)) return "avatar-video";
   if (IMAGE_TO_VIDEO_MARKERS.test(path)) return "image-to-video";
   if (TEXT_TO_VIDEO_MARKERS.test(path)) return "text-to-video";
   if (VIDEO_TO_VIDEO_MARKERS.test(path)) return "video-to-video";
   if (/reference-to-video|r2v/.test(path)) return "reference-to-video";
-  if (/lip-sync|avatar|omnihuman|infinitalk|from-audio/.test(path)) return "avatar-video";
   if (/upscale/.test(path)) return path.includes("video") ? "video-upscale" : "image-upscale";
   if (/remove-background/.test(path)) return "background-removal";
   if (/text-to-speech|tts|dialogue|voice/.test(path)) return "text-to-speech";
@@ -603,16 +696,26 @@ export function inferKieModelFromUrl(url) {
   if (marketIndex >= 0) {
     const rest = parts.slice(marketIndex + 1);
     const family = rest[0];
+    // Exact-match against the FULL first segment on purpose: a root-level
+    // market page like "gemini-omni-video" is its own family and must NOT be
+    // treated as family "gemini" (video-market.md root cause #10).
     if (LLM_SEGMENTS.has(family) && !MEDIA_EXCEPTIONS.some((item) => path.includes(item))) return null;
-    if (["quickstart", "common"].includes(family) || rest.length < 2) return null;
+    if (["quickstart", "common"].includes(family) || rest.length < 1) return null;
+    // Single-segment ROOT-LEVEL market pages are real models whose family IS
+    // the page slug (market/gemini-omni-video, market/omnihuman-1-5 — both
+    // documented against the real createTask endpoint, video-market.md).
+    // The old `rest.length < 2` guard silently dropped every one of them.
     let modelId = rest.join("/");
-    // KIE sitemap uses simplified slugs (e.g., flux2, qwen2) but the API
-    // expects hyphenated model IDs (e.g., flux-2, qwen-2). Normalize the
-    // first segment to match what KIE's createTask endpoint actually accepts.
-    const normalizedFirst = rest[0]?.replace(/^([a-z]+)(\d+)$/, "$1-$2") || rest[0];
-    if (normalizedFirst !== rest[0]) {
-      modelId = [normalizedFirst, ...rest.slice(1)].join("/");
+    // Per-family sitemap-slug → API-id segment mapping (flux2 → flux-2 only;
+    // see KIE_FAMILY_SEGMENT_MAP's header — the old blanket
+    // `<letters><digits>` hyphenation broke qwen2/qwen3).
+    const mappedFirst = KIE_FAMILY_SEGMENT_MAP[rest[0]];
+    if (mappedFirst) {
+      modelId = [mappedFirst, ...rest.slice(1)].join("/");
     }
+    // Doc-verified full-id corrections (version dots, Kling version prefixes,
+    // PixVerse -v6, bare ids — see KIE_MODEL_ID_CORRECTIONS's header).
+    modelId = KIE_MODEL_ID_CORRECTIONS[modelId] || modelId;
     const capability = inferCapability(modelId);
     const [inputModalities, outputModalities] = modalitiesForCapability(capability);
     return { modelId, providerModelId: modelId, endpoint: modelId, displayName: slugToTitle(modelId, { capability }), capability, inputModalities, outputModalities, sourceUrl: url };

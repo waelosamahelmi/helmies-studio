@@ -8,7 +8,7 @@
 import prisma from "./prisma.js";
 import { formatAlibabaPayload, getAlibabaApiPath, getAlibabaHeaders, parseAlibabaOutputs } from "./alibaba-provider-core.mjs";
 import { resolveModelPricingRow } from "./model-catalog-core.mjs";
-import { applyRequiredDefaults } from "./provider-payload-core.mjs";
+import { applyRequiredDefaults, absolutizeMediaUrls } from "./provider-payload-core.mjs";
 import { audioSubmitPath, audioPollPath, formatAudioRequest, parseSunoPoll } from "./audio-payload-core.mjs";
 import { log } from "./log.js";
 
@@ -411,6 +411,11 @@ async function submitOnlyMock(provider, payload) {
 // catalog lookup hiccuped (and several unit suites mock "@/lib/prisma" as an
 // empty object), so we simply submit exactly what the caller built.
 async function fillRequiredParams(modelId, params) {
+  // Audit class A: app-relative media URLs (/api/media/local/<key>) must
+  // become absolute BEFORE any early return below — the provider's servers
+  // cannot fetch a relative path, and this must apply even when the schema
+  // lookup fails or the model has no schema.
+  params = absolutizeMediaUrls(params);
   let schema = null;
   try {
     const row = await resolveModelPricingRow(prisma, modelId, { modelId: true, inputSchema: true });
