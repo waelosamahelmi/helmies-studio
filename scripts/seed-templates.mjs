@@ -45,13 +45,36 @@ async function upsertTemplate(tpl) {
   return prisma.template.create({ data: { slug: tpl.slug, isPublished: false, ...TEMPLATE_FIELDS(tpl) } });
 }
 
+// Deterministic deep-equality for graph JSON (key order must not matter —
+// Prisma round-trips Json fields with no ordering guarantee).
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 async function upsertVersion(template, tpl) {
-  const existing = await prisma.templateVersion.findUnique({
-    where: { templateId_version: { templateId: template.id, version: 1 } },
+  const latest = await prisma.templateVersion.findFirst({
+    where: { templateId: template.id },
+    orderBy: { version: "desc" },
   });
-  if (existing) return existing; // graph is immutable once created — never rewritten by a re-run
+  if (!latest) {
+    return prisma.templateVersion.create({
+      data: { templateId: template.id, version: 1, graph: tpl.graph, status: "draft" },
+    });
+  }
+  // A version's graph is immutable once created — that invariant stands. But
+  // the SEED's graph can legitimately change (e.g. the 2026-08-05 Alibaba
+  // retirement repointed every seed to KIE models). Publishing then requires
+  // a NEW version carrying the new graph; the old version stays untouched as
+  // history, and template-runner already executes the newest PUBLISHED
+  // version, so in-flight runs of the old version are unaffected.
+  if (stableStringify(latest.graph) === stableStringify(tpl.graph)) return latest;
+  console.log(`  ↺ ${tpl.slug} — seed graph changed; creating version ${latest.version + 1}`);
   return prisma.templateVersion.create({
-    data: { templateId: template.id, version: 1, graph: tpl.graph, status: "draft" },
+    data: { templateId: template.id, version: latest.version + 1, graph: tpl.graph, status: "draft" },
   });
 }
 

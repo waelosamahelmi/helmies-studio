@@ -15,6 +15,11 @@
 // Usage:
 //   node scripts/retire-alibaba.mjs                # dry-run (default)
 //   node scripts/retire-alibaba.mjs --apply --yes  # write
+// MUST be the side-effect import — ES module imports are hoisted, so a
+// config() call after imports runs AFTER prisma.js has read an empty
+// DATABASE_URL (fails on the server with "SASL: client password must be a
+// string"). Same fix as verify-catalog.mjs.
+import "dotenv/config";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import prisma from "../src/lib/prisma.js";
