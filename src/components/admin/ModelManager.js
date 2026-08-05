@@ -39,6 +39,12 @@ export default function ModelManager() {
   const [syncAsk, setSyncAsk] = useState(null);
   const [syncNote, setSyncNote] = useState("");
 
+  // EDITSv1 M3 — inputSchema editing.
+  const [schemaModel, setSchemaModel] = useState(null);
+  const [schemaText, setSchemaText] = useState("");
+  const [schemaBusy, setSchemaBusy] = useState(false);
+  const [schemaFault, setSchemaFault] = useState("");
+
   const categories = useMemo(
     () => ["all", ...Array.from(new Set(models.map((m) => m.category))).sort()],
     [models],
@@ -117,6 +123,54 @@ export default function ModelManager() {
       setFault(e.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const openSchema = (m) => {
+    setSchemaModel(m);
+    setSchemaText(JSON.stringify(m.inputSchema ?? { fields: {} }, null, 2));
+    setSchemaFault("");
+  };
+
+  // Client-side JSON validation + a field-level preview, recomputed as the
+  // admin types. The SERVER is still the gate (input-schema-validation.mjs)
+  // — this only catches the obvious before a round-trip.
+  const schemaPreview = useMemo(() => {
+    if (!schemaModel) return { error: "", rows: [] };
+    let parsed;
+    try {
+      parsed = JSON.parse(schemaText);
+    } catch (e) {
+      return { error: `Not valid JSON: ${e.message}`, rows: [] };
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { error: "Schema must be a JSON object.", rows: [] };
+    }
+    const fields = parsed.fields;
+    if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
+      return { error: "Schema must carry a `fields` object.", rows: [] };
+    }
+    const rows = Object.entries(fields).map(([name, f]) => ({
+      name,
+      type: (f && typeof f === "object" && f.type) || "string",
+      required: !!(f && typeof f === "object" && f.required === true),
+      enum: f && typeof f === "object" && Array.isArray(f.enum) ? f.enum.join(", ") : "",
+    }));
+    return { error: "", rows, parsed };
+  }, [schemaModel, schemaText]);
+
+  const saveSchema = async () => {
+    if (schemaPreview.error || !schemaPreview.parsed) return;
+    setSchemaBusy(true);
+    setSchemaFault("");
+    try {
+      await write(schemaModel, { inputSchema: schemaPreview.parsed });
+      setSchemaModel(null);
+      reload();
+    } catch (e) {
+      setSchemaFault(e.message);
+    } finally {
+      setSchemaBusy(false);
     }
   };
 
@@ -271,6 +325,15 @@ export default function ModelManager() {
                 </td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   <button type="button" className="hs-btn hs-btn--sm" onClick={() => openEdit(m)}>Price</button>
+                  <button
+                    type="button"
+                    className="hs-btn hs-btn--sm"
+                    style={{ marginLeft: "var(--s-2)" }}
+                    onClick={() => openSchema(m)}
+                    aria-label={`Edit schema for ${m.name}`}
+                  >
+                    Schema
+                  </button>
                   {m.configured && (
                     <button
                       type="button"
@@ -366,6 +429,68 @@ export default function ModelManager() {
             </span>{" "}
             per run.
           </p>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!schemaModel}
+        onClose={() => setSchemaModel(null)}
+        title={schemaModel ? `Schema for ${schemaModel.name}` : ""}
+        footer={
+          <>
+            <button type="button" className="hs-btn hs-btn--ghost" onClick={() => setSchemaModel(null)}>Cancel</button>
+            <button
+              type="button"
+              className="hs-btn hs-btn--primary"
+              onClick={saveSchema}
+              disabled={schemaBusy || !!schemaPreview.error}
+            >
+              {schemaBusy && <span className="hs-spin" aria-hidden="true" />}
+              Save schema
+            </button>
+          </>
+        }
+      >
+        <Fault>{schemaFault}</Fault>
+
+        <div className="hs-field">
+          <label className="hs-label" htmlFor="m-schema">Input schema (JSON)</label>
+          <textarea
+            id="m-schema"
+            className="hs-input hs-mono"
+            rows={12}
+            value={schemaText}
+            onChange={(e) => setSchemaText(e.target.value)}
+            spellCheck={false}
+            aria-invalid={schemaPreview.error ? "true" : undefined}
+            aria-describedby={schemaPreview.error ? "m-schema-error" : "m-schema-hint"}
+            style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "var(--t-micro)", resize: "vertical" }}
+          />
+          {schemaPreview.error
+            ? <p className="hs-error" id="m-schema-error">{schemaPreview.error}</p>
+            : <p className="hs-hint" id="m-schema-hint">
+                {"Shape: { \"fields\": { name: { type, required, enum, default, … } } }. Studio controls, submit validation and required-field defaults all read this."}
+              </p>}
+        </div>
+
+        {!schemaPreview.error && (
+          schemaPreview.rows.length === 0 ? (
+            <p className="hs-hint">No fields declared yet.</p>
+          ) : (
+            <Table
+              caption="Field preview"
+              head={["Field", "Type", "Required", "Enum"]}
+            >
+              {schemaPreview.rows.map((f) => (
+                <tr key={f.name}>
+                  <td className="hs-mono">{f.name}</td>
+                  <td>{f.type}</td>
+                  <td>{f.required ? "yes" : "no"}</td>
+                  <td className="hs-mono" style={{ whiteSpace: "normal", wordBreak: "break-word" }}>{f.enum || "—"}</td>
+                </tr>
+              ))}
+            </Table>
+          )
         )}
       </Modal>
 

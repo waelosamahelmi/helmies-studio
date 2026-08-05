@@ -9,7 +9,7 @@ import prisma from "./prisma.js";
 import { formatAlibabaPayload, getAlibabaApiPath, getAlibabaHeaders, parseAlibabaOutputs } from "./alibaba-provider-core.mjs";
 import { resolveModelPricingRow } from "./model-catalog-core.mjs";
 import { applyRequiredDefaults, absolutizeMediaUrls } from "./provider-payload-core.mjs";
-import { audioSubmitPath, audioPollPath, formatAudioRequest, parseSunoPoll } from "./audio-payload-core.mjs";
+import { audioSubmitPath, audioPollPath, formatAudioRequest, parseSunoPoll, parseAudioOpPoll } from "./audio-payload-core.mjs";
 import { imageSubmitPath, imagePollPath, formatImageRequest, parseImagePoll } from "./image-payload-core.mjs";
 import { videoSubmitPath, videoPollTarget, formatVideoRequest, parseVideoPoll } from "./video-payload-core.mjs";
 import { log } from "./log.js";
@@ -203,6 +203,13 @@ export const PROVIDERS = {
       if (image) return image;
       const video = parseVideoPoll(data, model, pollState);
       if (video) return video;
+      // The Suno OPS with their own record-info envelopes (lyrics, style
+      // boost, vocal removal) are MODEL-keyed and must be read before the
+      // shape-detected music branch: their bodies also carry a
+      // `status: "SUCCESS"` string isSunoPollBody would claim and misread
+      // as "pending forever" (no sunoData) — see audio-payload-core.mjs.
+      const audioOp = parseAudioOpPoll(data, model);
+      if (audioOp) return audioOp;
       // The music route answers with a completely different envelope
       // (`status` + `response.sunoData[]` instead of `state` + `resultJson`),
       // which the generic branch below reads as "no outputs, still pending"

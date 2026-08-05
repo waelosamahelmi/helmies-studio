@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { requireAdmin } from "@/lib/security";
+import { requireAdmin, logAudit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import prisma from "@/lib/prisma";
 import { IMAGE_MODELS, I2I_MODELS, VIDEO_MODELS, I2V_MODELS, V2V_MODELS, LIPSYNC_MODELS, RECAST_MODELS, AUDIO_MODELS } from "@/lib/models";
 import { assertCreditsCoverCost } from "@/lib/pricing-engine";
+import { validateInputSchema } from "@/lib/input-schema-validation.mjs";
 
 const ALL_MODELS = [
   ...IMAGE_MODELS.map((m) => ({ ...m, category: "image" })),
@@ -36,6 +37,9 @@ export async function GET(req) {
         background: p?.background || null,
         backgroundOverlay: p?.backgroundOverlay ?? null,
         textColor: p?.textColor || null,
+        // EDITSv1 M3: the stored input schema, so the admin schema editor
+        // can prefill. Null for unpriced models (no row yet).
+        inputSchema: p?.inputSchema ?? null,
         configured: !!p,
       };
     });
@@ -50,7 +54,7 @@ export async function POST(req) {
   try {
     await requireAdmin(req);
     verifyOrigin(req);
-    const { modelId, modelType, providerName, providerCost, creditsCost, isActive, background, backgroundOverlay, textColor } = await req.json();
+    const { modelId, modelType, providerName, providerCost, creditsCost, isActive, background, backgroundOverlay, textColor, inputSchema } = await req.json();
 
     const updateData = {};
     if (providerCost != null) updateData.providerCost = providerCost;
@@ -59,6 +63,17 @@ export async function POST(req) {
     if (background !== undefined) updateData.background = background;
     if (backgroundOverlay !== undefined) updateData.backgroundOverlay = backgroundOverlay;
     if (textColor !== undefined) updateData.textColor = textColor;
+
+    // EDITSv1 M3 — admin schema editing. Validated hard server-side: this
+    // column drives studio controls, submit validation and required-field
+    // defaulting, so junk here silently breaks the model for every user.
+    if (inputSchema !== undefined) {
+      const checked = validateInputSchema(inputSchema);
+      if (!checked.ok) {
+        return NextResponse.json({ error: checked.error }, { status: 400 });
+      }
+      updateData.inputSchema = checked.schema;
+    }
 
     // Margin floor (code review follow-up): this is a partial update (only
     // fields present in the body land in updateData), so the EFFECTIVE
@@ -78,9 +93,21 @@ export async function POST(req) {
 
     await prisma.modelPricing.upsert({
       where: { modelId },
-      create: { modelId, modelType, providerName: providerName || "KIE", providerCost: providerCost || 0, creditsCost: creditsCost || 1, isActive: isActive ?? true, background: background || null, backgroundOverlay: backgroundOverlay ?? null, textColor: textColor || null },
+      create: { modelId, modelType, providerName: providerName || "KIE", providerCost: providerCost || 0, creditsCost: creditsCost || 1, isActive: isActive ?? true, background: background || null, backgroundOverlay: backgroundOverlay ?? null, textColor: textColor || null, ...(updateData.inputSchema !== undefined ? { inputSchema: updateData.inputSchema } : {}) },
       update: updateData,
     });
+
+    // Same AuditLog convention as admin/pricing's admin_set_pricing entry —
+    // a schema change is at least as consequential as a price change.
+    if (updateData.inputSchema !== undefined) {
+      await logAudit(
+        "admin_edit_model_schema",
+        "model_pricing",
+        modelId,
+        { fields: Object.keys(updateData.inputSchema.fields || {}) },
+        req,
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (e) {

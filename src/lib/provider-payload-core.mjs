@@ -58,6 +58,10 @@ export const FILLABLE_FIELDS = new Set([
   // text/seed — content is never invented.
   "sound",
   "audio",
+  // kling-3.0/video (probe round 3, 2026-08-05): with sound/aspect_ratio/
+  // mode supplied the provider answered 422 "multi_shots cannot be empty" —
+  // a boolean shot-structure setting (single vs multi shot), not content.
+  "multi_shots",
   "upscale_factor",
   "character_orientation",
   "ratio",
@@ -89,6 +93,22 @@ export const CANONICAL_FIELD_DEFAULTS = {
 // bootstrap for what has already been proved by hand.
 export const PROVIDER_REQUIRED_FIELDS = {
   "flux-2/pro-text-to-image": ["aspect_ratio"],
+  //   kling-3.0/video → {"code":500,"msg":"This field is required"} (nameless)
+  //     (live KIE probes, 2026-08-05: prompt+duration failed; adding `sound`
+  //     alone STILL failed the same way, so every rendering setting the doc
+  //     lists — docs/model-audit/video-market.md, kling/kling-3-0: sound,
+  //     aspect_ratio, and mode (resolution is derived from mode+aspect) —
+  //     is treated as provider-required and filled from the schema defaults)
+  //     Probe round 3 (sound+aspect_ratio+mode supplied) advanced to a
+  //     NAMED error: {"code":422,"msg":"multi_shots cannot be empty"} —
+  //     so multi_shots is required too (filled false = single shot).
+  "kling-3.0/video": ["sound", "aspect_ratio", "mode", "multi_shots"],
+  //   pixverse-v6/text-to-video → {"code":500,"msg":"This field is required"}
+  //     (live KIE probes, 2026-08-05: prompt+duration failed; adding
+  //     `quality` alone STILL failed identically — so `aspect_ratio` (the
+  //     one remaining doc-listed rendering setting with a default) is
+  //     hard-required too, same pattern as flux-2/pro-text-to-image)
+  "pixverse-v6/text-to-video": ["quality", "aspect_ratio"],
 };
 
 function normalizeKey(modelId) {

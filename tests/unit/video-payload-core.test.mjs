@@ -107,7 +107,7 @@ describe("Aleph", () => {
 });
 
 describe("Veo3 generate + extend bodies", () => {
-  it("posts the real flat body with snake_case aspect_ratio and a tier under `model`", () => {
+  it("posts the real flat body with snake_case aspect_ratio and the engine under `model`", () => {
     expect(videoSubmitPath("generate-veo-3-video")).toBe("/api/v1/veo/generate");
     const req = formatVideoRequest("generate-veo-3-video", "sunset timelapse", {
       image_urls: ["https://cdn.example/a.png", "https://cdn.example/b.png", "https://cdn.example/c.png"],
@@ -129,6 +129,20 @@ describe("Veo3 generate + extend bodies", () => {
     });
   });
 
+  // M-straggler (live probes 2026-08-05): a submit with NO `model` at all
+  // 422'd "Invalid model" (and so did a "veo3.1-fast" spelling — the doc's
+  // veo3/veo3_fast/veo3_lite enum is the real wire enum). The body always
+  // carries a model now, and Veo3.1-style marketing spellings normalize
+  // down to the wire enum instead of leaking through.
+  it("always sends a model, defaulting veo3_fast and normalizing 3.1-style tier spellings", () => {
+    expect(buildVeoBody("x", {}).model).toBe("veo3_fast");
+    expect(buildVeoBody("x", { model_tier: "veo3_fast" }).model).toBe("veo3_fast");
+    expect(buildVeoBody("x", { model_tier: "veo3.1-fast" }).model).toBe("veo3_fast");
+    expect(buildVeoBody("x", { model_tier: "veo3.1" }).model).toBe("veo3");
+    expect(buildVeoBody("x", { model_tier: "veo3.1-lite" }).model).toBe("veo3_lite");
+    expect(buildVeoBody("x", { model_tier: "VEO3" }).model).toBe("veo3");
+  });
+
   it("extend posts taskId with its OWN tier enum (fast|quality|lite)", () => {
     const req = formatVideoRequest("extend-video", "continue the shot", {
       task_id: "veo_task_123",
@@ -139,7 +153,9 @@ describe("Veo3 generate + extend bodies", () => {
     expect(req.body).toEqual({ taskId: "veo_task_123", prompt: "continue the shot", seeds: 12345, model: "quality" });
     // generate's enum values are NOT valid on extend.
     expect(buildVeoExtendBody("x", { model_tier: "veo3_fast" }).model).toBeUndefined();
-    expect(buildVeoBody("x", { model_tier: "quality" }).model).toBeUndefined();
+    // ...and an unknown/extend-flavoured tier on generate falls back to the
+    // default engine rather than leaking an invalid value onto the wire.
+    expect(buildVeoBody("x", { model_tier: "quality" }).model).toBe("veo3_fast");
   });
 });
 

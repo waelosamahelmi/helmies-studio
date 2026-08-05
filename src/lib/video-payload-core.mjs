@@ -157,12 +157,41 @@ export function buildAlephBody(prompt, params = {}) {
 }
 
 // ── Veo3 generate ──────────────────────────────────────────────────────────
-// prompt (req), imageUrls (opt, ≤2), model (tier selector veo3|veo3_fast|
-// veo3_lite — canonical studio name is `model_tier`, because submitOnly's
-// payload destructuring reserves `model` for the catalog id), generationType,
-// aspect_ratio (snake_case here, unlike Runway!), resolution (720p|1080p|4k),
+// prompt (req), imageUrls (opt, ≤2), model (engine selector — canonical
+// studio name is `model_tier`, because submitOnly's payload destructuring
+// reserves `model` for the catalog id), generationType, aspect_ratio
+// (snake_case here, unlike Runway!), resolution (720p|1080p|4k),
 // duration (4|6|8), watermark, enableTranslation.
+//
+// M-straggler fix (live probes 2026-08-05): the endpoint 422'd
+// "Invalid model" on a submit that carried no `model` at all (the old
+// builder omitted the field whenever the caller named no tier — which is
+// every studio submit), and a follow-up probe proved the version-suffixed
+// "veo3.1-fast" spelling is ALSO rejected with the same 422 — the accepted
+// engine selectors are exactly the doc's `veo3` / `veo3_fast` / `veo3_lite`
+// (docs/model-audit/video-dedicated.md, generate-veo-3-video entry). The
+// body therefore ALWAYS carries a `model` (fast tier when the caller named
+// none — the doc's own default), and any Veo3.1-style marketing spelling a
+// caller supplies is normalized DOWN to the wire enum rather than rejected.
 export const VEO_TIERS = ["veo3", "veo3_fast", "veo3_lite"];
+export const VEO_DEFAULT_TIER = "veo3_fast";
+const VEO_TIER_ALIASES = {
+  "veo3": "veo3",
+  "veo3.1": "veo3",
+  "veo3_1": "veo3",
+  "veo3_fast": "veo3_fast",
+  "veo3-fast": "veo3_fast",
+  "veo3.1-fast": "veo3_fast",
+  "veo3.1_fast": "veo3_fast",
+  "veo3_lite": "veo3_lite",
+  "veo3-lite": "veo3_lite",
+  "veo3.1-lite": "veo3_lite",
+  "veo3.1_lite": "veo3_lite",
+};
+export function resolveVeoTier(value) {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return VEO_TIER_ALIASES[raw] || null;
+}
 export const VEO_EXTEND_TIERS = ["fast", "quality", "lite"];
 
 export function buildVeoBody(prompt, params = {}) {
@@ -171,8 +200,8 @@ export function buildVeoBody(prompt, params = {}) {
   if (text !== null) body.prompt = text;
   const imageUrls = asUrlArray(params.imageUrls ?? params.image_urls ?? params.image_url, 2);
   if (imageUrls) body.imageUrls = imageUrls;
-  const tier = firstString(params.model_tier, params.modelTier, params.veo_model)?.toLowerCase();
-  if (tier && VEO_TIERS.includes(tier)) body.model = tier;
+  const tier = resolveVeoTier(firstString(params.model_tier, params.modelTier, params.veo_model));
+  body.model = tier || VEO_DEFAULT_TIER;
   const generationType = firstString(params.generationType, params.generation_type);
   if (generationType) body.generationType = generationType;
   const aspect = firstString(params.aspect_ratio, params.aspectRatio);
