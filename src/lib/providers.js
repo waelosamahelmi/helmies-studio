@@ -9,6 +9,7 @@ import prisma from "./prisma.js";
 import { formatAlibabaPayload, getAlibabaApiPath, getAlibabaHeaders, parseAlibabaOutputs } from "./alibaba-provider-core.mjs";
 import { resolveModelPricingRow } from "./model-catalog-core.mjs";
 import { applyRequiredDefaults } from "./provider-payload-core.mjs";
+import { audioSubmitPath, audioPollPath, formatAudioRequest, parseSunoPoll } from "./audio-payload-core.mjs";
 import { log } from "./log.js";
 
 const BRANDED_ERRORS = {
@@ -27,6 +28,30 @@ const BRANDED_ERRORS = {
   unknown: "An unexpected error occurred. Please try again.",
 };
 
+// ── Bare moderation tokens ─────────────────────────────────────────────────
+// Production incident: a real image generation came back with the provider's
+// `failMsg: "nsfw"` — a single word, no sentence around it — and the user was
+// shown "An unexpected error occurred. Please try again.". The content branch
+// below only matched "content"/"filter"/"safety", so a one-word moderation
+// verdict fell all the way through to `unknown`, telling the user nothing and
+// leaving them with no idea their PROMPT was the problem and could simply be
+// reworded.
+//
+// Providers label a moderation refusal with whichever single word they
+// prefer, so the tokens below are matched on their own as well as inside a
+// sentence. Each is a word a provider only uses to mean "this request was
+// refused on content grounds":
+//   nsfw        KIE failMsg (the incident above)
+//   sensitive   KIE Suno's SENSITIVE_WORD_ERROR terminal status
+//   moderation  common across providers
+//   prohibited / policy / blocked  generic refusal wording
+// The separators are `[^a-z0-9]` rather than `\b` on purpose: `_` counts as a
+// WORD character to `\b`, so `\bsensitive\b` would not match the real
+// "SENSITIVE_WORD_ERROR" status this has to catch. Each token still only
+// matches standing on its own — "unblocked" and "policyholder" are not
+// content-filter errors.
+const MODERATION_TOKEN_RE = /(^|[^a-z0-9])(nsfw|sensitive|moderation|prohibited|policy|blocked)([^a-z0-9]|$)/i;
+
 export function brandError(providerError) {
   const lower = (providerError || "").toLowerCase();
   if (lower.includes("rate") || lower.includes("429")) return BRANDED_ERRORS.rate_limit;
@@ -38,7 +63,7 @@ export function brandError(providerError) {
   if (lower.includes("model name you specified is not supported") || lower.includes("model not exist")) return BRANDED_ERRORS.model_not_found;
   if (lower.includes("not found") || lower.includes("404")) return BRANDED_ERRORS.model_not_found;
   if (lower.includes("timeout") || lower.includes("timed out")) return BRANDED_ERRORS.timeout;
-  if (lower.includes("content") || lower.includes("filter") || lower.includes("safety")) return BRANDED_ERRORS.content_filter;
+  if (lower.includes("content") || lower.includes("filter") || lower.includes("safety") || MODERATION_TOKEN_RE.test(lower)) return BRANDED_ERRORS.content_filter;
   if (lower.includes("balance") || lower.includes("credit") || lower.includes("insufficient")) return BRANDED_ERRORS.insufficient_balance;
   if (lower.includes("500") || lower.includes("502") || lower.includes("503") || lower.includes("server")) return BRANDED_ERRORS.server_error;
   return BRANDED_ERRORS.unknown;
@@ -116,22 +141,40 @@ export const PROVIDERS = {
     type: "llm+generation",
     baseUrl: "https://api.kie.ai",
     getKey: () => process.env.KIE_KEY,
-    buildUrl: () => "/api/v1/jobs/createTask",
+    // Per-MODEL, not per-provider: KIE's Suno music family is not on the
+    // generic market route at all (a live `{"model":"generate-music"}` submit
+    // there answers "The model name you specified is not supported"); it has
+    // its own path and its own body shape. src/lib/audio-payload-core.mjs is
+    // the single place that knows which models those are — this adapter only
+    // asks. `model` is submitOnly's already-resolved provider model id
+    // (`payload.model || endpoint`), so submit and poll route on the SAME
+    // identifier and can never disagree about which shape is in flight.
+    buildUrl: (endpoint, model) => audioSubmitPath(model || endpoint) || "/api/v1/jobs/createTask",
     formatPayload: (model, prompt, params) => {
       const { endpoint: _ep, ...rest } = params;
-      return {
-        model,
-        input: { prompt, ...rest },
-        callBackUrl: params.callBackUrl || params.webhook_url || `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`,
-      };
+      const callBackUrl = params.callBackUrl || params.webhook_url || `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
+      // Audio models take their OWN field names (`text` not `prompt`, `voice`
+      // not `voiceId`, a flat camelCase body for music) — see
+      // audio-payload-core.mjs's header for the live probes that proved it.
+      // Every non-audio model keeps the exact generic envelope it always had.
+      const audio = formatAudioRequest(model, prompt, rest);
+      if (audio) return { ...audio.body, callBackUrl };
+      return { model, input: { prompt, ...rest }, callBackUrl };
     },
     parseResult: (data) => ({
       requestId: data.taskId || data.data?.taskId || data.request_id || data.data?.request_id,
       status: data.state || data.data?.state || data.status,
       outputs: [],
     }),
-    buildPollUrl: (requestId) => `/api/v1/jobs/recordInfo?taskId=${requestId}`,
+    buildPollUrl: (requestId, model) => audioPollPath(model, requestId) || `/api/v1/jobs/recordInfo?taskId=${requestId}`,
     parsePoll: (data) => {
+      // The music route answers with a completely different envelope
+      // (`status` + `response.sunoData[]` instead of `state` + `resultJson`),
+      // which the generic branch below reads as "no outputs, still pending"
+      // forever. Shape-detected, not model-detected, so a poll resumed after
+      // a crash still reads its own answer correctly.
+      const suno = parseSunoPoll(data);
+      if (suno) return suno;
       let outputs = [];
       if (data.resultJson) {
         try {
@@ -397,7 +440,10 @@ export async function submitOnly(providerName, endpoint, payload) {
   const { model, prompt, ...rawParams } = payload;
   const providerModel = model || endpoint;
   const params = await fillRequiredParams(providerModel, rawParams);
-  const apiPath = provider.buildUrl(endpoint);
+  // providerModel (not just endpoint) is handed to buildUrl so a per-model
+  // route — KIE's Suno music API — is chosen from the same identifier
+  // formatPayload below shapes the body for.
+  const apiPath = provider.buildUrl(endpoint, providerModel);
   const url = `${provider.baseUrl}${apiPath}`;
   const body = provider.formatPayload(providerModel, prompt, params);
   // `headers` may be a per-route function (Alibaba: the async task header is
@@ -448,7 +494,11 @@ export async function submitOnly(providerName, endpoint, payload) {
     throw brandedError(reason);
   }
 
-  return { provider, requestId, submitData: result };
+  // providerModel travels back out so every caller can hand it to
+  // pollProviderResult — a per-model poll route (KIE's Suno music API) has to
+  // be resolvable from what the caller already holds, including the durable
+  // job runner's crash-resume path, which rebuilds the adapter from scratch.
+  return { provider, requestId, submitData: result, providerModel };
 }
 
 function defaultParsePoll(data) {
@@ -456,7 +506,12 @@ function defaultParsePoll(data) {
   return { status: (data.status || data.state || "").toLowerCase(), outputs, error: data.error || data.message };
 }
 
-export async function pollProviderResult(provider, requestId, maxAttempts = 900, interval = 2000) {
+// `providerModel` is the identifier the submit was routed on — required for
+// any model whose RESULTS live on a different path from the default one (KIE
+// serves Suno music tasks from its own record-info route). Optional and
+// backwards-compatible: an omitted value simply keeps the default path,
+// which is what every non-audio model has always used.
+export async function pollProviderResult(provider, requestId, maxAttempts = 900, interval = 2000, providerModel = null) {
   const key = provider.apiKey || provider.getKey();
 
   let pollInterval = interval;
@@ -464,7 +519,7 @@ export async function pollProviderResult(provider, requestId, maxAttempts = 900,
     await new Promise((r) => setTimeout(r, pollInterval));
     try {
       const pollPath = provider.buildPollUrl
-        ? provider.buildPollUrl(requestId)
+        ? provider.buildPollUrl(requestId, providerModel)
         : `/api/v1/jobs/recordInfo?taskId=${requestId}`;
       const pollRes = await fetch(`${provider.baseUrl}${pollPath}`, {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
@@ -504,7 +559,7 @@ export async function pollProviderResult(provider, requestId, maxAttempts = 900,
 }
 
 export async function submitAndPoll(providerName, endpoint, payload, maxAttempts = 900, interval = 2000) {
-  const { provider, requestId, submitData, immediateResult } = await submitOnly(providerName, endpoint, payload);
+  const { provider, requestId, submitData, immediateResult, providerModel } = await submitOnly(providerName, endpoint, payload);
 
   if (immediateResult) {
     const outputs = immediateResult.outputs || immediateResult.output || [];
@@ -513,7 +568,7 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
 
   if (!requestId) return submitData;
 
-  return pollProviderResult(provider, requestId, maxAttempts, interval);
+  return pollProviderResult(provider, requestId, maxAttempts, interval, providerModel);
 }
 
 export async function llmComplete(messages, options = {}) {

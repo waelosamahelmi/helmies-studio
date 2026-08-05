@@ -33,6 +33,53 @@ describe("brandError key-shaped inputs", () => {
   });
 });
 
+// A real production image generation failed with the provider's one-word
+// `failMsg: "nsfw"` and the user was shown "An unexpected error occurred.
+// Please try again." — the content branch matched "content"/"filter"/
+// "safety" and nothing else, so a bare moderation verdict fell through to
+// `unknown` and the user never learned their PROMPT was the problem.
+describe("brandError bare moderation tokens", () => {
+  const CONTENT = "The request was blocked by safety filters.";
+
+  for (const token of ["nsfw", "NSFW", "sensitive", "moderation", "prohibited", "policy", "blocked"]) {
+    it(`brands the bare token "${token}" as a content-filter refusal`, () => {
+      expect(brandError(token)).toBe(CONTENT);
+    });
+  }
+
+  it("brands the tokens inside a real provider sentence", () => {
+    expect(brandError("Request rejected: nsfw content detected")).toBe(CONTENT);
+    expect(brandError("SENSITIVE_WORD_ERROR")).toBe(CONTENT);
+    expect(brandError("prompt violates the provider policy")).toBe(CONTENT);
+    expect(brandError("This prompt is prohibited")).toBe(CONTENT);
+  });
+
+  it("only matches a token standing on its own", () => {
+    // "unblocked"/"policyholder" embed a token but mean something else — they
+    // must keep falling through to the existing buckets, not become a
+    // content refusal.
+    expect(brandError("account unblocked")).not.toBe(CONTENT);
+    expect(brandError("policyholder record missing")).not.toBe(CONTENT);
+  });
+
+  it("leaves every pre-existing mapping intact", () => {
+    expect(brandError("429 too many requests")).toMatch(/wait a moment/i);
+    expect(brandError("invalid_api_key")).toMatch(/authentication failed/i);
+    expect(brandError("AccessDenied")).toMatch(/isn't available to run right now/i);
+    expect(brandError("The model name you specified is not supported")).toMatch(/temporarily unavailable/i);
+    expect(brandError("request timed out")).toMatch(/took too long/i);
+    expect(brandError("insufficient balance")).toMatch(/balance is low/i);
+    expect(brandError("upstream 503 service unavailable")).toMatch(/on our end/i);
+    expect(brandError("something inexplicable")).toBe("An unexpected error occurred. Please try again.");
+  });
+
+  it("stays branded and never names a provider", () => {
+    expect(brandForUser("nsfw")).toBe(CONTENT);
+    expect(brandForUser(brandError("nsfw"))).toBe(CONTENT);
+    expect(brandForUser("nsfw")).not.toMatch(/kie|alibaba|dashscope|suno|elevenlabs|openrouter/i);
+  });
+});
+
 describe("brandForUser idempotence", () => {
   it("passes an already-branded message through unchanged", () => {
     const branded = brandError("invalid_api_key");

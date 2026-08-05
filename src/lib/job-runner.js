@@ -106,14 +106,23 @@ function isRetryableError(err) {
 // — it's a single blocking loop with its own internal sleep/backoff — so the
 // heartbeat runs on its own timer alongside the poll promise and is cleared
 // the moment the poll settles, either way.
+//
+// The provider model id is derived from the DURABLE job row
+// (`job.payload.model || job.endpoint` — the same pair submitOnly resolves
+// its own `providerModel` from) rather than from the submit's return value,
+// because the resume branch below never runs a submit at all: it rebuilds
+// the adapter with getProvider(job.providerName) after a crash. Any model
+// whose results live on a non-default poll path (KIE's Suno music API) has
+// to survive that, and only the persisted payload can carry it.
 async function pollWithHeartbeat(provider, requestId, job, workerId) {
   const timer = setInterval(() => {
     heartbeatJob(job.id, workerId).catch((err) => {
       log.error("job_heartbeat_failed", { jobId: job.id, generationId: job.generationId, workerId, err });
     });
   }, HEARTBEAT_INTERVAL_MS);
+  const providerModel = job.payload?.model || job.endpoint || null;
   try {
-    return await pollProviderResult(provider, requestId);
+    return await pollProviderResult(provider, requestId, undefined, undefined, providerModel);
   } finally {
     clearInterval(timer);
   }

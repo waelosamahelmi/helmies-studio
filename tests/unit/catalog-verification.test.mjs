@@ -121,6 +121,57 @@ describe("classifyProbeResponse — a transient failure is INCONCLUSIVE and neve
   });
 });
 
+// ── Audio sweep outcomes (live probes, 2026-08-05) ─────────────────────────
+// All 30 active audio rows were failing. These fixtures are the verbatim
+// bodies that decide which of them survive the sweep.
+const KIE_VOICE_EMPTY = { status: 200, body: { code: 422, msg: "voiceId cannot be empty", data: null } };
+const KIE_SPEAKERS_EMPTY = { status: 200, body: { code: 422, msg: "The speakers parameter cannot be empty", data: null } };
+const KIE_BAD_VOICE = { status: 200, body: { code: 422, msg: "Invalid voice parameter: rachel. Please refer to the documentation for the list of supported voices.", data: null } };
+const KIE_MUSIC_ACCEPTED = { status: 200, body: { code: 200, msg: "success", data: { taskId: "96152a7a838bfb07d872b22a5969e860" } } };
+
+describe("classifyProbeResponse — the audio family", () => {
+  it("treats a speech model's own value validator as proof it is REACHABLE, never as a dead model", () => {
+    for (const probe of [KIE_VOICE_EMPTY, KIE_SPEAKERS_EMPTY, KIE_BAD_VOICE]) {
+      const c = classifyProbeResponse(probe);
+      expect(c.verdict).toBe(VERDICT.NEEDS_PARAM);
+      expect(c.callable).toBe(true);
+    }
+  });
+
+  it("keeps `text is required` (the ElevenLabs shape bug) callable and records the field", () => {
+    const c = classifyProbeResponse(KIE_REQUIRED_TEXT);
+    expect(c.verdict).toBe(VERDICT.NEEDS_PARAM);
+    expect(c.missingField).toBe("text");
+  });
+
+  it("keeps the music composer active once it is routed to the music API", () => {
+    const c = classifyProbeResponse(KIE_MUSIC_ACCEPTED);
+    expect(c.verdict).toBe(VERDICT.CALLABLE);
+    expect(updateForVerdict({ id: "m", modelId: "generate-music", constraints: {}, inputSchema: { fields: {} }, isActive: true }, c).isActive).toBe(true);
+  });
+
+  it("deactivates the Suno-suite slugs that no route can reach", () => {
+    // extend-music / replace-section / cover-suno / generate-mashup /
+    // generate-persona / add-instrumental / convert-to-wav /
+    // boost-music-style / generate-lyrics all answer with this exact body.
+    const c = classifyProbeResponse(KIE_NOT_SUPPORTED);
+    const data = updateForVerdict(
+      { id: "s", modelId: "replace-section", constraints: {}, inputSchema: { fields: {} }, isActive: true },
+      c,
+    );
+    expect(data.isActive).toBe(false);
+    expect(readVerification(data.constraints)).toMatchObject({ callable: false, verdict: VERDICT.NOT_CALLABLE });
+  });
+
+  it("still refuses to deactivate on a transient upstream failure", () => {
+    // Every ElevenLabs GENERATION currently dies with this after an accepted
+    // submit — an upstream outage must never take the model out of the
+    // catalog.
+    expect(classifyProbeResponse({ status: 200, body: { code: 500, msg: "internal error, please try again later." } }).verdict)
+      .toBe(VERDICT.INCONCLUSIVE);
+  });
+});
+
 describe("verdict storage — no schema column invented", () => {
   it("round-trips a verdict through the existing constraints Json blob, preserving what was there", () => {
     const constraints = { maxOutputs: 4 };

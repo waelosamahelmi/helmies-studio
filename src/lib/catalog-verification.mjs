@@ -14,6 +14,25 @@
 //   flux-2/pro-text-to-image   → {"code":500,"msg":"aspect_ratio is required"}   (callable!)
 //   elevenlabs/…-turbo-2-5     → {"code":500,"msg":"text is required"}           (callable!)
 //
+// AUDIO ADDENDUM (live re-probe, 2026-08-05). All 30 active audio rows were
+// failing, for two different reasons, and only one of them is a dead model:
+//   · The ElevenLabs/Google speech models are CALLABLE — they were being sent
+//     the wrong field names. Fixed in src/lib/audio-payload-core.mjs; the
+//     "…cannot be empty" wording those models use is now recognised below as
+//     a parameter rejection (proof of reachability), not an unclassifiable
+//     422.
+//   · Suno's `generate-music` is CALLABLE too, but only on KIE's own music
+//     path (POST /api/v1/generate), which the adapter now routes it to. The
+//     REST of the Suno suite (extend-music, replace-section, cover-suno,
+//     generate-mashup, generate-persona, add-instrumental, convert-to-wav,
+//     boost-music-style, generate-lyrics, …) is genuinely not reachable
+//     through any route this app can drive: each is a separate per-operation
+//     endpoint keyed on a source track id the studio has no surface to
+//     supply, and on the generic route every one of them answers "The model
+//     name you specified is not supported". Those rows classify NOT_CALLABLE
+//     and the sweep deactivates them — which is the honest outcome: a Music
+//     studio must not list models that cannot run.
+//
 // This module is the pure, dependency-free classifier the sweep
 // (scripts/verify-catalog.mjs) runs over each probe response. It is separate
 // from the script so it can be unit-tested against captured fixtures without
@@ -97,8 +116,16 @@ const REQUIRED_FIELD_PATTERNS = [
 // requested media resource during the data inspection process"). Those are
 // the cheapest possible proof a model is reachable: the request got all the
 // way to the model's own validator and was refused for free.
+// "cannot be empty" / "invalid voice parameter" are the audio family's own
+// wording for the same thing — the model ran the request through its
+// validator and refused a VALUE. Live examples (KIE, 2026-08-05):
+//   elevenlabs/text-to-speech-multilingual-v2 → {"code":422,"msg":"voiceId cannot be empty"}
+//   google/gemini-3-1-flash-tts               → {"code":422,"msg":"The speakers parameter cannot be empty"}
+//   elevenlabs/text-to-dialogue-v3            → {"code":422,"msg":"Invalid voice parameter: rachel…"}
+// Without these the sweep called a perfectly reachable speech model
+// "inconclusive" and learned nothing from a free, decisive answer.
 const PARAM_REJECTED_RE =
-  /invalidparameter|invalid[_ ]parameter|does not match the allowed|out of range|must be between|must be in |is not supported for|illegal|unsupported (?:size|resolution|duration|aspect)|datainspection|data inspection|failed to (?:find|download|fetch) the requested media|(?:image|video|audio) (?:url|file) (?:is )?(?:invalid|unreachable|not accessible)|download.*(?:failed|timeout)/i;
+  /invalidparameter|invalid[_ ]parameter|does not match the allowed|out of range|must be between|must be in |is not supported for|illegal|unsupported (?:size|resolution|duration|aspect)|datainspection|data inspection|failed to (?:find|download|fetch) the requested media|(?:image|video|audio) (?:url|file) (?:is )?(?:invalid|unreachable|not accessible)|download.*(?:failed|timeout)|cannot be empty|must not be empty|invalid voice parameter/i;
 
 export function extractRequiredField(message) {
   const text = String(message || "");
