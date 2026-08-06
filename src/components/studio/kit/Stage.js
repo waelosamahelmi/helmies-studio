@@ -147,7 +147,7 @@ export function Result({
 
       <figure className="st-stage__media">
         {isVideo(url) ? (
-          <video src={url} controls playsInline loop preload="metadata" />
+          <video src={url} controls playsInline preload="metadata" disableRemotePlayback />
         ) : isAudio(url) ? (
           <audio src={url} controls style={{ width: "min(520px, 80vw)", margin: "var(--s-8)" }} />
         ) : (

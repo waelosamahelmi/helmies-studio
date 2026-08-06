@@ -65,7 +65,7 @@ export async function GET(req) {
 
     const headers = {
       "Content-Type": contentType,
-      "Cache-Control": "public, max-age=31536000, immutable",
+      "Cache-Control": "public, max-age=31536000",
       "Access-Control-Allow-Origin": "*",
       "Accept-Ranges": "bytes",
       "X-Content-Type-Options": "nosniff",

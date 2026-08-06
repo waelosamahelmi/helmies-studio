@@ -375,7 +375,13 @@
 }
 .st-stage__media:hover .st-stage__acts,
 .st-stage__media:focus-within .st-stage__acts { opacity: 1; }
-@media (pointer: coarse) { .st-stage__acts { opacity: 1; } }
+/* On touch devices the action bar is always visible, but if it stays at the
+   bottom it covers the native video controls (≈44px on iOS). Move it to the
+   top edge instead, where it can't block the play button, seek bar, or
+   fullscreen control. */
+@media (pointer: coarse) {
+  .st-stage__acts { opacity: 1; top: var(--s-3); bottom: auto; }
+}
 
 /* Readout strip — model / settings / elapsed, mono, top-left of the stage */
 .st-readout {
