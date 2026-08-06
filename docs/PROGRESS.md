@@ -49,6 +49,8 @@
 
 > **Update this section every time you stop or hand off.**
 
+2026-08-06 (post-rebase): after rebasing S2 onto main-with-S3 (#42), the full suite on this machine is 306 passed / 1 flaky-passed / 2 skipped / **4 failed — all four are S3's `tests/e2e/theme.spec.mjs` on the firefox project** (the tests that rely on `colorScheme: "dark"` emulation read `data-theme="light"`), deterministic in isolation, and S2 touches zero theme files (`layout.js`/`Shell.js`/`system.css`/`theme.spec` untouched — verified by diff). Looks like Firefox prefers-color-scheme emulation not applying on this Windows box; S3's own branch run reported 0 failed. **S4 must re-check theme.spec on firefox** and fix in S3's files if it reproduces.
+
 2026-08-06: S2 complete on branch `feat/s2-music-voices` (music timeline workbench + replace-section/voice-step payload families + VoiceProfile migration/lib/routes + voice-clone wizard + pickers; unit 1480 / integration 143 / build green; full Playwright suite all projects 0 failed — 272 passed / 2 flaky-passed / 2 skipped, pre-S3-rebase). **Deploy note: migration `20260805120000_voice_profiles` must run on prod (`npx prisma migrate deploy`).** S2 leftovers for S4: verify the voice-step poll shapes and replace-section/upload-extend params with one real generation each (doc-derived, unverified live); `extend-music`/mashup/MIDI/persona still deliberately unclaimed. Rebased onto main after S3 (#42) merged. Then S4 final QA.
 
 2026-08-05 (S3 agent): S3 light mode COMPLETE on branch `feat/s3-light-mode` (pushed; full Playwright suite all projects 0 failed; lint/typecheck/vitest/build green). Merged as #42.
