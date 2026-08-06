@@ -97,7 +97,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toMatch(/KIE|Alibaba|DashScope|OpenRouter|DeepSeek/i);
   });
 
-  it("asks the user to CHOOSE the generation models (with prices) before planning — never forcing one (2026-08-06)", () => {
+  it("moves model choice to the PLAN CARD dropdown — the chat never asks which model (2026-08-06)", () => {
     const withPools = buildChatSystemPrompt({
       modelOptions: {
         video: [{ id: "kling-3.0/video", credits: 8 }, { id: "bytedance/seedance-2", credits: 143 }],
@@ -106,21 +106,20 @@ describe("buildChatSystemPrompt", () => {
       },
     });
     expect(withPools).toMatch(/MODEL CHOICE/i);
-    expect(withPools).toMatch(/Which video model should generate the clips/i);
+    expect(withPools).toMatch(/on the plan card, not in chat/i);
+    expect(withPools).toMatch(/Do NOT ask which model/i);
+    // The pools are still listed so the assistant can name/suggest a model
+    // and point the user at the dropdown.
     expect(withPools).toContain("kling-3.0/video (8 cr)");
     expect(withPools).toContain("bytedance/seedance-2 (143 cr)");
-    expect(withPools).toContain("flux-2/flex-text-to-image (5 cr)");
-    expect(withPools).toContain("suno-v4.5 (6 cr)");
-    // Options must stay BARE ids (the answer becomes the plan's model) —
-    // the prompt says prices never go inside an option string.
-    expect(withPools).toMatch(/bare model ids VERBATIM/i);
-    expect(withPools).toMatch(/prices go in the question text/i);
+    // But the old chat-question contract is GONE.
+    expect(withPools).not.toMatch(/Which video model should generate the clips/i);
+    expect(withPools).not.toMatch(/bare model ids VERBATIM/i);
   });
 
-  it("never guesses a model the user names outside the offered list (2026-08-06: 'Seedance 2.0' was misread as seedance-1.5-pro)", () => {
+  it("never guesses a model the user names in chat (2026-08-06: 'Seedance 2.0' was misread as seedance-1.5-pro)", () => {
     const prompt = buildChatSystemPrompt({ modelOptions: {} });
-    expect(prompt).toMatch(/NEVER guess or translate it yourself/i);
-    expect(prompt).toMatch(/pick one of the offered ids/i);
+    expect(prompt).toMatch(/never guess or translate it yourself/i);
     expect(prompt).toMatch(/resolved-model/i);
   });
 

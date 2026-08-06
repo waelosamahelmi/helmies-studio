@@ -263,15 +263,32 @@ export default function PlanApproval({
                 <div className="st-planedit">
                   <div className="st-planedit__row">
                     <span className="hs-label">Model</span>
-                    <button
-                      type="button"
-                      className="hs-btn hs-btn--ghost hs-btn--sm"
-                      onClick={() => setPickerFor(i)}
+                    {/* A real model dropdown (2026-08-06): the FULL runnable
+                        pool of the step's kind, name + credits, defaulting to
+                        the step's current model — so the user can switch the
+                        video/image/music model directly on the plan card, and
+                        the re-quote shows the new price immediately. "Change
+                        model…" opens the full spec-sheet picker (search,
+                        sort, capabilities) for a deeper choice. */}
+                    <select
+                      className="st-planedit__select"
+                      value={step.params?.model || ""}
                       disabled={!!busy}
-                      aria-label={`Change model for step ${i + 1}`}
+                      aria-label={`Model for step ${i + 1}`}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "__picker") { setPickerFor(i); return; }
+                        selectModel(i, v);
+                      }}
                     >
-                      {current?.displayName || step.params?.model || "Choose model"}
-                    </button>
+                      {pool.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.displayName || m.name || m.id}
+                          {typeof m.credits === "number" ? ` — ${m.credits} cr` : ""}
+                        </option>
+                      ))}
+                      {pool.length > 0 && <option value="__picker">Change model…</option>}
+                    </select>
                   </div>
 
                   {resolutions.length > 0 && (

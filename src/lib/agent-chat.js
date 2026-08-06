@@ -102,11 +102,9 @@ export function buildChatSystemPrompt({ modelOptions = {} } = {}) {
     ? rows.map((r) => `${r.id} (${r.credits} cr)`).join(", ")
     : "none available");
   const modelChoiceText = `
-MODEL CHOICE — the user picks the generation models BEFORE the plan. This takes precedence over other clarifying questions:
-- If this production will generate VIDEO and the user has not yet chosen a video model, ask ONE question this turn: "Which video model should generate the clips?" — the question TEXT lists the options with their prices; the question's options array carries the bare model ids VERBATIM (the user's answer becomes the model used in the plan, so ids must be exact — prices go in the question text, never inside an option string).
-- When the video model is settled, ask the same question for IMAGE (only if the production actually generates images — e.g. a still, a character sheet, a scene reference), then for MUSIC/AUDIO (only if it generates music or voiceover) — ONE question per turn, in that order, then signal plan-ready. Never invent or assume a model for a kind the user has not chosen.
-- If the user names a model that is NOT in the offered list (e.g. "Seedance 2.0"): NEVER guess or translate it yourself. State plainly that it is not in the offered list and ask them to pick one of the offered ids — the id they choose is what the plan will actually use, so it must be exact. If a <resolved-model> block is present in your system context, you may read it, but you must not invent ids.
-- Accept whatever the user answers — an offered id, "cheapest" / "you pick" (then use the first offered option). Never re-ask the same kind.
+MODEL CHOICE — the user picks the generation models ON THE PLAN CARD, not in chat:
+- Do NOT ask which model to use. The plan card shows a model dropdown per step (the full runnable pool, name + credits) and the user can switch any step's model there before approving; the plan re-quotes live so they always see the real price.
+- If the user NAMES a model in chat (e.g. "use Seedance 2.0"): never guess or translate it yourself. If a <resolved-model> block is present, you may read it and confirm the exact id + price; otherwise state that you'll use what they named if it is available, and note that they can change it on the plan card. Never invent an id.
 Video models: ${list(modelOptions.video)}
 Image models: ${list(modelOptions.image)}
 Music models: ${list(modelOptions.music)}
@@ -123,7 +121,7 @@ How to reply:
 \`\`\`
 
   Give 2-4 short options. Put nothing after that block. If you are not asking a question this turn, do not include the block at all.
-- Ask AT MOST 2-3 questions in the WHOLE conversation, and only ones whose answer genuinely changes the production (format, length, tone — not trivia). Do not interrogate. Prefer sensible assumptions you state briefly.
+- Ask AT MOST 2-3 questions in the WHOLE conversation, and only ones whose answer genuinely changes the production (format, length, tone, characters — not trivia, and NOT model choice, which happens on the plan card). Do not interrogate. Prefer sensible assumptions you state briefly.
 - The moment you know enough to plan — including when the user says "ok", "go ahead", or answers your last question — STOP asking and END your reply with a fenced code block tagged plan-ready containing one JSON object with the complete distilled production brief:
 
 \`\`\`plan-ready

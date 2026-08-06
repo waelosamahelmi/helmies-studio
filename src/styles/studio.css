@@ -2145,6 +2145,29 @@ select.st-layer__role option {
 .st-planedit__row .hs-label { margin: 0; }
 .st-plan__mode { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); }
 
+/* Model dropdown on the plan card (2026-08-06): the full runnable pool of
+   the step's kind, name + credits, native <select> so it works with a
+   keyboard and on a phone, styled to the plan card's language. */
+.st-planedit__select {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 340px;
+  appearance: none;
+  -webkit-appearance: none;
+  font-family: var(--ff-ui);
+  font-size: var(--t-sm);
+  color: var(--tx);
+  background: var(--ink-050) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23888' fill='none' stroke-width='1.5'/></svg>") no-repeat right 10px center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  padding: var(--s-2) 30px var(--s-2) var(--s-3);
+  cursor: pointer;
+  transition: border-color var(--d-fast) var(--ease);
+}
+.st-planedit__select:hover { border-color: var(--line-accent); }
+.st-planedit__select:focus-visible { outline: 2px solid var(--filament); outline-offset: 1px; }
+.st-planedit__select:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ── Storyboard card — the first step of every video production ────────────
    Rendered inside the plan card so the user accepts or edits the whole
    video's plan (characters, angles, scenes) BEFORE anything generates. */
