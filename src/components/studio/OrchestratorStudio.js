@@ -474,6 +474,95 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
      gone. The session feed re-attaches it on resume. */
   useEffect(() => () => { clearInterval(pollRef.current); pollRef.current = null; }, []);
 
+  /* ── Balance + message helpers ──────────────────────────────────────────
+     Declared BEFORE resumeSession: resumeSession re-attaches a still-
+     executing background run, which means its dependency array references
+     pollBackgroundRun — and pollBackgroundRun's own deps reference patch
+     and loadBalance. A dependency array is evaluated EAGERLY at render, so
+     every one of these must be initialized before the callback that lists
+     it (a const referenced from a deps array before its own declaration is
+     a temporal-dead-zone crash — the exact 'Cannot access X before
+     initialization' that took down the studio on 2026-08-06). */
+  const loadBalance = useCallback(async () => {
+    try {
+      const res = await apiFetch("/api/credits", { retries: 0 });
+      const data = await res.json();
+      setBalance(typeof data?.credits === "number" ? data.credits : null);
+    } catch {
+      /* Leave the balance unknown rather than showing a number we cannot vouch for. */
+    }
+  }, []);
+
+  const patch = useCallback((id, change) => {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id ? (typeof change === "function" ? change(m) : { ...m, ...change }) : m)),
+    );
+  }, []);
+
+  /* ── Background-run poll (2026-08-06) ──────────────────────────────────
+     Auto mode executes DETACHED from the browser: the server debits the
+     approved total, runs every step to completion regardless of whether
+     this tab stays open, writes each media step's Generation row (which
+     lands in the gallery), and persists the run to the session feed. This
+     poll renders the live card — per-step progress via the progressively
+     persisted stepResults, then the final outputs/assembled — while the
+     component is mounted, and re-attaches a still-executing run on resume. */
+  const pollBackgroundRun = useCallback((messageId, serverRunId) => {
+    clearInterval(pollRef.current);
+    let stopped = false;
+
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const res = await apiFetch(`/api/agent/run/${serverRunId}`, { retries: 0 });
+        const data = await res.json();
+        if (stopped || !data?.run) return;
+        const r = data.run;
+        const result = r.result && typeof r.result === "object" ? r.result : {};
+        const stepResults = Array.isArray(result.stepResults) ? result.stepResults : [];
+
+        if (r.status === "executing" || r.status === "pending") {
+          if (stepResults.length) {
+            patch(messageId, (m) => ({
+              ...m,
+              run: { ...m.run, steps: mergeStepResults(m.run.steps, stepResults) },
+            }));
+          }
+          return;
+        }
+
+        /* Terminal — settle the card once and stop polling. */
+        stopped = true;
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        const ok = r.status === "completed";
+        patch(messageId, (m) => ({
+          ...m,
+          text: ok
+            ? result.summary || "The production finished."
+            : "The production stopped before it finished.",
+          run: {
+            ...m.run,
+            status: ok ? "done" : "failed",
+            error: ok ? "" : r.error || "The run failed.",
+            creditsUsed: typeof r.creditsUsed === "number" ? r.creditsUsed : m.run.creditsUsed,
+            outputs: Array.isArray(result.outputs)
+              ? result.outputs.filter((o) => typeof o === "string")
+              : m.run.outputs,
+            assembled: result.assembled || m.run.assembled,
+            steps: mergeStepResults(m.run.steps, stepResults),
+          },
+        }));
+        setBusy("");
+        loadBalance();
+        onCreditsChanged?.();
+      } catch { /* transient — poll again */ }
+    };
+
+    tick();
+    pollRef.current = setInterval(tick, 3000);
+  }, [patch, loadBalance, onCreditsChanged]);
+
   /* ── Session: created implicitly on the first message (E3.1/E3.4) ────── */
   const ensureSession = useCallback(async () => {
     if (sessionRef.current) return sessionRef.current;
@@ -629,16 +718,6 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   }, []);
 
   /* ── Balance: the API's number, or nothing at all ────────────────────── */
-  const loadBalance = useCallback(async () => {
-    try {
-      const res = await apiFetch("/api/credits", { retries: 0 });
-      const data = await res.json();
-      setBalance(typeof data?.credits === "number" ? data.credits : null);
-    } catch {
-      /* Leave the balance unknown rather than showing a number we cannot vouch for. */
-    }
-  }, []);
-
   useEffect(() => { loadBalance(); }, [loadBalance]);
 
   /* A template can arrive after mount and pre-fill the brief */
@@ -675,12 +754,6 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   }, []);
 
   /* ── Message helpers ─────────────────────────────────────────────────── */
-  const patch = useCallback((id, change) => {
-    setMessages((prev) =>
-      prev.map((m) => (m.id === id ? (typeof change === "function" ? change(m) : { ...m, ...change }) : m)),
-    );
-  }, []);
-
   const stop = useCallback(() => { abortRef.current?.abort(); }, []);
 
   const clear = useCallback(() => {
@@ -1149,70 +1222,6 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     setAtBottom(true);
     runReviewStep(reviewId, 0);
   }, [runReviewStep]);
-
-  /* ── Background-run poll (2026-08-06) ──────────────────────────────────
-     Auto mode now executes DETACHED from the browser: the server debits the
-     approved total, runs every step to completion regardless of whether
-     this tab stays open, writes each media step's Generation row (which
-     lands in the gallery), and persists the run to the session feed. This
-     poll renders the live card — per-step progress via the progressively
-     persisted stepResults, then the final outputs/assembled — while the
-     component is mounted, and re-attaches a still-executing run on resume. */
-  const pollBackgroundRun = useCallback((messageId, serverRunId) => {
-    clearInterval(pollRef.current);
-    let stopped = false;
-
-    const tick = async () => {
-      if (stopped) return;
-      try {
-        const res = await apiFetch(`/api/agent/run/${serverRunId}`, { retries: 0 });
-        const data = await res.json();
-        if (stopped || !data?.run) return;
-        const r = data.run;
-        const result = r.result && typeof r.result === "object" ? r.result : {};
-        const stepResults = Array.isArray(result.stepResults) ? result.stepResults : [];
-
-        if (r.status === "executing" || r.status === "pending") {
-          if (stepResults.length) {
-            patch(messageId, (m) => ({
-              ...m,
-              run: { ...m.run, steps: mergeStepResults(m.run.steps, stepResults) },
-            }));
-          }
-          return;
-        }
-
-        /* Terminal — settle the card once and stop polling. */
-        stopped = true;
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-        const ok = r.status === "completed";
-        patch(messageId, (m) => ({
-          ...m,
-          text: ok
-            ? result.summary || "The production finished."
-            : "The production stopped before it finished.",
-          run: {
-            ...m.run,
-            status: ok ? "done" : "failed",
-            error: ok ? "" : r.error || "The run failed.",
-            creditsUsed: typeof r.creditsUsed === "number" ? r.creditsUsed : m.run.creditsUsed,
-            outputs: Array.isArray(result.outputs)
-              ? result.outputs.filter((o) => typeof o === "string")
-              : m.run.outputs,
-            assembled: result.assembled || m.run.assembled,
-            steps: mergeStepResults(m.run.steps, stepResults),
-          },
-        }));
-        setBusy("");
-        loadBalance();
-        onCreditsChanged?.();
-      } catch { /* transient — poll again */ }
-    };
-
-    tick();
-    pollRef.current = setInterval(tick, 3000);
-  }, [patch, loadBalance, onCreditsChanged]);
 
   /* ── Approve — the only path that spends credits ─────────────────────── */
   /* `approvedPlan` is the EXACT plan the user saw and edited in the
