@@ -56,4 +56,4 @@
 
 > **Update this section every time you stop or hand off.**
 
-2026-08-06 (night): U1 deployed (PR #47, 277ce57) — Filament thread, Bricolage Grotesque display face, bottom-sheet phone composer, adaptive dock, both themes, 320 e2e passed. Remaining PARKED per owner decision (testing paused due to cost): KIE balance top-up, 38 unverified video models, one-real-gen-each for remaining audio ops (separate-vocals, boost-music-style, add-vocals, replace-section, voice-clone wizard), browser QA of EDITSv1 scenarios, final QA report. A9 deployed but bedding-film convo not re-run yet.
+2026-08-07: U1 (PR #48) merged AND deployed (commit 06f26f7) — admin-merged as CI was in a GitHub Actions outage; full local suite independently verified at 320/0/3, build verified fresh, public 200. Active priority = owner live-testing of the phone experience. PARKED: KIE balance top-up (needed for veo/pixverse/kling probes + 38 unverified video models + remaining audio-op checks), the A9 acceptance rerun (deployed but owner hasn't retried yet), the batched sweeps, browser QA of EDITSv1 scenarios, and the final QA report — all instructions preserved above.
