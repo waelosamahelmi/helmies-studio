@@ -107,6 +107,14 @@ describe("executeStep — every AGENTS key dispatches without throwing", () => {
   const priorOutputs = ["https://cdn.example/still.png", "https://cdn.example/clip.mp4"];
 
   it.each(ids)("agent %s executes and returns a result", async (id) => {
+    // The storyboard step's draft comes from the plan; only a draft-less
+    // plan triggers the LLM fallback, so give that path a parseable reply.
+    if (id === "storyboard") {
+      llmComplete.mockResolvedValue(JSON.stringify({
+        scenario: "A short film.", characters: [],
+        scenes: [{ id: 1, title: "The shot", description: "A scene", location: "Set", time: "Day", camera: "Static", characters: [] }],
+      }));
+    }
     const step = { agent: id, task: "do the thing", params: { prompt: "do the thing", model: "flux-dev", endpoint: "flux-dev" } };
     await expect(executeStep(step, priorOutputs)).resolves.toBeDefined();
   });
@@ -335,5 +343,44 @@ describe("executeStep — an invented agent name falls back instead of throwing"
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Super Duper Agent 9000"));
 
     warnSpy.mockRestore();
+  });
+});
+
+// ── Storyboard-first (2026-08-06) — the video-production step contract ─────
+describe("executeStep — storyboard", () => {
+  const SB = {
+    scenario: "A linen launch film: morning light, calm hands, one hero moment.",
+    characters: [{ name: "The Sleeper", role: "protagonist", appearance: "warm skin, dark hair, white linen robe", shots: ["full body", "face front", "face side"] }],
+    scenes: [{ id: 1, title: "Opening", description: "Sunlight through curtains", location: "Bedroom", time: "Morning", camera: "Slow push-in", characters: ["The Sleeper"] }],
+  };
+
+  it("returns the APPROVED draft verbatim — no LLM call, nothing regenerated", async () => {
+    const out = await executeStep({ agent: "storyboard", task: "Storyboard", params: { storyboard: JSON.stringify(SB) } }, []);
+    expect(JSON.parse(out)).toEqual(SB);
+    expect(llmComplete).not.toHaveBeenCalled();
+  });
+
+  it("accepts the draft as an object too (the planner's raw JSON shape)", async () => {
+    const out = await executeStep({ agent: "storyboard", task: "Storyboard", params: { storyboard: SB } }, []);
+    expect(JSON.parse(out)).toEqual(SB);
+    expect(llmComplete).not.toHaveBeenCalled();
+  });
+
+  it("generates a storyboard via the LLM when the plan carried no draft, and returns the parsed JSON", async () => {
+    llmComplete.mockResolvedValue(JSON.stringify({ scenario: "x", characters: [], scenes: [{ id: 1, title: "t", description: "d", location: "l", time: "Day", camera: "Static", characters: [] }] }));
+    const out = await executeStep({ agent: "storyboard", task: "Storyboard", params: { brief: "A 10s clip of rain on glass" } }, []);
+    expect(JSON.parse(out).scenes).toHaveLength(1);
+    expect(llmComplete).toHaveBeenCalledTimes(1);
+    expect(llmComplete.mock.calls[0][0][0].content).toMatch(/Storyboard Agent/i);
+  });
+
+  it("injects the ACCEPTED storyboard into later steps' ${storyboard} token", async () => {
+    const out = await executeStep(
+      { agent: "image", task: "Scene still", params: { prompt: "A still scene. Storyboard: ${storyboard}", model: "flux-dev", endpoint: "flux-dev" } },
+      [JSON.stringify(SB)],
+    );
+    expect(generateImage).toHaveBeenCalledTimes(1);
+    expect(generateImage.mock.calls[0][0].prompt).toContain('"The Sleeper"');
+    expect(generateImage.mock.calls[0][0].prompt).not.toContain("${storyboard}");
   });
 });

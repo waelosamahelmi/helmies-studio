@@ -246,11 +246,17 @@ describe("buildHeuristicPlan — complete multi-step productions", () => {
     expect(plan.steps[0].agent).toBe("image");
   });
 
-  it("image-then-animate stays image → chained video (+ export), preserving $STEP_1_OUTPUT", async () => {
+  it("video briefs lead with a storyboard step — the clip animates the storyboard-matched still (storyboard-first, 2026-08-06)", async () => {
     const plan = await buildHeuristicPlan("Create a hero shot of a ceramic kettle and animate it as a video clip");
     const agents = plan.steps.map((s) => s.agent);
-    expect(agents.slice(0, 2)).toEqual(["image", "video"]);
-    expect(plan.steps[1].params.image_url).toBe("$STEP_1_OUTPUT");
+    expect(agents.slice(0, 3)).toEqual(["storyboard", "image", "video"]);
+    expect(agents).toContain("export");
+    // The still (step 2) is generated from the storyboard's accepted JSON
+    // (the ${storyboard} token), and the clip (step 3) animates that still.
+    expect(plan.steps[0].params.storyboard).toBeTruthy();
+    expect(plan.steps[0].params.storyboard.scenes).toHaveLength(1);
+    expect(plan.steps[1].params.prompt).toContain("${storyboard}");
+    expect(plan.steps[2].params.image_url).toBe("$STEP_2_OUTPUT");
   });
 
   it("session settings win over the catalog default (task 5)", async () => {
@@ -283,5 +289,46 @@ describe("helpers", () => {
     expect(extractPlanJson('prose ```json\n{"a":1}\n``` more prose')).toBe('{"a":1}');
     expect(extractPlanJson("no json here")).toBeNull();
     expect(extractPlanJson(null)).toBeNull();
+  });
+});
+
+// ── Storyboard-first film productions (2026-08-06) ─────────────────────────
+describe("buildHeuristicPlan — storyboard-first video productions", () => {
+  it("a launch film leads with the storyboard, then character/scene stills, then clips animating the stills", async () => {
+    const plan = await buildHeuristicPlan("Plan a 30-second launch film for a linen bedding brand");
+    const agents = plan.steps.map((s) => s.agent);
+    expect(agents[0]).toBe("storyboard");
+    expect(agents).toContain("voiceover");
+    expect(agents).toContain("music");
+    expect(agents).toContain("assembly");
+    expect(agents).toContain("export");
+
+    const sb = plan.steps[0].params.storyboard;
+    expect(sb.scenario.length).toBeGreaterThan(10);
+    expect(Array.isArray(sb.scenes)).toBe(true);
+    expect(sb.scenes.length).toBeGreaterThanOrEqual(2);
+    // Every scene carries the full shot vocabulary the card renders.
+    for (const scene of sb.scenes) {
+      expect(scene.title).toBeTruthy();
+      expect(scene.description).toBeTruthy();
+      expect(scene.camera).toBeTruthy();
+    }
+    // Every still embeds the ${storyboard} token; every clip animates its
+    // own still via $STEP_N_OUTPUT.
+    const stills = plan.steps.filter((s) => s.agent === "image");
+    expect(stills.length).toBeGreaterThanOrEqual(2);
+    for (const still of stills) expect(still.params.prompt).toContain("${storyboard}");
+    const clips = plan.steps.filter((s) => s.agent === "video");
+    expect(clips.length).toBe(2);
+    for (const clip of clips) expect(clip.params.image_url).toMatch(/^\$STEP_\d+_OUTPUT$/);
+  });
+
+  it("a music video gets the same storyboard-first treatment", async () => {
+    const plan = await buildHeuristicPlan("Make a music video for my band");
+    const agents = plan.steps.map((s) => s.agent);
+    expect(agents[0]).toBe("storyboard");
+    expect(plan.steps[0].params.storyboard.scenes).toHaveLength(3);
+    expect(plan.steps.filter((s) => s.agent === "image").length).toBe(3); // one still per scene
+    expect(plan.steps.filter((s) => s.agent === "video").length).toBe(3); // one clip per still
   });
 });

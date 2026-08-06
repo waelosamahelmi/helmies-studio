@@ -8,6 +8,7 @@ import {
   ModelPicker, RatioPicker, Segmented, SpendMeter, Sheet,
   IcFlow, IcCheck,
 } from "@/components/studio/kit";
+import StoryboardCard from "@/components/studio/agent/StoryboardCard";
 
 /* ══════════════════════════════════════════════════════════════════════════
    PLAN APPROVAL — the one screen read before spending (EDITSv1 E3.4)
@@ -244,6 +245,19 @@ export default function PlanApproval({
                   {quote.quoting ? "…" : quote.perStep[i] == null ? "—" : `${quote.perStep[i]} cr`}
                 </span>
               </div>
+
+              {/* Storyboard steps (video/film productions always lead with
+                  one): the user ACCEPTS or EDITS the storyboard right here,
+                  before anything generates. The edited JSON travels with the
+                  approved plan and the ${storyboard} token in later steps
+                  resolves to it at run time. */}
+              {kind === "storyboard" && (
+                <StoryboardCard
+                  value={step.params?.storyboard}
+                  editable={!approved}
+                  onChange={(json) => changeStep(i, { storyboard: json })}
+                />
+              )}
 
               {editable && (
                 <div className="st-planedit">

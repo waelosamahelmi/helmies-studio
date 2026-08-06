@@ -2145,6 +2145,57 @@ select.st-layer__role option {
 .st-planedit__row .hs-label { margin: 0; }
 .st-plan__mode { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--line); }
 
+/* ── Storyboard card — the first step of every video production ────────────
+   Rendered inside the plan card so the user accepts or edits the whole
+   video's plan (characters, angles, scenes) BEFORE anything generates. */
+.st-story {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--fill-01);
+}
+.st-story__head { display: flex; align-items: center; gap: var(--s-2); }
+.st-story__head .hs-label { color: var(--filament-lit); text-transform: uppercase; letter-spacing: 0.08em; }
+.st-story__acts { display: flex; align-items: center; gap: var(--s-2); margin-left: auto; }
+.st-story__scenario { margin: 0; font-size: var(--t-sm); line-height: 1.6; color: var(--tx-dim); }
+.st-story__chars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--s-3);
+}
+.st-story__char {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-000);
+}
+.st-story__char strong { font-size: var(--t-sm); }
+.st-story__appearance { margin: var(--s-1) 0 0; font-size: var(--t-tiny); line-height: 1.55; color: var(--tx-dim); }
+.st-story__scenes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.st-story__scene {
+  display: flex;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-000);
+}
+.st-story__n {
+  flex: none;
+  font-family: var(--ff-mono);
+  font-size: var(--t-tiny);
+  color: var(--filament-lit);
+  line-height: 1.6;
+  min-width: 2ch;
+}
+.st-story__scene strong { font-size: var(--t-sm); }
+.st-story__hint { border-top: 1px dashed var(--line-strong); }
+
 /* Session rail entries */
 .st-sessions { display: flex; flex-direction: column; gap: var(--s-1); }
 .st-sessions__item {

@@ -49,6 +49,15 @@ PLAN THE COMPLETE PRODUCTION — never a fragment:
 - Whenever the plan produces MORE THAN ONE timed asset (video clips, music, voiceover), add an "assembly" step to join them into the final cut, and finish with an "export" step that names the deliverable.
 - Asset step agents: "image", "video", "i2v" (animate an earlier image), "music", "voiceover", "assembly", "export".
 
+STORYBOARD-FIRST — REQUIRED for every production that contains video clips (film, launch video, music video, promo, ad with motion, social reel):
+- Step 1 is ALWAYS a "storyboard" step. Its params.storyboard is the COMPLETE storyboard JSON you draft right here, covering the WHOLE video:
+  { "scenario": "<one-paragraph narrative of the whole video>", "characters": [ { "name": "<character name>", "role": "<role in the story>", "appearance": "<hair, skin, build, clothing, distinguishing marks — the SAME words every sheet reuses>", "shots": ["full body", "face front", "face side", "face 3/4"] } ], "scenes": [ { "id": 1, "title": "<scene title>", "description": "<what happens, where, who is in it>", "location": "<setting>", "time": "<time of day>", "camera": "<shot size and movement>", "characters": ["<names from the characters list>"] } ] }
+  Include EVERY character that appears (main and background), with shots covering full body and face angles so a character sheet can be generated. Include every scene of the whole video.
+- Then, one "image" step per character: { "agent": "image", "task": "Character sheet — <name>", "params": { "model": "<runnable image model>", "prompt": "Character sheet for <name>: <appearance>, full body + face front + face side + face 3/4 views, same person in every view, consistent outfit, neutral background. Storyboard: \${storyboard}", "aspect_ratio": "1:1" } } — the \${storyboard} token is replaced at run time with the accepted storyboard, so the sheet matches it exactly.
+- Then, one "image" step per scene: { "agent": "image", "task": "Scene still N — <title>", "params": { "model": "<runnable image model>", "prompt": "<the scene composed as a cinematic still, subject/composition/lighting/camera — 15-40 words>. Storyboard: \${storyboard}", "aspect_ratio": "<same ratio as the video, e.g. 9:16>" } }.
+- Then, one "video" step PER SCENE that animates that scene's still: { "agent": "video", "task": "Clip N — <title>", "params": { "model": "<runnable video model>", "image_url": "$STEP_<n>_OUTPUT", "prompt": "<the motion: what moves, how, camera behavior — 15-40 words>", "aspect_ratio": "<same ratio>" } }. Video steps carry the scene still as image_url so the clip matches the storyboard. Only when the brief has no visual direction at all may a scene's video step be text-to-video without image_url.
+- The accepted storyboard is the plan's step 1 output; \${storyboard} in any later step's params is replaced with it at run time, so user edits flow into every sheet, still and clip automatically.
+
 EVERY STEP CARRIES FINISHED CONTENT, NEVER INSTRUCTIONS:
 - "voiceover" steps: params.text is the FINAL narration script written out in full — the exact words the voice will speak, in the user's language and tone. The speech model reads that text VERBATIM, so an instruction placed there gets spoken aloud.
   WRONG: { "agent": "voiceover", "params": { "text": "Generate a warm voiceover about our linen bedding" } }  ← the voice would literally say this sentence
@@ -686,10 +695,35 @@ export async function buildHeuristicPlan(userMessage, context = {}) {
   } else if (isMusicVideo) {
     const videoModel = await videoModelFor();
     const musicModel = await musicModelFor();
+    const imageModel = await imageModelFor();
+    const ratio = settings.aspect || "16:9";
+    // Storyboard-first (2026-08-06): step 1 is the storyboard the user
+    // accepts or edits at the plan card; scene stills are generated from it
+    // (the \${storyboard} token is replaced at run time with the ACCEPTED
+    // JSON) and each clip animates its own still, so the video matches the
+    // storyboard instead of drifting.
+    const storyboard = {
+      scenario: `A music video for ${subject}: three scenes following one visual idea, cut to the rhythm of the track.`,
+      characters: [],
+      scenes: [
+        { id: 1, title: "Opening", description: `Wide establishing scene for ${subject}`, location: "Studio set", time: "Night", camera: "Slow push-in", characters: [] },
+        { id: 2, title: "Feature", description: `Dynamic feature scene for ${subject}`, location: "Studio set", time: "Night", camera: "Medium close-up, rhythmic motion", characters: [] },
+        { id: 3, title: "Finale", description: `Sweeping finale scene for ${subject}`, location: "Studio set", time: "Night", camera: "Wide pull-out", characters: [] },
+      ],
+    };
+    const still = (n, title, shot) => ({
+      agent: "image",
+      task: `Scene still ${n} — ${title}`,
+      params: { model: imageModel, endpoint: imageModel, prompt: `${shot} Storyboard: \${storyboard}`, aspect_ratio: ratio },
+    });
     steps.push(
-      videoStep("Clip 1 — opening", `Opening shot for ${subject}: wide establishing frame, cinematic lighting, slow push-in, rich color grade.`, videoModel),
-      videoStep("Clip 2 — feature", `Feature shot for ${subject}: dynamic medium close-up, rhythmic motion, dramatic side light, shallow depth of field.`, videoModel),
-      videoStep("Clip 3 — finale", `Finale shot for ${subject}: sweeping wide angle, light shifting to a bold accent color, slow pull-out ending on a striking silhouette.`, videoModel),
+      { agent: "storyboard", task: "Storyboard — scenes and shot plan", params: { brief: userMessage, storyboard } },
+      still(1, "Opening", `Opening scene for ${subject}: wide establishing frame, cinematic lighting, slow push-in, rich color grade.`),
+      still(2, "Feature", `Feature scene for ${subject}: dynamic medium close-up, rhythmic motion, dramatic side light, shallow depth of field.`),
+      still(3, "Finale", `Finale scene for ${subject}: sweeping wide angle, light shifting to a bold accent color, slow pull-out ending on a striking silhouette.`),
+      { agent: "video", task: "Clip 1 — opening", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_2_OUTPUT", prompt: `Push slowly into the opening scene for ${subject}.`, duration: 5, aspect_ratio: ratio } },
+      { agent: "video", task: "Clip 2 — feature", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_3_OUTPUT", prompt: `Feature shot for ${subject}: rhythmic motion, dramatic side light, shallow depth of field.`, duration: 5, aspect_ratio: ratio } },
+      { agent: "video", task: "Clip 3 — finale", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_4_OUTPUT", prompt: `Finale for ${subject}: sweeping wide angle, slow pull-out ending on a striking silhouette.`, duration: 5, aspect_ratio: ratio } },
       {
         agent: "music",
         task: "Original track",
@@ -698,21 +732,38 @@ export async function buildHeuristicPlan(userMessage, context = {}) {
       { agent: "assembly", task: "Join the clips into the final cut", params: {} },
       { agent: "export", task: "Final music video", params: { name: "Music video" } },
     );
-    summary = `Complete music video for ${subject}: three clips, an original track, assembled into one final video.`;
+    summary = `Complete music video for ${subject}: storyboard first, three storyboard-matched clips, an original track, assembled into one final video.`;
   } else if (isFilmPromo) {
     const imageModel = await imageModelFor();
     const videoModel = await videoModelFor();
     const musicModel = await musicModelFor();
     const ttsModel = await ttsModelFor();
+    const ratio = settings.aspect || "16:9";
     const narration = `Some things are worth slowing down for. ${capitalize(subject)} — crafted with care, made for real life. Experience it for yourself, today.`;
+    // Storyboard-first: the accepted storyboard drives the hero still and
+    // both clips (still → \${storyboard} → clip image_url chain).
+    const storyboard = {
+      scenario: `A ${ratio === "9:16" ? "vertical" : "widescreen"} launch film for ${subject}: warm light, premium texture, a calm build from detail to full hero moment.`,
+      characters: [],
+      scenes: [
+        { id: 1, title: "Opening", description: `Slow reveal of ${subject} in warm natural light`, location: "Softly lit interior", time: "Morning", camera: "Slow drift, gentle push-in", characters: [] },
+        { id: 2, title: "Closing", description: `Hero framing of ${subject} in golden-hour glow`, location: "Softly lit interior", time: "Golden hour", camera: "Slow motion, confident final hold", characters: [] },
+      ],
+    };
     steps.push(
+      { agent: "storyboard", task: "Storyboard — scenes and shot plan", params: { brief: userMessage, storyboard } },
       {
         agent: "image",
         task: "Hero still",
-        params: { model: imageModel, endpoint: imageModel, prompt: `Hero still of ${subject}: cinematic composition, soft key light, shallow depth of field, premium product photography.`, aspect_ratio: settings.aspect || "16:9" },
+        params: { model: imageModel, endpoint: imageModel, prompt: `Hero still of ${subject}: cinematic composition, soft key light, shallow depth of field, premium product photography. Storyboard: \${storyboard}`, aspect_ratio: ratio },
       },
-      videoStep("Clip 1 — opening", `Opening shot for ${subject}: slow reveal, warm natural light, gentle camera drift, inviting atmosphere.`, videoModel),
-      videoStep("Clip 2 — closing", `Closing shot for ${subject}: hero framing, golden-hour glow, subtle slow motion, confident final hold.`, videoModel),
+      {
+        agent: "image",
+        task: "Scene still — Closing",
+        params: { model: imageModel, endpoint: imageModel, prompt: `Closing scene of ${subject}: hero framing, golden-hour glow, confident final hold. Storyboard: \${storyboard}`, aspect_ratio: ratio },
+      },
+      { agent: "video", task: "Clip 1 — opening", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_2_OUTPUT", prompt: `Opening shot for ${subject}: slow reveal, warm natural light, gentle camera drift, inviting atmosphere.`, duration: 5, aspect_ratio: ratio } },
+      { agent: "video", task: "Clip 2 — closing", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_3_OUTPUT", prompt: `Closing shot for ${subject}: hero framing, golden-hour glow, subtle slow motion, confident final hold.`, duration: 5, aspect_ratio: ratio } },
       {
         agent: "voiceover",
         task: "Narration",
@@ -726,7 +777,7 @@ export async function buildHeuristicPlan(userMessage, context = {}) {
       { agent: "assembly", task: "Join the clips into the final cut", params: {} },
       { agent: "export", task: "Final film", params: { name: "Final film" } },
     );
-    summary = `Complete production for ${subject}: hero still, two clips, narration and underscore, assembled into the final film.`;
+    summary = `Complete production for ${subject}: storyboard first, hero still and storyboard-matched clips, narration and underscore, assembled into the final film.`;
   } else if (isCode) {
     steps.push({ agent: "coding", task: userMessage, params: { prompt: userMessage } });
     summary = "One-step coding task.";
@@ -736,16 +787,27 @@ export async function buildHeuristicPlan(userMessage, context = {}) {
   } else if (isGenericVideo) {
     const imageModel = await imageModelFor();
     const videoModel = await videoModelFor();
+    const ratio = settings.aspect || "16:9";
+    // Storyboard-first, same contract as the film branches: the accepted
+    // storyboard drives the still, the still drives the clip.
+    const storyboard = {
+      scenario: `A short animated clip of ${subject}.`,
+      characters: [],
+      scenes: [
+        { id: 1, title: "The shot", description: userMessage, location: "Set", time: "Unspecified", camera: "Gentle motion", characters: [] },
+      ],
+    };
     steps.push(
+      { agent: "storyboard", task: "Storyboard — scene and shot plan", params: { brief: userMessage, storyboard } },
       {
         agent: "image",
         task: userMessage,
-        params: { model: imageModel, endpoint: imageModel, prompt: userMessage, aspect_ratio: settings.aspect || "1:1" },
+        params: { model: imageModel, endpoint: imageModel, prompt: `${userMessage} Storyboard: \${storyboard}`, aspect_ratio: ratio },
       },
-      { agent: "video", task: "Animate the generated image", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_1_OUTPUT", prompt: userMessage, duration: 5 } },
+      { agent: "video", task: "Animate the generated image", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_2_OUTPUT", prompt: userMessage, duration: 5, aspect_ratio: ratio } },
       { agent: "export", task: "Final clip", params: { name: "Final clip" } },
     );
-    summary = `Still plus animated clip for ${subject}.`;
+    summary = `Storyboard, still, and animated clip for ${subject}.`;
   } else if (isAudioOnly) {
     // Only reached when NO film/video class claimed the brief — a genuine
     // audio-first request. Voice vs music by explicit voice words, exactly
@@ -774,10 +836,18 @@ export async function executeStep(step, previousOutputs = []) {
   const { agent, params } = step;
 
   let resolvedParams = { ...params };
+  // The storyboard step (always step 1 of a video production) is the single
+  // source of truth for character/scene consistency: every later step whose
+  // prompt embeds the ${storyboard} token gets the ACCEPTED storyboard JSON
+  // injected here, so user edits at plan approval flow into character
+  // sheets, scene stills and clips automatically.
+  const storyboardOutput = previousOutputs.find((o) => typeof o === "string" && /"scenes"\s*:/.test(o)) || previousOutputs[0];
   for (const [key, value] of Object.entries(resolvedParams)) {
     if (typeof value === "string" && value.startsWith("$STEP_")) {
       const stepNum = parseInt(value.match(/\d+/)?.[0]) - 1;
       if (previousOutputs[stepNum]) resolvedParams[key] = previousOutputs[stepNum];
+    } else if (typeof value === "string" && value.includes("${storyboard}") && storyboardOutput) {
+      resolvedParams[key] = value.replaceAll("${storyboard}", storyboardOutput);
     }
   }
 
@@ -788,6 +858,8 @@ export async function executeStep(step, previousOutputs = []) {
       return await executeImageStep(resolvedParams);
     case "video":
       return await executeVideoStep(resolvedParams);
+    case "storyboard":
+      return await executeStoryboardStep(resolvedParams);
     case "audio":
       return await executeAudioStep(resolvedParams);
     // ── EDITSv1 E5.1 — the workflow step kinds ─────────────────────────
@@ -865,6 +937,58 @@ async function executeVideoStep(params) {
   }
   const result = await generateVideo({ endpoint, ...params, _provider: provider });
   return result.url || result.outputs?.[0];
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STORYBOARD STEP — the first step of every video production (2026-08-06)
+   ──────────────────────────────────────────────────────────────────────────
+   The planner drafts the full storyboard (scenario, every character with
+   full-body + face-angle shots, every scene) and embeds it as
+   params.storyboard, so the plan card can show it for accept/edit BEFORE
+   anything generates. This executor is then a pure pass-through for the
+   APPROVED draft — zero LLM calls, zero credits. Only when a plan arrives
+   without a draft (e.g. an old approved plan) does it generate one, using
+   the same strict JSON contract the planner was told to emit, so the
+   ${storyboard} token downstream steps embed resolves to the same shape
+   either way.
+   ══════════════════════════════════════════════════════════════════════════ */
+const STORYBOARD_JSON_HINT =
+  'Reply with ONLY one valid JSON object — no markdown fences, no commentary: {"scenario":"<one-paragraph narrative of the whole video>","characters":[{"name":"<name>","role":"<role>","appearance":"<same words every sheet reuses>","shots":["full body","face front","face side","face 3/4"]}],"scenes":[{"id":1,"title":"<scene title>","description":"<what happens, where, who>","location":"<setting>","time":"<time of day>","camera":"<shot size and movement>","characters":["<names from characters>"]}]}';
+
+function parseStoryboard(text) {
+  const json = extractPlanJson(text);
+  if (!json) return null;
+  try {
+    const parsed = JSON.parse(json);
+    return parsed && Array.isArray(parsed.scenes) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function executeStoryboardStep(params) {
+  const draft = typeof params?.storyboard === "string" ? parseStoryboard(params.storyboard)
+    : params?.storyboard && typeof params.storyboard === "object" ? params.storyboard : null;
+  if (draft) {
+    // The accepted draft — deterministic, free, and exactly what the user
+    // approved (or edited) at the plan card.
+    return JSON.stringify(draft);
+  }
+  const brief = params?.brief || params?.prompt || params?.task || "A short video";
+  const messages = [
+    { role: "system", content: AGENTS.storyboard.systemPrompt },
+    { role: "user", content: `${brief}\n\n${STORYBOARD_JSON_HINT}` },
+  ];
+  let parsed = null;
+  for (let attempt = 0; attempt < 2 && !parsed; attempt++) {
+    const reply = await llmComplete(messages, { maxTokens: 3000, temperature: 0.4 });
+    parsed = parseStoryboard(reply);
+    if (!parsed && attempt === 0) {
+      messages.push({ role: "user", content: STRICT_JSON_RETRY_HINT });
+    }
+  }
+  if (!parsed) throw new Error("The storyboard draft could not be parsed. Please try again.");
+  return JSON.stringify(parsed);
 }
 
 async function executeAudioStep(params) {
@@ -1359,8 +1483,17 @@ async function executePlannedRun(userId, agentRun, plan, sessionId, emit) {
         actualUsed += stepCredits;
         outputs.push(output);
         const displayOutput = displayOutputFor(step, output);
-        displayOutputs.push(displayOutput);
-        stepResults.push({ step: i + 1, agent: step.agent, status: "completed", output: typeof displayOutput === "string" ? displayOutput.slice(0, 500) : displayOutput, retried: false });
+        // The storyboard JSON stays in `outputs` (later steps resolve
+        // ${storyboard} from it) but never leaks into the user-facing
+        // outputs grid — the client renders it as a storyboard card from the
+        // step result instead.
+        const isStoryboard = normalizeAgentKey(step.agent) === "storyboard";
+        displayOutputs.push(isStoryboard ? null : displayOutput);
+        stepResults.push({
+          step: i + 1, agent: step.agent, status: "completed",
+          output: isStoryboard ? displayOutput : (typeof displayOutput === "string" ? displayOutput.slice(0, 500) : displayOutput),
+          retried: false,
+        });
 
         if (isMediaAgent(step.agent)) {
           await prisma.generation.create({
@@ -1628,6 +1761,7 @@ export function assembleOutputs(outputs, steps) {
   let deliverable = null;
 
   outputs.forEach((output, i) => {
+    if (!output) return; // storyboard steps leave a null display output by design
     if (output && typeof output === "object" && output.kind === "export") {
       if (typeof output.url === "string" && output.url) {
         deliverable = { url: output.url, name: output.name || "Deliverable" };

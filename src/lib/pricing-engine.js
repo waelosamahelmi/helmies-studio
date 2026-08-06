@@ -38,7 +38,7 @@ async function resolveMarkup(providerName) {
 //
 // 5 for assembly is the director's own assembly charge
 // (director-planner.js's assemblyCost), for the same ffmpeg work.
-export const NON_PROVIDER_STEP_CREDITS = { assembly: 5, export: 0 };
+export const NON_PROVIDER_STEP_CREDITS = { assembly: 5, export: 0, storyboard: 0 };
 
 // ── Estimate credits for a task before execution ──
 export async function estimateCredits(tool, model, params = {}) {
