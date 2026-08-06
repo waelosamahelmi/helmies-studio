@@ -12,6 +12,8 @@ import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { matchesGroup } from "@/lib/capability-groups";
 import { audioKind } from "@/lib/model-catalog-core.mjs";
+import { apiFetch } from "@/lib/client-fetch";
+import TrackWorkbench from "./music/TrackWorkbench";
 
 /* ══════════════════════════════════════════════════════════════════════════
    MUSIC — composition, on the .st-wave archetype
@@ -306,8 +308,28 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
   const [vocalGender, setVocalGender] = useState("f");
   const [duration, setDuration] = useState(60);
   const [sheet, setSheet] = useState(false);
+  const [profiles, setProfiles] = useState([]);
+  const [profileId, setProfileId] = useState("");
+  const [workbenchKey, setWorkbenchKey] = useState(0);
 
   const { models, loading: loadingModels } = useModelCatalog({});
+
+  /* S2 — the user's ready VoiceProfiles list alongside the stock vocal
+     options. A fetch failure just leaves the stock options — the picker is
+     an addition, never a gate. */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/voice-profiles?status=ready", { retries: 0 });
+        const data = await res.json();
+        if (alive) setProfiles(data.profiles || []);
+      } catch {
+        /* stock options only */
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
   const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
 
   /* Composition models ONLY (EDITSv1 E1.4): audioKind === "music". The old
@@ -369,7 +391,13 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
 
   const { cost, affordable, balance, shortfall } = useCreditCost("audio", model?.id || "", costParams);
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
+  useEffect(() => {
+    if (!result) return;
+    onCreditsChanged?.();
+    /* A finished composition is a Generation — the workbench's track list
+       refreshes to include it. */
+    setWorkbenchKey((k) => k + 1);
+  }, [result, onCreditsChanged]);
 
   const url = mediaUrl(result);
   const { peaks, real } = useWaveform(url);
@@ -390,6 +418,11 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
     setStyle((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   }, []);
 
+  /* S2 — the chosen cloned voice rides the generate body as `persona_id`,
+     the documented reusable-voice field the music route accepts. Only when
+     the take actually has vocals. */
+  const chosenProfile = profiles.find((p) => p.id === profileId) || null;
+
   const generate = useCallback(() => {
     if (!model || !brief.trim()) return;
     submit("audio", model.id, {
@@ -399,11 +432,12 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
       ...(wantsStyle && styleText ? { style: styleText } : {}),
       ...(wantsTitle && suggestedTitle ? { title: suggestedTitle } : {}),
       ...(wantsVocals ? { instrumental, ...(instrumental ? {} : { vocal_gender: vocalGender }) } : {}),
+      ...(wantsVocals && !instrumental && chosenProfile?.voiceId ? { persona_id: chosenProfile.voiceId } : {}),
       ...(wantsNegative && negativeTags.trim() ? { negative_tags: negativeTags.trim() } : {}),
     });
   }, [
     model, brief, submit, duration, wantsStyle, styleText, wantsTitle, suggestedTitle,
-    wantsVocals, instrumental, vocalGender, wantsNegative, negativeTags,
+    wantsVocals, instrumental, vocalGender, chosenProfile, wantsNegative, negativeTags,
   ]);
 
   /* ── Controls ─────────────────────────────────────────────────────────── */
@@ -478,6 +512,17 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
                 { value: "m", label: "Male" },
               ]}
             />
+          )}
+          {!instrumental && profiles.length > 0 && (
+            <Field label="Your voices" hint="Cloned voices you built in Audio → Voice cloning.">
+              <Chips
+                label="Your voices"
+                scroll
+                value={profileId}
+                onChange={(v) => setProfileId(v === profileId ? "" : v)}
+                options={profiles.map((p) => ({ value: p.id, label: p.name }))}
+              />
+            </Field>
           )}
         </Group>
       )}
@@ -636,6 +681,9 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
           </div>
         )
       )}
+
+      {/* S2 — track history, timeline and operations on a selected track */}
+      <TrackWorkbench refreshKey={workbenchKey} onCreditsChanged={onCreditsChanged} />
     </div>
   );
 
