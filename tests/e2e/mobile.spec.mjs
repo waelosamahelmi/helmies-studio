@@ -355,9 +355,15 @@ test.describe("mobile — the agent's session context is reachable", () => {
     // leaves empty (playwright.config.mjs), so the reply fails — but the
     // user's own turn stays in the feed, which is the state that reveals the
     // Clear control.
-    const brief = visible(page.getByLabel("Creative brief"));
-    await brief.fill("Reachability check");
-    await visible(page.getByRole("button", { name: /^Send/ })).tap();
+    //
+    // U1: on a phone the composer is collapsed to a peek bar; the textarea
+    // lives inside the expanding sheet, so the path to it is tap-to-expand —
+    // exactly what a thumb does.
+    await visible(page.getByRole("button", { name: "Open the brief composer" })).tap();
+    const composer = page.getByRole("dialog", { name: "Message" });
+    await expect(composer).toBeVisible();
+    await composer.getByLabel("Creative brief").fill("Reachability check");
+    await composer.getByRole("button", { name: /^Send/ }).tap();
     await expect(visible(page.locator(".st-msg--user"))).toBeVisible({ timeout: 20000 });
 
     await trigger.tap();
@@ -642,4 +648,90 @@ test("Music timeline: a track opens and its range grips are grabbable with a fin
 
   await expectNoHorizontalScroll(page, "/studio/music (timeline)");
   await expectTapTargets(page, "/studio/music (timeline)");
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   U1 — the phone shell: composer thumb reach, dock legibility, the filament
+   ══════════════════════════════════════════════════════════════════════════ */
+test.describe("mobile — U1 shell", () => {
+  test.use({ storageState: USER_AUTH_FILE });
+
+  test("the composer's primary action sits in right-thumb reach", async ({ page }) => {
+    await stubProviders(page);
+    await page.goto("/studio/image");
+    await settleApp(page);
+    await expect(visible(page.locator(".st-credits"))).toContainText(/\d|—/, { timeout: 15000 });
+
+    const go = visible(page.getByTestId("brief-primary"));
+    await expect(go).toBeVisible();
+    const box = await go.boundingBox();
+    const vp = page.viewportSize();
+    // The right-thumb zone at 393x851: bottom 40% of the height…
+    expect(
+      box.y,
+      `primary action top ${Math.round(box.y)}px is above the thumb zone (needs >= ${Math.round(vp.height * 0.6)}px)`,
+    ).toBeGreaterThanOrEqual(vp.height * 0.6);
+    // …and the right 60% of the width.
+    expect(
+      box.x,
+      `primary action left ${Math.round(box.x)}px is outside right-thumb reach (needs >= ${Math.round(vp.width * 0.4)}px)`,
+    ).toBeGreaterThanOrEqual(vp.width * 0.4);
+    // U1 direction: the primary action is >= 48px on a phone, above the
+    // shell's own 44px floor.
+    expect(box.height, `primary action is ${Math.round(box.height)}px tall — the phone floor is 48px`).toBeGreaterThanOrEqual(48);
+  });
+
+  test("expanding the composer reaches the full brief, meter and action", async ({ page }) => {
+    await stubProviders(page);
+    await page.goto("/studio/image");
+    await settleApp(page);
+    await expect(visible(page.locator(".st-credits"))).toContainText(/\d|—/, { timeout: 15000 });
+
+    await visible(page.getByRole("button", { name: "Open the brief composer" })).tap();
+    const sheet = page.getByRole("dialog", { name: "Brief" });
+    await expect(sheet).toBeVisible();
+    await sheet.getByLabel("Creative brief").fill("A red bicycle against a white wall");
+    await expect(sheet.getByLabel("Creative brief")).toHaveValue(/red bicycle/);
+    // The spend decision is inside the sheet with the action, per the kit's
+    // own rule: the action never appears without the cost beside it.
+    await expect(sheet.locator(".st-spend")).toBeVisible();
+  });
+
+  test("dock labels are legible: every visible label is at least 11px", async ({ page }) => {
+    await stubProviders(page);
+    await page.goto("/studio/image");
+    await settleApp(page);
+
+    const labels = await page.evaluate(() =>
+      [...document.querySelectorAll(".st-dock__btn span")]
+        .filter((el) => getComputedStyle(el).display !== "none")
+        .map((el) => ({ text: (el.textContent || "").trim(), size: parseFloat(getComputedStyle(el).fontSize) })),
+    );
+    expect(labels.length, "the active dock tool carries a visible label").toBeGreaterThan(0);
+    for (const l of labels) {
+      expect(l.size, `dock label "${l.text}" is ${l.size}px — the legibility floor is 11px`).toBeGreaterThanOrEqual(11);
+    }
+  });
+
+  test("the filament thread is present, and static under reduced motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await stubProviders(page);
+    await page.goto("/studio/image");
+    await settleApp(page);
+
+    // On a phone the thread runs along the dock's top edge.
+    await expect(page.locator(".st-dock .st-filament")).toHaveCount(1);
+
+    const anim = await page.evaluate(() => {
+      const el = document.querySelector(".st-dock .st-filament");
+      if (!el) return null;
+      return {
+        before: getComputedStyle(el, "::before").animationName,
+        after: getComputedStyle(el, "::after").animationName,
+      };
+    });
+    expect(anim, "filament element exists").toBeTruthy();
+    expect(anim.after, "the draw layer must not animate under reduced motion").toBe("none");
+    expect(anim.before, "the base thread must not animate under reduced motion").toBe("none");
+  });
 });

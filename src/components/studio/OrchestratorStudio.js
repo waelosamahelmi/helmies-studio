@@ -239,7 +239,7 @@ function AssetGrid({ assembled }) {
         >
           <header style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", marginBottom: "var(--s-3)" }}>
             <IcCheck className="hs-icon-sm" />
-            <span className="hs-label" style={{ margin: 0 }}>Final deliverable</span>
+            <span className="hs-label st-cardtitle" style={{ margin: 0 }}>Final deliverable</span>
             <span className="hs-hint" style={{ marginLeft: "auto" }}>{deliverable.name || ""}</span>
           </header>
           <AssetCard url={deliverable.url} label={deliverable.name || "Final deliverable"} gated={false} />

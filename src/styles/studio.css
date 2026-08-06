@@ -2663,3 +2663,169 @@ select.st-layer__role option {
   font-size: 10px;
 }
 .st-vcw__step.is-active .st-vcw__no { background: var(--filament-a24); color: var(--tx); }
+
+/* ── U1 ── */
+/* ══════════════════════════════════════════════════════════════════════════
+   U1 — the signature, the type, the phone shell. Appended as one block per
+   this file's merge discipline. Four ideas:
+     1. THE FILAMENT, MADE LITERAL — a single 2px thread through the shell
+        (under the top bar on desktop, along the dock's top edge on a phone)
+        that draws itself while jobs run and settles with one pulse when the
+        last completes. The only continuously-moving element in the app.
+     2. DISPLAY TYPE — Bricolage Grotesque on the few display moments only.
+     3. PHONE COMPOSER — collapsed peek bar + expanding sheet (Brief.js).
+     4. ADAPTIVE DOCK — active tool centred and labelled, neighbours as
+        icons, swipe to switch.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. The Filament ────────────────────────────────────────────────────── */
+.st-bar, .st-dock { position: relative; }
+
+.st-filament {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+}
+.st-filament--bar  { bottom: -1px; }
+.st-filament--dock { top: -1px; }
+@media (max-width: 900px) { .st-filament--bar { display: none; } }
+
+/* The thread at rest: a barely-there static gradient. */
+.st-filament::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent, var(--filament-a40) 24%, var(--filament-a40) 76%, transparent);
+  opacity: 0.35;
+  transition: opacity var(--d-slow) var(--ease);
+}
+
+/* The draw head: a lit segment that travels the thread's length while work
+   is running. Indeterminate by design — it never fakes a percentage. */
+.st-filament::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 38%;
+  background: linear-gradient(90deg,
+    transparent, var(--filament) 30%, var(--filament-lit) 55%, var(--filament) 80%, transparent);
+  box-shadow: 0 0 12px 1px var(--filament-a40);
+  opacity: 0;
+  transform: translateX(-100%);
+}
+.st-filament[data-state="generating"]::before { opacity: 0.85; }
+.st-filament[data-state="generating"]::after {
+  opacity: 1;
+  animation: st-filament-draw 1.8s linear infinite;
+}
+@keyframes st-filament-draw {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(264%); } /* -0.38W → 1.0W of the parent */
+}
+
+/* Completion: one settle pulse, then back to rest. */
+.st-filament[data-state="settling"]::before {
+  animation: st-filament-settle 0.9s var(--ease) 1;
+}
+@keyframes st-filament-settle {
+  0%   { opacity: 1;    box-shadow: 0 0 14px 2px var(--filament-a40); }
+  100% { opacity: 0.35; box-shadow: none; }
+}
+
+/* Reduced motion: the thread still reports state — brighter while working —
+   but nothing travels and nothing pulses. */
+@media (prefers-reduced-motion: reduce) {
+  .st-filament::after { animation: none !important; opacity: 0 !important; }
+  .st-filament[data-state="generating"]::before { opacity: 1; }
+  .st-filament[data-state="settling"]::before { animation: none !important; }
+}
+
+/* ── 2. Display type — the named moments only ───────────────────────────── */
+.st-where__name {
+  font-family: var(--ff-display);
+  font-size: var(--t-md);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.st-stage .hs-empty h3,
+.st-lib .hs-empty h3 {
+  font-family: var(--ff-display);
+  font-size: var(--t-xl);
+  letter-spacing: -0.024em;
+}
+/* Plan / run / deliverable card titles: the mono micro-caps eyebrow becomes
+   a real title in the display face. .st-cardtitle is applied in JSX where
+   the eyebrow class alone was carrying a title's weight. */
+.st-plan__head > .hs-label,
+.st-cardtitle {
+  font-family: var(--ff-display);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  text-transform: none;
+  color: var(--tx);
+}
+
+/* ── 3. Phone composer — peek bar + sheet body ──────────────────────────── */
+.st-dock-prompt--peek {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+}
+.st-peek {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  min-width: 0;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--ink-100);
+  text-align: left;
+  transition: border-color var(--d-fast) var(--ease);
+}
+.st-peek:active { border-color: var(--line-strong); }
+.st-peek__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-sm);
+  color: var(--tx);
+}
+.st-peek__text.is-empty { color: var(--tx-mute); }
+.st-peek__go {
+  --btn-h: 48px;
+  border-radius: var(--r-full);
+  padding: 0 var(--s-5);
+  font-weight: 600;
+}
+/* Inside the sheet the composer sheds the dock chrome — the sheet is the
+   chrome. */
+.st-dock-prompt--sheet {
+  border-top: 0;
+  background: transparent;
+  padding: 0;
+}
+@media (max-width: 900px) { .st-dock-prompt--sheet { padding: 0; } }
+
+/* Sheet snap point: half-open. Dragging the grabber up snaps to full
+   (kit/Sheet.js swaps the class). */
+.hs-sheet--half { max-height: 60dvh; }
+
+/* ── 4. Adaptive dock ───────────────────────────────────────────────────── */
+.st-dock__btn span { display: none; }
+.st-dock__btn.is-active span {
+  display: block;
+  font-size: var(--t-micro); /* 11px — no 9.5px squint */
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.st-dock__btn svg { transition: transform var(--d-fast) var(--ease); }
+.st-dock__btn.is-active svg { width: 22px; height: 22px; }
+.st-dock__btn:active svg { transform: scale(0.92); }
