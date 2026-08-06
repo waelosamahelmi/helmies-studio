@@ -53,6 +53,8 @@ export const IcCheck = make(<><path d="M20 6L9 17l-5-5" /></>);
 export const IcSearch = make(<><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.6-3.6" /></>);
 export const IcSettings = make(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 11-4 0v-.1A1.6 1.6 0 008 19.4a1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H2a2 2 0 110-4h.1A1.6 1.6 0 004.6 8a1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3H9a1.6 1.6 0 001-1.5V2a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8V9a1.6 1.6 0 001.5 1H22a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z" /></>);
 export const IcMenu = make(<><path d="M4 7h16M4 12h16M4 17h16" /></>);
+export const IcSun = make(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" /></>);
+export const IcMoon = make(<><path d="M20.5 14.1A8.5 8.5 0 019.9 3.5a8.5 8.5 0 1010.6 10.6z" /></>);
 export const IcChevron = make(<><path d="M6 9l6 6 6-6" /></>);
 export const IcChevronLeft = make(<><path d="M15 18l-6-6 6-6" /></>);
 export const IcChevronRight = make(<><path d="M9 6l6 6-6 6" /></>);

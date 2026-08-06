@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Sheet } from "./Sheet";
+import ThemeToggle from "@/components/ThemeToggle";
 import { byGroup, DOCK_TOOLS, getTool } from "./tools";
 import { IcSearch, IcSettings, IcMenu, IcBolt } from "./Icons";
 
@@ -83,6 +84,7 @@ export default function Shell({
             </Link>
           )}
           <Credits credits={credits} />
+          <ThemeToggle />
           <Link
             href="/settings"
             className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip"

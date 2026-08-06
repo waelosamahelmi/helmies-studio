@@ -1290,3 +1290,155 @@ kbd.hs-kbd {
   border: 1px solid var(--line);
 }
 .hs-announce-pop__text { font-size: var(--t-sm); line-height: 1.6; color: var(--tx-dim); }
+
+/* ── S3 light theme ── */
+/* ══════════════════════════════════════════════════════════════════════════
+   LIGHT THEME  (plan phase S3)
+   ──────────────────────────────────────────────────────────────────────────
+   The entire theme is a runtime-token swap on `[data-theme="light"]` — the
+   attribute is stamped on <html> BEFORE first paint by the inline script in
+   src/app/layout.js (localStorage "helmies.theme", falling back to
+   prefers-color-scheme), and toggled by src/components/ThemeToggle.js.
+   No component changes: everything that reads var(--…) flips with it.
+
+   Every text/ground pair used by .hs-* / .st-* / .pg-* was validated at
+   WCAG AA 4.5:1 (worst measured pairs, from the S3 contrast script):
+     tx       #16161D on --ink-300 #E2E2EA .... 13.97:1
+     tx-dim   #494956 on --ink-300 ............  6.88:1
+     tx-mute  #5B5B69 on --ink-300 ............  5.18:1
+     accent   #C4004F on --filament-a14/white ..  4.91:1
+     signal   #0E7A50 on --signal-a12/white ....  4.53:1
+     caution  #8A5A00 on --caution-a12/white ...  5.00:1
+     fault    #C81E1E on --fault-a12/white .....  4.70:1
+     white    on --filament-deep #C4004F .......  6.07:1
+
+   Accent policy (owner-approved): --filament #FF1B6B stays the accent for
+   FILLS (meter, progress, switch, primary-button hover, glows). Wherever the
+   accent is used as TEXT on a light ground — which components reach via
+   --filament-lit (chips, badges, meter readout, links) — the token itself
+   darkens to #C4004F, the owner-approved darker pink, so no component needs
+   a per-component change.
+
+   The elevation shadows soften (a floating panel on a light ground needs a
+   whisper, not a void), the scrim lightens, and the handful of rules across
+   system/studio/pages.css that hard-code a DARK ground (glass strips over
+   media, scrolling-edge shadows) are re-pointed here — studio.css and
+   pages.css themselves are untouched (concurrent-phase ownership).
+   ══════════════════════════════════════════════════════════════════════════ */
+[data-theme="light"] {
+  /* Ground — same five steps, inverted: the page is paper, panels are white,
+     raised controls are a shade of grey the hand can find. */
+  --ink-000: #F4F4F7;   /* page ground */
+  --ink-050: #FAFAFC;   /* app chrome, input wells */
+  --ink-100: #FFFFFF;   /* panel */
+  --ink-200: #ECECF1;   /* raised control */
+  --ink-300: #E2E2EA;   /* hovered control */
+
+  /* Accent — see the header note. --filament unchanged (fills only);
+     --filament-lit becomes the dark accent-TEXT tone; --filament-deep is
+     pinned to the owner-approved #C4004F. */
+  --filament-lit:  #C4004F;
+  --filament-deep: #C4004F;
+  --filament-a08:  rgba(255,27,107,0.07);
+  --filament-a14:  rgba(255,27,107,0.14);
+  --filament-a24:  rgba(255,27,107,0.26);
+  --filament-a40:  rgba(255,27,107,0.42);
+
+  /* Status — darkened so status-coloured TEXT clears 4.5:1 on light grounds
+     and on its own alpha tint. */
+  --signal:  #0E7A50;
+  --caution: #8A5A00;
+  --fault:   #C81E1E;
+  --signal-a12:  rgba(14,122,80,0.12);
+  --caution-a12: rgba(138,90,0,0.12);
+  --fault-a12:   rgba(200,30,30,0.10);
+
+  /* Type colour */
+  --tx:      #16161D;
+  --tx-dim:  #494956;
+  --tx-mute: #5B5B69;
+  --tx-ghost:#A6A6B2;
+
+  /* Structure */
+  --line:        rgba(22,22,29,0.11);
+  --line-strong: rgba(22,22,29,0.20);
+  --line-accent: rgba(196,0,79,0.38);
+
+  /* Fills — dark washes instead of white ones */
+  --fill-01: rgba(22,22,29,0.030);
+  --fill-02: rgba(22,22,29,0.050);
+  --fill-03: rgba(22,22,29,0.080);
+
+  /* Elevation — softened: light-ground shadows are tints, not voids */
+  --lift-1: 0 1px 2px rgba(22,22,29,0.10);
+  --lift-2: 0 8px 24px -8px rgba(22,22,29,0.18);
+  --lift-3: 0 24px 64px -16px rgba(22,22,29,0.24);
+}
+
+/* Native form controls + UA widgets render light */
+[data-theme="light"] { color-scheme: light; }
+[data-theme="dark"]  { color-scheme: dark; }
+
+/* Scrollbars — the dark theme's white-alpha thumbs vanish on paper */
+[data-theme="light"] * { scrollbar-color: rgba(22,22,29,0.25) transparent; }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(22,22,29,0.22); background-clip: content-box; }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(22,22,29,0.35); background-clip: content-box; }
+
+/* Floating chrome glass — hard-coded dark rgba in the base rule */
+[data-theme="light"] .hs-glass { background: rgba(252,252,254,0.85); }
+@supports not (backdrop-filter: blur(1px)) {
+  [data-theme="light"] .hs-glass { background: rgba(252,252,254,0.98); }
+}
+
+/* Scrim — lighter: a veil, not a blackout */
+[data-theme="light"] .hs-scrim { background: rgba(23,23,31,0.38); }
+
+/* Select chevron — the data-URI stroke is baked to the dark theme's dim grey */
+[data-theme="light"] .hs-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235B5B69' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+}
+
+/* Notices — the pastel text tones (#FFC9C9 …) are unreadable on light
+   tints; the darkened status colours above are exactly the right ink. */
+[data-theme="light"] .hs-notice--fault   { color: var(--fault); }
+[data-theme="light"] .hs-notice--caution { color: var(--caution); }
+[data-theme="light"] .hs-notice--signal  { color: var(--signal); }
+
+/* Skip link — white on #FF1B6B is 3.7:1; the deep pink clears 6:1 */
+[data-theme="light"] .hs-skip { background: var(--filament-deep); }
+
+/* ── studio.css re-points (that file is owned by a concurrent phase; these
+      are the ONLY rules in it that hard-code a dark ground) ─────────────── */
+/* Glass strips that float over media/canvas: dark rgba(8,8,12,…) becomes
+   light glass so the (now dark) text tokens inside them stay readable. */
+[data-theme="light"] .st-stage__acts { background: rgba(252,252,254,0.88); }
+[data-theme="light"] .st-readout > span { background: rgba(252,252,254,0.78); }
+[data-theme="light"] .st-canvas__zoom { background: rgba(252,252,254,0.85); }
+[data-theme="light"] .st-item__kind { background: rgba(252,252,254,0.85); color: var(--tx-dim); }
+/* Timeline range label: white-with-dark-shadow flips to ink-with-light-halo */
+[data-theme="light"] .st-range__label { color: var(--tx); text-shadow: 0 1px 2px rgba(255,255,255,0.85); }
+
+/* ── pages.css re-points (same ownership story) ────────────────────────── */
+[data-theme="light"] .pg-nav.is-stuck { background: rgba(250,250,252,0.86); }
+[data-theme="light"] .pg-gal__meta {
+  background: linear-gradient(transparent, rgba(255,255,255,0.94));
+}
+/* Scrolling-edge shadows (admin rail / settings tabs): a 60% black smear
+   reads as a stain on paper — soften to a hint. Same ≤899px scope as the
+   base rules. */
+@media (max-width: 899px) {
+  [data-theme="light"] .pg-admin__side {
+    background-image:
+      linear-gradient(to right, var(--ink-050) 40%, rgba(250,250,252,0)),
+      linear-gradient(to left,  var(--ink-050) 40%, rgba(250,250,252,0)),
+      linear-gradient(to right, rgba(0,0,0,0.16), rgba(0,0,0,0)),
+      linear-gradient(to left,  rgba(0,0,0,0.16), rgba(0,0,0,0));
+  }
+  [data-theme="light"] .pg-tabs {
+    background-image:
+      linear-gradient(to right, var(--ink-000) 40%, rgba(244,244,247,0)),
+      linear-gradient(to left,  var(--ink-000) 40%, rgba(244,244,247,0)),
+      linear-gradient(to right, rgba(0,0,0,0.16), rgba(0,0,0,0)),
+      linear-gradient(to left,  rgba(0,0,0,0.16), rgba(0,0,0,0));
+  }
+}

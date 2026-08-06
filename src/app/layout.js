@@ -91,13 +91,34 @@ export const viewport = {
   maximumScale: 5,
   userScalable: true,
   viewportFit: "cover",
-  themeColor: "#08080C",
+  // S3: the browser chrome tint follows the OS preference. (It cannot follow
+  // the in-app toggle — this is static metadata — but matching the system is
+  // right for the no-choice majority and harmless for the rest.)
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F4F4F7" },
+    { media: "(prefers-color-scheme: dark)", color: "#08080C" },
+  ],
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        {/* S3 light mode — theme init, FIRST thing in <head> so it runs
+            before any paint. Reads the stored choice ("helmies.theme"),
+            falls back to prefers-color-scheme, and stamps
+            document.documentElement.dataset.theme, which the
+            [data-theme="light"] token block in system.css keys off.
+            Synchronous inline script = zero flash; the CSP already carries
+            script-src 'unsafe-inline' for this file's ld+json blocks (see
+            next.config.js). suppressHydrationWarning on <html> above covers
+            the attribute React never renders. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              '(function(){var t;try{t=localStorage.getItem("helmies.theme")}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.dataset.theme=t})()',
+          }}
+        />
         <link rel="icon" href="/ico.svg" type="image/svg+xml" />
         <link rel="icon" href="/favicon-32x32.png" sizes="32x32" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

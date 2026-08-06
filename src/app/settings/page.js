@@ -25,6 +25,7 @@ import { CREDIT_PACKS } from "@/lib/credit-packs";
 import { PLAN_NAMES, SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
 import EmptyState from "@/components/states/EmptyState";
 import LoadingSkeleton from "@/components/states/LoadingSkeleton";
+import ThemeToggle from "@/components/ThemeToggle";
 
 /* ── Formatting — every numeral is mono, so keep the strings predictable ── */
 const NF = new Intl.NumberFormat("en-US");
@@ -156,6 +157,16 @@ function AccountPanel({ session, status, plan }) {
                   <div className="pg-kv__sub">Quote this if you contact support.</div>
                 </div>
                 <div className="pg-kv__v">{user.id}</div>
+              </div>
+
+              {/* S3: same toggle as the studio bar — stored in this browser,
+                  defaults to the system preference until first use. */}
+              <div className="pg-kv">
+                <div>
+                  <div className="pg-kv__k">Appearance</div>
+                  <div className="pg-kv__sub">Light or dark. Follows your system until you choose.</div>
+                </div>
+                <div className="pg-kv__v"><ThemeToggle /></div>
               </div>
             </div>
 
