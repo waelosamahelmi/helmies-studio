@@ -2620,3 +2620,38 @@ select.st-layer__role option {
     var(--ink-050);
   overflow: visible;
 }
+
+/* The voice-clone wizard's stepper (Audio → Voice cloning). */
+.st-vcw__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.st-vcw__step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 32px;
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill, 999px);
+  font-size: 11px;
+  color: var(--tx-mute);
+}
+.st-vcw__step.is-active { border-color: var(--filament); color: var(--tx); }
+.st-vcw__step.is-done { color: var(--tx-dim); }
+.st-vcw__no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-100);
+  font-family: var(--ff-mono);
+  font-size: 10px;
+}
+.st-vcw__step.is-active .st-vcw__no { background: var(--filament-a24); color: var(--tx); }
