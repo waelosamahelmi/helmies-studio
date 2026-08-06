@@ -142,16 +142,22 @@ test("pickers: a ready profile lists in Speech voices and in Music's vocal optio
   });
   await loginThroughForm(page, user);
 
-  // Speech: the cloned voice sits alongside the stock cast.
+  // Speech: the cloned voice sits alongside the stock cast. Other specs
+  // seed their own TTS models into the shared catalog (fullyParallel), so
+  // select THIS spec's model — its schema declares `voice`, which is what
+  // makes the picker render.
   await page.goto("/studio/audio");
   await settle(page);
+  await visible(page.locator(".st-model", { hasText: "E2E Speech Model" })).click();
   const voiceChips = visible(page.getByRole("group", { name: "Voice", exact: true }));
   await expect(voiceChips.getByRole("button", { name: profileName })).toBeVisible({ timeout: 20000 });
   await expect(voiceChips.getByRole("button", { name: "Rachel" })).toBeVisible();
 
-  // Music: under "Your voices" in the vocal options.
+  // Music: under "Your voices" in the vocal options — again on this spec's
+  // own composer model (schema declares instrumental/vocal_gender).
   await page.goto("/studio/music");
   await settle(page);
+  await visible(page.locator(".st-model", { hasText: "E2E Composer Model" })).click();
   const mine = visible(page.getByRole("group", { name: "Your voices" }));
   await expect(mine.getByRole("button", { name: profileName })).toBeVisible({ timeout: 20000 });
 });
