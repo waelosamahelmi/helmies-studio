@@ -550,6 +550,10 @@ export function buildSunoUploadExtendBody(modelId, prompt, params = {}) {
     if (text !== null) body.prompt = text;
     mapFields(params, { style: "style", title: "title" }, body);
   }
+  // Live verification 2026-08-06: {"code":422,"msg":"instrumental cannot
+  // be null"} on an omitted flag — required key, defaults to keeping the
+  // source's vocal character unless the caller says otherwise.
+  if (body.instrumental === undefined) body.instrumental = params.instrumental === true;
   return body;
 }
 
@@ -580,6 +584,10 @@ export function buildSunoAddVocalsBody(prompt, params = {}) {
   const text = textOf(prompt, params);
   if (text !== null) body.prompt = text;
   mapFields(params, { title: "title", style: "style", negative_tags: "negativeTags", negativeTags: "negativeTags" }, body);
+  // Live verification 2026-08-06: the provider rejects an OMITTED
+  // negativeTags outright — {"code":422,"msg":"negativeTags cannot be
+  // null"}. It is a required key that may be empty, so always send it.
+  if (body.negativeTags === undefined) body.negativeTags = "";
   return body;
 }
 

@@ -455,6 +455,9 @@ describe("upload-and-extend-audio — defaultParamFlag keyed off continueAt", ()
       model: SUNO_DEFAULT_ENGINE,
       uploadUrl: "https://cdn.example/track.mp3",
       defaultParamFlag: false,
+      // Live-verified 2026-08-06: the provider 422s ("instrumental cannot
+      // be null") when the key is omitted, even in default-param mode.
+      instrumental: false,
     });
   });
 
