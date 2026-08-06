@@ -22,12 +22,22 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/client-fetch";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
-import { SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
+import { SUBSCRIPTION_CREDITS, CREDIT_COSTS } from "@/lib/plan-constants";
 import { IcCheck, IcChevron } from "@/components/studio/kit/Icons";
 import PromoField from "@/components/PromoField";
 
 const int = (n) => n.toLocaleString("en-US");
 const rate = (eur, credits) => (credits > 0 ? `€${(eur / credits).toFixed(4)}` : "—");
+
+/* Credits are an abstraction a first-time buyer cannot price. This turns a
+   balance into the two outcomes people actually shop for, derived from the
+   same CREDIT_COSTS the run-cost table on this page renders — so the claim
+   moves automatically if a baseline cost ever changes. */
+const outcome = (credits) => {
+  const images = Math.floor(credits / CREDIT_COSTS.image.default);
+  const videos = Math.floor(credits / CREDIT_COSTS.video.default);
+  return `Roughly ${int(images)} images, or ${int(videos)} videos`;
+};
 
 /* Prices are the ones the Stripe price ids are configured against. Yearly is
    billed twelve months up front; `perMonth` is what that works out to. */
@@ -192,6 +202,7 @@ export default function PricingPlans() {
                   <p className="hs-mono hs-hint">
                     {isFree ? "€0.0000 / credit" : `${rate(price, plan.credits)} / credit`}
                   </p>
+                  <p className="hs-hint">{outcome(plan.credits)}</p>
                 </div>
 
                 <p className="hs-hint">{plan.line}</p>

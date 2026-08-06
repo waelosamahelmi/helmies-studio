@@ -7,7 +7,7 @@ const COLUMNS = [
       { href: "/studio/image",   label: "Image" },
       { href: "/studio/video",   label: "Video" },
       { href: "/studio/director",label: "Director" },
-      { href: "/studio/canvas",  label: "Canvas" },
+      { href: "/studio/image?mode=canvas",  label: "Canvas" },
       { href: "/studio/audio",   label: "Audio" },
     ],
   },

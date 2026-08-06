@@ -43,16 +43,16 @@ export const metadata = {
 const RUNS = [
   { key: "image", label: "Image", note: "One still from a text brief", href: "/studio/image" },
   { key: "i2i", label: "Image edit", note: "Re-render a still you supply", href: "/studio/image" },
-  { key: "influencer", label: "Persona shot", note: "A character that holds across frames", href: "/studio/influencer" },
-  { key: "cinema", label: "Cinema frame", note: "A still with lens and light direction", href: "/studio/cinema" },
+  { key: "influencer", label: "Persona shot", note: "A character that holds across frames", href: "/studio/perform?mode=persona" },
+  { key: "cinema", label: "Cinema frame", note: "A still with lens and light direction", href: "/studio/image?mode=create&preset=cinematic" },
   { key: "audio", label: "Audio", note: "Speech, music or a sound bed", href: "/studio/audio" },
-  { key: "clipping", label: "Clipping", note: "Cut the moments out of a long video", href: "/studio/clipping" },
-  { key: "lipsync", label: "Lip sync", note: "Match a performance to a voice track", href: "/studio/lipsync" },
-  { key: "motion", label: "Motion", note: "Animate a still or restyle motion", href: "/studio/vibe-motion" },
-  { key: "v2v", label: "Video → video", note: "Restyle footage you supply", href: "/studio/video-edit" },
+  { key: "clipping", label: "Clipping", note: "Cut the moments out of a long video", href: "/studio/video?mode=clips" },
+  { key: "lipsync", label: "Lip sync", note: "Match a performance to a voice track", href: "/studio/perform?mode=lipsync" },
+  { key: "motion", label: "Motion", note: "Animate a still or restyle motion", href: "/studio/video?mode=ttv&preset=motion" },
+  { key: "v2v", label: "Video → video", note: "Restyle footage you supply", href: "/studio/video?mode=edit" },
   { key: "video", label: "Video", note: "Motion from a text brief", href: "/studio/video" },
   { key: "i2v", label: "Image → video", note: "Motion from a still you supply", href: "/studio/video" },
-  { key: "recast", label: "Recast", note: "Place an identity into another scene", href: "/studio/body-swap" },
+  { key: "recast", label: "Recast", note: "Place an identity into another scene", href: "/studio/video?mode=edit&preset=recast" },
   { key: "marketing", label: "Marketing", note: "A campaign deliverable set", href: "/studio/marketing" },
 ];
 

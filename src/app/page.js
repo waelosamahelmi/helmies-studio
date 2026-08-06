@@ -17,6 +17,13 @@ import {
   IconArrowUpRight, IconArrowRight, IconCheck, IconMail,
 } from "@/components/Icons";
 import { useIsMobile } from "@/lib/use-media-query";
+import { SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
+
+/* Deliberately conservative and rounded DOWN from the live active-model count
+   in ModelPricing (136 active as of 2026-08-06), so the claim stays true as
+   the catalog churns. The page previously carried four different, unsourced
+   figures ("32 models", "17 video models", "9 lip-sync models", "70+"). */
+const MODEL_COUNT = 130;
 
 const HEADSHOTS = [
   "/assets/warrior_girl_e29532086b-40.webp",
@@ -29,18 +36,34 @@ const HEADSHOTS = [
   "/assets/photo-1551434678-e076c223a692-10.webp",
 ];
 
+// Credits come from plan-constants (the same source /pricing renders from) so
+// the landing page can never drift from the real plans again. Every tier gets
+// the whole catalog — plans differ only in credits, matching the /pricing FAQ.
+const fmtCredits = (n) => `${n.toLocaleString("en-US")} credits/mo`;
+const PLAN_BASE = [
+  { name: "Free", credits: SUBSCRIPTION_CREDITS.free, desc: "Try every studio. No card required.", extras: [`All ${MODEL_COUNT}+ models`, "No card required", "Credits stay on the balance"], cta: "Start free", popular: false },
+  { name: "Starter", credits: SUBSCRIPTION_CREDITS.starter, desc: "For testing the waters.", extras: ["Every model in the catalog", "Credits roll over — nothing resets", "Cancel anytime"], cta: "Subscribe", popular: false },
+  { name: "Studio", credits: SUBSCRIPTION_CREDITS.studio, desc: "For regular creators who ship.", extras: ["Every model in the catalog", "Credits roll over — nothing resets", "Plan-included templates"], cta: "Subscribe", popular: true },
+  { name: "Pro", credits: SUBSCRIPTION_CREDITS.pro, desc: "Power users and small teams.", extras: ["Every model in the catalog", "Credits roll over — nothing resets", "Plan-included templates"], cta: "Subscribe", popular: false },
+];
+const plan = (base, price, period, billed) => ({
+  ...base, price, period, billed,
+  credits: fmtCredits(base.credits),
+  features: [`${fmtCredits(base.credits).replace("/mo", " monthly")}`, ...base.extras],
+});
+
 const PRICING_MONTHLY = [
-  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
-  { name: "Starter", price: "€24", period: "/mo", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
-  { name: "Studio", price: "€49", period: "/mo", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
-  { name: "Pro", price: "€99", period: "/mo", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
+  plan(PLAN_BASE[0], "€0", "/forever"),
+  plan(PLAN_BASE[1], "€24", "/mo"),
+  plan(PLAN_BASE[2], "€49", "/mo"),
+  plan(PLAN_BASE[3], "€99", "/mo"),
 ];
 
 const PRICING_YEARLY = [
-  { name: "Free", price: "€0", period: "/forever", credits: "10 credits/mo", desc: "Try every studio. No card required.", features: ["10 credits monthly", "All 70+ models", "Standard resolution", "Community support"], cta: "Start free", popular: false },
-  { name: "Starter", price: "€19", period: "/mo", billed: "Billed €228/yr", credits: "500 credits/mo", desc: "For testing the waters.", features: ["500 credits monthly", "All studios unlocked", "HD resolution", "Cancel anytime"], cta: "Subscribe", popular: false },
-  { name: "Studio", price: "€39", period: "/mo", billed: "Billed €468/yr", credits: "1500 credits/mo", desc: "For regular creators who ship.", features: ["1500 credits monthly", "All studios unlocked", "4K downloads", "Priority queue"], cta: "Subscribe", popular: true },
-  { name: "Pro", price: "€79", period: "/mo", billed: "Billed €948/yr", credits: "5000 credits/mo", desc: "Power users and small teams.", features: ["5000 credits monthly", "Priority queue", "Batch exports", "API access"], cta: "Subscribe", popular: false },
+  plan(PLAN_BASE[0], "€0", "/forever"),
+  plan(PLAN_BASE[1], "€19", "/mo", "Billed €228/yr"),
+  plan(PLAN_BASE[2], "€39", "/mo", "Billed €468/yr"),
+  plan(PLAN_BASE[3], "€79", "/mo", "Billed €948/yr"),
 ];
 
 const VIDEOS = [
@@ -63,7 +86,7 @@ const SECTIONS = [
     kicker: "Image Studio",
     title: (
       <>
-        32 models.
+        40+ models.
         <br />
         <em>One prompt.</em>
       </>
@@ -85,7 +108,7 @@ const SECTIONS = [
         <em>motion.</em>
       </>
     ),
-    desc: "Sora 2, Kling v3, Veo 3, Runway. 17 video models. Text-to-video, image-to-video. 4K cinematic footage.",
+    desc: "Sora, Kling v3, Veo 3, Seedance, Hailuo. 60+ video models. Text-to-video, image-to-video, video-to-video.",
     pills: ["Sora 2", "Kling v3", "Veo 3", "Runway", "Wan 2.6"],
     accent: "#FF1B6B",
     bg: "/assets/warrior_girl_e29532086b-40.webp",
@@ -103,7 +126,7 @@ const SECTIONS = [
         <em>Any voice.</em>
       </>
     ),
-    desc: "9 lip-sync models. Upload a portrait, add audio. Talking videos in seconds.",
+    desc: "Upload a portrait, add a voice track. Talking videos in seconds — or let the studio write and speak the lines for you.",
     pills: ["Infinite Talk", "Wan 2.2", "LTX 2.3", "LatentSync"],
     accent: "#FF1B6B",
     bg: "/assets/photo-1620121692029-d088224ddc74-11.webp",
@@ -151,7 +174,7 @@ function HeroSection() {
     <section className="hero">
       <div className="hero__bg">
         {/* eslint-disable-next-line @next/next/no-img-element -- next/image would change loading/layout behavior; deferred, out of scope for lint-only stabilization (2026-08-01) */}
-        <img src={isMobile ? "/assets/hero-video-poster.webp" : "/assets/hero-video-poster.webp"} alt="" className="hero__bg-poster" style={{ opacity: playing ? 0 : 1 }} />
+        <img src="/assets/hero-video-poster.webp" alt="" className="hero__bg-poster" style={{ opacity: playing ? 0 : 1 }} />
         {!isMobile ? (
           <video
             src="/assets/12709382_1920_1080_30fps-39.mp4"
@@ -170,19 +193,20 @@ function HeroSection() {
       <div className="hero__content">
         <HeroTitle
           image="/assets/warrior_girl_e29532086b-40.webp"
-          line1=" models."
-          line2="studio."
+          line1=" AI model."
+          line2="subscription."
           line1AccentImg="/assets/200.webp"
           accent="One "
         />
 
         <p className="hero__sub">
-          Generate images, videos, audio, and lip sync with 70+ state-of-the-art models.
-          Flux, Midjourney, Sora 2, Kling, Veo 3. One subscription, zero filters.
+          Flux, Veo 3, Kling, Sora, Seedream, ElevenLabs — images, video, music and
+          lip sync from {MODEL_COUNT}+ models on one credit balance. No per-vendor
+          subscriptions, no waitlists, no filters.
         </p>
 
         <div className="hero__cta" style={isMobile ? { flexDirection: "column", width: "100%" } : {}}>
-          <Link href="/login" className="btn btn-primary btn-lg" style={isMobile ? { width: "100%", justifyContent: "center" } : {}}>
+          <Link href="/login?new=1" className="btn btn-primary btn-lg" style={isMobile ? { width: "100%", justifyContent: "center" } : {}}>
             Start free
             <span className="btn__icon"><IconArrowUpRight /></span>
           </Link>
@@ -329,8 +353,8 @@ function ServiceSection({ section, index }) {
               </div>
             )}
             {!section.isPricing && (
-              <Link href={`/studio/${section.id}`} className="btn btn-primary mt-8 inline-flex">
-                Open {section.id} studio
+              <Link href={section.id === "lipsync" ? "/studio/perform?mode=lipsync" : `/studio/${section.id}`} className="btn btn-primary mt-8 inline-flex">
+                Open {section.kicker}
                 <span className="btn__icon"><IconArrowUpRight /></span>
               </Link>
             )}
@@ -414,7 +438,7 @@ function AnnouncementBar() {
     <div className="announcement-bar">
       <div className="announcement-bar__inner">
         <span className="announcement-bar__dot" />
-        <span>70+ models live — Sora 2, Kling v3</span>
+        <span>{MODEL_COUNT}+ models live — Sora, Kling v3, Veo 3</span>
       </div>
     </div>
   );

@@ -38,7 +38,7 @@ const FAQS = [
     category: "General",
     question: "What can I create with Helmies Studio?",
     answer:
-      "You can generate images, videos, music, sound effects, lip-synced talking head videos, body-swap / face-recast scenes, cinematic motion graphics, marketing UGC ads, and more. There are 13 specialized studios, each tuned for a specific creative workflow.",
+      "You can generate images, videos, music, sound effects, lip-synced talking head videos, body-swap / face-recast scenes, cinematic motion graphics, marketing UGC ads, and more. There are 12 specialized studios, each tuned for a specific creative workflow.",
   },
   // Credits & Pricing
   {
@@ -51,7 +51,7 @@ const FAQS = [
     category: "Credits & Pricing",
     question: "What subscription plans are available?",
     answer:
-      `We offer four subscription tiers: Free (${n(SUBSCRIPTION_CREDITS.free)} credits/mo), Starter (${n(SUBSCRIPTION_CREDITS.starter)} credits/mo at €24/mo), Studio (${n(SUBSCRIPTION_CREDITS.studio)} credits/mo at €49/mo), and Pro (${n(SUBSCRIPTION_CREDITS.pro)} credits/mo at €99/mo). Yearly billing saves you 20%. Every plan gives you access to all 70+ models and all 13 studios.`,
+      `We offer four subscription tiers: Free (${n(SUBSCRIPTION_CREDITS.free)} credits/mo), Starter (${n(SUBSCRIPTION_CREDITS.starter)} credits/mo at €24/mo), Studio (${n(SUBSCRIPTION_CREDITS.studio)} credits/mo at €49/mo), and Pro (${n(SUBSCRIPTION_CREDITS.pro)} credits/mo at €99/mo). Yearly billing saves you 20%. Every plan gives you access to all 70+ models and all 12 studios.`,
   },
   {
     category: "Credits & Pricing",

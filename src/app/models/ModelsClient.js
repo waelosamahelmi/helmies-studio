@@ -24,8 +24,8 @@ const MODALITIES = [
   { id: "iti", label: "Image → image", caps: CAPABILITY_GROUPS.iti, types: ["i2i"], tool: "image" },
   { id: "ttv", label: "Text → video", caps: CAPABILITY_GROUPS.ttv, types: ["video"], tool: "video" },
   { id: "i2v", label: "Image → video", caps: [...CAPABILITY_GROUPS.i2v, "reference-to-video"], types: ["i2v"], tool: "video" },
-  { id: "v2v", label: "Video → video", caps: CAPABILITY_GROUPS.v2v, types: ["v2v"], tool: "video-edit" },
-  { id: "lipsync", label: "Lip sync", caps: CAPABILITY_GROUPS.lipsync, types: ["lipsync"], tool: "lipsync" },
+  { id: "v2v", label: "Video → video", caps: CAPABILITY_GROUPS.v2v, types: ["v2v"], tool: "video?mode=edit" },
+  { id: "lipsync", label: "Lip sync", caps: CAPABILITY_GROUPS.lipsync, types: ["lipsync"], tool: "perform?mode=lipsync" },
   { id: "audio", label: "Audio", caps: CAPABILITY_GROUPS.audio, types: ["audio", "tts"], tool: "audio" },
 ];
 
@@ -250,7 +250,7 @@ export default function ModelsClient() {
           {shown.map((m) => (
             <Link
               key={m.id}
-              href={`/studio/${m.tool}?model=${encodeURIComponent(m.id)}`}
+              href={`/studio/${m.tool}${m.tool.includes("?") ? "&" : "?"}model=${encodeURIComponent(m.id)}`}
               className="pg-cat__card"
             >
               <div className="pg-cat__top">
