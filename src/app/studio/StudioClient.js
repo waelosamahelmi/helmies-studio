@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MotionConfig } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
@@ -52,6 +52,7 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
   const [running, setRunning] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [templateConfig, setTemplateConfig] = useState(null);
+  const [isPending, startTransition] = useTransition();
 
   /* Follow the route when it changes from outside (back button, deep link) */
   useEffect(() => {
@@ -60,8 +61,10 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
 
   const select = useCallback((id) => {
     if (!TOOL_IDS.includes(id) || id === active) return;
-    setActive(id);
-    router.push(`/studio/${id}`, { scroll: false });
+    startTransition(() => {
+      setActive(id);
+      router.push(`/studio/${id}`, { scroll: false });
+    });
   }, [active, router]);
 
   /* A template preloads a tool's settings */
@@ -142,6 +145,19 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
         credits={credits}
         running={running}
       >
+        {/* Tool-switch loading bar — sits at the top of the work area and
+            resolves in under a frame for warm components, so it is only
+            visible when a heavier tool needs its first paint. */}
+        {isPending && (
+          <div
+            aria-busy="true"
+            style={{
+              position: "absolute", top: 0, left: 0, right: 0, zIndex: 50,
+              height: 2, background: "var(--filament)",
+              animation: "hs-loading-bar 0.8s ease infinite",
+            }}
+          />
+        )}
         <ErrorBoundary key={active}>
           <Tool
             tool={active}

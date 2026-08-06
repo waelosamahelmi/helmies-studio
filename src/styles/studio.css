@@ -32,6 +32,9 @@
     "rail work";
   background: var(--ink-000);
   overflow: hidden;
+  /* PWA standalone: the status bar overlays the top edge. Push the whole
+     shell down by the safe-area inset so the header and clock don't overlap. */
+  padding-top: var(--sa-top);
 }
 
 /* ── Bar ───────────────────────────────────────────────────────────────── */

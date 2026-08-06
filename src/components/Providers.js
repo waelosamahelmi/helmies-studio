@@ -8,6 +8,7 @@ import DevMode from "@/components/DevMode";
 import OfflineBanner from "@/components/states/OfflineBanner";
 import AnnouncementBar from "@/components/AnnouncementBar";
 import AnnouncementPopup from "@/components/AnnouncementPopup";
+import PwaInstallPrompt from "@/components/PwaInstallPrompt";
 
 export default function Providers({ children }) {
   return (
@@ -23,6 +24,7 @@ export default function Providers({ children }) {
           had been happening to every announcement the owner ever posted. */}
       <AnnouncementBar />
       <AnnouncementPopup />
+      <PwaInstallPrompt />
       <DevMode />
       <Toaster
         position="top-right"

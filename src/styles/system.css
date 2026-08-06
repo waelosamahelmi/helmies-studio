@@ -16,21 +16,14 @@
      · Every interactive target ≥ 44px on coarse pointers.
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Typeface: Nohemi (local, self-hosted) ─────────────────────────────── */
-@font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-light.woff2")     format("woff2"); font-weight: 300; font-style: normal; font-display: swap; }
-@font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-regular.woff2")   format("woff2"); font-weight: 400; font-style: normal; font-display: swap; }
-@font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-medium.woff2")    format("woff2"); font-weight: 500; font-style: normal; font-display: swap; }
-@font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-semibold.woff2")  format("woff2"); font-weight: 600; font-style: normal; font-display: swap; }
-@font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-bold.woff2")      format("woff2"); font-weight: 700; font-style: normal; font-display: swap; }
-@font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-extrabold.woff2") format("woff2"); font-weight: 800; font-style: normal; font-display: swap; }
-@font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-black.woff2")     format("woff2"); font-weight: 900; font-style: normal; font-display: swap; }
-
 /* ── Display face: Bricolage Grotesque (U1) ────────────────────────────────
    Self-hosted (no external font requests — CSP + perf), latin subset only,
    one variable-weight file covering 600–700. Reserved for the few display
-   moments the U1 direction names: studio titles, stage empty-state
-   headings, Library section headings, plan/deliverable card titles.
-   Body and controls stay on Nohemi; mono is untouched. */
+   moments: studio titles, stage empty-state headings, Library section
+   headings, plan/deliverable card titles.
+   Body and controls use the platform's native UI font (zero download,
+   max readability — San Francisco on Apple, Segoe UI on Windows,
+   Roboto on Android). Mono is untouched. */
 @font-face {
   font-family: "Bricolage Grotesque";
   src: url("/fonts/bricolage-grotesque-latin.woff2") format("woff2");
@@ -42,8 +35,8 @@
 
 /* ── Tailwind theme bridge ─────────────────────────────────────────────── */
 @theme {
-  --font-sans:    "Nohemi", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Nohemi", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono:    ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
   --color-ink-000: #08080C;
@@ -115,13 +108,15 @@
   --fill-03: rgba(255,255,255,0.075);
 
   /* Type stack.
-     U1: --ff-display now points at the characterful display face
-     (Bricolage Grotesque). It is applied ONLY where the design direction
-     names a display moment (studio title, stage empty-state headings,
-     Library section headings, plan/deliverable card titles) — the base
-     h1–h6 rule below deliberately uses --ff-ui so nothing else changes. */
-  --ff-display: "Bricolage Grotesque", "Nohemi", ui-sans-serif, system-ui, sans-serif;
-  --ff-ui:      "Nohemi", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+     U1: --ff-display points at Bricolage Grotesque for the few display
+     moments the U1 direction names (studio title, stage empty-state
+     headings, Library section headings, plan/deliverable card titles).
+     --ff-ui uses the platform's native UI font — San Francisco on Apple,
+     Segoe UI on Windows, Roboto on Android. Zero download, maximum
+     readability at every size. The base h1–h6 rule deliberately uses
+     --ff-ui so nothing else changes. */
+  --ff-display: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --ff-ui:      -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --ff-mono:    ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
   /* Type scale — 11 steps, fixed. Display sizes are fluid. */
@@ -204,9 +199,8 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    /* U1: was var(--ff-display) — visually identical then (both stacks led
-       with Nohemi). Now that --ff-display carries the Bricolage display
-       face, headings default to the utility face and opt IN to display
+    /* U1: was var(--ff-display). Now that --ff-display carries Bricolage
+       Grotesque, headings default to the utility face and opt IN to display
        type via .hs-display / the scoped rules in studio.css & pages.css. */
     font-family: var(--ff-ui);
     font-weight: 600;
@@ -825,6 +819,12 @@ kbd.hs-kbd {
   flex: none;
 }
 @keyframes hs-rotate { to { transform: rotate(360deg); } }
+@keyframes hs-loading-bar {
+  0%   { transform: scaleX(0);   transform-origin: left; }
+  35%  { transform: scaleX(0.5); transform-origin: left; }
+  65%  { transform: scaleX(0.5); transform-origin: right; }
+  100% { transform: scaleX(0);   transform-origin: right; }
+}
 
 /* Inline notice */
 .hs-notice {
@@ -1277,6 +1277,67 @@ kbd.hs-kbd {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
+   PWA INSTALL PROMPT — bottom banner shown to browser users on any device
+   when beforeinstallprompt fires and the app is not yet installed
+   ────────────────────────────────────────────────────────────────────────── */
+.hs-pwa-prompt {
+  position: fixed;
+  z-index: 80;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--s-4) + var(--sa-bottom));
+  width: min(480px, calc(100vw - var(--s-6)));
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--ink-200);
+  box-shadow: var(--lift-2);
+  font-size: var(--t-sm);
+  color: var(--tx);
+  line-height: 1.5;
+  overflow: hidden;
+}
+.hs-pwa-prompt::before {
+  content: "";
+  display: block;
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--filament);
+}
+.hs-pwa-prompt__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+}
+.hs-pwa-prompt__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.hs-pwa-prompt__text strong {
+  font-weight: 600;
+}
+.hs-pwa-prompt__text span {
+  color: var(--tx-dim);
+  font-size: var(--t-xs);
+}
+.hs-pwa-prompt__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: none;
+}
+@media (max-width: 900px) {
+  .hs-pwa-prompt { width: calc(100vw - var(--s-4)); }
+  body:has(.st-dock) .hs-pwa-prompt {
+    bottom: calc(var(--s-3) + var(--sa-bottom) + var(--dock-h));
+  }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
    MODAL CENTRING — a real bug, found by E8.3's tall edit form
    ──────────────────────────────────────────────────────────────────────────
    `.hs-modal` above centres itself with `top:50%; left:50%` plus
@@ -1479,5 +1540,5 @@ kbd.hs-kbd {
 /* The token reads identically in both themes — restated here so the theme
    block is self-contained the way every other runtime token is. */
 [data-theme="light"] {
-  --ff-display: "Bricolage Grotesque", "Nohemi", ui-sans-serif, system-ui, sans-serif;
+  --ff-display: "Bricolage Grotesque", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }

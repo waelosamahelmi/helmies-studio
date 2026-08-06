@@ -76,13 +76,6 @@ const SIZE_PRESETS = [
 
 const BACKGROUNDS = ["transparent", "#000000", "#FFFFFF", "#0B0B10", "#F2EFE9", "#12233A"];
 
-const EXAMPLES = [
-  "Keep the product exactly as placed, replace the background with wet slate",
-  "Match the light in the reference and hold the logo where it sits",
-  "Remove the marked region and rebuild the wall behind it",
-  "Same layout, softer key from the left, cooler cast",
-];
-
 const MAX_HISTORY = 60;
 const MAX_BACKING = 4096;      // px per side of the preview backing store
 const MIN_ZOOM = 0.05;
@@ -101,12 +94,24 @@ const IcRect = ({ className = "hs-icon", ...rest }) => (
 const IcEllipse = ({ className = "hs-icon", ...rest }) => (
   <svg {...stroke} className={className} aria-hidden="true" {...rest}><ellipse cx="12" cy="12" rx="8.6" ry="7" /></svg>
 );
+const IcBrush = ({ className = "hs-icon", ...rest }) => (
+  <svg {...stroke} className={className} aria-hidden="true" {...rest}><path d="M6 18c.8-.8 2-2 4-4l5-5 1.5-1.5a2.1 2.1 0 0 1 3 3l-1.5 1.5-9 9a1.5 1.5 0 0 1-.7.4L5 22l.5-2.5a1.5 1.5 0 0 1 .5-.7Z" /><path d="M10 14h0" /><line x1="9" y1="15" x2="7" y2="17" /></svg>
+);
+const IcEraser = ({ className = "hs-icon", ...rest }) => (
+  <svg {...stroke} className={className} aria-hidden="true" {...rest}><path d="M7 21 3 17l8-11h8l3 3-15 12Z" /><line x1="9" y1="14" x2="15" y2="20" /><line x1="12" y1="11" x2="18" y2="17" /></svg>
+);
+const IcLine = ({ className = "hs-icon", ...rest }) => (
+  <svg {...stroke} className={className} aria-hidden="true" {...rest}><line x1="4" y1="20" x2="20" y2="4" /></svg>
+);
 
 const TOOLS = [
   { id: "select", label: "Select", key: "V", icon: IcCursor },
   { id: "hand", label: "Pan", key: "H", icon: IcHand },
   { id: "image", label: "Place image", key: "I", icon: IcImage },
   { id: "text", label: "Text", key: "T", icon: IcText },
+  { id: "brush", label: "Brush", key: "B", icon: IcBrush },
+  { id: "eraser", label: "Eraser", key: "E", icon: IcEraser },
+  { id: "line", label: "Line", key: "L", icon: IcLine },
   { id: "rect", label: "Rectangle", key: "R", icon: IcRect },
   { id: "ellipse", label: "Ellipse", key: "O", icon: IcEllipse },
 ];
@@ -423,6 +428,7 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
   /* ── Tool defaults (used when nothing is selected) ────────────────────── */
   const [textDefaults, setTextDefaults] = useState({ fontFamily: "Inter", fontSize: 72, fontWeight: 700, color: "#FFFFFF", align: "center" });
   const [shapeDefaults, setShapeDefaults] = useState({ fill: "#FF1B6B", stroke: "transparent", strokeWidth: 0, radius: 0 });
+  const [brushDefaults, setBrushDefaults] = useState({ color: "#FF1B6B", size: 4 });
 
   /* ── Refs ─────────────────────────────────────────────────────────────── */
   const surfaceRef = useRef(null);
@@ -854,6 +860,13 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
         const layer = addLayer("text", { ...box, ...textDefaults, text: "New text" });
         setEditingId(layer.id);
         setTool("select");
+      } else if (kind === "line") {
+        /* A line is a thin rectangle. Snap to zero height/width for axis-aligned lines. */
+        const lw = Math.abs(w), lh = Math.abs(h);
+        if (lw < 4 && lh < 4) { setTool("select"); return; }
+        if (lw < lh) addLayer("rect", { x, y, width: Math.max(2, Math.round(lw)), height: Math.round(lh), ...shapeDefaults, name: "Line", radius: 0 });
+        else addLayer("rect", { x, y, width: Math.round(lw), height: Math.max(2, Math.round(lh)), ...shapeDefaults, name: "Line", radius: 0 });
+        setTool("select");
       } else if (w > 6 && h > 6) {
         addLayer(kind, { x, y, width: Math.round(w), height: Math.round(h), ...shapeDefaults });
         setTool("select");
@@ -863,17 +876,108 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     window.addEventListener("pointerup", up);
   }, [toDoc, tool, addLayer, textDefaults, shapeDefaults]);
 
+  /* ── Brush / eraser freehand path ─────────────────────────────────────── */
+  const brushPath = useRef([]);
+  const brushCanvas = useRef(null);
+
+  /* Rasterise a brush/eraser stroke to a blob and place it as a layer. */
+  const finishBrushStroke = useCallback(async () => {
+    const pts = brushPath.current;
+    brushPath.current = [];
+    if (pts.length < 2) return;
+    /* Compute the stroke's bounding box in document space, widened by the
+       brush radius so the raster fits it with room to spare. */
+    const r = (brushDefaults.size || 4) + 2;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+    const w = Math.max(8, maxX - minX + r * 2), h = Math.max(8, maxY - minY + r * 2);
+    const ox = minX - r, oy = minY - r;
+
+    const off = document.createElement("canvas");
+    off.width = Math.round(w);
+    off.height = Math.round(h);
+    const ctx = off.getContext("2d");
+    if (!ctx) return;
+    ctx.strokeStyle = tool === "eraser" ? "rgba(0,0,0,1)" : (brushDefaults.color || "#FF1B6B");
+    ctx.lineWidth = brushDefaults.size || 4;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    for (let i = 0; i < pts.length; i++) {
+      const sx = pts[i].x - ox, sy = pts[i].y - oy;
+      if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+
+    try {
+      const blob = await new Promise((resolve, reject) => off.toBlob((b) => (b ? resolve(b) : reject(new Error("encode"))), "image/png"));
+      const file = new File([blob], "stroke.png", { type: "image/png" });
+      const up = await upload(file);
+      if (up?.url) {
+        if (tool === "eraser") {
+          addLayer("rect", { name: "Eraser stroke", fill: "transparent", stroke: "transparent", mask: "exclude", role: "remove_target", x: Math.round(ox), y: Math.round(oy), width: Math.round(w), height: Math.round(h) });
+        } else {
+          addLayer("image", { src: up.url, name: "Brush stroke", x: Math.round(ox), y: Math.round(oy), width: Math.round(w), height: Math.round(h), fit: "fill" });
+        }
+      }
+    } catch {
+      /* raster failed silently — the user can try again */
+    }
+    /* clear the preview overlay */
+    if (brushCanvas.current) {
+      const bc = brushCanvas.current.getContext("2d");
+      if (bc) bc.clearRect(0, 0, brushCanvas.current.width, brushCanvas.current.height);
+    }
+  }, [tool, brushDefaults, upload, addLayer]);
+
   const onSurfacePointerDown = useCallback((e) => {
     if (e.button === 1 || tool === "hand") { startPan(e); return; }
     if (e.button !== 0) return;
     if (editingId) { setEditingId(null); return; }
     if (tool === "image") { fileRef.current?.click(); return; }
-    if (tool === "text" || tool === "rect" || tool === "ellipse") { e.preventDefault(); startDraw(e); return; }
+    if (tool === "text" || tool === "rect" || tool === "ellipse" || tool === "line") { e.preventDefault(); startDraw(e); return; }
+    if (tool === "brush" || tool === "eraser") {
+      e.preventDefault();
+      const p = toDoc(e.clientX, e.clientY);
+      brushPath.current = [{ x: p.x, y: p.y }];
+      const move = (ev) => {
+        const pt = toDoc(ev.clientX, ev.clientY);
+        brushPath.current.push({ x: pt.x, y: pt.y });
+        /* Draw a live preview on a small overlay canvas */
+        const surface = surfaceRef.current;
+        if (!surface || !brushCanvas.current) return;
+        const r = surface.getBoundingClientRect();
+        brushCanvas.current.width = r.width;
+        brushCanvas.current.height = r.height;
+        const ctx = brushCanvas.current.getContext("2d");
+        if (!ctx) return;
+        ctx.clearRect(0, 0, r.width, r.height);
+        ctx.strokeStyle = tool === "eraser" ? "rgba(255,90,90,0.6)" : (brushDefaults.color || "#FF1B6B");
+        ctx.lineWidth = (brushDefaults.size || 4) * zoom;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        const pts = brushPath.current;
+        for (let i = 0; i < pts.length; i++) {
+          const sx = pts[i].x * zoom + pan.x, sy = pts[i].y * zoom + pan.y;
+          if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        finishBrushStroke();
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      return;
+    }
     const hit = hitTest(toDoc(e.clientX, e.clientY));
     if (!hit) { setSelectedId(null); return; }
     setSelectedId(hit.id);
     if (!hit.locked) startMove(e, hit.id);
-  }, [tool, editingId, startPan, startDraw, hitTest, toDoc, startMove]);
+  }, [tool, editingId, startPan, startDraw, hitTest, toDoc, startMove, pan, zoom, brushDefaults]);
 
   const onSurfaceDoubleClick = useCallback((e) => {
     const hit = hitTest(toDoc(e.clientX, e.clientY));
@@ -1367,6 +1471,22 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     if (tool === "hand") {
       return <span className="hs-hint">Drag to pan. Ctrl and scroll to zoom. Scroll to move.</span>;
     }
+    if (tool === "brush" || tool === "eraser") {
+      return (
+        <>
+          <span className="hs-label" style={{ margin: 0 }}>{tool === "brush" ? "Brush" : "Eraser"}</span>
+          <span className="hs-hint">Colour</span>
+          {tool === "brush" && (
+            <input type="color" style={swatch} aria-label="Brush colour"
+              value={brushDefaults.color} onChange={(e) => setBrushDefaults((d) => ({ ...d, color: e.target.value }))} />
+          )}
+          <span className="hs-hint">Size</span>
+          <input className="hs-input" type="number" style={num} min={1} max={120} aria-label="Brush size"
+            value={brushDefaults.size} onChange={(e) => setBrushDefaults((d) => ({ ...d, size: Math.max(1, Number(e.target.value) || 1) }))} />
+          <span style={{ width: brushDefaults.size * 2, height: brushDefaults.size * 2, borderRadius: "50%", background: tool === "eraser" ? "var(--fault)" : brushDefaults.color, opacity: 0.7, flex: "none" }} />
+        </>
+      );
+    }
     if (tool === "image") {
       return (
         <>
@@ -1804,6 +1924,12 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
         >
           <canvas ref={canvasRef} aria-label="Canvas composition" />
 
+          {/* Brush / eraser live-preview overlay */}
+          <canvas
+            ref={(el) => { brushCanvas.current = el; }}
+            style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 10 }}
+          />
+
           {/* Shape being dragged out */}
           {draft && (
             <div className="st-canvas__marquee" style={{
@@ -1898,24 +2024,6 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
               <span className="hs-empty__mark"><IcLayers /></span>
               <h3>Compose, then generate</h3>
               <p>Drop images on the surface, draw a region, or set a headline. Give every layer a role and the model is told what each one is for.</p>
-              <div
-                className="hs-chips"
-                style={{ justifyContent: "center", marginTop: "var(--s-2)", pointerEvents: "auto" }}
-                onPointerDown={(e) => e.stopPropagation()}
-              >
-                {EXAMPLES.map((e) => (
-                  <button
-                    key={e}
-                    type="button"
-                    className="hs-chip"
-                    style={{ fontFamily: "var(--ff-ui)", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis" }}
-                    title={e}
-                    onClick={() => setPrompt(e)}
-                  >
-                    {e.length > 44 ? `${e.slice(0, 44)}…` : e}
-                  </button>
-                ))}
-              </div>
             </div>
           </div>
         )}
