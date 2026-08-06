@@ -104,13 +104,16 @@ test("Audio studio: each segment pools only its own kind", async ({ page }) => {
   await expect(page.getByRole("button", { name: /E2E Dialogue Model/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /E2E Speech Model/ })).toHaveCount(0);
 
+  // S2: the Voice-clone mode is the wizard now, not a model pool — the old
+  // single-shot submit mapped to nothing the real API takes.
   await job.getByRole("button", { name: "Voice cloning" }).click();
-  await expect(page.getByRole("button", { name: /E2E Voice Clone Model/ })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Voice cloning steps" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Validate recording/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /E2E Dialogue Model/ })).toHaveCount(0);
 
   await job.getByRole("button", { name: "Sound effects" }).click();
   await expect(page.getByRole("button", { name: /E2E Sound Effects Model/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /E2E Voice Clone Model/ })).toHaveCount(0);
+  await expect(page.getByRole("list", { name: "Voice cloning steps" })).toHaveCount(0);
 });
 
 test("Music studio: composition pool only, with genre/duration/instrumental controls for a Suno-family model", async ({ page }) => {

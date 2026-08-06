@@ -2553,3 +2553,113 @@ select.st-layer__role option {
    canvas or clipping layouts), it fills the remaining height exactly as it
    filled .st-work-area before the strip existed. */
 .st-moded__body > * { flex: 1; min-height: 0; }
+
+/* ── S2 music ── */
+/* The Music track workbench: history list, duration-scaled timeline bar,
+   range grips (reusing .st-range / .st-range__grip so the coarse-pointer
+   44px hit rule already in this file applies to them), and the operation
+   row. Lives at the end of MusicStudio's scrolling .st-wave__body. */
+.st-mtl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--line);
+}
+.st-mtl__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.st-mtl__track {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--ink-050);
+  text-align: left;
+  transition: border-color var(--d-fast) var(--ease), background var(--d-fast) var(--ease);
+}
+.st-mtl__track:hover { border-color: var(--tx-ghost); }
+.st-mtl__track.is-active { border-color: var(--filament); background: var(--filament-a24); }
+.st-mtl__mark { flex: none; display: inline-flex; color: var(--tx-dim); }
+.st-mtl__meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.st-mtl__title {
+  font-size: 12px;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-mtl__sub { font-size: 10px; color: var(--tx-mute); }
+.st-mtl__work {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.st-mtl__audio { width: 100%; height: 40px; }
+/* The timeline bar: a simple duration-scaled strip — deliberately no
+   waveform dependency. .st-range positions absolutely inside it exactly as
+   it does inside ClippingStudio's .st-track. */
+.st-mtl__bar {
+  position: relative;
+  height: 56px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background:
+    repeating-linear-gradient(90deg, var(--ink-100) 0 1px, transparent 1px 10%),
+    var(--ink-050);
+  overflow: visible;
+}
+
+/* Unlike every other studio's chips (which live in the aside that hides on
+   phones), the workbench's op chips sit in the MAIN column — so they must
+   meet the 44px floor themselves; the global .hs-chip coarse rule stops at
+   40px. */
+@media (pointer: coarse) {
+  .st-mtl .hs-chip { min-height: 44px; }
+}
+
+/* The voice-clone wizard's stepper (Audio → Voice cloning). */
+.st-vcw__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+.st-vcw__step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 32px;
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill, 999px);
+  font-size: 11px;
+  color: var(--tx-mute);
+}
+.st-vcw__step.is-active { border-color: var(--filament); color: var(--tx); }
+.st-vcw__step.is-done { color: var(--tx-dim); }
+.st-vcw__no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-100);
+  font-family: var(--ff-mono);
+  font-size: 10px;
+}
+.st-vcw__step.is-active .st-vcw__no { background: var(--filament-a24); color: var(--tx); }

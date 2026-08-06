@@ -1233,6 +1233,33 @@
     "notes": "Task 3 origin-check target. POST mints a new API key (a bearer credential usable against the mixed(user+apikey) generate routes) with no rate limit — an attacker holding a hijacked session could mint unlimited long-lived keys. Task 3: verifyOrigin wired on POST/DELETE (GET read-only, unchecked)."
   },
   {
+    "path": "/api/voice-profiles",
+    "file": "src/app/api/voice-profiles/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "S2. GET lists the caller's VoiceProfile rows (read-only, unchecked; ?status=ready feeds the TTS/Music vocal pickers); POST creates one at the start of the voice-clone wizard — verifyOrigin wired on POST."
+  },
+  {
+    "path": "/api/voice-profiles/[id]",
+    "file": "src/app/api/voice-profiles/[id]/route.js",
+    "methods": [
+      "GET",
+      "PATCH",
+      "DELETE"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "S2. GET reads one owned profile (404s identically for missing and other users' profiles); PATCH advances the wizard state (status/voiceId/name, status validated against the enum), DELETE removes — verifyOrigin wired on PATCH/DELETE (GET read-only, unchecked)."
+  },
+  {
     "path": "/api/webhooks/generation-complete",
     "file": "src/app/api/webhooks/generation-complete/route.js",
     "methods": [

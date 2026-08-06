@@ -13,8 +13,10 @@ import { useCreditCost } from "./useCreditCost";
 import { useStudioMode } from "./useStudioMode";
 import ModeBar from "./ModeBar";
 import AudioToolsStudio from "./AudioToolsStudio";
+import VoiceCloneWizard from "./VoiceCloneWizard";
 import { matchesGroup } from "@/lib/capability-groups";
 import { audioKind } from "@/lib/model-catalog-core.mjs";
+import { apiFetch } from "@/lib/client-fetch";
 
 /* ══════════════════════════════════════════════════════════════════════════
    AUDIO — speech, dialogue, voice cloning and sound effects (.st-wave)
@@ -388,8 +390,26 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
   const [duration, setDuration] = useState(null);
   const [source, setSource] = useState(null);
   const [sheet, setSheet] = useState(false);
+  const [profiles, setProfiles] = useState([]);
 
   const { models, loading: loadingModels } = useModelCatalog({});
+
+  /* S2 — the user's ready VoiceProfiles list alongside the stock voices in
+     the Speech picker. A fetch failure just leaves the stock cast. */
+  useEffect(() => {
+    if (mode !== "speech") return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const res = await apiFetch("/api/voice-profiles?status=ready", { retries: 0 });
+        const data = await res.json();
+        if (alive) setProfiles(data.profiles || []);
+      } catch {
+        /* stock voices only */
+      }
+    })();
+    return () => { alive = false; };
+  }, [mode]);
   const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
 
   /* Pools go through the group map, then audioKind — the honest per-model
@@ -480,7 +500,13 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
             scroll
             value={voice}
             onChange={(v) => setVoice(v === voice ? "" : v)}
-            options={VOICES.map((v) => ({ value: v.id, label: v.label, title: v.desc }))}
+            options={[
+              ...VOICES.map((v) => ({ value: v.id, label: v.label, title: v.desc })),
+              /* S2 — the user's own cloned voices, by provider voiceId. */
+              ...profiles
+                .filter((p) => p.voiceId)
+                .map((p) => ({ value: p.voiceId, label: p.name, title: "Your cloned voice" })),
+            ]}
           />
         </Field>
       )}
@@ -733,6 +759,13 @@ export default function AudioStudio(props) {
       <div className="st-moded__body" key={mode}>
         {mode === "tools" ? (
           <AudioToolsStudio {...props} />
+        ) : mode === "voice" ? (
+          /* S2 — the Voice-clone mode is the wizard now. The old single-shot
+             "Build voice" submit mapped to nothing the real API takes
+             (audit: audio-music.md) — the stepper drives the real
+             validate → phrase → generate → record-info flow and persists a
+             VoiceProfile at each transition. */
+          <VoiceCloneWizard onCreditsChanged={props.onCreditsChanged} />
         ) : (
           <AudioGenBody {...props} mode={mode} />
         )}

@@ -64,6 +64,15 @@ export const AUDIO_FAMILY = {
   SUNO_ADD_INSTRUMENTAL: "suno-add-instrumental",
   SUNO_ADD_VOCALS: "suno-add-vocals",
   SUNO_VOCAL_SEPARATION: "suno-vocal-separation",
+  // S2 — the Music timeline's range op (fresh-upload branch: uploadUrl +
+  // model + the infill window) and the voice-clone wizard's two paid steps.
+  // Their poll shapes for the non-music envelopes are doc-derived and
+  // marked verify-with-one-real-generation in docs/model-audit/
+  // audio-music.md; the parsers below read the documented fields and fail
+  // honestly through terminalFailure rather than hang.
+  SUNO_REPLACE_SECTION: "suno-replace-section",
+  SUNO_VOICE_VALIDATE: "suno-voice-validate",
+  SUNO_VOICE_GENERATE: "suno-voice-generate",
   ELEVENLABS_TTS: "elevenlabs-tts",
   ELEVENLABS_DIALOGUE: "elevenlabs-dialogue",
   GEMINI_TTS: "gemini-tts",
@@ -91,6 +100,14 @@ export const SUNO_ADD_INSTRUMENTAL_PATH = "/api/v1/generate/add-instrumental";
 export const SUNO_ADD_VOCALS_PATH = "/api/v1/generate/add-vocals";
 export const SUNO_VOCAL_REMOVAL_SUBMIT_PATH = "/api/v1/vocal-removal/generate";
 export const SUNO_VOCAL_REMOVAL_POLL_PATH = "/api/v1/vocal-removal/record-info";
+// S2 — replace-section is a /generate/* transformer (ordinary sunoData
+// tracks, polled at the music record-info); the voice-clone steps live on
+// their own /voice namespace with per-step read-only pollers.
+export const SUNO_REPLACE_SECTION_PATH = "/api/v1/generate/replace-section";
+export const SUNO_VOICE_VALIDATE_PATH = "/api/v1/voice/validate";
+export const SUNO_VOICE_VALIDATE_POLL_PATH = "/api/v1/voice/validate-info";
+export const SUNO_VOICE_GENERATE_PATH = "/api/v1/voice/generate";
+export const SUNO_VOICE_RECORD_INFO_PATH = "/api/v1/voice/record-info";
 
 // Normalization ladder shared with model-catalog-core.mjs's
 // curatedSchemaEntry: a sitemap-derived id keeps its vendor folder and
@@ -119,9 +136,11 @@ const SUNO_MUSIC_RE = /(^|[^a-z])generate-music($|[^a-z])|(^|[^a-z])suno-v[\d.]+
 // "Summary for the caller"). Matched by exact id — every one of these DB
 // rows stores the bare doc-page slug — with the vendor-prefixed spelling
 // ("suno/boost-music-style" → "suno-boost-music-style") tolerated the same
-// way normalizeId tolerates it everywhere else. The ops that need a UI
-// concept the studio lacks (extend-music's prior-generation audioId,
-// replace-section's time range, mashup's 2 files, the voice-clone chain,
+// way normalizeId tolerates it everywhere else. S2 additionally claims
+// replace-section (the Music timeline now supplies its time range) and the
+// two paid voice-clone steps (the wizard supplies their multi-step
+// context). The ops that still need a UI concept the studio lacks
+// (extend-music's prior-generation audioId, mashup's 2 files,
 // convert-to-wav/generate-midi's chained taskIds) are deliberately still
 // NOT claimed and keep failing honestly on the generic route.
 const SUNO_OP_FAMILY_BY_ID = {
@@ -133,6 +152,11 @@ const SUNO_OP_FAMILY_BY_ID = {
   "add-instrumental": AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL,
   "add-vocals": AUDIO_FAMILY.SUNO_ADD_VOCALS,
   "separate-vocals": AUDIO_FAMILY.SUNO_VOCAL_SEPARATION,
+  // S2 — claimed now that the Music timeline supplies the range and the
+  // voice-clone wizard supplies the multi-step context these ops need.
+  "replace-section": AUDIO_FAMILY.SUNO_REPLACE_SECTION,
+  "suno-voice-validate": AUDIO_FAMILY.SUNO_VOICE_VALIDATE,
+  "suno-voice-generate": AUDIO_FAMILY.SUNO_VOICE_GENERATE,
 };
 
 function sunoOpFamily(modelId) {
@@ -559,6 +583,88 @@ export function buildSunoAddVocalsBody(prompt, params = {}) {
   return body;
 }
 
+/**
+ * replace-section (S2): `POST /api/v1/generate/replace-section` — the doc
+ * requires `prompt`, `tags`, `title`, `infillStartS`, `infillEndS`,
+ * `fullLyrics`, plus EITHER `taskId`+`audioId` (existing provider track) OR
+ * `uploadUrl`+`model` (fresh upload — the branch the Music timeline uses,
+ * since the app has the track's URL, not the provider's audioId). The time
+ * window comes from the timeline's range selector. Missing doc-required
+ * fields are left absent so the provider's own validator answers honestly.
+ */
+export function buildSunoReplaceSectionBody(modelId, prompt, params = {}) {
+  const body = {};
+  const taskId = firstStringOf(params.taskId, params.task_id);
+  const audioId = firstStringOf(params.audioId, params.audio_id);
+  if (taskId && audioId) {
+    body.taskId = taskId;
+    body.audioId = audioId;
+  } else {
+    const uploadUrl = uploadUrlOf(params);
+    if (uploadUrl) body.uploadUrl = uploadUrl;
+    body.model = resolveSunoEngine(modelId, params);
+  }
+  const text = textOf(prompt, params);
+  if (text !== null) body.prompt = text;
+  const tags = firstStringOf(params.tags, params.style);
+  if (tags) body.tags = tags;
+  mapFields(params, {
+    title: "title",
+    full_lyrics: "fullLyrics",
+    fullLyrics: "fullLyrics",
+    negative_tags: "negativeTags",
+    negativeTags: "negativeTags",
+  }, body);
+  const startS = Number(params.infillStartS ?? params.infill_start_s ?? params.start_s ?? params.startS);
+  const endS = Number(params.infillEndS ?? params.infill_end_s ?? params.end_s ?? params.endS);
+  if (Number.isFinite(startS)) body.infillStartS = startS;
+  if (Number.isFinite(endS)) body.infillEndS = endS;
+  return body;
+}
+
+/**
+ * suno-voice-validate (S2 wizard step 1): `POST /api/v1/voice/validate` —
+ * `voiceUrl` (a recording the USER already has — the wizard's upload),
+ * `vocalStartS`, `vocalEndS`, optional `language`. Returns a taskId and,
+ * via validate-info, a server-generated phrase for the user to read aloud.
+ */
+export function buildSunoVoiceValidateBody(prompt, params = {}) {
+  const body = {};
+  const voiceUrl = firstStringOf(params.voiceUrl, params.voice_url) || uploadUrlOf(params);
+  if (voiceUrl) body.voiceUrl = voiceUrl;
+  const startS = Number(params.vocalStartS ?? params.vocal_start_s);
+  const endS = Number(params.vocalEndS ?? params.vocal_end_s);
+  if (Number.isFinite(startS)) body.vocalStartS = startS;
+  if (Number.isFinite(endS)) body.vocalEndS = endS;
+  const language = firstStringOf(params.language);
+  if (language) body.language = language;
+  return body;
+}
+
+/**
+ * suno-voice-generate (S2 wizard step 3): `POST /api/v1/voice/generate` —
+ * `taskId` (from the validate step) + `verifyUrl` (the user's recorded
+ * phrase); optional `voiceName`, `description`, `style`,
+ * `singerSkillLevel`. Polled at /api/v1/voice/record-info for the reusable
+ * `voiceId`.
+ */
+export function buildSunoVoiceGenerateBody(prompt, params = {}) {
+  const body = {};
+  const taskId = firstStringOf(params.taskId, params.task_id);
+  if (taskId) body.taskId = taskId;
+  const verifyUrl = firstStringOf(params.verifyUrl, params.verify_url) || uploadUrlOf(params);
+  if (verifyUrl) body.verifyUrl = verifyUrl;
+  mapFields(params, {
+    voice_name: "voiceName",
+    voiceName: "voiceName",
+    description: "description",
+    style: "style",
+    singer_skill_level: "singerSkillLevel",
+    singerSkillLevel: "singerSkillLevel",
+  }, body);
+  return body;
+}
+
 export const SUNO_VOCAL_REMOVAL_TYPES = ["separate_vocal", "split_stem", "split_stem_advanced"];
 
 /**
@@ -592,6 +698,9 @@ const AUDIO_SUBMIT_PATHS = {
   [AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL]: SUNO_ADD_INSTRUMENTAL_PATH,
   [AUDIO_FAMILY.SUNO_ADD_VOCALS]: SUNO_ADD_VOCALS_PATH,
   [AUDIO_FAMILY.SUNO_VOCAL_SEPARATION]: SUNO_VOCAL_REMOVAL_SUBMIT_PATH,
+  [AUDIO_FAMILY.SUNO_REPLACE_SECTION]: SUNO_REPLACE_SECTION_PATH,
+  [AUDIO_FAMILY.SUNO_VOICE_VALIDATE]: SUNO_VOICE_VALIDATE_PATH,
+  [AUDIO_FAMILY.SUNO_VOICE_GENERATE]: SUNO_VOICE_GENERATE_PATH,
 };
 
 // Family → poll path. The /generate/* transformer ops all report through
@@ -604,9 +713,12 @@ const AUDIO_POLL_PATHS = {
   [AUDIO_FAMILY.SUNO_UPLOAD_EXTEND]: SUNO_POLL_PATH,
   [AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL]: SUNO_POLL_PATH,
   [AUDIO_FAMILY.SUNO_ADD_VOCALS]: SUNO_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_REPLACE_SECTION]: SUNO_POLL_PATH,
   [AUDIO_FAMILY.SUNO_STYLE]: SUNO_STYLE_POLL_PATH,
   [AUDIO_FAMILY.SUNO_LYRICS]: SUNO_LYRICS_POLL_PATH,
   [AUDIO_FAMILY.SUNO_VOCAL_SEPARATION]: SUNO_VOCAL_REMOVAL_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_VOICE_VALIDATE]: SUNO_VOICE_VALIDATE_POLL_PATH,
+  [AUDIO_FAMILY.SUNO_VOICE_GENERATE]: SUNO_VOICE_RECORD_INFO_PATH,
 };
 
 /**
@@ -642,6 +754,12 @@ export function formatAudioRequest(modelId, prompt, params = {}) {
       return { family, path: SUNO_ADD_VOCALS_PATH, body: buildSunoAddVocalsBody(prompt, params) };
     case AUDIO_FAMILY.SUNO_VOCAL_SEPARATION:
       return { family, path: SUNO_VOCAL_REMOVAL_SUBMIT_PATH, body: buildSunoVocalRemovalBody(prompt, params) };
+    case AUDIO_FAMILY.SUNO_REPLACE_SECTION:
+      return { family, path: SUNO_REPLACE_SECTION_PATH, body: buildSunoReplaceSectionBody(modelId, prompt, params) };
+    case AUDIO_FAMILY.SUNO_VOICE_VALIDATE:
+      return { family, path: SUNO_VOICE_VALIDATE_PATH, body: buildSunoVoiceValidateBody(prompt, params) };
+    case AUDIO_FAMILY.SUNO_VOICE_GENERATE:
+      return { family, path: SUNO_VOICE_GENERATE_PATH, body: buildSunoVoiceGenerateBody(prompt, params) };
     default:
       break;
   }
@@ -794,10 +912,45 @@ export function parseSunoVocalRemovalPoll(data) {
 }
 
 /**
+ * suno-voice-validate validate-info (S2 — doc-derived, unverified live):
+ * the server-generated validation phrase the user must read aloud, plus a
+ * status. The phrase is TEXT, carried as a data: URI exactly like the
+ * lyrics/style envelopes above; the wizard decodes it for display.
+ */
+export function parseSunoVoiceValidatePoll(data) {
+  if (!data || typeof data !== "object") return { status: "pending", outputs: [], error: undefined };
+  const failed = terminalFailure(data);
+  if (failed) return failed;
+  const resp = data.response && typeof data.response === "object" ? data.response : {};
+  const phrase = firstStringOf(resp.phrase, resp.text, resp.sentence, data.phrase, data.text);
+  const raw = String(data.status || "");
+  if (phrase && (raw === "SUCCESS" || raw === "" || Number(data.successFlag) === 1)) {
+    return { status: "success", outputs: [textAsDataUri(phrase)], error: undefined };
+  }
+  return { status: "pending", outputs: [], error: undefined };
+}
+
+/**
+ * suno-voice-generate record-info (S2 — doc-derived, unverified live): the
+ * reusable `voiceId` plus status/error fields. The voiceId is carried as a
+ * data: URI; the wizard decodes it and persists it on the VoiceProfile.
+ */
+export function parseSunoVoiceGeneratePoll(data) {
+  if (!data || typeof data !== "object") return { status: "pending", outputs: [], error: undefined };
+  const failed = terminalFailure(data);
+  if (failed) return failed;
+  const resp = data.response && typeof data.response === "object" ? data.response : {};
+  const voiceId = firstStringOf(resp.voiceId, resp.voice_id, data.voiceId, data.voice_id);
+  if (voiceId) return { status: "success", outputs: [textAsDataUri(voiceId)], error: undefined };
+  return { status: "pending", outputs: [], error: undefined };
+}
+
+/**
  * Model-keyed poll dispatch for the Suno ops whose record-info envelope is
  * NOT the music sunoData shape — or null when the model isn't one of them
  * (the caller then falls through to the shape-detected parseSunoPoll: the
- * /generate/* transformer ops answer with ordinary sunoData tracks).
+ * /generate/* transformer ops, replace-section included, answer with
+ * ordinary sunoData tracks).
  */
 export function parseAudioOpPoll(data, modelId) {
   switch (audioProviderFamily(modelId)) {
@@ -807,6 +960,10 @@ export function parseAudioOpPoll(data, modelId) {
       return parseSunoStylePoll(data);
     case AUDIO_FAMILY.SUNO_VOCAL_SEPARATION:
       return parseSunoVocalRemovalPoll(data);
+    case AUDIO_FAMILY.SUNO_VOICE_VALIDATE:
+      return parseSunoVoiceValidatePoll(data);
+    case AUDIO_FAMILY.SUNO_VOICE_GENERATE:
+      return parseSunoVoiceGeneratePoll(data);
     default:
       return null;
   }
