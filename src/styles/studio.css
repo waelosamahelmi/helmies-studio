@@ -251,13 +251,28 @@
 @media (max-width: 900px) {
   .st-app {
     grid-template-rows: var(--bar-h) 1fr auto;
-    grid-template-columns: 1fr;
+    /* U1: was `1fr`. An fr track's minimum is the largest child's
+       min-content, and the bar's flex row could not compress below ~468px
+       (measured at Pixel 5) — so the ENTIRE shell column silently grew to
+       468 and `overflow: hidden` clipped the last ~75px of the bar, the
+       composer's primary action and the dock's final slot off the right
+       edge of a 393px phone. scrollWidth stayed 393, which is why the
+       overflow sweep never saw it. minmax(0, 1fr) pins the track to the
+       viewport; the rules below make the bar genuinely fit inside it. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "bar"
       "work"
       "dock";
   }
   .st-rail { display: none; }
+  .st-bar { min-width: 0; }
+  /* The wordmark is the desktop's; the mark alone says who we are in 44px
+     instead of ~150. min-width keeps the home link a real touch target
+     once the text is gone. */
+  .st-brand { padding-right: 0; min-width: 44px; justify-content: center; }
+  .st-brand strong, .st-brand span { display: none; }
+  .st-where { flex: 1; }
   .st-where__desc { display: none; }
   .st-search { max-width: none; }
   .st-search > span, .st-search kbd { display: none; }
@@ -2869,4 +2884,26 @@ select.st-layer__role option {
 @keyframes st-enter {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
+}
+
+/* ── U1 Chanel pass ─────────────────────────────────────────────────────────
+   Looking at the phone screenshots, the shell's bottom edge stacked three
+   boxed bands — peek bar, two grey panel-tab slabs, dock. One decoration
+   too many. The panel tabs keep their 44px targets and their labels but
+   lose the slab: quiet ghost buttons on the same surface as the composer. */
+.st-panel-tabs { border-top: 0; background: transparent; padding-top: 0; }
+.st-panel-tabs > button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--tx-dim);
+}
+.st-panel-tabs > button:hover:not(:disabled) { background: var(--fill-02); border-color: transparent; }
+
+/* On a true phone the bar cannot afford the tool title — it survived only
+   as "Im…" beside the search button, which names nothing. The adaptive
+   dock already carries the active tool's name in the display weight it
+   deserves, so the bar keeps the readouts (credits, running, theme,
+   settings) and lets the dock say where you are. */
+@media (max-width: 640px) {
+  .st-where { display: none; }
 }

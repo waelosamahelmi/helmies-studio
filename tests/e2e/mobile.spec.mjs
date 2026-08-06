@@ -697,6 +697,37 @@ test.describe("mobile — U1 shell", () => {
     await expect(sheet.locator(".st-spend")).toBeVisible();
   });
 
+  test("the shell chrome fits the viewport — nothing clipped off the right edge", async ({ page }) => {
+    await stubProviders(page);
+    await page.goto("/studio/image");
+    await settleApp(page);
+    await expect(visible(page.locator(".st-credits"))).toContainText(/\d|—/, { timeout: 15000 });
+
+    // The page-level overflow sweep cannot see this class of bug: when the
+    // shell's fr track grows to the bar's min-content width, .st-app's own
+    // `overflow: hidden` clips the excess and documentElement.scrollWidth
+    // still reports the viewport width — found live at 468px of shell in a
+    // 393px viewport, with the settings button, the composer's primary
+    // action and the dock's last slot cut clean off. Measure the chrome
+    // boxes directly instead.
+    const protruding = await page.evaluate(() => {
+      const out = [];
+      const sel = ".st-bar, .st-bar > *, .st-dock, .st-dock__btn, .st-dock-prompt--peek, [data-testid='brief-primary']";
+      for (const el of document.querySelectorAll(sel)) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0) continue;
+        const over = Math.round(r.right - window.innerWidth);
+        if (over > 1) {
+          const cls = String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className)
+            .trim().split(/\s+/).slice(0, 2).join(".");
+          out.push(`${el.tagName.toLowerCase()}.${cls} +${over}px`);
+        }
+      }
+      return out;
+    });
+    expect(protruding, `shell chrome clipped off the right edge:\n  ${protruding.join("\n  ")}`).toEqual([]);
+  });
+
   test("dock labels are legible: every visible label is at least 11px", async ({ page }) => {
     await stubProviders(page);
     await page.goto("/studio/image");
