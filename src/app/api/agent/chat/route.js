@@ -8,6 +8,7 @@ import { buildChatSystemPrompt, parseQuestionBlock } from "@/lib/agent-chat";
 import { appendMessage, resolveOwnedSession } from "@/lib/agent-sessions";
 import { getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind } from "@/lib/model-catalog-core.mjs";
+import { resolveMentionRows } from "@/lib/agents";
 
 // EDITSv1 E3.2 — structured agent chat. The system prompt (src/lib/
 // agent-chat.js) enforces: markdown prose, AT MOST ONE clarifying question
@@ -54,6 +55,58 @@ async function persistAssistantTurn(sessionId, text) {
   await appendMessage(sessionId, { role: "assistant", kind, content: text }).catch(() => {});
 }
 
+// Authoritative resolution of a model the user names in chat (2026-08-06):
+// the user's answer must be EXACT, because the plan pins the exact id and
+// shows its real price. So when the user names a model outside the offered
+// list, the route resolves it against the SAME pools the plan pins from and
+// hands the assistant the authoritative result — an exact-match id, the
+// closest id-tail match, or null (nothing found) — so the assistant confirms
+// the real id + price or asks the user to pick an offered id, and never
+// invents a translation that the pin would then disagree with.
+// NOTE: this shares resolveMentionRows' matching so chat and pin can never
+// disagree about which model "Seedance 2.0" means.
+async function resolveChatModelMention(messages) {
+  try {
+    const text = (Array.isArray(messages) ? messages : [])
+      .filter((m) => m?.role === "user" && typeof m.content === "string")
+      .map((m) => m.content)
+      .join("\n");
+    if (!text) return null;
+    const frags = [...text.matchAll(/([a-z][a-z0-9.\-]*?)(?:\s*(?:v\.?)?(\d+(?:\.\d+)*))/gi)].map((m) => m[0].trim());
+    if (!frags.length) return null;
+
+    const pools = {
+      video: () => getRunnableModelsForType("video", { limit: 500 }).catch(() => []),
+      image: () => getRunnableModelsForType("image", { limit: 500 }).catch(() => []),
+      music: () => getRunnableModelsForType("audio", { limit: 500 }).catch(() => []).then((rows) => rows.filter((r) => audioKind(r) === "music")),
+    };
+    for (const frag of frags) {
+      for (const [kind, load] of Object.entries(pools)) {
+        const rows = await load();
+        const hits = await resolveMentionRows(frag, rows);
+        if (!hits.length) continue;
+        const unique = [...new Map(hits.map((h) => [h.row.modelId, h.row])).values()];
+        // Exact (rank 2) always wins; a single id-tail match (rank 1) is
+        // unambiguous too. Multiple rank-1 rows = ambiguous → null (the
+        // assistant must ask).
+        const exact = unique.filter((row) => runnableProviderModelId(row) === frag
+          || String(row.modelId).toLowerCase() === frag.toLowerCase());
+        const chosen = exact.length === 1 ? exact[0] : unique.length === 1 ? unique[0] : null;
+        if (!chosen) continue;
+        return {
+          kind,
+          modelId: runnableProviderModelId(chosen),
+          credits: chosen.creditsCost,
+          exact: exact.length === 1,
+        };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req) {
   try {
     const user = await getCurrentUser(req);
@@ -89,8 +142,17 @@ export async function POST(req) {
       });
     }
 
+    // If the user just named a model, resolve it authoritatively (exact id +
+    // real price) so the assistant's confirmation and the plan's pin can
+    // never disagree.
+    const resolved = await resolveChatModelMention(messages);
+    const systemPrompt = buildChatSystemPrompt({ modelOptions: await chatModelOptions() }) +
+      (resolved
+        ? `\n\n<resolved-model>\nThe user's most recent model mention resolves to:\n- kind: ${resolved.kind}\n- exact id: ${resolved.modelId}\n- price: ${resolved.credits} cr\n${resolved.exact ? "This is an exact catalog match." : "This is the closest available model — confirm it with the user before proceeding."}\n</resolved-model>`
+        : "");
+
     const allMessages = [
-      { role: "system", content: buildChatSystemPrompt({ modelOptions: await chatModelOptions() }) },
+      { role: "system", content: systemPrompt },
       ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 

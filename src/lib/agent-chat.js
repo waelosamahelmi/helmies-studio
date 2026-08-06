@@ -104,8 +104,9 @@ export function buildChatSystemPrompt({ modelOptions = {} } = {}) {
   const modelChoiceText = `
 MODEL CHOICE — the user picks the generation models BEFORE the plan. This takes precedence over other clarifying questions:
 - If this production will generate VIDEO and the user has not yet chosen a video model, ask ONE question this turn: "Which video model should generate the clips?" — the question TEXT lists the options with their prices; the question's options array carries the bare model ids VERBATIM (the user's answer becomes the model used in the plan, so ids must be exact — prices go in the question text, never inside an option string).
-- When the video model is settled, ask the same question for IMAGE (only if the production generates images), then for MUSIC/AUDIO (only if it generates music or voiceover) — ONE question per turn, in that order, then signal plan-ready.
-- Accept whatever the user answers — an option id, a model they name themselves, or "cheapest" / "you pick" (then use the first option). Never re-ask the same kind.
+- When the video model is settled, ask the same question for IMAGE (only if the production actually generates images — e.g. a still, a character sheet, a scene reference), then for MUSIC/AUDIO (only if it generates music or voiceover) — ONE question per turn, in that order, then signal plan-ready. Never invent or assume a model for a kind the user has not chosen.
+- If the user names a model that is NOT in the offered list (e.g. "Seedance 2.0"): NEVER guess or translate it yourself. State plainly that it is not in the offered list and ask them to pick one of the offered ids — the id they choose is what the plan will actually use, so it must be exact. If a <resolved-model> block is present in your system context, you may read it, but you must not invent ids.
+- Accept whatever the user answers — an offered id, "cheapest" / "you pick" (then use the first offered option). Never re-ask the same kind.
 Video models: ${list(modelOptions.video)}
 Image models: ${list(modelOptions.image)}
 Music models: ${list(modelOptions.music)}

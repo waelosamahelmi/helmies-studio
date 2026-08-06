@@ -117,6 +117,13 @@ describe("buildChatSystemPrompt", () => {
     expect(withPools).toMatch(/prices go in the question text/i);
   });
 
+  it("never guesses a model the user names outside the offered list (2026-08-06: 'Seedance 2.0' was misread as seedance-1.5-pro)", () => {
+    const prompt = buildChatSystemPrompt({ modelOptions: {} });
+    expect(prompt).toMatch(/NEVER guess or translate it yourself/i);
+    expect(prompt).toMatch(/pick one of the offered ids/i);
+    expect(prompt).toMatch(/resolved-model/i);
+  });
+
   it("tolerates a prompt built without pools (old call shape)", () => {
     expect(buildChatSystemPrompt()).toMatch(/MODEL CHOICE/i);
     expect(buildChatSystemPrompt({})).toMatch(/MODEL CHOICE/i);

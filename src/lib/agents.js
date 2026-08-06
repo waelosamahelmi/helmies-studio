@@ -332,10 +332,13 @@ export async function resolveUserRequestedModels(context) {
   };
   const seen = new Set();
   const kindRows = {};
+  const kindFrags = {}; // the fragments that resolved into each kind (for the exact-tail tiebreak below)
   for (const [kind, load] of Object.entries(pools)) {
     const rows = await load();
     for (const fragment of fragments) {
       const hits = await resolveMentionRows(fragment, rows);
+      if (!hits.length) continue;
+      (kindFrags[kind] || (kindFrags[kind] = [])).push(fragment);
       for (const hit of hits) {
         const key = `${kind}:${hit.row.modelId}`;
         if (seen.has(key)) continue;
@@ -349,7 +352,23 @@ export async function resolveUserRequestedModels(context) {
   const out = [];
   for (const [kind, rows] of Object.entries(kindRows)) {
     const unique = [...new Map(rows.map((r) => [r.modelId, r])).values()];
-    if (unique.length === 1) out.push({ kind, row: unique[0] });
+    if (unique.length === 1) {
+      out.push({ kind, row: unique[0] });
+      continue;
+    }
+    // Ambiguous PREFIX hits can still have a single EXACT id-tail match —
+    // "Seedance 2.0" prefix-matches both bytedance/seedance-2 and
+    // bytedance/seedance-1.5-pro, but only bytedance/seedance-2 is an exact
+    // id-tail match (bare "seedance-2" normalizes to "seedance2"). Prefer
+    // the exact one so the pin and the chat's authoritative resolution
+    // agree (2026-08-06: the chat said seedance-1.5-pro while the pin
+    // silently used seedance-2 — the user was told 8 cr and charged 143).
+    const frag = (kindFrags[kind] || [])[0];
+    const exact = frag ? unique.filter((r) => {
+      const bare = String(runnableProviderModelId(r) || "").toLowerCase().replace(/^.*\//, "");
+      return bare === normModelToken(frag);
+    }) : [];
+    if (exact.length === 1) out.push({ kind, row: exact[0] });
   }
   return out;
 }

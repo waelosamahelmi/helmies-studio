@@ -55,7 +55,7 @@ import prisma from "@/lib/prisma";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { detectAbuse } from "@/lib/security";
 import { generateImage, generateVideo, generateI2V } from "@/lib/generation";
-import { executeAgentStep, executeStepWithRetry, defaultRunnableModel, resolveUserRequestedModels, pinUserRequestedModels } from "@/lib/agents";
+import { executeAgentStep, executeStepWithRetry, defaultRunnableModel, resolveUserRequestedModels, pinUserRequestedModels, resolveMentionRows } from "@/lib/agents";
 
 // The exact production shape reported for the two dead models that used to
 // be the ENTIRE hardcoded image fallback chain.
@@ -462,5 +462,73 @@ describe("user-requested model resolution — 'use seedance 2' is honored determ
       conversation: [{ role: "user", content: "use kling for the shots" }],
     });
     expect(requested).toEqual([]);
+  });
+});
+
+// ── "Seedance 2.0" — exact id-tail tiebreak (2026-08-06) ───────────────────
+describe("user-requested model resolution — exact id-tail tiebreak", () => {
+  const SEEDANCE_2 = {
+    modelId: "bytedance/seedance-2", isActive: true, isDeprecated: false,
+    endpoint: "bytedance/seedance-2", providerModelId: "bytedance/seedance-2",
+    providerName: "KIE", capability: "video", modelType: "video", creditsCost: 143,
+    inputSchema: { fields: { prompt: { type: "string", required: true } } },
+  };
+  const SEEDANCE_1_5 = {
+    modelId: "bytedance/seedance-1.5-pro", isActive: true, isDeprecated: false,
+    endpoint: "bytedance/seedance-1.5-pro", providerModelId: "bytedance/seedance-1.5-pro",
+    providerName: "KIE", capability: "video", modelType: "video", creditsCost: 8,
+    inputSchema: { fields: { prompt: { type: "string", required: true } } },
+  };
+
+  it("resolves 'Seedance 2.0' to bytedance/seedance-2 — the EXACT id-tail match — not the prefix-sibling seedance-1.5-pro", async () => {
+    seedCatalog([SEEDANCE_2, SEEDANCE_1_5]);
+    const requested = await resolveUserRequestedModels({
+      conversation: [{ role: "user", content: "Seedance 2.0" }],
+    });
+    // Both prefix-match ("seedance2"), but only seedance-2 has an exact bare
+    // id-tail "seedance2" — that one wins the tiebreak.
+    expect(requested).toHaveLength(1);
+    expect(requested[0].kind).toBe("video");
+    expect(requested[0].row.modelId).toBe("bytedance/seedance-2");
+  });
+
+  it("pins that exact model onto video steps — so the plan shows the real 143 cr price", async () => {
+    const plan = {
+      summary: "s", steps: [{ agent: "video", task: "Clip 1", params: { prompt: "x" } }],
+    };
+    pinUserRequestedModels(plan, await resolveUserRequestedModels({
+      conversation: [{ role: "user", content: "use Seedance 2.0 for the clips" }],
+    }));
+    expect(plan.steps[0].params.model).toBe("bytedance/seedance-2");
+  });
+});
+
+// ── Chat authoritative resolution vs the pin — must agree (2026-08-06) ─────
+// The chat route resolves a user-named model with resolveMentionRows (same
+// function the pin uses) and hands the assistant the exact id + price. This
+// locks in that BOTH resolve "Seedance 2.0" to the SAME row — so the chat
+// can confirm bytedance/seedance-2 at 143 cr and the plan shows exactly
+// that, never the 8-cr seedance-1.5-pro the old free-text guess claimed.
+describe("resolveMentionRows — the shared resolver chat and pin both use", () => {
+  const rows = [
+    { modelId: "bytedance/seedance-2", displayName: "Seedance 2", creditsCost: 143 },
+    { modelId: "bytedance/seedance-1.5-pro", displayName: "Seedance 1.5 Pro", creditsCost: 8 },
+    { modelId: "bytedance/seedance-2-fast", displayName: "Seedance 2 Fast", creditsCost: 125 },
+  ];
+
+  it("'Seedance 2.0' ranks the EXACT id-tail (seedance-2) above its prefix siblings", async () => {
+    const hits = await resolveMentionRows("Seedance 2.0", rows);
+    // Rank 1 = id STARTS with the mention. seedance-2, seedance-1.5-pro and
+    // seedance-2-fast all start with "seedance2"… but seedance-2's bare
+    // id-tail normalizes to exactly "seedance2" too, so it gets rank 2
+    // (exact), which resolveMentionRows keeps alone.
+    expect(hits).toHaveLength(1);
+    expect(hits[0].row.modelId).toBe("bytedance/seedance-2");
+  });
+
+  it("an unambiguous bare mention still resolves to its single row", async () => {
+    const hits = await resolveMentionRows("seedance 1.5", rows);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].row.modelId).toBe("bytedance/seedance-1.5-pro");
   });
 });
