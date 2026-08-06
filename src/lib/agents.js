@@ -1409,7 +1409,7 @@ async function persistSessionMessage(sessionId, kind, payload) {
 // (approved plan honored verbatim, or the planner for the legacy message
 // path), AgentRun row, wallet check, and the single up-front debit of the
 // server-computed estimate total (the run's spending ceiling).
-async function prepareAgentRun(userId, userMessage, context, options) {
+export async function prepareAgentRun(userId, userMessage, context, options) {
   const { precomputedPlan = context?.precomputedPlan || null, sessionId = null } = options || {};
 
   const abuse = await detectAbuse(userId);
@@ -1458,7 +1458,7 @@ async function prepareAgentRun(userId, userMessage, context, options) {
 // steps' quotes, so no fallback swap can push the run past what was
 // approved. Unused budget (cheaper fallbacks, failed later steps) is
 // refunded at the end; a hard failure refunds everything not actually spent.
-async function executePlannedRun(userId, agentRun, plan, sessionId, emit) {
+export async function executePlannedRun(userId, agentRun, plan, sessionId, emit) {
   const debitedTotal = plan.estimate.total;
   const breakdown = plan.estimate.breakdown || [];
   const outputs = [];        // raw outputs — $STEP_N_OUTPUT chaining needs provider-fetchable URLs
@@ -1530,6 +1530,16 @@ async function executePlannedRun(userId, agentRun, plan, sessionId, emit) {
         outputs.push(null);        // keep $STEP_N_OUTPUT indexes aligned
         displayOutputs.push(null);
       }
+
+      // Live progress for background runs: persist the step list after each
+      // step so the status poll (GET /api/agent/run/:id) can render
+      // per-step progress while the run is still executing — the client may
+      // have closed the tab and come back mid-run. The final update below
+      // overwrites this with the complete result (outputs + assembled).
+      await prisma.agentRun.update({
+        where: { id: agentRun.id },
+        data: { result: { stepResults: stepResults.slice(), summary: plan.summary } },
+      }).catch(() => {});
     }
 
     const assembled = assembleOutputs(displayOutputs, plan.steps);
@@ -1560,6 +1570,9 @@ async function executePlannedRun(userId, agentRun, plan, sessionId, emit) {
 }
 
 // ── Execute full agent run with SSE streaming ──
+// (prepareAgentRun/executePlannedRun below are also exported — the
+// background path uses them detached, and the status route reads the
+// AgentRun row they write.)
 // options: { precomputedPlan, sessionId } — when precomputedPlan is present
 // it IS the executed plan (the planner is never re-run; see
 // resolveApprovedPlan above for the money contract).
@@ -1571,7 +1584,14 @@ export async function executeAgentRunStream(userId, userMessage, context = {}, o
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const emit = (payload) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      // A client that closed the tab must never kill the run: enqueue throws
+      // once the stream is gone, so every emit is guarded — the production
+      // itself (executePlannedRun) keeps running to completion server-side,
+      // writing its Generation rows (which land in the gallery) and
+      // persisting the run to the session (which renders on resume).
+      const emit = (payload) => {
+        try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`)); } catch { /* client gone — keep running */ }
+      };
       try {
         const result = await executePlannedRun(userId, agentRun, plan, sessionId, emit);
         emit({ type: "run_complete", ...result });
@@ -1580,11 +1600,35 @@ export async function executeAgentRunStream(userId, userMessage, context = {}, o
         // catastrophic emit/stream fault.
         try { emit({ type: "run_complete", success: false, error: brandForUser(error.message) }); } catch { /* stream gone */ }
       }
-      controller.close();
+      try { controller.close(); } catch { /* stream gone */ }
     },
   });
 
   return { stream, plan };
+}
+
+/* ── Background agent run (2026-08-06) ──────────────────────────────────────
+   The browser must be able to close and the run still finish: the queue is
+   the app process itself (PM2 keeps it alive), the run is detached from any
+   request. prepareAgentRun debits the approved total up front (the same
+   money contract as the streaming path), then executePlannedRun runs
+   detached — writing each media step's Generation row (which lands in the
+   gallery), persisting the run to the session feed, and refunding unused
+   budget. Returns { queued, runId } immediately so the client can poll
+   GET /api/agent/run/:id for progress. */
+export async function executeAgentRunBackground(userId, userMessage, context = {}, options = {}) {
+  const prep = await prepareAgentRun(userId, userMessage, context, options);
+  if (prep.error) return { success: false, ...prep };
+
+  const { plan, agentRun, sessionId } = prep;
+  const runId = agentRun.id;
+  // Detached — never awaited by the request handler. Errors are handled
+  // inside executePlannedRun (refund + agentRun row + session message);
+  // this last-resort catch only logs a runaway so it is never silent.
+  executePlannedRun(userId, agentRun, plan, sessionId, null).catch((err) => {
+    try { log.error("agent_background_run_crashed", { runId, err: err?.message }); } catch { /* logging must not mask */ }
+  });
+  return { queued: true, runId };
 }
 
 export async function executeAgentRun(userId, userMessage, context = {}, options = {}) {

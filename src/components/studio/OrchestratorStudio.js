@@ -449,6 +449,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
 
   const feedRef = useRef(null);
   const abortRef = useRef(null);
+  const pollRef = useRef(null); // background-run status poll (3s tick)
   const sessionRef = useRef(null);
   const needsTitleRef = useRef(false); // auto-title once, from the first user message
   const idRef = useRef(0);
@@ -467,6 +468,11 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   }, []);
 
   useEffect(() => { loadSessions(); }, [loadSessions]);
+
+  /* A background run's poll timer must never outlive the component — the
+     run itself lives on (server-side, detached), but the card it drives is
+     gone. The session feed re-attaches it on resume. */
+  useEffect(() => () => { clearInterval(pollRef.current); pollRef.current = null; }, []);
 
   /* ── Session: created implicitly on the first message (E3.1/E3.4) ────── */
   const ensureSession = useCallback(async () => {
@@ -514,19 +520,57 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       const res = await apiFetch(`/api/agent/sessions/${id}`, { retries: 0 });
       const data = await res.json();
       abortRef.current?.abort();
+      clearInterval(pollRef.current);
+      pollRef.current = null;
       sessionRef.current = id;
       setSessionId(id);
       needsTitleRef.current = (data?.session?.title || "New session") === "New session";
       setMode(data?.session?.settings?.autoComplete ? "auto" : "review");
-      setMessages(feedFromStored(Array.isArray(data?.messages) ? data.messages : [], nextId));
+      const feed = feedFromStored(Array.isArray(data?.messages) ? data.messages : [], nextId);
+      setMessages(feed);
       setError("");
       setBusy("");
       setAtBottom(true);
       loadSessions();
+
+      /* A run may STILL be executing in the background from a previous
+         visit (the tab closed, or the user switched tools mid-run): attach
+         it as a live progress card so this session picks up where it left
+         off. The run itself never stopped — it is detached on the server. */
+      try {
+        const runsRes = await apiFetch(`/api/agent/runs?sessionId=${encodeURIComponent(id)}&limit=5`, { retries: 0 });
+        const runsData = await runsRes.json();
+        const live = (runsData.runs || []).find((r) => r.status === "executing" || r.status === "pending");
+        if (live?.id && !feed.some((m) => m.run && m.run.serverRunId === live.id)) {
+          const stepResults = (live.result && Array.isArray(live.result.stepResults)) ? live.result.stepResults : [];
+          const cardId = nextId();
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: cardId,
+              role: "agent",
+              text: "",
+              run: {
+                serverRunId: live.id,
+                status: "running",
+                steps: stepResults.map((r) => ({
+                  n: r.step,
+                  agent: r.agent,
+                  task: "",
+                  status: r.status === "completed" ? "done" : r.status === "failed" ? "failed" : "pending",
+                  error: r.error || "",
+                })),
+                outputs: [],
+              },
+            },
+          ]);
+          pollBackgroundRun(cardId, live.id);
+        }
+      } catch { /* the feed still works without the live card */ }
     } catch (err) {
       setError(err?.message || "Could not load that session.");
     }
-  }, [loadSessions]);
+  }, [loadSessions, nextId, pollBackgroundRun]);
 
   /* New session: create + switch to an empty feed. */
   const startNewSession = useCallback(async () => {
@@ -1106,12 +1150,77 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     runReviewStep(reviewId, 0);
   }, [runReviewStep]);
 
+  /* ── Background-run poll (2026-08-06) ──────────────────────────────────
+     Auto mode now executes DETACHED from the browser: the server debits the
+     approved total, runs every step to completion regardless of whether
+     this tab stays open, writes each media step's Generation row (which
+     lands in the gallery), and persists the run to the session feed. This
+     poll renders the live card — per-step progress via the progressively
+     persisted stepResults, then the final outputs/assembled — while the
+     component is mounted, and re-attaches a still-executing run on resume. */
+  const pollBackgroundRun = useCallback((messageId, serverRunId) => {
+    clearInterval(pollRef.current);
+    let stopped = false;
+
+    const tick = async () => {
+      if (stopped) return;
+      try {
+        const res = await apiFetch(`/api/agent/run/${serverRunId}`, { retries: 0 });
+        const data = await res.json();
+        if (stopped || !data?.run) return;
+        const r = data.run;
+        const result = r.result && typeof r.result === "object" ? r.result : {};
+        const stepResults = Array.isArray(result.stepResults) ? result.stepResults : [];
+
+        if (r.status === "executing" || r.status === "pending") {
+          if (stepResults.length) {
+            patch(messageId, (m) => ({
+              ...m,
+              run: { ...m.run, steps: mergeStepResults(m.run.steps, stepResults) },
+            }));
+          }
+          return;
+        }
+
+        /* Terminal — settle the card once and stop polling. */
+        stopped = true;
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+        const ok = r.status === "completed";
+        patch(messageId, (m) => ({
+          ...m,
+          text: ok
+            ? result.summary || "The production finished."
+            : "The production stopped before it finished.",
+          run: {
+            ...m.run,
+            status: ok ? "done" : "failed",
+            error: ok ? "" : r.error || "The run failed.",
+            creditsUsed: typeof r.creditsUsed === "number" ? r.creditsUsed : m.run.creditsUsed,
+            outputs: Array.isArray(result.outputs)
+              ? result.outputs.filter((o) => typeof o === "string")
+              : m.run.outputs,
+            assembled: result.assembled || m.run.assembled,
+            steps: mergeStepResults(m.run.steps, stepResults),
+          },
+        }));
+        setBusy("");
+        loadBalance();
+        onCreditsChanged?.();
+      } catch { /* transient — poll again */ }
+    };
+
+    tick();
+    pollRef.current = setInterval(tick, 3000);
+  }, [patch, loadBalance, onCreditsChanged]);
+
   /* ── Approve — the only path that spends credits ─────────────────────── */
   /* `approvedPlan` is the EXACT plan the user saw and edited in the
      PlanApproval card (models/params + its live re-quoted estimate); the
      server re-verifies every price and honors it verbatim (E3.2).
-     Review mode walks it step by step; auto-complete streams the whole
-     run. */
+     Review mode walks it step by step; auto-complete runs the whole
+     production in the background (detached from this tab) and tracks it
+     here via polling. */
   const approve = useCallback(async (message, approvedPlan, chosenMode) => {
     if (busy || !message?.plan) return;
     const plan = approvedPlan || message.plan;
@@ -1134,6 +1243,32 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       { id: runId, role: "agent", text: "", run: { status: "running", steps, outputs: [] } },
     ]);
     setBusy("run");
+
+    /* Background first: POST with background:true detaches the run from
+       this tab — closing the browser or switching tools cannot stop it, its
+       media steps land in the gallery either way. Only if that request
+       fails (network/5xx) do we fall back to the live SSE stream. */
+    try {
+      const res = await apiFetch("/api/agent/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: message.request || plan.summary || "",
+          plan,
+          sessionId: sessionRef.current,
+          background: true,
+          stream: false,
+        }),
+        timeout: 30000,
+        retries: 0,
+      });
+      const data = await res.json();
+      if (data?.queued && data.runId) {
+        setBusy(""); // the run is detached — the user can keep working
+        pollBackgroundRun(runId, data.runId);
+        return;
+      }
+    } catch { /* fall through to the streaming path */ }
 
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -1222,7 +1357,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       loadBalance();
       onCreditsChanged?.();
     }
-  }, [busy, patch, loadBalance, onCreditsChanged, mode, startReview]);
+  }, [busy, patch, loadBalance, onCreditsChanged, mode, startReview, pollBackgroundRun]);
 
   /* A free-text revision request goes back to the planner with the
      original brief as context. */

@@ -333,6 +333,30 @@
     "notes": "Task 3 origin-check target. Delegates to executeAgentRun/executeAgentRunStream, which create AgentRun and Generation rows and spend credits — same billing surface as /api/generate/*. Task 3 fix: verifyOrigin wired on POST — reviewer flagged this as the same shape as workflows/[id]/run and generate/async (cookie-session, state-changing, credit-consuming), which WERE wired in the original pass; leaving it unwired was an inconsistency, not staging."
   },
   {
+    "path": "/api/agent/run/[id]",
+    "file": "src/app/api/agent/run/[id]/route.js",
+    "methods": [
+      "GET"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "2026-08-06 background runs: read-only status of ONE owned AgentRun (steps/credits/outputs) — the client polls this while a detached run executes. Owned-scope only, verifyOrigin wired on GET."
+  },
+  {
+    "path": "/api/agent/runs",
+    "file": "src/app/api/agent/runs/route.js",
+    "methods": [
+      "GET"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "2026-08-06 background runs: read-only list of the user's AgentRun rows (optionally scoped to a session) so a resumed session can re-attach a still-executing run. Owned-scope only, verifyOrigin wired on GET."
+  },
+  {
     "path": "/api/agent/step",
     "file": "src/app/api/agent/step/route.js",
     "methods": [

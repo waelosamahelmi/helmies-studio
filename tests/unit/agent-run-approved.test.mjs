@@ -64,7 +64,7 @@ import { detectAbuse } from "@/lib/security";
 import { generateImage } from "@/lib/generation";
 import { llmComplete, llmStream, resolveProvider } from "@/lib/providers";
 import { estimateCredits, estimateAgentTask } from "@/lib/pricing-engine";
-import { executeAgentRunStream, executeAgentRun, executeAgentStep } from "@/lib/agents";
+import { executeAgentRunStream, executeAgentRun, executeAgentStep, executeAgentRunBackground } from "@/lib/agents";
 
 const IMAGE_STEP = {
   agent: "image",
@@ -334,5 +334,64 @@ describe("executeAgentStep — one step at a time", () => {
 
     await executeAgentStep("u1", { plan, stepIndex: 1, previousOutputs: ["https://cdn.example/img.png"] });
     expect(generateI2V.mock.calls[0][0]).toMatchObject({ image_url: "https://cdn.example/img.png" });
+  });
+});
+
+// ── Background runs (2026-08-06) — the run survives a closed browser ───────
+describe("executeAgentRunBackground — detached execution", () => {
+  it("returns { queued, runId } immediately and still runs the production to completion server-side", async () => {
+    generateImage.mockResolvedValue({ url: "https://cdn.example/img.png" });
+    const plan = approvedPlan({ total: 2 });
+
+    const result = await executeAgentRunBackground("u1", "ignored", {}, { precomputedPlan: plan });
+
+    // Detached contract: the caller gets the queue acknowledgement at once,
+    // NOT a stream to drain and not the run's final output.
+    expect(result).toEqual({ queued: true, runId: "run1" });
+
+    // The run itself executes to completion in the background: the media
+    // step's Generation row is written (it lands in the gallery), the
+    // AgentRun row is marked completed, the approved debit settles.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(generateImage).toHaveBeenCalledTimes(1);
+    expect(generateImage.mock.calls[0][0]).toMatchObject({ endpoint: "custom-model-x" });
+    expect(prisma.generation.create).toHaveBeenCalledTimes(1);
+    expect(prisma.generation.create.mock.calls[0][0].data.status).toBe("completed");
+    expect(prisma.agentRun.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "run1" }, data: expect.objectContaining({ status: "completed" }) }),
+    );
+    expect(debitWallet).toHaveBeenCalledTimes(1);
+    expect(netDebits()).toBeLessThanOrEqual(2);
+  });
+
+  it("keeps per-step progress on the AgentRun row while executing — the status poll can render it live", async () => {
+    generateImage.mockResolvedValue({ url: "https://cdn.example/img.png" });
+    const plan = approvedPlan({ total: 4, steps: [IMAGE_STEP, IMAGE_STEP] });
+
+    await executeAgentRunBackground("u1", "ignored", {}, { precomputedPlan: plan });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // At least one intermediate update carried a partial stepResults array
+    // (the progressive-persistence write), and the final update carries the
+    // complete result with outputs + stepResults.
+    const updates = prisma.agentRun.update.mock.calls.map((c) => c[0]);
+    const withPartial = updates.find((u) => u.data?.result?.stepResults?.length === 1);
+    expect(withPartial).toBeTruthy();
+    const final = updates[updates.length - 1];
+    expect(final.data.status).toBe("completed");
+    expect(Array.isArray(final.data.result.stepResults)).toBe(true);
+    expect(final.data.result.stepResults).toHaveLength(2);
+  });
+
+  it("a quote change still rejects before anything is queued or debited", async () => {
+    estimateAgentTask.mockResolvedValue({ total: 10, breakdown: [{ credits: 10 }] });
+    const plan = approvedPlan({ total: 2 });
+
+    const result = await executeAgentRunBackground("u1", "ignored", {}, { precomputedPlan: plan });
+    expect(result.success).toBe(false);
+    expect(result.errorCode).toBe("quote_changed");
+    expect(result.queued).toBeUndefined();
+    expect(debitWallet).not.toHaveBeenCalled();
+    expect(generateImage).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { executeAgentRun, executeAgentRunStream } from "@/lib/agents";
+import { executeAgentRun, executeAgentRunStream, executeAgentRunBackground } from "@/lib/agents";
 import { checkRateLimit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
@@ -57,6 +57,17 @@ export async function POST(req) {
 
     const session = await resolveOwnedSession(user.id, body.sessionId);
     const options = { precomputedPlan: body.plan || null, sessionId: session?.id || null };
+
+    // Background mode (2026-08-06): the run is detached from the request —
+    // debited up front, executed server-side to completion regardless of
+    // whether the browser stays open, its media steps landing in the gallery
+    // and its outcome in the session feed. Returns { queued, runId }
+    // immediately; the client polls GET /api/agent/run/:id for progress.
+    if (body.background === true) {
+      const result = await executeAgentRunBackground(user.id, message, context, options);
+      if (result.error && !result.queued) return errorResponse(result);
+      return NextResponse.json(result);
+    }
 
     if (shouldStream) {
       const result = await executeAgentRunStream(user.id, message, context, options);

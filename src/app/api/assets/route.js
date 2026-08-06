@@ -22,16 +22,31 @@ export async function GET(req) {
 
     /* Merge completed generations alongside uploaded assets so the library
        is a single view of everything the user has made. Map each generation
-       to an asset-shaped object the client already knows how to render. */
+       to an asset-shaped object the client already knows how to render.
+       The type filter applies to generations too — same kind inference the
+       client sees — so "Images" / "Video" / "Audio" tabs show BOTH the
+       uploads AND everything generated of that kind. */
+    const GENERATION_KIND_TOOLS = {
+      video: ["video", "i2v", "v2v", "lipsync", "recast"],
+      audio: ["audio", "music", "voiceover"],
+    };
     let generations = [];
     let totalHasMore = hasMore;
-    if (includeGenerations && (!type || type === "all")) {
+    if (includeGenerations) {
       const genWhere = {
         userId: user.id,
         status: "succeeded",
         outputUrl: { not: null },
       };
-      const genTotal = await prisma.generation.count({ where: genWhere });
+      // Filter at the DB, not after the merge — a type filter must not
+      // silently drop generations the way it did when the merge only ran
+      // for type === "all" (owner defect, 2026-08-06: Assets "Video" tab
+      // showed only uploads, never generated clips).
+      if (type && type !== "all") {
+        const tools = GENERATION_KIND_TOOLS[type];
+        if (tools) genWhere.tool = { in: tools };
+        else genWhere.tool = { notIn: ["video", "i2v", "v2v", "lipsync", "recast", "audio", "music", "voiceover"] }; // "image"
+      }
       const genLimit = Math.min(limit - assets.length + (hasMore ? 1 : 0), 50);
       if (genLimit > 0) {
         const genRows = await prisma.generation.findMany({
@@ -41,7 +56,12 @@ export async function GET(req) {
         });
         generations = genRows.map((g) => {
           const t = String(g.tool || "").toLowerCase();
-          const kind = t === "video" ? "video" : t === "music" || t === "audio" ? "audio" : "image";
+          // SAME mapping as the type filter above (and generation-handler's
+          // own assetType) — i2v/v2v/lipsync/recast are video, music/
+          // voiceover are audio, everything else is an image.
+          const kind = GENERATION_KIND_TOOLS.video.includes(t) ? "video"
+            : GENERATION_KIND_TOOLS.audio.includes(t) ? "audio"
+            : "image";
           return {
             id: `gen-${g.id}`,
             type: kind,
