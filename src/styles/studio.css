@@ -212,7 +212,7 @@
 }
 .st-tool svg { width: 19px; height: 19px; stroke-width: 1.6; }
 .st-tool span {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: -0.01em;
   line-height: 1;
@@ -283,13 +283,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: var(--s-1);
   min-height: var(--dock-h);
   color: var(--tx-mute);
   transition: color var(--d-fast) var(--ease);
 }
 .st-dock__btn svg { width: 20px; height: 20px; stroke-width: 1.7; }
-.st-dock__btn span { font-size: 9.5px; font-weight: 500; letter-spacing: -0.01em; }
+.st-dock__btn span { font-size: var(--t-micro); font-weight: 500; letter-spacing: -0.01em; }
 .st-dock__btn.is-active { color: var(--filament-lit); }
 .st-dock__btn:active { color: var(--tx); }
 
@@ -463,7 +463,9 @@
   background: var(--ink-100);
   transition: border-color var(--d-base) var(--ease);
 }
-.st-brief:focus-within { border-color: var(--line-strong); }
+/* U1 focus audit: the brief owns the page's main action, so its focus
+   state reads in the accent hairline rather than a neutral one. */
+.st-brief:focus-within { border-color: var(--line-accent); }
 
 .st-brief textarea {
   display: block;
@@ -605,7 +607,7 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--tx-mute);
-  margin-bottom: 3px;
+  margin-bottom: var(--s-1);
 }
 .st-specs dd {
   font-family: var(--ff-mono);
@@ -1034,7 +1036,7 @@
   grid-area: tools;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--s-1);
   padding: var(--s-2) var(--s-1);
   border-right: 1px solid var(--line);
   background: var(--ink-050);
@@ -1146,7 +1148,7 @@
   padding: var(--s-3);
   border-bottom: 1px solid var(--line);
 }
-.st-canvas__layers-list { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s-2); display: flex; flex-direction: column-reverse; gap: 2px; }
+.st-canvas__layers-list { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s-2); display: flex; flex-direction: column-reverse; gap: var(--s-1); }
 
 .st-layer {
   display: grid;
@@ -1361,7 +1363,7 @@
   text-transform: uppercase;
   color: var(--tx-dim);
 }
-.st-item__body { padding: var(--s-2) var(--s-3) var(--s-3); display: flex; flex-direction: column; gap: 3px; }
+.st-item__body { padding: var(--s-2) var(--s-3) var(--s-3); display: flex; flex-direction: column; gap: var(--s-1); }
 .st-item__name {
   font-size: var(--t-tiny);
   font-weight: 500;
@@ -1372,14 +1374,14 @@
 }
 .st-item__meta {
   font-family: var(--ff-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--tx-mute);
   font-variant-numeric: tabular-nums;
 }
 .st-item__acts {
   position: absolute;
   right: var(--s-2); bottom: var(--s-2);
-  display: flex; gap: 3px;
+  display: flex; gap: var(--s-1);
   opacity: 0;
   transition: opacity var(--d-base) var(--ease);
 }
@@ -1604,7 +1606,7 @@
 }
 .st-swatch__hex {
   font-family: var(--ff-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   text-transform: uppercase;
   color: var(--tx-mute);
   text-align: center;
@@ -1676,7 +1678,7 @@
 .st-flow__wf b { font-size: var(--t-tiny); font-weight: 600; color: var(--tx); }
 .st-flow__wf span {
   font-family: var(--ff-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--tx-mute);
   font-variant-numeric: tabular-nums;
 }
@@ -1758,7 +1760,7 @@
 /* ── Layer rows ─────────────────────────────────────────────────────────── */
 .st-layer__body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .st-layer.is-drop { box-shadow: inset 0 2px 0 var(--filament); }
-.st-layer__acts { display: flex; gap: 1px; flex: none; }
+.st-layer__acts { display: flex; gap: var(--s-1); flex: none; }
 .st-layer__act {
   width: 20px; height: 20px;
   display: grid; place-items: center;
@@ -1863,7 +1865,7 @@ select.st-layer__role option {
 .st-shot__tools {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--s-1);
   padding: 0 var(--s-2);
 }
 .st-shot__tools .hs-btn { flex: none; }
@@ -1955,7 +1957,7 @@ select.st-layer__role option {
 .st-clip__actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--s-1);
   flex: none;
   flex-wrap: wrap;
 }
@@ -2304,7 +2306,11 @@ select.st-layer__role option {
   font-weight: 600;
 }
 .st-node__name:hover { border-color: var(--line); }
-.st-node__name:focus { outline: none; border-color: var(--line-accent); background: var(--ink-050); }
+/* U1 focus audit: `outline: none` here also killed the global
+   :focus-visible ring for keyboard users; the border tint alone is too
+   quiet at a glance. The global ring now shows on keyboard focus, and the
+   border tint stays for pointer focus. */
+.st-node__name:focus { border-color: var(--line-accent); background: var(--ink-050); }
 
 .st-node__kind { grid-area: kind; font-size: var(--t-micro); color: var(--tx-faint); white-space: nowrap; }
 .st-node__cost { grid-area: cost; font-size: var(--t-micro); color: var(--tx-mute); white-space: nowrap; }
@@ -2359,7 +2365,7 @@ select.st-layer__role option {
   grid-area: tools;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--s-1);
   flex-wrap: wrap;
   padding-top: var(--s-2);
   border-top: 1px solid var(--line);
@@ -2829,3 +2835,38 @@ select.st-layer__role option {
 .st-dock__btn svg { transition: transform var(--d-fast) var(--ease); }
 .st-dock__btn.is-active svg { width: 22px; height: 22px; }
 .st-dock__btn:active svg { transform: scale(0.92); }
+
+/* ── U1b. Result cards — the agent's collected assets on a phone ────────────
+   Desktop keeps the vertical stack. On a phone the collection becomes one
+   full-width card per swipe: scroll-snap x with native momentum, actions
+   kept along the card's bottom edge in thumb reach. The deliverable card
+   stays above the row — first, always. */
+.st-cardrow { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; }
+@media (max-width: 900px) {
+  .st-cardrow {
+    flex-direction: row;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: var(--s-2);
+    scrollbar-width: none;
+  }
+  .st-cardrow::-webkit-scrollbar { display: none; }
+  .st-cardrow > * { flex: 0 0 100%; min-width: 0; scroll-snap-align: center; }
+  .st-cardrow .st-asset__acts { justify-content: flex-end; }
+}
+
+/* ── U1b. Micro-motion ──────────────────────────────────────────────────────
+   One entrance for list cards on the base duration; press states already
+   ride --d-fast. Nothing here loops — the Filament is the only element
+   allowed continuous motion — and reduced-motion strips it all (the global
+   rule in system.css zeroes these durations). */
+@media (prefers-reduced-motion: no-preference) {
+  .st-item, .st-model, .st-shot, .st-mtl__track, .st-asset, .st-stepcard {
+    animation: st-enter var(--d-base) var(--ease) both;
+  }
+}
+@keyframes st-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
