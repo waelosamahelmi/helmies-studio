@@ -57,6 +57,6 @@
 
 > **Update this section every time you stop or hand off.**
 
-2026-08-06 evening: Canvas tools (#51-54), PWA fixes (#55/#58/#59), loading state (#56), asset generations (#57) — all 9 tasks committed to main (bd79fdf), pushed, NOT YET DEPLOYED. All gates green. Pending: owner deploy decision, or deploy via plink runbook.
+2026-08-06 evening: Canvas tools (#51-54), PWA fixes (#55/#58/#59), loading state (#56), asset generations (#57) — all 9 tasks committed to main (bd79fdf). Video playback fix on mobile (b7470c4) — action bar moved to top on touch, loop attr removed from video element, proxy immutable directive removed. All pushed, NOT YET DEPLOYED. All gates green. Pending: owner deploy decision.
 
 2026-08-07: U1 (PR #48) merged AND deployed (commit 06f26f7) — admin-merged as CI was in a GitHub Actions outage; full local suite independently verified at 320/0/3, build verified fresh, public 200. Active priority = owner live-testing of the phone experience. PARKED: KIE balance top-up (needed for veo/pixverse/kling probes + 38 unverified video models + remaining audio-op checks), the A9 acceptance rerun (deployed but owner hasn't retried yet), the batched sweeps, browser QA of EDITSv1 scenarios, and the final QA report — all instructions preserved above.
