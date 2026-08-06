@@ -2621,6 +2621,14 @@ select.st-layer__role option {
   overflow: visible;
 }
 
+/* Unlike every other studio's chips (which live in the aside that hides on
+   phones), the workbench's op chips sit in the MAIN column — so they must
+   meet the 44px floor themselves; the global .hs-chip coarse rule stops at
+   40px. */
+@media (pointer: coarse) {
+  .st-mtl .hs-chip { min-height: 44px; }
+}
+
 /* The voice-clone wizard's stepper (Audio → Voice cloning). */
 .st-vcw__steps {
   list-style: none;

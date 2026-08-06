@@ -589,3 +589,57 @@ test("Director timeline clips can be rearranged and trimmed with a finger", asyn
   await expectNoHorizontalScroll(page, "/studio/director (timeline)");
   await expectTapTargets(page, "/studio/director (timeline)");
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   S2 — the Music timeline on a phone
+   ──────────────────────────────────────────────────────────────────────────
+   The workbench's range grips reuse ClippingStudio's .st-range__grip, whose
+   coarse-pointer rule grows the pointer box to 44px — measured here on the
+   grips' OWN border boxes, plus the page-wide overflow and tap sweeps that
+   every other studio surface passes.
+   ══════════════════════════════════════════════════════════════════════════ */
+test("Music timeline: a track opens and its range grips are grabbable with a finger", async ({ page }) => {
+  await stubProviders(page);
+
+  let user;
+  const title = `Mobile timeline track ${Date.now().toString(36)}`;
+  await withTestDb(async (prisma) => {
+    user = await createIsolatedUser(prisma, { credits: 100, label: "mobmtl" });
+    // A completed music Generation seeded directly — this test is about the
+    // timeline's touch ergonomics, not the generation pipeline (covered in
+    // music-timeline.spec.mjs on the desktop projects).
+    await prisma.generation.create({
+      data: {
+        userId: user.id,
+        tool: "audio",
+        model: "generate-music",
+        prompt: title,
+        params: { duration: 60 },
+        status: "completed",
+        outputUrl: "/api/media/local/e2e-fixture.png",
+        creditsUsed: 5,
+      },
+    });
+  });
+  await loginThroughForm(page, user);
+
+  await page.goto("/studio/music");
+  await settleApp(page);
+  await expect(visible(page.locator(".st-credits"))).toContainText(/\d|—/, { timeout: 15000 });
+
+  const row = visible(page.locator(".st-mtl__track", { hasText: title.slice(0, 30) }));
+  await expect(row).toBeVisible({ timeout: 20000 });
+  await row.tap();
+
+  for (const name of ["Selection start", "Selection end"]) {
+    const grip = visible(page.getByRole("slider", { name }));
+    await expect(grip).toBeVisible();
+    const box = await grip.boundingBox();
+    expect(box, `${name} has a box`).toBeTruthy();
+    expect(box.width, `${name} width ${Math.round(box.width)}px`).toBeGreaterThanOrEqual(TAP_MIN);
+    expect(box.height, `${name} height ${Math.round(box.height)}px`).toBeGreaterThanOrEqual(TAP_MIN);
+  }
+
+  await expectNoHorizontalScroll(page, "/studio/music (timeline)");
+  await expectTapTargets(page, "/studio/music (timeline)");
+});
