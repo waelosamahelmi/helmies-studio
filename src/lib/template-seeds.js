@@ -6,9 +6,11 @@
 // ALIBABA_MEDIA_MODELS, synced into ModelPricing by
 // src/lib/model-catalog.js's syncAlibabaModels(). That catalog is
 // image/video only (text-to-image, image-to-image, text-to-video,
-// image-to-video, reference-to-video, video-to-video) — there is no
-// audio/TTS/music-generation model with real, verified pricingRules
-// anywhere in this codebase today. Two templates that would traditionally
+// image-to-video, reference-to-video, video-to-video) — at the time the
+// twelve were written there was no audio/TTS/music-generation model with
+// real, verified pricingRules. (That is no longer true: the KIE sync now
+// maintains verified audio/TTS/lip-sync rows, which the Short Drama Suite
+// templates M–P at the bottom of this file build on.) Two templates that would traditionally
 // involve audio (music-visualizer-pack, podcast-clip-factory) are scoped
 // honestly around that real gap: they generate the VISUAL side only (cover
 // art / an animated background loop) rather than inventing a fake
@@ -578,6 +580,214 @@ export const TEMPLATE_SEEDS = [
           first_frame_url: "$step1.output",
           duration: 5,
           resolution: "720p",
+        },
+      },
+    ],
+  }),
+
+  // ── Short Drama Suite (M–P) ────────────────────────────────────────────
+  // Added after the KIE catalog sync brought verified audio, TTS, and
+  // lip-sync rows into ModelPricing (elevenlabs/*, generate-music,
+  // volcengine/video-to-video-lip-sync, kling/ai-avatar-*) — the "no audio
+  // models" constraint the original twelve were scoped around no longer
+  // holds. Field names below match the live DB inputSchema rows, verified
+  // 2026-08-06: kling-2.6 durations are STRING enums ("5"/"10") and take an
+  // `image_urls` ARRAY; kling/v3-turbo takes a NUMERIC duration (3–15);
+  // volcengine lip-sync has NO prompt field; generate-music's only required
+  // field is `prompt`.
+
+  // M — short-drama-episode: the flagship vertical-drama pipeline.
+  // Keyframe → performance shot → dialogue audio → lip-synced final cut.
+  template({
+    slug: "short-drama-episode",
+    name: "Short Drama Episode",
+    description:
+      "A vertical mini-drama scene, start to finish: a cinematic 9:16 keyframe, a moody performance shot animated from it, spoken dialogue, and a final lip-synced cut ready for TikTok, Reels, or a short-drama app.",
+    category: "cinematic",
+    scopeNote:
+      "The lip-synced video in step 4 is the finished deliverable; steps 1–3 are also saved to your assets so you can regrade, recut, or redub the scene.",
+    steps: [
+      {
+        id: "step1",
+        tool: "image",
+        modelId: "nano-banana-pro",
+        dependsOn: linear("step1"),
+        inputs: {
+          prompt:
+            "Vertical 9:16 cinematic film still: a young woman in a rain-soaked doorway at night, mascara slightly smudged, holding back tears as she confronts someone off-frame. Warm interior light behind her, cold blue city rain in front. Shallow depth of field, 35mm anamorphic look, teal-and-amber grade, prestige TV drama aesthetic. Her face is clearly visible, mouth closed, facing camera.",
+          aspect_ratio: "9:16",
+          resolution: "2K",
+        },
+      },
+      {
+        id: "step2",
+        tool: "i2v",
+        modelId: "kling-2.6/image-to-video",
+        dependsOn: linear("step2", "step1"),
+        inputs: {
+          prompt:
+            "The camera pushes in slowly on her face as she begins to speak, rain falling behind her, breath visible in the cold air, subtle trembling in her expression, cinematic drama performance, natural head movement, no cuts.",
+          image_urls: ["$step1.output"],
+          sound: false,
+          duration: "10",
+        },
+      },
+      {
+        id: "step3",
+        tool: "audio",
+        modelId: "elevenlabs/text-to-dialogue-v3",
+        dependsOn: linear("step3", "step2"),
+        inputs: {
+          prompt:
+            "[emotional, voice breaking] You knew. You knew the whole time, and you let me stand there like a fool. [pause] [quietly] I'm done waiting for you to choose me.",
+        },
+      },
+      {
+        id: "step4",
+        tool: "lipsync",
+        modelId: "volcengine/video-to-video-lip-sync",
+        dependsOn: linear("step4", "step3"),
+        inputs: {
+          mode: "basic",
+          video_url: "$step2.output",
+          audio_url: "$step3.output",
+        },
+      },
+    ],
+  }),
+
+  // N — talking-avatar-skit: one portrait becomes a talking character.
+  template({
+    slug: "talking-avatar-skit",
+    name: "Talking Avatar Skit",
+    description:
+      "Turn a generated character into a talking vertical clip: a stylized portrait, a scripted voice performance, and an AI-avatar video that delivers the lines — the fastest route to a face-on-camera format without a camera.",
+    category: "social",
+    steps: [
+      {
+        id: "step1",
+        tool: "image",
+        modelId: "nano-banana-pro",
+        dependsOn: linear("step1"),
+        inputs: {
+          prompt:
+            "Vertical 9:16 portrait of a charismatic podcast host in their late twenties, warm studio lighting, soft background with a hint of neon, looking directly into the camera with a friendly confident expression, mouth closed, head and shoulders framing, photorealistic, crisp detail.",
+          aspect_ratio: "9:16",
+          resolution: "2K",
+        },
+      },
+      {
+        id: "step2",
+        tool: "audio",
+        modelId: "elevenlabs/text-to-dialogue-v3",
+        dependsOn: linear("step2", "step1"),
+        inputs: {
+          prompt:
+            "[upbeat, conversational] Okay, real talk — nobody tells you this, but the algorithm doesn't reward perfect videos. It rewards videos people finish. [short laugh] Thirty seconds, one idea, say it like you'd say it to a friend. That's the whole secret.",
+        },
+      },
+      {
+        id: "step3",
+        tool: "lipsync",
+        modelId: "kling/ai-avatar-standard",
+        dependsOn: linear("step3", "step2"),
+        inputs: {
+          image_url: "$step1.output",
+          audio_url: "$step2.output",
+          prompt:
+            "The host speaks naturally to camera with lively, believable delivery — small head movements, natural blinks, expressive but not exaggerated.",
+        },
+      },
+    ],
+  }),
+
+  // O — pov-drama-teaser: a hook-first teaser plus a score to cut it to.
+  template({
+    slug: "pov-drama-teaser",
+    name: "POV Drama Teaser",
+    description:
+      "A binge-bait vertical teaser in the POV short-drama style — one continuous 8-second shot built for the first three seconds to hook, plus a tense cinematic score to lay under it in your editor.",
+    category: "cinematic",
+    scopeNote:
+      "Delivers two assets: the 9:16 teaser video and a separate 30-second score. Drop both on a timeline and cut the hook to the downbeat.",
+    steps: [
+      {
+        id: "step1",
+        tool: "video",
+        modelId: "kling/v3-turbo-text-to-video",
+        dependsOn: linear("step1"),
+        inputs: {
+          prompt:
+            "POV vertical shot: you are seated at a candlelit dinner table; across from you, an elegant woman in a red dress slides a folded document toward the camera, her expression unreadable. She looks up, directly into the lens, and raises one eyebrow. Slow dolly-in, warm restaurant bokeh, cinematic short-drama style, continuous take, no cuts.",
+          duration: 8,
+          aspect_ratio: "9:16",
+          resolution: "1080p",
+        },
+      },
+      {
+        id: "step2",
+        tool: "audio",
+        modelId: "generate-music",
+        dependsOn: linear("step2", "step1"),
+        inputs: {
+          prompt:
+            "Tense, elegant cinematic underscore for a dramatic reveal scene: low string ostinato, sparse piano notes, a rising swell into a sudden hush, modern prestige-drama trailer tone.",
+          style: "cinematic, orchestral, tension, trailer",
+          title: "The Reveal",
+          instrumental: true,
+          duration: 30,
+        },
+      },
+    ],
+  }),
+
+  // P — viral-hook-pack: thumb-stopper still → animated hook → trend track.
+  template({
+    slug: "viral-hook-pack",
+    name: "Viral Hook Pack",
+    description:
+      "The first three seconds of a viral vertical video, manufactured: a thumb-stopping 9:16 hook frame, a punchy animated hook clip, and an upbeat trend-style track to carry the edit.",
+    category: "social",
+    scopeNote:
+      "Delivers three assets — hook frame, hook clip, and audio track — sized for TikTok, Reels, and Shorts. The frame doubles as your cover image.",
+    steps: [
+      {
+        id: "step1",
+        tool: "image",
+        modelId: "seedream/4.5-text-to-image",
+        dependsOn: linear("step1"),
+        inputs: {
+          prompt:
+            "Vertical 9:16 thumb-stopping social frame: extreme close-up of a hand lifting a glass cloche off a tiny glowing object on a velvet pedestal, dramatic single-source spotlight, rich saturated color, shallow depth of field, mystery-reveal energy, crisp commercial photography.",
+          aspect_ratio: "9:16",
+          quality: "high",
+        },
+      },
+      {
+        id: "step2",
+        tool: "i2v",
+        modelId: "pixverse-v6/image-to-video",
+        dependsOn: linear("step2", "step1"),
+        inputs: {
+          prompt:
+            "The cloche lifts in silky slow motion, light blooms off the glowing object, fine dust particles drift through the spotlight beam, a slow confident push-in — a reveal engineered to stop the scroll in the first second.",
+          image_urls: ["$step1.output"],
+          quality: "1080p",
+          duration: 5,
+        },
+      },
+      {
+        id: "step3",
+        tool: "audio",
+        modelId: "generate-music",
+        dependsOn: linear("step3", "step2"),
+        inputs: {
+          prompt:
+            "Short upbeat social-media trend track: punchy percussive intro with an immediate hook, bright modern pop-electronic production, a satisfying beat drop around second three, loopable, high energy without being harsh.",
+          style: "pop, electronic, upbeat, social media trend",
+          title: "Hook Drop",
+          instrumental: true,
+          duration: 30,
         },
       },
     ],
