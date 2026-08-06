@@ -10,7 +10,7 @@ import { detectAbuse } from "@/lib/security";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { assembleVideos } from "@/lib/video-assembly";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
-import { runnableProviderModelId, audioKind } from "@/lib/model-catalog-core.mjs";
+import { runnableProviderModelId, audioKind, requiresMediaInput } from "@/lib/model-catalog-core.mjs";
 import { isVoiceoverInstruction } from "@/lib/voiceover-guard";
 import { log } from "@/lib/log";
 import prisma from "@/lib/prisma";
@@ -206,7 +206,7 @@ export function normalizeAgentKey(agent) {
 // this fetches a short, live snapshot of currently-runnable ids per
 // capability and appends it to the system prompt on every planning call —
 // the prompt (above) tells the model to pick ONLY from this list.
-async function runnableModelHint() {
+async function runnableModelHint(context) {
   try {
     const [images, videos, audioRows] = await Promise.all([
       getRunnableModelsForType("image", { limit: 6 }),
@@ -234,11 +234,138 @@ async function runnableModelHint() {
       line("music", musicRows),
       line("voiceover", ttsRows),
     ].filter(Boolean);
+    // A user who names a model in chat must be hearable: the hard "use ONLY
+    // an exact id from this list" rule structurally forbade honoring a model
+    // outside the 6-cheapest slice (measured incident: "use seedance 2" was
+    // ignored twice). Their models are appended here as explicit user-
+    // requested entries, AND pinned deterministically after parsing — see
+    // resolveUserRequestedModels/pinUserRequestedModels below.
+    const requested = await resolveUserRequestedModels(context);
+    if (requested.length) {
+      const byKind = new Map();
+      for (const r of requested) {
+        const list = byKind.get(r.kind) || [];
+        list.push(r.row);
+        byKind.set(r.kind, list);
+      }
+      for (const [kind, rows] of byKind) {
+        const ids = [...new Set(rows.map(runnableProviderModelId).filter(Boolean))];
+        if (ids.length) lines.push(`- user-requested ${kind} (the user named this model — honor it): ${ids.join(", ")}`);
+      }
+    }
     if (!lines.length) return "";
     return `\n\nCurrently runnable models — use ONLY an exact id from this list in a step's "model" param:\n${lines.join("\n")}`;
   } catch {
     return "";
   }
+}
+
+// ── User-requested model resolution (2026-08-06, A9 follow-up) ─────────────
+// Production incident: the user asked twice for "seedance 2" in the chat and
+// the plan used kling-3.0/motion-control both times. The planner's hard rule
+// is "use ONLY an exact id from the hint list", and the hint list is the 6
+// CHEAPEST runnable rows per kind — a user-named model outside that slice
+// (bytedance/seedance-2 is 143 cr against an 8 cr cheapest) was
+// structurally impossible for the LLM to pick. resolveUserRequestedModels
+// scans the conversation for vendor+version mentions and resolves each
+// against the LIVE runnable pools (the SAME gated getRunnableModelsForType
+// the hint and fallback chains use — the video gate is what makes "kling
+// 3.0" resolve to kling-3.0/video rather than the media-required
+// motion-control variant), and pinUserRequestedModels writes an
+// unambiguous resolution onto every matching-kind step after the plan is
+// parsed. The re-quote then shows the user the REAL cost (143 cr) before
+// approval, so an explicit choice is honored end-to-end, not just
+// suggested.
+const normModelToken = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9.]+/g, "").replace(/\.0+$/g, "");
+const MODEL_MENTION_RE = /([a-z][a-z0-9.\-]*?)(?:\s*(?:v\.?)?(\d+(?:\.\d+)*))/gi;
+
+// Rank a mention against a row: exact id match 2; id/display STARTS or ENDS
+// with the mention 1 (vendor prefixes and capability suffixes surround the
+// named part); only-contains 0 (too loose to pin — e.g. "seedance 2"
+// contains-matches the -fast variant too). Returns the top-ranked rows.
+// Exported for unit tests (same rationale as defaultRunnableModel).
+export async function resolveMentionRows(fragment, rows) {
+  const f = normModelToken(fragment);
+  if (f.length < 5) return [];
+  let bestRank = -1;
+  const hits = [];
+  for (const row of rows) {
+    let rank = -1;
+    for (const candidate of [normModelToken(row.modelId), normModelToken(row.displayName)]) {
+      if (!candidate) continue;
+      if (candidate === f) rank = 2;
+      else if (candidate.endsWith(f) || candidate.startsWith(f)) rank = Math.max(rank, 1);
+      else if (candidate.includes(f)) rank = Math.max(rank, 0);
+    }
+    if (rank >= 0) { hits.push({ row, rank }); bestRank = Math.max(bestRank, rank); }
+  }
+  return hits.filter((h) => h.rank === bestRank && h.rank >= 1);
+}
+
+// Exported for unit tests — see resolveMentionRows for why.
+export async function resolveUserRequestedModels(context) {
+  const text = [
+    ...(Array.isArray(context?.conversation)
+      ? context.conversation.map((m) => (typeof m?.content === "string" ? m.content : ""))
+      : []),
+    typeof context?.userMessage === "string" ? context.userMessage : "",
+  ].join("\n");
+  const fragments = [...text.matchAll(MODEL_MENTION_RE)].map((m) => m[0].trim());
+  if (!fragments.length) return [];
+
+  const pools = {
+    video: () => getRunnableModelsForType("video", { limit: 500 }).catch(() => []),
+    image: () => getRunnableModelsForType("image", { limit: 500 }).catch(() => []),
+    music: () => getRunnableModelsForType("audio", { limit: 500 }).catch(() => []).then((rows) => rows.filter((row) => audioKind(row) === "music")),
+    voiceover: () => getRunnableModelsForType("audio", { limit: 500 }).catch(() => []).then((rows) => rows.filter((row) => { const k = audioKind(row); return k === "tts" || k === "dialogue"; })),
+  };
+  const seen = new Set();
+  const kindRows = {};
+  for (const [kind, load] of Object.entries(pools)) {
+    const rows = await load();
+    for (const fragment of fragments) {
+      const hits = await resolveMentionRows(fragment, rows);
+      for (const hit of hits) {
+        const key = `${kind}:${hit.row.modelId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        (kindRows[kind] || (kindRows[kind] = [])).push(hit.row);
+      }
+    }
+  }
+  // A kind with several DIFFERENT rows resolved is ambiguous — the planner
+  // still sees them in the hint list, but nothing gets pinned.
+  const out = [];
+  for (const [kind, rows] of Object.entries(kindRows)) {
+    const unique = [...new Map(rows.map((r) => [r.modelId, r])).values()];
+    if (unique.length === 1) out.push({ kind, row: unique[0] });
+  }
+  return out;
+}
+
+// Deterministic backstop to the LLM honoring the hint: an unambiguous
+// user-requested model is written onto every step of its kind. The caller
+// re-runs estimateAgentTask AFTER this so the approval shows the real cost.
+// Exported for unit tests — see resolveMentionRows for why.
+export function pinUserRequestedModels(plan, requested) {
+  if (!Array.isArray(plan?.steps) || !requested.length) return plan;
+  let pinned = 0;
+  for (const { kind, row } of requested) {
+    const modelId = runnableProviderModelId(row);
+    if (!modelId) continue;
+    for (const step of plan.steps) {
+      if (normalizeAgentKey(step.agent) !== kind) continue;
+      const params = step.params || {};
+      if (params.model === modelId) continue;
+      step.params = { ...params, model: modelId, endpoint: modelId };
+      pinned++;
+    }
+  }
+  if (pinned) {
+    const names = [...new Set(requested.map(({ row }) => runnableProviderModelId(row)).filter(Boolean))].join(", ");
+    plan.summary = `${plan.summary || ""} [Models pinned to your request: ${names}]`.trim();
+  }
+  return plan;
 }
 
 // ── Session defaults for the planner (A9 task 5) ──────────────────────────
@@ -315,7 +442,7 @@ async function llmPlanOnce(messages) {
 // Returns the parsed plan JSON, or null when both attempts failed (the
 // caller then falls back to the heuristic and MARKS the plan as degraded).
 async function requestLlmPlan(userMessage, context = {}) {
-  const system = AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context) + (await runnableModelHint());
+  const system = AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context) + (await runnableModelHint(context));
   const user = buildPlanUserContent(userMessage, context);
   try {
     return await llmPlanOnce([
@@ -343,6 +470,9 @@ async function requestLlmPlan(userMessage, context = {}) {
 // "quick draft" notice on the plan card.
 async function heuristicFallbackPlan(userMessage, context, { degraded }) {
   const plan = await buildHeuristicPlan(userMessage, context);
+  // Same pin-then-quote contract as the LLM paths — an explicit user model
+  // request is honored even when the planner degraded to the heuristic.
+  pinUserRequestedModels(plan, await resolveUserRequestedModels(context));
   const estimate = await estimateAgentTask(plan.steps || []);
   return { ...plan, estimate, planSource: "heuristic", degraded: !!degraded };
 }
@@ -356,7 +486,7 @@ export async function planTaskStream(userMessage, context = {}) {
   }
 
   const messages = [
-    { role: "system", content: AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context) + (await runnableModelHint()) },
+    { role: "system", content: AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context) + (await runnableModelHint(context)) },
     { role: "user", content: buildPlanUserContent(userMessage, context) },
   ];
 
@@ -402,6 +532,10 @@ export async function planTaskStream(userMessage, context = {}) {
         try {
           const json = JSON.parse(extractPlanJson(buffer) || "");
           if (!Array.isArray(json.steps) || !json.steps.length) throw new Error("planner reply had no steps");
+          // An explicit user model request ("use seedance 2") is pinned onto
+          // its kind's steps BEFORE the quote, so the estimate below (and
+          // the plan card) shows the real cost of the user's choice.
+          pinUserRequestedModels(json, await resolveUserRequestedModels(context));
           const estimate = await estimateAgentTask(json.steps);
           plan = { ...json, estimate, planSource: "llm" };
         } catch (err) {
@@ -428,6 +562,9 @@ export async function planTask(userMessage, context = {}) {
   if (hasLLM) {
     const json = await requestLlmPlan(userMessage, context);
     if (json) {
+      // Same pin-then-quote contract as the streaming path: an explicit user
+      // model request lands on its kind's steps before the estimate.
+      pinUserRequestedModels(json, await resolveUserRequestedModels(context));
       const estimate = await estimateAgentTask(json.steps);
       return { ...json, estimate, planSource: "llm" };
     }
@@ -1000,7 +1137,19 @@ export async function executeStepWithRetry(step, previousOutputs, attempt = 0, b
   let primary = { step, credits: budget && typeof budget.quoted === "number" ? budget.quoted : null };
   if (originalModel && CATALOG_MODEL_KINDS.has(agentKind)) {
     const runnableRow = await resolveRunnableModel(originalModel).catch(() => null);
-    if (!runnableRow) {
+    // A runnable row can still be WRONG FOR THIS STEP: a model whose schema
+    // requires an image/video/audio upload (motion-control, transition,
+    // reference-to-video — see requiresMediaInput's header in
+    // model-catalog-core.mjs) cannot run on a text-only step; the provider
+    // rejects it outright (measured 2026-08-06: kling-3.0/motion-control →
+    // 500 "This field is required", pixverse-v6/transition → 422
+    // "first_frame_image_url cannot be empty"). Substitute it exactly like
+    // an unrunnable model — the substitute pool is the same gated
+    // getRunnableModelsForType — instead of wasting a provider call on a
+    // guaranteed rejection.
+    const stepMedia = step.params?.image_url || step.params?.images_list?.length || step.params?.videos_list?.length
+      || step.params?.audio_url || step.params?.input_urls?.length || step.params?.video_urls?.length;
+    if (!runnableRow || (requiresMediaInput(runnableRow) && !stepMedia)) {
       const sub = await pickSubstituteModel(agentKind, originalModel, step.params, ceiling);
       if (!sub) {
         const err = new Error(`No runnable ${agentKind} model is currently available to replace "${originalModel}". Please try again once a provider model is re-enabled.`);

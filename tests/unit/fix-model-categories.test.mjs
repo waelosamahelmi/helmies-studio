@@ -34,8 +34,11 @@ describe("planFixes", () => {
       { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2v" },
     ];
     const { modelTypeFixes, needsAttention } = planFixes(rows);
+    // Reference-to-video is an image-INPUT capability (its modelType is i2v,
+    // never "video" — see CAPABILITY_TO_MODEL_TYPE's header) so the backfill
+    // writes i2v and the model drops out of every text-to-video pool.
     expect(modelTypeFixes).toEqual([
-      { modelId: "wan/2-7-r2v", providerName: "KIE", capability: "reference-to-video", from: "image", to: "video" },
+      { modelId: "wan/2-7-r2v", providerName: "KIE", capability: "reference-to-video", from: "image", to: "i2v" },
     ]);
     expect(needsAttention).toEqual([]);
   });
@@ -199,7 +202,7 @@ describe("planFixes", () => {
   it("is idempotent: re-planning against already-fixed rows reports nothing", () => {
     const fixedRows = [
       { modelId: "seedance-1-5-pro", providerName: "KIE", modelType: "video", capability: "video", displayName: "Seedance 1.5 Pro" },
-      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "video", capability: "reference-to-video", displayName: "Wan 2.7 R2v" },
+      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "i2v", capability: "reference-to-video", displayName: "Wan 2.7 R2v" },
       { modelId: "mystery-image-1", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Mystery Image 1", inputModalities: ["text"], outputModalities: ["image"] },
       { modelId: "alibaba:qwen3-tts-flash", providerName: "Alibaba", modelType: "audio", capability: "text-to-speech", displayName: "Qwen3 TTS Flash" },
     ];
@@ -248,7 +251,7 @@ describe("run() — dry-run vs apply (mocked DB)", () => {
     });
     expect(prisma.modelPricing.update).toHaveBeenCalledWith({
       where: { modelId: "wan/2-7-r2v" },
-      data: { modelType: "video" },
+      data: { modelType: "i2v" },
     });
     expect(prisma.modelPricing.update).toHaveBeenCalledWith({
       where: { modelId: "mystery-image-1" },

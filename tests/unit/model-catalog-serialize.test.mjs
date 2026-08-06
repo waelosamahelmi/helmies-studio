@@ -41,9 +41,11 @@ describe("serializeCatalogModel", () => {
       expect(pub.isUncategorized).toBe(false);
     });
 
-    it("a reference-to-video row is corrected to modelType video even if stored as image", () => {
+    it("a reference-to-video row is corrected to modelType i2v even if stored as image", () => {
+      // Image-INPUT model (the provider rejects a text-only payload) — its
+      // modelType is i2v, never "video", so text-to-video pools can't offer it.
       const drifted = { ...row, modelType: "image", capability: "reference-to-video" };
-      expect(serializeCatalogModel(drifted).modelType).toBe("video");
+      expect(serializeCatalogModel(drifted).modelType).toBe("i2v");
     });
 
     it("a video-to-video row is corrected to modelType v2v even if stored as i2i", () => {

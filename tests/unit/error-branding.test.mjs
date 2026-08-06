@@ -93,6 +93,35 @@ describe("brandError upstream outages", () => {
   });
 });
 
+describe("brandError missing-field verdicts (2026-08-06 incident)", () => {
+  // KIE answers a payload missing a required field with a NAMELESS
+  // {"code":500,"msg":"This field is required"} or a named variant like
+  // "first_frame_image_url cannot be empty". Neither matched any bucket, so
+  // a text-only step sent to an image-required model (kling-3.0/motion-
+  // control, pixverse-v6/transition) told the user "An unexpected error
+  // occurred" about a fixable input problem.
+  const INPUT_ERROR = "Some required settings are missing for this model. Please adjust the settings and try again.";
+
+  it("brands the nameless 'This field is required' verdict", () => {
+    expect(brandError("This field is required")).toBe(INPUT_ERROR);
+  });
+
+  it("brands the named 'cannot be empty' verdicts", () => {
+    expect(brandError("first_frame_image_url cannot be empty")).toBe(INPUT_ERROR);
+    expect(brandError("multi_shots cannot be empty")).toBe(INPUT_ERROR);
+  });
+
+  it("does not disturb the server_error bucket for real outages", () => {
+    expect(brandError("internal error, please try again later.")).toMatch(/on our end/i);
+    expect(brandError("503 upstream unavailable")).toMatch(/on our end/i);
+  });
+
+  it("stays branded and never names a provider", () => {
+    expect(brandForUser(brandError("This field is required"))).toBe(INPUT_ERROR);
+    expect(brandForUser("This field is required")).not.toMatch(/kie|alibaba|dashscope/i);
+  });
+});
+
 describe("brandForUser idempotence", () => {
   it("passes an already-branded message through unchanged", () => {
     const branded = brandError("invalid_api_key");

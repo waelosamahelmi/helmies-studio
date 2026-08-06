@@ -19,13 +19,19 @@ import { modelTypeForCapability, CAPABILITY_TO_MODEL_TYPE, UNCATEGORIZED_MODEL_T
 // now lock down the OPPOSITE way.
 
 describe("modelTypeForCapability — the single source of truth for modelType", () => {
+  // reference-to-video is an IMAGE-INPUT model: the provider rejects a
+  // text-only payload ("first_frame_image_url cannot be empty", measured
+  // 2026-08-06). It belongs with i2v in the pool typing so the agent's
+  // text-to-video pool (getRunnableModelsForType("video")) can never offer
+  // it for a text-only step. Studio pickers are unaffected — they filter by
+  // capability STRING (capability-groups.js's r2v group), not modelType.
   const expected = {
     "text-to-image": "image",
     "image-to-image": "i2i",
     "text-to-video": "video",
     "image-to-video": "i2v",
     "video-to-video": "v2v",
-    "reference-to-video": "video",
+    "reference-to-video": "i2v",
     "avatar-video": "lipsync",
     "text-to-speech": "audio",
     audio: "audio",

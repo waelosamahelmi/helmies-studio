@@ -19,7 +19,7 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 import prisma from "@/lib/prisma";
-import { isRunnableModelRow, runnableProviderModelId } from "@/lib/model-catalog-core.mjs";
+import { isRunnableModelRow, runnableProviderModelId, requiresMediaInput } from "@/lib/model-catalog-core.mjs";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
 
 const RUNNABLE_ROW = {
@@ -203,5 +203,55 @@ describe("getRunnableModelsForType — fallback/substitution pool returns only r
   it("returns nothing for a falsy modelType", async () => {
     await expect(getRunnableModelsForType(null)).resolves.toEqual([]);
     await expect(getRunnableModelsForType("")).resolves.toEqual([]);
+  });
+
+  // ── 2026-08-06 incident: text-to-video steps sent to image-required models ──
+  it("excludes from the VIDEO pool any row whose schema requires a media upload — motion-control/transition rows can never run on a text prompt", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([
+      // kling-3.0/motion-control's curated schema REQUIRES input_urls +
+      // video_urls (a motion-transfer model). Live shape, 2026-08-06.
+      { modelId: "kling-3.0/motion-control", isActive: true, isDeprecated: false, endpoint: "kling-3.0/motion-control", providerModelId: "kling-3.0/motion-control", capability: "video", modelType: "video", creditsCost: 8,
+        inputSchema: { fields: { prompt: { type: "string", required: false }, input_urls: { type: "array", required: true }, video_urls: { type: "array", required: true } } } },
+      // pixverse-v6/transition requires first/last frame images. Live shape.
+      { modelId: "pixverse-v6/transition", isActive: true, isDeprecated: false, endpoint: "pixverse-v6/transition", providerModelId: "pixverse-v6/transition", capability: "video", modelType: "video", creditsCost: 8,
+        inputSchema: { fields: { prompt: { type: "string", required: true }, first_frame_image_url: { type: "string", format: "uri", required: true }, last_frame_image_url: { type: "string", format: "uri", required: true } } } },
+      // A genuine t2v row — required fields are all rendering settings.
+      { modelId: "kling-3.0/video", isActive: true, isDeprecated: false, endpoint: "kling-3.0/video", providerModelId: "kling-3.0/video", capability: "video", modelType: "video", creditsCost: 8,
+        inputSchema: { fields: { prompt: { type: "string", required: true }, sound: { type: "boolean", default: false, required: true }, multi_shots: { type: "boolean", default: false, required: true } } } },
+    ]);
+
+    const ids = (await getRunnableModelsForType("video", { limit: 5 })).map((r) => r.modelId);
+    expect(ids).toEqual(["kling-3.0/video"]);
+  });
+
+  it("keeps a media-required row in its OWN pool type (reference-to-video → i2v) — still offered for image-input steps", async () => {
+    prisma.modelPricing.findMany.mockResolvedValue([
+      { modelId: "happyhorse-1-1/reference-to-video", isActive: true, isDeprecated: false, endpoint: "happyhorse-1-1/reference-to-video", providerModelId: "happyhorse-1-1/reference-to-video", capability: "reference-to-video", modelType: "video", creditsCost: 8,
+        inputSchema: { fields: { prompt: { type: "string", required: true }, reference_image_url: { type: "string", format: "uri", required: true } } } },
+    ]);
+    expect(await getRunnableModelsForType("video", { limit: 5 })).toEqual([]);
+    expect((await getRunnableModelsForType("i2v", { limit: 5 })).map((r) => r.modelId)).toEqual(["happyhorse-1-1/reference-to-video"]);
+  });
+});
+
+describe("requiresMediaInput — schema-driven media-input gate for text-only step kinds", () => {
+  it("returns true only when a REQUIRED field names a media upload", () => {
+    expect(requiresMediaInput({ inputSchema: { fields: { input_urls: { type: "array", required: true }, video_urls: { type: "array", required: true } } } })).toBe(true);
+    expect(requiresMediaInput({ inputSchema: { fields: { first_frame_image_url: { type: "string", format: "uri", required: true } } } })).toBe(true);
+    expect(requiresMediaInput({ inputSchema: { fields: { image_url: { type: "string", format: "uri", required: true } } } })).toBe(true);
+  });
+
+  it("returns false when required fields are rendering settings, not media", () => {
+    expect(requiresMediaInput({ inputSchema: { fields: { prompt: { type: "string", required: true }, sound: { type: "boolean", default: false, required: true }, multi_shots: { type: "boolean", default: false, required: true }, aspect_ratio: { type: "string", required: true }, duration: { type: "number", required: true }, quality: { type: "string", required: true } } } })).toBe(false);
+  });
+
+  it("treats an optional media field as NOT required — the caller can omit it", () => {
+    expect(requiresMediaInput({ inputSchema: { fields: { prompt: { type: "string", required: true }, image_url: { type: "string", format: "uri", required: false } } } })).toBe(false);
+  });
+
+  it("returns false for a row with no schema — never narrows an unverified model by guesswork", () => {
+    expect(requiresMediaInput({ inputSchema: null })).toBe(false);
+    expect(requiresMediaInput({})).toBe(false);
+    expect(requiresMediaInput(null)).toBe(false);
   });
 });

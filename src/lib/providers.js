@@ -26,6 +26,14 @@ const BRANDED_ERRORS = {
   timeout: "The request took too long. Please try again.",
   content_filter: "The request was blocked by safety filters.",
   insufficient_balance: "Provider balance is low. Please contact support.",
+  // KIE answers a payload missing a required field with a NAMELESS
+  // {"code":500,"msg":"This field is required"} or a named variant like
+  // "first_frame_image_url cannot be empty" (measured 2026-08-06 — a
+  // text-only step sent to an image-required model). Neither matched any
+  // bucket, so the user was told "An unexpected error occurred" about a
+  // fixable input problem. Branded honestly: the model needs settings the
+  // caller didn't supply.
+  input_error: "Some required settings are missing for this model. Please adjust the settings and try again.",
   server_error: "Something went wrong on our end. Please try again.",
   unknown: "An unexpected error occurred. Please try again.",
 };
@@ -64,6 +72,11 @@ export function brandError(providerError) {
   if (lower.includes("accessdenied") || lower.includes("access denied") || lower.includes("does not support asynchronous calls") || lower.includes("does not support synchronous calls")) return BRANDED_ERRORS.access_denied;
   if (lower.includes("model name you specified is not supported") || lower.includes("model not exist")) return BRANDED_ERRORS.model_not_found;
   if (lower.includes("not found") || lower.includes("404")) return BRANDED_ERRORS.model_not_found;
+  // Checked before the server_error bucket: KIE's missing-field verdicts are
+  // {"code":500,"msg":"This field is required"} and named variants like
+  // "first_frame_image_url cannot be empty" — an INPUT problem, not an
+  // outage, and the user can act on it (pick another model / add the input).
+  if (lower.includes("this field is required") || lower.includes("field is required") || lower.includes("cannot be empty")) return BRANDED_ERRORS.input_error;
   if (lower.includes("timeout") || lower.includes("timed out")) return BRANDED_ERRORS.timeout;
   if (lower.includes("content") || lower.includes("filter") || lower.includes("safety") || MODERATION_TOKEN_RE.test(lower)) return BRANDED_ERRORS.content_filter;
   if (lower.includes("balance") || lower.includes("credit") || lower.includes("insufficient")) return BRANDED_ERRORS.insufficient_balance;

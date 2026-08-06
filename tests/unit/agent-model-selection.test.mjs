@@ -54,8 +54,8 @@ vi.mock("@/lib/providers", () => ({
 import prisma from "@/lib/prisma";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { detectAbuse } from "@/lib/security";
-import { generateImage } from "@/lib/generation";
-import { executeAgentStep, executeStepWithRetry, defaultRunnableModel } from "@/lib/agents";
+import { generateImage, generateVideo, generateI2V } from "@/lib/generation";
+import { executeAgentStep, executeStepWithRetry, defaultRunnableModel, resolveUserRequestedModels, pinUserRequestedModels } from "@/lib/agents";
 
 // The exact production shape reported for the two dead models that used to
 // be the ENTIRE hardcoded image fallback chain.
@@ -336,5 +336,131 @@ describe("defaultRunnableModel — the audio default picks a generator, not a tr
   it("degrades to the last-resort fallback id when the catalog lookup itself fails", async () => {
     prisma.modelPricing.findMany.mockRejectedValue(new Error("db unreachable"));
     expect(await defaultRunnableModel("audio")).toBe("suno-v4.5");
+  });
+});
+
+describe("video pool — text-only steps must never get image-required models (2026-08-06 production incident)", () => {
+  // The exact rows the incident produced: all 8 cr, capability "video", but
+  // kling-3.0/motion-control's curated schema REQUIRES input_urls/video_urls
+  // (a motion-transfer model) and the happyhorse reference row needs a
+  // reference image — neither can run on a text prompt alone.
+  const KLING_MOTION = {
+    modelId: "kling-3.0/motion-control", isActive: true, isDeprecated: false,
+    endpoint: "kling-3.0/motion-control", providerModelId: "kling-3.0/motion-control",
+    providerName: "KIE", capability: "video", modelType: "video", creditsCost: 8,
+    inputSchema: { fields: { prompt: { type: "string", required: false }, input_urls: { type: "array", required: true }, video_urls: { type: "array", required: true } } },
+  };
+  const HAPPYHORSE_REF = {
+    modelId: "happyhorse-1-1/reference-to-video", isActive: true, isDeprecated: false,
+    endpoint: "happyhorse-1-1/reference-to-video", providerModelId: "happyhorse-1-1/reference-to-video",
+    providerName: "KIE", capability: "reference-to-video", modelType: "video", creditsCost: 8,
+    inputSchema: { fields: { prompt: { type: "string", required: true }, reference_image_url: { type: "string", format: "uri", required: true } } },
+  };
+  const KLING_3_0_VIDEO = {
+    modelId: "kling-3.0/video", isActive: true, isDeprecated: false,
+    endpoint: "kling-3.0/video", providerModelId: "kling-3.0/video",
+    providerName: "KIE", capability: "video", modelType: "video", creditsCost: 8,
+    inputSchema: { fields: { prompt: { type: "string", required: true }, sound: { type: "boolean", default: false, required: true }, multi_shots: { type: "boolean", default: false, required: true } } },
+  };
+  const SEEDANCE_2 = {
+    modelId: "bytedance/seedance-2", isActive: true, isDeprecated: false,
+    endpoint: "bytedance/seedance-2", providerModelId: "bytedance/seedance-2",
+    providerName: "KIE", capability: "video", modelType: "video", creditsCost: 143,
+    inputSchema: { fields: { prompt: { type: "string", required: true }, aspect_ratio: { type: "string", enum: ["16:9", "9:16"] }, duration: { type: "number", minimum: 4, maximum: 15 } } },
+  };
+
+  it("defaultRunnableModel('video') skips the media-required rows and picks a text-capable model", async () => {
+    seedCatalog([KLING_MOTION, HAPPYHORSE_REF, KLING_3_0_VIDEO]);
+    expect(await defaultRunnableModel("video")).toBe("kling-3.0/video");
+  });
+
+  it("executeStepWithRetry substitutes a media-required PRIMARY on a text-only step — no wasted provider call", async () => {
+    seedCatalog([KLING_MOTION, HAPPYHORSE_REF, KLING_3_0_VIDEO]);
+    generateVideo.mockResolvedValue({ url: "https://cdn.example/clip.mp4" });
+
+    const step = { agent: "video", task: "Clip 1", params: { model: "kling-3.0/motion-control", prompt: "sunlight through curtains", aspect_ratio: "9:16" } };
+    const { output, model } = await executeStepWithRetry(step, [], 0, { quoted: 8, max: 8 });
+
+    expect(output).toBe("https://cdn.example/clip.mp4");
+    expect(model).toBe("kling-3.0/video");
+    expect(generateVideo).toHaveBeenCalledTimes(1);
+    expect(generateVideo.mock.calls[0][0]).toMatchObject({ endpoint: "kling-3.0/video" });
+  });
+
+  it("the SAME media-required model is allowed when the step actually carries an image (i2v)", async () => {
+    seedCatalog([KLING_MOTION, KLING_3_0_VIDEO]);
+    generateI2V.mockResolvedValue({ url: "https://cdn.example/animated.mp4" });
+
+    const step = { agent: "video", task: "Animate the still", params: { model: "kling-3.0/motion-control", prompt: "move the cloth", image_url: "/api/media/local/x.png" } };
+    const { output, model } = await executeStepWithRetry(step, [], 0, { quoted: 8, max: 8 });
+
+    expect(output).toBe("https://cdn.example/animated.mp4");
+    expect(model).toBe("kling-3.0/motion-control");
+    expect(generateI2V).toHaveBeenCalledTimes(1);
+    expect(generateI2V.mock.calls[0][0]).toMatchObject({ endpoint: "kling-3.0/motion-control", image_url: "/api/media/local/x.png" });
+  });
+});
+
+describe("user-requested model resolution — 'use seedance 2' is honored deterministically (2026-08-06 incident)", () => {
+  const KLING_3_0_VIDEO = {
+    modelId: "kling-3.0/video", isActive: true, isDeprecated: false,
+    endpoint: "kling-3.0/video", providerModelId: "kling-3.0/video",
+    providerName: "KIE", capability: "video", modelType: "video", creditsCost: 8,
+    inputSchema: { fields: { prompt: { type: "string", required: true } } },
+  };
+  const SEEDANCE_2 = {
+    modelId: "bytedance/seedance-2", isActive: true, isDeprecated: false,
+    endpoint: "bytedance/seedance-2", providerModelId: "bytedance/seedance-2",
+    providerName: "KIE", capability: "video", modelType: "video", creditsCost: 143,
+    inputSchema: { fields: { prompt: { type: "string", required: true } } },
+  };
+  const SEEDANCE_2_FAST = {
+    modelId: "bytedance/seedance-2-fast", isActive: true, isDeprecated: false,
+    endpoint: "bytedance/seedance-2-fast", providerModelId: "bytedance/seedance-2-fast",
+    providerName: "KIE", capability: "video", modelType: "video", creditsCost: 125,
+    inputSchema: { fields: { prompt: { type: "string", required: true } } },
+  };
+
+  it("resolves 'use seedance 2' from the conversation to bytedance/seedance-2 — not the -fast variant", async () => {
+    seedCatalog([KLING_3_0_VIDEO, SEEDANCE_2, SEEDANCE_2_FAST]);
+    const requested = await resolveUserRequestedModels({
+      conversation: [{ role: "user", content: "Use seedance 2 for the videos" }],
+    });
+    expect(requested).toEqual([
+      { kind: "video", row: expect.objectContaining({ modelId: "bytedance/seedance-2" }) },
+    ]);
+  });
+
+  it("resolves the dotted 'seedance 2.0' spelling identically", async () => {
+    seedCatalog([KLING_3_0_VIDEO, SEEDANCE_2]);
+    const requested = await resolveUserRequestedModels({
+      userMessage: "Revision: For videos use seedance 2.0",
+    });
+    expect(requested[0].row.modelId).toBe("bytedance/seedance-2");
+  });
+
+  it("pins the resolved model onto every video step and marks the summary", async () => {
+    const plan = {
+      summary: "4 slow cinematic clips",
+      steps: [
+        { agent: "video", task: "Clip 1", params: { prompt: "x", aspect_ratio: "9:16" } },
+        { agent: "video", task: "Clip 2", params: { prompt: "y", aspect_ratio: "9:16" } },
+        { agent: "music", task: "Score", params: { prompt: "ambient" } },
+      ],
+    };
+    pinUserRequestedModels(plan, [{ kind: "video", row: SEEDANCE_2 }]);
+    expect(plan.steps[0].params.model).toBe("bytedance/seedance-2");
+    expect(plan.steps[0].params.endpoint).toBe("bytedance/seedance-2");
+    expect(plan.steps[1].params.model).toBe("bytedance/seedance-2");
+    expect(plan.steps[2].params.model).toBeUndefined(); // other kinds untouched
+    expect(plan.summary).toMatch(/pinned to your request/i);
+  });
+
+  it("returns nothing for an ambiguous bare-vendor mention ('use kling' matches many rows)", async () => {
+    seedCatalog([KLING_3_0_VIDEO, SEEDANCE_2]);
+    const requested = await resolveUserRequestedModels({
+      conversation: [{ role: "user", content: "use kling for the shots" }],
+    });
+    expect(requested).toEqual([]);
   });
 });

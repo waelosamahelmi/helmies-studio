@@ -191,7 +191,18 @@ export const CAPABILITY_TO_MODEL_TYPE = {
   "text-to-video": "video",
   "image-to-video": "i2v",
   "video-to-video": "v2v",
-  "reference-to-video": "video",
+  // Reference-to-video models REQUIRE a source image (the provider rejects a
+  // text-only payload with "first_frame_image_url cannot be empty"). They are
+  // image-INPUT models, so they belong with i2v in the pool typing, NOT with
+  // text-to-video — previously "video" put them in getRunnableModelsForType's
+  // t2v pool, where the agent's planner hint and fallback chain offered them
+  // for text-only steps and every such step failed at the provider (measured
+  // production incident, 2026-08-06: happyhorse-1-1/reference-to-video and
+  // pixverse-v6/transition were the fallback candidates for a linen-film
+  // text-to-video step). The studio pickers are unaffected: they filter by
+  // capability STRING via capability-groups.js (r2v: ["reference-to-video"]),
+  // which this modelType mapping never touched.
+  "reference-to-video": "i2v",
   "avatar-video": "lipsync",
   "text-to-speech": "audio",
   audio: "audio",
@@ -457,6 +468,35 @@ export function isRunnableModelRow(row) {
   if (row.isActive !== true) return false;
   if (row.isDeprecated === true) return false;
   return !!(row.endpoint || row.providerModelId || row.modelId);
+}
+
+// ── Media-input gate for TEXT-ONLY step kinds (URGENT production fix) ──────
+// A model whose schema REQUIRES an image/video/audio upload (input_urls,
+// first_frame_image_url, reference_image_urls, ...) can never run on a text
+// prompt alone — the provider rejects it (measured, 2026-08-06:
+// kling-3.0/motion-control → 500 "This field is required" for its required
+// input_urls/video_urls; pixverse-v6/transition → 422 "first_frame_image_url
+// cannot be empty"). Such models are coarse-`video`-capability rows with no
+// textual marker to distinguish them, so the ONLY honest signal is the
+// schema's own required fields. Reads the same per-field shape
+// validateModelInput/applyRequiredDefaults already use (fields.*.required,
+// plus the providerRequired list written by verify-catalog.mjs) so this gate
+// can never disagree with what a submit actually validates. A row with no
+// schema (or no required fields) is treated as text-capable — the historical
+// behavior, never narrowed by guesswork.
+export function requiresMediaInput(row) {
+  const schema = row?.inputSchema;
+  if (!schema || typeof schema !== "object") return false;
+  const fields = schema.fields && typeof schema.fields === "object" ? schema.fields : {};
+  const required = [];
+  for (const [name, field] of Object.entries(fields)) {
+    if (field && (field.required === true || field.required === "true")) required.push(name);
+  }
+  if (Array.isArray(schema.providerRequired)) required.push(...schema.providerRequired);
+  // A required field whose name names a media upload. Kept deliberately
+  // tight (url/list tokens only): `sound`, `multi_shots`, `mode`, `quality`,
+  // `duration`, `aspect_ratio` etc. are rendering settings, not media.
+  return required.some((f) => typeof f === "string" && /url|_list|upload/i.test(f.trim()));
 }
 
 // The identifier to actually hand a provider adapter for a runnable row —

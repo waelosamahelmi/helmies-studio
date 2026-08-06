@@ -11,7 +11,7 @@ import {
   calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput,
   modelTypeForCapability, UNCATEGORIZED_MODEL_TYPE, slugToTitle, toPublicModelId, resolveModelPricingRow,
   inferCapabilityFromRow, sanitizeCatalogDescription, sanitizeDisplayName,
-  isRunnableModelRow, runnableProviderModelId,
+  isRunnableModelRow, runnableProviderModelId, requiresMediaInput,
 } from "./model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
@@ -334,6 +334,13 @@ export async function getRunnableModelsForType(modelType, { excludeModelIds = []
     if (!isRunnableModelRow(row)) continue;
     const capability = resolveEffectiveCapability(row);
     if (modelTypeForCapability(capability) !== modelType) continue;
+    // A text-only "video" step cannot run a model whose schema demands an
+    // image/video upload (motion-control, transition, reference rows with
+    // coarse "video" capability) — the provider rejects them outright
+    // (measured, 2026-08-06 — see requiresMediaInput's header in
+    // model-catalog-core.mjs). Excluding them here keeps the planner hint
+    // AND every agent fallback/substitute pool honest at once.
+    if (modelType === "video" && requiresMediaInput(row)) continue;
     matches.push(row);
     if (matches.length >= limit) break;
   }
