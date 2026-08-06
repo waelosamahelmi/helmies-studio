@@ -101,7 +101,10 @@ test("wizard: the validate step persists a VoiceProfile and blocked chaining is 
     mimeType: "audio/wav",
     buffer: wavBuffer(),
   });
-  await expect(visible(page.getByRole("button", { name: /Replace the recording/ }))).toBeVisible({ timeout: 15000 });
+  // The Dropzone swaps its browse button for a thumbnail once the upload
+  // lands — the thumb's remove control is the reliable "upload finished"
+  // signal.
+  await expect(visible(page.getByRole("button", { name: /Remove recording\.wav/ }))).toBeVisible({ timeout: 15000 });
 
   const validate = visible(page.getByRole("button", { name: /Validate recording/ }));
   await expect(validate).toBeEnabled({ timeout: 15000 });
