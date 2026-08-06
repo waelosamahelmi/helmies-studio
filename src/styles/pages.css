@@ -896,3 +896,13 @@
       linear-gradient(to left,  rgba(0,0,0,0.6), rgba(0,0,0,0));
   }
 }
+
+/* ── U1 ── */
+/* Display type on Library-page section headings (the gallery's page title
+   here; its in-page section headings opt in via .hs-display in JSX). The
+   base h1–h6 rule now uses the utility face, so this is the deliberate
+   moment, not a default. */
+.pg-head h1 {
+  font-family: var(--ff-display);
+  letter-spacing: -0.03em;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { IcClose } from "./Icons";
@@ -71,17 +71,55 @@ function useReturnFocus(open) {
   }, [open]);
 }
 
+/* U1 — keyboard avoidance. A bottom sheet holding a text field must not be
+   covered by the on-screen keyboard. visualViewport is the only honest
+   signal a browser gives for that: when the keyboard opens, the visual
+   viewport shrinks while the layout viewport does not, and the difference
+   is exactly the strip the keyboard occupies. The offset is applied as an
+   inline `bottom` (framer-motion owns `transform`, so translating would be
+   overwritten mid-animation; `bottom` composes cleanly). Playwright cannot
+   emulate the on-screen keyboard, so this path is exercised only on real
+   devices — the fallback (no visualViewport) simply leaves the sheet at the
+   bottom, which is where it already was. */
+function useKeyboardAvoidance(active, ref) {
+  useEffect(() => {
+    if (!active) return undefined;
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return undefined;
+    const el = ref.current;
+    const apply = () => {
+      if (!ref.current) return;
+      const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      ref.current.style.bottom = covered ? `${covered}px` : "";
+    };
+    apply();
+    vv.addEventListener("resize", apply);
+    vv.addEventListener("scroll", apply);
+    return () => {
+      vv.removeEventListener("resize", apply);
+      vv.removeEventListener("scroll", apply);
+      if (el) el.style.bottom = "";
+    };
+  }, [active, ref]);
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    SHEET — bottom sheet. Drag down or tap the scrim to dismiss.
+   U1: `snap="half"` opens at half height; dragging the grabber up snaps to
+   full, dragging down past the threshold still dismisses. `avoidKeyboard`
+   keeps the sheet above the on-screen keyboard (see above).
    ══════════════════════════════════════════════════════════════════════════ */
-export function Sheet({ open, onClose, title, children, footer }) {
+export function Sheet({ open, onClose, title, children, footer, snap, avoidKeyboard = false }) {
   const ref = useRef(null);
+  const [full, setFull] = useState(false);
   useScrollLock(open);
   useDismiss(open, onClose, ref);
   useReturnFocus(open);
+  useKeyboardAvoidance(open && avoidKeyboard, ref);
 
   useEffect(() => {
     if (open) ref.current?.focus();
+    else setFull(false);
   }, [open]);
 
   return (
@@ -99,7 +137,7 @@ export function Sheet({ open, onClose, title, children, footer }) {
             />
             <motion.div
               ref={ref}
-              className="hs-sheet"
+              className={`hs-sheet${snap === "half" && !full ? " hs-sheet--half" : ""}`}
               role="dialog"
               aria-modal="true"
               aria-label={title}
@@ -110,9 +148,10 @@ export function Sheet({ open, onClose, title, children, footer }) {
               transition={{ duration: 0.32, ease: EASE }}
               drag="y"
               dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={{ top: 0, bottom: 0.4 }}
+              dragElastic={{ top: snap === "half" && !full ? 0.25 : 0, bottom: 0.4 }}
               onDragEnd={(_, info) => {
-                if (info.offset.y > 110 || info.velocity.y > 520) onClose?.();
+                if (info.offset.y > 110 || info.velocity.y > 520) { onClose?.(); return; }
+                if (snap === "half" && !full && (info.offset.y < -70 || info.velocity.y < -520)) setFull(true);
               }}
             >
               <div className="hs-sheet__grip" aria-hidden="true" />

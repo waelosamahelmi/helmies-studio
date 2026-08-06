@@ -25,6 +25,21 @@
 @font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-extrabold.woff2") format("woff2"); font-weight: 800; font-style: normal; font-display: swap; }
 @font-face { font-family: "Nohemi"; src: url("/fonts/nohemi-black.woff2")     format("woff2"); font-weight: 900; font-style: normal; font-display: swap; }
 
+/* ── Display face: Bricolage Grotesque (U1) ────────────────────────────────
+   Self-hosted (no external font requests — CSP + perf), latin subset only,
+   one variable-weight file covering 600–700. Reserved for the few display
+   moments the U1 direction names: studio titles, stage empty-state
+   headings, Library section headings, plan/deliverable card titles.
+   Body and controls stay on Nohemi; mono is untouched. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/fonts/bricolage-grotesque-latin.woff2") format("woff2");
+  font-weight: 600 700;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC, U+2122, U+2212, U+FEFF, U+FFFD;
+}
+
 /* ── Tailwind theme bridge ─────────────────────────────────────────────── */
 @theme {
   --font-sans:    "Nohemi", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -99,8 +114,13 @@
   --fill-02: rgba(255,255,255,0.045);
   --fill-03: rgba(255,255,255,0.075);
 
-  /* Type stack */
-  --ff-display: "Nohemi", ui-sans-serif, system-ui, sans-serif;
+  /* Type stack.
+     U1: --ff-display now points at the characterful display face
+     (Bricolage Grotesque). It is applied ONLY where the design direction
+     names a display moment (studio title, stage empty-state headings,
+     Library section headings, plan/deliverable card titles) — the base
+     h1–h6 rule below deliberately uses --ff-ui so nothing else changes. */
+  --ff-display: "Bricolage Grotesque", "Nohemi", ui-sans-serif, system-ui, sans-serif;
   --ff-ui:      "Nohemi", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --ff-mono:    ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
@@ -184,7 +204,11 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    font-family: var(--ff-display);
+    /* U1: was var(--ff-display) — visually identical then (both stacks led
+       with Nohemi). Now that --ff-display carries the Bricolage display
+       face, headings default to the utility face and opt IN to display
+       type via .hs-display / the scoped rules in studio.css & pages.css. */
+    font-family: var(--ff-ui);
     font-weight: 600;
     letter-spacing: -0.032em;
     line-height: 1.06;
@@ -1441,4 +1465,19 @@ kbd.hs-kbd {
       linear-gradient(to right, rgba(0,0,0,0.16), rgba(0,0,0,0)),
       linear-gradient(to left,  rgba(0,0,0,0.16), rgba(0,0,0,0));
   }
+}
+
+/* ── U1 ── */
+/* Display-type utility: the opt-in for Bricolage moments in JSX (gallery
+   section headings and the like) where a CSS selector would be clumsier. */
+.hs-display {
+  font-family: var(--ff-display);
+  font-weight: 600;
+  letter-spacing: -0.022em;
+}
+
+/* The token reads identically in both themes — restated here so the theme
+   block is self-contained the way every other runtime token is. */
+[data-theme="light"] {
+  --ff-display: "Bricolage Grotesque", "Nohemi", ui-sans-serif, system-ui, sans-serif;
 }

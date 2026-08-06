@@ -231,7 +231,7 @@ export default function GalleryClient() {
       {(active.length > 0 || broken.length > 0) && (
         <section aria-labelledby="jobs-h" style={{ marginBottom: "var(--s-10)" }}>
           <div className="hs-row hs-row--between" style={{ marginBottom: "var(--s-4)" }}>
-            <h2 id="jobs-h" style={{ fontSize: "var(--t-md)" }}>Queue</h2>
+            <h2 id="jobs-h" className="hs-display" style={{ fontSize: "var(--t-md)" }}>Queue</h2>
             <span className="pg-count" aria-live="polite">
               {active.length} running · {broken.length} failed
             </span>
@@ -304,7 +304,7 @@ export default function GalleryClient() {
       {/* ── Finished work ──────────────────────────────────────────────── */}
       <section aria-labelledby="work-h">
         <div className="hs-row hs-row--between" style={{ marginBottom: "var(--s-4)" }}>
-          <h2 id="work-h" style={{ fontSize: "var(--t-md)" }}>Finished work</h2>
+          <h2 id="work-h" className="hs-display" style={{ fontSize: "var(--t-md)" }}>Finished work</h2>
           {!loading && total > 0 && (
             <span className="pg-count">
               {done.length} of {total} shown

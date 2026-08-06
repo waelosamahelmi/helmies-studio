@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Sheet } from "./Sheet";
 import { SpendMeter } from "./Spend";
 import { IcSpark, IcUpload, IcClose, IcBolt } from "./Icons";
 import { shouldSubmitOnKeyDown, isEnterSendGesture } from "@/lib/brief-keydown";
@@ -13,7 +14,30 @@ import { shouldSubmitOnKeyDown, isEnterSendGesture } from "@/lib/brief-keydown";
      2. what it will cost  (the meter)
      3. commit             (the action)
    The action never appears without the cost beside it.
+
+   U1 — on a phone the composer is a two-state instrument: collapsed, it is
+   a slim bar above the dock (prompt preview on the left, the primary action
+   in right-thumb reach); tapped, it expands into a bottom sheet with the
+   full brief, tools and the spend meter, using the kit Sheet's grabber /
+   drag-dismiss / snap mechanics. One component tree — the desktop layout is
+   untouched, and the phone collapse is a matchMedia switch, not a remount
+   of a second tree.
    ══════════════════════════════════════════════════════════════════════════ */
+
+/* Phone = the width at which the shell swaps its rail for the dock. SSR and
+   the first client render agree on `false`, so hydration stays clean; the
+   effect corrects it before paint on a real phone. */
+function usePhone() {
+  const [phone, setPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    const apply = () => setPhone(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  return phone;
+}
 
 export default function Brief({
   value = "",
@@ -50,6 +74,8 @@ export default function Brief({
   glow = false,
 }) {
   const ref = useRef(null);
+  const phone = usePhone();
+  const [open, setOpen] = useState(false);
 
   /* Grow with the content, up to the CSS max-height */
   const resize = useCallback(() => {
@@ -59,8 +85,17 @@ export default function Brief({
     el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   }, []);
 
-  useEffect(() => { resize(); }, [value, resize]);
-  useEffect(() => { if (autoFocus) ref.current?.focus(); }, [autoFocus]);
+  useEffect(() => { resize(); }, [value, resize, open]);
+  useEffect(() => { if (autoFocus && !phone) ref.current?.focus(); }, [autoFocus, phone]);
+
+  /* Expanding on a phone should land the cursor in the brief. */
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => ref.current?.focus(), 120);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [open]);
 
   const count = value.length;
   const near = count > maxChars * 0.85;
@@ -77,7 +112,12 @@ export default function Brief({
   // submitted, rather than letting the caller re-read `value` itself — see
   // the WebKit note below for why that distinction matters end to end, not
   // just for this component's own readiness check.
-  const submitText = (text) => { if (isReady(text)) onSubmit?.(text); };
+  const submitText = (text) => {
+    if (isReady(text)) {
+      setOpen(false);
+      onSubmit?.(text);
+    }
+  };
 
   const submit = () => submitText(value);
 
@@ -124,6 +164,7 @@ export default function Brief({
       isComposing: e.nativeEvent?.isComposing, keyCode: e.keyCode,
       value: liveValue, generating, disabled, affordable, enterSends,
     })) {
+      setOpen(false);
       onSubmit?.(liveValue);
     }
   };
@@ -159,10 +200,12 @@ export default function Brief({
     const onNativeInput = (e) => applyChange(e.target.value);
     el.addEventListener("input", onNativeInput);
     return () => el.removeEventListener("input", onNativeInput);
-  }, [applyChange]);
+  }, [applyChange, phone, open]);
 
-  return (
-    <div className={`st-dock-prompt${glow ? " hs-glow" : ""}`}>
+  /* The full composer — rendered inline on desktop, inside the sheet on a
+     phone. One JSX tree either way. */
+  const composer = (
+    <>
       <div className="st-brief">
         <textarea
           ref={ref}
@@ -242,6 +285,69 @@ export default function Brief({
           </button>
         )}
       </div>
-    </div>
+    </>
+  );
+
+  if (!phone) {
+    return <div className={`st-dock-prompt${glow ? " hs-glow" : ""}`}>{composer}</div>;
+  }
+
+  /* ── Phone: collapsed bar + expanding sheet ──────────────────────────── */
+  const preview = value.trim();
+  return (
+    <>
+      <div className={`st-dock-prompt st-dock-prompt--peek${glow ? " hs-glow" : ""}`}>
+        <button
+          type="button"
+          className="st-peek"
+          onClick={() => setOpen(true)}
+          aria-label="Open the brief composer"
+          aria-expanded={open}
+        >
+          <span className={`st-peek__text${preview ? "" : " is-empty"}`}>
+            {preview || placeholder}
+          </span>
+        </button>
+
+        {generating ? (
+          <button
+            type="button"
+            className="hs-btn hs-btn--outline st-peek__go"
+            onClick={onCancel}
+            disabled={!onCancel}
+            data-testid="brief-primary"
+          >
+            <span className="hs-spin" />
+            {stage ? String(stage).replace(/_/g, " ") : "Working"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="hs-btn hs-btn--primary st-peek__go"
+            onClick={ready ? submit : () => setOpen(true)}
+            data-testid="brief-primary"
+            title={
+              !value.trim() ? "Write a brief first"
+              : !affordable ? "Not enough credits"
+              : submitLabel
+            }
+          >
+            <IcBolt className="hs-icon-sm" />
+            {submitLabel}
+            {cost > 0 && <span className="hs-btn__cost">{cost}</span>}
+          </button>
+        )}
+      </div>
+
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title={enterSends ? "Message" : "Brief"}
+        snap="half"
+        avoidKeyboard
+      >
+        <div className="st-dock-prompt st-dock-prompt--sheet">{composer}</div>
+      </Sheet>
+    </>
   );
 }

@@ -64,10 +64,10 @@ export default function Workspace({
         </aside>
       )}
 
-      <Sheet open={open === "controls"} onClose={() => setOpen(null)} title={controlsLabel}>
+      <Sheet open={open === "controls"} onClose={() => setOpen(null)} title={controlsLabel} snap="half">
         {controls}
       </Sheet>
-      <Sheet open={open === "inspector"} onClose={() => setOpen(null)} title={inspectorLabel}>
+      <Sheet open={open === "inspector"} onClose={() => setOpen(null)} title={inspectorLabel} snap="half">
         {inspector}
       </Sheet>
     </div>

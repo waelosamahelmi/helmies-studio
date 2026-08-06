@@ -239,7 +239,7 @@ function AssetGrid({ assembled }) {
         >
           <header style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", marginBottom: "var(--s-3)" }}>
             <IcCheck className="hs-icon-sm" />
-            <span className="hs-label" style={{ margin: 0 }}>Final deliverable</span>
+            <span className="hs-label st-cardtitle" style={{ margin: 0 }}>Final deliverable</span>
             <span className="hs-hint" style={{ marginLeft: "auto" }}>{deliverable.name || ""}</span>
           </header>
           <AssetCard url={deliverable.url} label={deliverable.name || "Final deliverable"} gated={false} />
@@ -248,14 +248,18 @@ function AssetGrid({ assembled }) {
       {deliverable && (media.length > 0 || text.length > 0) && (
         <span className="hs-label" style={{ margin: 0 }}>Collected assets</span>
       )}
-      {media.map((entry) => (
-        <AssetCard
-          key={`${entry.step}-${entry.url}`}
-          url={entry.url}
-          label={`Step ${entry.step} output`}
-          gated={false}
-        />
-      ))}
+      {media.length > 0 && (
+        <div className="st-cardrow">
+          {media.map((entry) => (
+            <AssetCard
+              key={`${entry.step}-${entry.url}`}
+              url={entry.url}
+              label={`Step ${entry.step} output`}
+              gated={false}
+            />
+          ))}
+        </div>
+      )}
       {text.map((entry, i) => (
         <details key={`text-${entry.step}-${i}`} className="hs-card">
           <summary className="hs-label" style={{ margin: 0, cursor: "pointer" }}>

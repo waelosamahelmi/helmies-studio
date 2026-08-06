@@ -212,7 +212,7 @@
 }
 .st-tool svg { width: 19px; height: 19px; stroke-width: 1.6; }
 .st-tool span {
-  font-size: 9.5px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: -0.01em;
   line-height: 1;
@@ -251,13 +251,28 @@
 @media (max-width: 900px) {
   .st-app {
     grid-template-rows: var(--bar-h) 1fr auto;
-    grid-template-columns: 1fr;
+    /* U1: was `1fr`. An fr track's minimum is the largest child's
+       min-content, and the bar's flex row could not compress below ~468px
+       (measured at Pixel 5) — so the ENTIRE shell column silently grew to
+       468 and `overflow: hidden` clipped the last ~75px of the bar, the
+       composer's primary action and the dock's final slot off the right
+       edge of a 393px phone. scrollWidth stayed 393, which is why the
+       overflow sweep never saw it. minmax(0, 1fr) pins the track to the
+       viewport; the rules below make the bar genuinely fit inside it. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "bar"
       "work"
       "dock";
   }
   .st-rail { display: none; }
+  .st-bar { min-width: 0; }
+  /* The wordmark is the desktop's; the mark alone says who we are in 44px
+     instead of ~150. min-width keeps the home link a real touch target
+     once the text is gone. */
+  .st-brand { padding-right: 0; min-width: 44px; justify-content: center; }
+  .st-brand strong, .st-brand span { display: none; }
+  .st-where { flex: 1; }
   .st-where__desc { display: none; }
   .st-search { max-width: none; }
   .st-search > span, .st-search kbd { display: none; }
@@ -283,13 +298,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: var(--s-1);
   min-height: var(--dock-h);
   color: var(--tx-mute);
   transition: color var(--d-fast) var(--ease);
 }
 .st-dock__btn svg { width: 20px; height: 20px; stroke-width: 1.7; }
-.st-dock__btn span { font-size: 9.5px; font-weight: 500; letter-spacing: -0.01em; }
+.st-dock__btn span { font-size: var(--t-micro); font-weight: 500; letter-spacing: -0.01em; }
 .st-dock__btn.is-active { color: var(--filament-lit); }
 .st-dock__btn:active { color: var(--tx); }
 
@@ -463,7 +478,9 @@
   background: var(--ink-100);
   transition: border-color var(--d-base) var(--ease);
 }
-.st-brief:focus-within { border-color: var(--line-strong); }
+/* U1 focus audit: the brief owns the page's main action, so its focus
+   state reads in the accent hairline rather than a neutral one. */
+.st-brief:focus-within { border-color: var(--line-accent); }
 
 .st-brief textarea {
   display: block;
@@ -605,7 +622,7 @@
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--tx-mute);
-  margin-bottom: 3px;
+  margin-bottom: var(--s-1);
 }
 .st-specs dd {
   font-family: var(--ff-mono);
@@ -1034,7 +1051,7 @@
   grid-area: tools;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--s-1);
   padding: var(--s-2) var(--s-1);
   border-right: 1px solid var(--line);
   background: var(--ink-050);
@@ -1146,7 +1163,7 @@
   padding: var(--s-3);
   border-bottom: 1px solid var(--line);
 }
-.st-canvas__layers-list { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s-2); display: flex; flex-direction: column-reverse; gap: 2px; }
+.st-canvas__layers-list { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s-2); display: flex; flex-direction: column-reverse; gap: var(--s-1); }
 
 .st-layer {
   display: grid;
@@ -1361,7 +1378,7 @@
   text-transform: uppercase;
   color: var(--tx-dim);
 }
-.st-item__body { padding: var(--s-2) var(--s-3) var(--s-3); display: flex; flex-direction: column; gap: 3px; }
+.st-item__body { padding: var(--s-2) var(--s-3) var(--s-3); display: flex; flex-direction: column; gap: var(--s-1); }
 .st-item__name {
   font-size: var(--t-tiny);
   font-weight: 500;
@@ -1372,14 +1389,14 @@
 }
 .st-item__meta {
   font-family: var(--ff-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--tx-mute);
   font-variant-numeric: tabular-nums;
 }
 .st-item__acts {
   position: absolute;
   right: var(--s-2); bottom: var(--s-2);
-  display: flex; gap: 3px;
+  display: flex; gap: var(--s-1);
   opacity: 0;
   transition: opacity var(--d-base) var(--ease);
 }
@@ -1604,7 +1621,7 @@
 }
 .st-swatch__hex {
   font-family: var(--ff-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   text-transform: uppercase;
   color: var(--tx-mute);
   text-align: center;
@@ -1676,7 +1693,7 @@
 .st-flow__wf b { font-size: var(--t-tiny); font-weight: 600; color: var(--tx); }
 .st-flow__wf span {
   font-family: var(--ff-mono);
-  font-size: 9.5px;
+  font-size: 10px;
   color: var(--tx-mute);
   font-variant-numeric: tabular-nums;
 }
@@ -1758,7 +1775,7 @@
 /* ── Layer rows ─────────────────────────────────────────────────────────── */
 .st-layer__body { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .st-layer.is-drop { box-shadow: inset 0 2px 0 var(--filament); }
-.st-layer__acts { display: flex; gap: 1px; flex: none; }
+.st-layer__acts { display: flex; gap: var(--s-1); flex: none; }
 .st-layer__act {
   width: 20px; height: 20px;
   display: grid; place-items: center;
@@ -1863,7 +1880,7 @@ select.st-layer__role option {
 .st-shot__tools {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--s-1);
   padding: 0 var(--s-2);
 }
 .st-shot__tools .hs-btn { flex: none; }
@@ -1955,7 +1972,7 @@ select.st-layer__role option {
 .st-clip__actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--s-1);
   flex: none;
   flex-wrap: wrap;
 }
@@ -2304,7 +2321,11 @@ select.st-layer__role option {
   font-weight: 600;
 }
 .st-node__name:hover { border-color: var(--line); }
-.st-node__name:focus { outline: none; border-color: var(--line-accent); background: var(--ink-050); }
+/* U1 focus audit: `outline: none` here also killed the global
+   :focus-visible ring for keyboard users; the border tint alone is too
+   quiet at a glance. The global ring now shows on keyboard focus, and the
+   border tint stays for pointer focus. */
+.st-node__name:focus { border-color: var(--line-accent); background: var(--ink-050); }
 
 .st-node__kind { grid-area: kind; font-size: var(--t-micro); color: var(--tx-faint); white-space: nowrap; }
 .st-node__cost { grid-area: cost; font-size: var(--t-micro); color: var(--tx-mute); white-space: nowrap; }
@@ -2359,7 +2380,7 @@ select.st-layer__role option {
   grid-area: tools;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--s-1);
   flex-wrap: wrap;
   padding-top: var(--s-2);
   border-top: 1px solid var(--line);
@@ -2663,3 +2684,226 @@ select.st-layer__role option {
   font-size: 10px;
 }
 .st-vcw__step.is-active .st-vcw__no { background: var(--filament-a24); color: var(--tx); }
+
+/* ── U1 ── */
+/* ══════════════════════════════════════════════════════════════════════════
+   U1 — the signature, the type, the phone shell. Appended as one block per
+   this file's merge discipline. Four ideas:
+     1. THE FILAMENT, MADE LITERAL — a single 2px thread through the shell
+        (under the top bar on desktop, along the dock's top edge on a phone)
+        that draws itself while jobs run and settles with one pulse when the
+        last completes. The only continuously-moving element in the app.
+     2. DISPLAY TYPE — Bricolage Grotesque on the few display moments only.
+     3. PHONE COMPOSER — collapsed peek bar + expanding sheet (Brief.js).
+     4. ADAPTIVE DOCK — active tool centred and labelled, neighbours as
+        icons, swipe to switch.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. The Filament ────────────────────────────────────────────────────── */
+.st-bar, .st-dock { position: relative; }
+
+.st-filament {
+  position: absolute;
+  left: 0; right: 0;
+  height: 2px;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 2;
+}
+.st-filament--bar  { bottom: -1px; }
+.st-filament--dock { top: -1px; }
+@media (max-width: 900px) { .st-filament--bar { display: none; } }
+
+/* The thread at rest: a barely-there static gradient. */
+.st-filament::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent, var(--filament-a40) 24%, var(--filament-a40) 76%, transparent);
+  opacity: 0.35;
+  transition: opacity var(--d-slow) var(--ease);
+}
+
+/* The draw head: a lit segment that travels the thread's length while work
+   is running. Indeterminate by design — it never fakes a percentage. */
+.st-filament::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 38%;
+  background: linear-gradient(90deg,
+    transparent, var(--filament) 30%, var(--filament-lit) 55%, var(--filament) 80%, transparent);
+  box-shadow: 0 0 12px 1px var(--filament-a40);
+  opacity: 0;
+  transform: translateX(-100%);
+}
+.st-filament[data-state="generating"]::before { opacity: 0.85; }
+.st-filament[data-state="generating"]::after {
+  opacity: 1;
+  animation: st-filament-draw 1.8s linear infinite;
+}
+@keyframes st-filament-draw {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(264%); } /* -0.38W → 1.0W of the parent */
+}
+
+/* Completion: one settle pulse, then back to rest. */
+.st-filament[data-state="settling"]::before {
+  animation: st-filament-settle 0.9s var(--ease) 1;
+}
+@keyframes st-filament-settle {
+  0%   { opacity: 1;    box-shadow: 0 0 14px 2px var(--filament-a40); }
+  100% { opacity: 0.35; box-shadow: none; }
+}
+
+/* Reduced motion: the thread still reports state — brighter while working —
+   but nothing travels and nothing pulses. */
+@media (prefers-reduced-motion: reduce) {
+  .st-filament::after { animation: none !important; opacity: 0 !important; }
+  .st-filament[data-state="generating"]::before { opacity: 1; }
+  .st-filament[data-state="settling"]::before { animation: none !important; }
+}
+
+/* ── 2. Display type — the named moments only ───────────────────────────── */
+.st-where__name {
+  font-family: var(--ff-display);
+  font-size: var(--t-md);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.st-stage .hs-empty h3,
+.st-lib .hs-empty h3 {
+  font-family: var(--ff-display);
+  font-size: var(--t-xl);
+  letter-spacing: -0.024em;
+}
+/* Plan / run / deliverable card titles: the mono micro-caps eyebrow becomes
+   a real title in the display face. .st-cardtitle is applied in JSX where
+   the eyebrow class alone was carrying a title's weight. */
+.st-plan__head > .hs-label,
+.st-cardtitle {
+  font-family: var(--ff-display);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  text-transform: none;
+  color: var(--tx);
+}
+
+/* ── 3. Phone composer — peek bar + sheet body ──────────────────────────── */
+.st-dock-prompt--peek {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+}
+.st-peek {
+  display: flex;
+  align-items: center;
+  min-height: 48px;
+  min-width: 0;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--ink-100);
+  text-align: left;
+  transition: border-color var(--d-fast) var(--ease);
+}
+.st-peek:active { border-color: var(--line-strong); }
+.st-peek__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-sm);
+  color: var(--tx);
+}
+.st-peek__text.is-empty { color: var(--tx-mute); }
+.st-peek__go {
+  --btn-h: 48px;
+  border-radius: var(--r-full);
+  padding: 0 var(--s-5);
+  font-weight: 600;
+}
+/* Inside the sheet the composer sheds the dock chrome — the sheet is the
+   chrome. */
+.st-dock-prompt--sheet {
+  border-top: 0;
+  background: transparent;
+  padding: 0;
+}
+@media (max-width: 900px) { .st-dock-prompt--sheet { padding: 0; } }
+
+/* Sheet snap point: half-open. Dragging the grabber up snaps to full
+   (kit/Sheet.js swaps the class). */
+.hs-sheet--half { max-height: 60dvh; }
+
+/* ── 4. Adaptive dock ───────────────────────────────────────────────────── */
+.st-dock__btn span { display: none; }
+.st-dock__btn.is-active span {
+  display: block;
+  font-size: var(--t-micro); /* 11px — no 9.5px squint */
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.st-dock__btn svg { transition: transform var(--d-fast) var(--ease); }
+.st-dock__btn.is-active svg { width: 22px; height: 22px; }
+.st-dock__btn:active svg { transform: scale(0.92); }
+
+/* ── U1b. Result cards — the agent's collected assets on a phone ────────────
+   Desktop keeps the vertical stack. On a phone the collection becomes one
+   full-width card per swipe: scroll-snap x with native momentum, actions
+   kept along the card's bottom edge in thumb reach. The deliverable card
+   stays above the row — first, always. */
+.st-cardrow { display: flex; flex-direction: column; gap: var(--s-3); min-width: 0; }
+@media (max-width: 900px) {
+  .st-cardrow {
+    flex-direction: row;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    gap: var(--s-2);
+    scrollbar-width: none;
+  }
+  .st-cardrow::-webkit-scrollbar { display: none; }
+  .st-cardrow > * { flex: 0 0 100%; min-width: 0; scroll-snap-align: center; }
+  .st-cardrow .st-asset__acts { justify-content: flex-end; }
+}
+
+/* ── U1b. Micro-motion ──────────────────────────────────────────────────────
+   One entrance for list cards on the base duration; press states already
+   ride --d-fast. Nothing here loops — the Filament is the only element
+   allowed continuous motion — and reduced-motion strips it all (the global
+   rule in system.css zeroes these durations). */
+@media (prefers-reduced-motion: no-preference) {
+  .st-item, .st-model, .st-shot, .st-mtl__track, .st-asset, .st-stepcard {
+    animation: st-enter var(--d-base) var(--ease) both;
+  }
+}
+@keyframes st-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── U1 Chanel pass ─────────────────────────────────────────────────────────
+   Looking at the phone screenshots, the shell's bottom edge stacked three
+   boxed bands — peek bar, two grey panel-tab slabs, dock. One decoration
+   too many. The panel tabs keep their 44px targets and their labels but
+   lose the slab: quiet ghost buttons on the same surface as the composer. */
+.st-panel-tabs { border-top: 0; background: transparent; padding-top: 0; }
+.st-panel-tabs > button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--tx-dim);
+}
+.st-panel-tabs > button:hover:not(:disabled) { background: var(--fill-02); border-color: transparent; }
+
+/* On a true phone the bar cannot afford the tool title — it survived only
+   as "Im…" beside the search button, which names nothing. The adaptive
+   dock already carries the active tool's name in the display weight it
+   deserves, so the bar keeps the readouts (credits, running, theme,
+   settings) and lets the dock say where you are. */
+@media (max-width: 640px) {
+  .st-where { display: none; }
+}

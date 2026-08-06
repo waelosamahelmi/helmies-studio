@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Sheet } from "./Sheet";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -17,6 +17,12 @@ import { IcSearch, IcSettings, IcMenu, IcBolt } from "./Icons";
    One tree at every width. The previous shell rendered two entirely separate
    component trees for mobile and desktop, so a resize remounted the studio
    and dropped in-flight generations.
+
+   U1 adds the Filament made literal: a single 2px thread — under the top
+   bar on desktop, along the top edge of the dock on a phone — that draws
+   itself while work is running and settles with a brief pulse when the last
+   job completes. It is the one element allowed to move continuously; see
+   .st-filament in studio.css.
    ══════════════════════════════════════════════════════════════════════════ */
 
 function Credits({ credits }) {
@@ -35,6 +41,58 @@ function Credits({ credits }) {
   );
 }
 
+/* The thread's three states, derived from the running-jobs count the Shell
+   already receives. "settling" is the completion pulse: entered only on a
+   true generating → idle transition, and released after the pulse has had
+   time to play (the CSS animation is 900ms). */
+function useFilamentState(running) {
+  const [state, setState] = useState("idle");
+  const timer = useRef(null);
+
+  useEffect(() => {
+    if (running > 0) {
+      clearTimeout(timer.current);
+      setState("generating");
+      return undefined;
+    }
+    setState((prev) => {
+      if (prev !== "generating") return prev;
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setState("idle"), 1000);
+      return "settling";
+    });
+    return undefined;
+  }, [running]);
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return state;
+}
+
+function Filament({ state, edge }) {
+  return (
+    <div
+      className={`st-filament st-filament--${edge}`}
+      data-state={state}
+      aria-hidden="true"
+    />
+  );
+}
+
+/* ── Adaptive dock ordering (U1) ──────────────────────────────────────────
+   The active tool sits in the centre slot with a legible label; its
+   neighbours flank it as icons, and "All" keeps the last slot. When the
+   active tool has no dock slot (Director, Music, …) the natural order is
+   kept and "All" carries the active state instead. */
+function dockOrder(active) {
+  const i = DOCK_TOOLS.findIndex((t) => t.id === active);
+  if (i === -1) return DOCK_TOOLS;
+  const n = DOCK_TOOLS.length;
+  // Rotate so the active tool lands in the centre of the tool slots
+  // (slot index 2 of the 5 rendered, counting "All").
+  const start = (i - 2 + 2 * n) % n;
+  return Array.from({ length: n }, (_, k) => DOCK_TOOLS[(start + k) % n]);
+}
+
 export default function Shell({
   active,
   onSelect,
@@ -46,11 +104,34 @@ export default function Shell({
   const [menu, setMenu] = useState(false);
   const tool = getTool(active);
   const groups = byGroup();
+  const filament = useFilamentState(running);
+  const activeInDock = DOCK_TOOLS.some((t) => t.id === active);
 
   /* Route changes should never leave the sheet open behind the new tool */
   useEffect(() => { setMenu(false); }, [active]);
 
   const pick = (id) => { setMenu(false); onSelect?.(id); };
+
+  /* Swipe on the dock switches tools — pointer events, tap untouched. */
+  const swipe = useRef(null);
+  const onDockPointerDown = (e) => {
+    swipe.current = { x: e.clientX, y: e.clientY };
+  };
+  const onDockPointerUp = (e) => {
+    const s = swipe.current;
+    swipe.current = null;
+    if (!s) return;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (Math.abs(dx) < 56 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    const i = DOCK_TOOLS.findIndex((t) => t.id === active);
+    const from = i === -1 ? 0 : i;
+    const n = DOCK_TOOLS.length;
+    const next = i === -1
+      ? DOCK_TOOLS[0]
+      : DOCK_TOOLS[(from + (dx < 0 ? 1 : n - 1)) % n];
+    pick(next.id);
+  };
 
   return (
     <div className="st-app">
@@ -94,6 +175,8 @@ export default function Shell({
             <IcSettings className="hs-icon-sm" />
           </Link>
         </div>
+
+        <Filament state={filament} edge="bar" />
       </header>
 
       {/* ── Instrument rail ─────────────────────────────────────────────── */}
@@ -123,15 +206,22 @@ export default function Shell({
         {children}
       </main>
 
-      {/* ── Mobile dock ─────────────────────────────────────────────────── */}
-      <nav className="st-dock" aria-label="Instruments">
-        {DOCK_TOOLS.map(({ id, label, icon: Icon }) => (
+      {/* ── Mobile dock — adaptive: active tool centred and labelled ────── */}
+      <nav
+        className="st-dock"
+        aria-label="Instruments"
+        onPointerDown={onDockPointerDown}
+        onPointerUp={onDockPointerUp}
+      >
+        <Filament state={filament} edge="dock" />
+        {dockOrder(active).map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             type="button"
             className={`st-dock__btn${active === id ? " is-active" : ""}`}
             onClick={() => pick(id)}
             aria-current={active === id ? "page" : undefined}
+            aria-label={label}
           >
             <Icon />
             <span>{label}</span>
@@ -139,12 +229,13 @@ export default function Shell({
         ))}
         <button
           type="button"
-          className={`st-dock__btn${menu ? " is-active" : ""}`}
+          className={`st-dock__btn${menu || !activeInDock ? " is-active" : ""}`}
           onClick={() => setMenu(true)}
           aria-expanded={menu}
+          aria-label="All instruments"
         >
           <IcMenu />
-          <span>All</span>
+          <span>{activeInDock ? "All" : tool.label}</span>
         </button>
       </nav>
 
