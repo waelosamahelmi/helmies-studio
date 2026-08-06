@@ -50,6 +50,7 @@ export async function GET(req, { params }) {
 
     return NextResponse.json({
       config: template.config,
+      name: template.name,
       toolType: template.toolType,
       purchaseId: purchase?.id || null,
     });

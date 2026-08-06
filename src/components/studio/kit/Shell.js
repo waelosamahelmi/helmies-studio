@@ -5,7 +5,7 @@ import Link from "next/link";
 import { Sheet } from "./Sheet";
 import ThemeToggle from "@/components/ThemeToggle";
 import { byGroup, DOCK_TOOLS, getTool } from "./tools";
-import { IcSearch, IcSettings, IcMenu, IcBolt } from "./Icons";
+import { IcSearch, IcSettings, IcMenu, IcBolt, IcLayers } from "./Icons";
 
 /* ══════════════════════════════════════════════════════════════════════════
    SHELL — the constant frame around every tool
@@ -199,6 +199,17 @@ export default function Shell({
             ))}
           </div>
         ))}
+
+        {/* Templates is a route, not an instrument, but it is the fastest
+            path to a good first result — so it sits in the rail rather than
+            being reachable only from the marketing nav. */}
+        <div>
+          <div className="st-rail__group">Start from</div>
+          <Link href="/templates" className="st-tool" title="Pre-built briefs and multi-step workflows">
+            <IcLayers />
+            <span>Templates</span>
+          </Link>
+        </div>
       </nav>
 
       {/* ── Work ────────────────────────────────────────────────────────── */}
@@ -262,6 +273,22 @@ export default function Shell({
               </div>
             </section>
           ))}
+
+          <section>
+            <span className="hs-label">Start from</span>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))", gap: "var(--s-2)" }}>
+              <Link
+                href="/templates"
+                className="hs-card"
+                onClick={() => setMenu(false)}
+                style={{ padding: "var(--s-3)", display: "flex", flexDirection: "column", gap: 4, textAlign: "left" }}
+              >
+                <IcLayers className="hs-icon" style={{ color: "var(--tx-mute)" }} />
+                <span style={{ fontSize: "var(--t-sm)", fontWeight: 600 }}>Templates</span>
+                <span style={{ fontSize: 10, color: "var(--tx-mute)", lineHeight: 1.4 }}>Pre-built briefs and multi-step workflows.</span>
+              </Link>
+            </div>
+          </section>
         </div>
       </Sheet>
     </div>

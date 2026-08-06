@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { MotionConfig } from "framer-motion";
 import { apiFetch } from "@/lib/client-fetch";
@@ -9,6 +9,7 @@ import Shell from "@/components/studio/kit/Shell";
 import { TOOL_IDS } from "@/components/studio/kit/tools";
 import CommandPalette from "@/components/studio/CommandPalette";
 import ErrorBoundary from "@/components/studio/v6/ErrorBoundary";
+import { useToast } from "@/components/ToastProvider";
 
 import OrchestratorStudio from "@/components/studio/OrchestratorStudio";
 import ImageStudio from "@/components/studio/ImageStudio";
@@ -67,15 +68,32 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
     });
   }, [active, router]);
 
-  /* A template preloads a tool's settings */
+  /* A template preloads a tool's settings. The handoff must be visible:
+     the user just clicked "Open in studio" on a template page, and without
+     feedback a failed apply is indistinguishable from a successful one.
+     The toast handle is held in a ref because the provider hands out a
+     fresh object literal every render — depending on it directly would
+     re-apply the template on every parent render. */
+  const toast = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+
   const templateSlug = params.get("template");
   useEffect(() => {
     if (!templateSlug) return;
     let dead = false;
     apiFetch(`/api/templates/${templateSlug}/apply`)
-      .then((r) => r.json())
-      .then((d) => { if (!dead && d?.config) setTemplateConfig(d.config); })
-      .catch(() => {});
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d) => {
+        if (dead) return;
+        if (d?.config) {
+          setTemplateConfig(d.config);
+          toastRef.current?.addToast(`Template loaded — ${d.name || templateSlug} settings applied`, "success");
+        } else {
+          toastRef.current?.addToast("That template could not be loaded", "error");
+        }
+      })
+      .catch(() => { if (!dead) toastRef.current?.addToast("That template could not be loaded", "error"); });
     return () => { dead = true; };
   }, [templateSlug]);
 

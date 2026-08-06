@@ -13,6 +13,7 @@ import { IcSearch, IcArchive, IcSettings, IcBolt, IcGrid } from "@/components/st
    ══════════════════════════════════════════════════════════════════════════ */
 
 const PLACES = [
+  { id: "go:templates", label: "Templates",    hint: "Pre-built briefs and workflows", icon: IcGrid, href: "/templates" },
   { id: "go:gallery",  label: "Generations",   hint: "History and running jobs", icon: IcArchive,  href: "/gallery" },
   { id: "go:models",   label: "Model catalog", hint: "Every available model",    icon: IcGrid,     href: "/models" },
   { id: "go:settings", label: "Settings",      hint: "Account and defaults",     icon: IcSettings, href: "/settings" },
