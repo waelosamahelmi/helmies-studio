@@ -96,4 +96,29 @@ describe("buildChatSystemPrompt", () => {
   it("never names a provider", () => {
     expect(prompt).not.toMatch(/KIE|Alibaba|DashScope|OpenRouter|DeepSeek/i);
   });
+
+  it("asks the user to CHOOSE the generation models (with prices) before planning — never forcing one (2026-08-06)", () => {
+    const withPools = buildChatSystemPrompt({
+      modelOptions: {
+        video: [{ id: "kling-3.0/video", credits: 8 }, { id: "bytedance/seedance-2", credits: 143 }],
+        image: [{ id: "flux-2/flex-text-to-image", credits: 5 }],
+        music: [{ id: "suno-v4.5", credits: 6 }],
+      },
+    });
+    expect(withPools).toMatch(/MODEL CHOICE/i);
+    expect(withPools).toMatch(/Which video model should generate the clips/i);
+    expect(withPools).toContain("kling-3.0/video (8 cr)");
+    expect(withPools).toContain("bytedance/seedance-2 (143 cr)");
+    expect(withPools).toContain("flux-2/flex-text-to-image (5 cr)");
+    expect(withPools).toContain("suno-v4.5 (6 cr)");
+    // Options must stay BARE ids (the answer becomes the plan's model) —
+    // the prompt says prices never go inside an option string.
+    expect(withPools).toMatch(/bare model ids VERBATIM/i);
+    expect(withPools).toMatch(/prices go in the question text/i);
+  });
+
+  it("tolerates a prompt built without pools (old call shape)", () => {
+    expect(buildChatSystemPrompt()).toMatch(/MODEL CHOICE/i);
+    expect(buildChatSystemPrompt({})).toMatch(/MODEL CHOICE/i);
+  });
 });

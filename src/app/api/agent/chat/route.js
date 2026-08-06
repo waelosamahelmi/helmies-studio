@@ -6,6 +6,8 @@ import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import { buildChatSystemPrompt, parseQuestionBlock } from "@/lib/agent-chat";
 import { appendMessage, resolveOwnedSession } from "@/lib/agent-sessions";
+import { getRunnableModelsForType } from "@/lib/model-catalog";
+import { runnableProviderModelId, audioKind } from "@/lib/model-catalog-core.mjs";
 
 // EDITSv1 E3.2 — structured agent chat. The system prompt (src/lib/
 // agent-chat.js) enforces: markdown prose, AT MOST ONE clarifying question
@@ -22,6 +24,29 @@ const SSE_HEADERS = {
 };
 
 const sse = (payload) => `data: ${JSON.stringify(payload)}\n\n`;
+
+// The live pools the MODEL CHOICE questions offer — the SAME gated
+// getRunnableModelsForType the planner hint and fallback chains use, so a
+// model the chat offers is always one a run can actually execute. The user's
+// answer (a bare id) is then pinned onto the plan by
+// resolveUserRequestedModels, which re-quotes the real price.
+async function chatModelOptions() {
+  try {
+    const [video, image, audio] = await Promise.all([
+      getRunnableModelsForType("video", { limit: 6 }),
+      getRunnableModelsForType("image", { limit: 6 }),
+      getRunnableModelsForType("audio", { limit: 50 }),
+    ]);
+    const row = (r) => ({ id: runnableProviderModelId(r), credits: r.creditsCost });
+    return {
+      video: video.map(row),
+      image: image.map(row),
+      music: audio.filter((r) => audioKind(r) === "music").slice(0, 6).map(row),
+    };
+  } catch {
+    return {};
+  }
+}
 
 async function persistAssistantTurn(sessionId, text) {
   if (!sessionId || !text) return;
@@ -65,7 +90,7 @@ export async function POST(req) {
     }
 
     const allMessages = [
-      { role: "system", content: buildChatSystemPrompt() },
+      { role: "system", content: buildChatSystemPrompt({ modelOptions: await chatModelOptions() }) },
       ...messages.map((m) => ({ role: m.role, content: m.content })),
     ];
 

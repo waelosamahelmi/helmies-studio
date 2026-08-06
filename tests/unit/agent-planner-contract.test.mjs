@@ -294,7 +294,7 @@ describe("helpers", () => {
 
 // ── Storyboard-first film productions (2026-08-06) ─────────────────────────
 describe("buildHeuristicPlan — storyboard-first video productions", () => {
-  it("a launch film leads with the storyboard, then character/scene stills, then clips animating the stills", async () => {
+  it("a launch film leads with the storyboard — one referenceOnly establishing still, clip 1 animates it, later clips chain from the previous clip's last frame", async () => {
     const plan = await buildHeuristicPlan("Plan a 30-second launch film for a linen bedding brand");
     const agents = plan.steps.map((s) => s.agent);
     expect(agents[0]).toBe("storyboard");
@@ -313,14 +313,19 @@ describe("buildHeuristicPlan — storyboard-first video productions", () => {
       expect(scene.description).toBeTruthy();
       expect(scene.camera).toBeTruthy();
     }
-    // Every still embeds the ${storyboard} token; every clip animates its
-    // own still via $STEP_N_OUTPUT.
+    // ONE establishing still, marked referenceOnly (an internal reference —
+    // never a final output) and embedding the ${storyboard} token.
     const stills = plan.steps.filter((s) => s.agent === "image");
-    expect(stills.length).toBeGreaterThanOrEqual(2);
-    for (const still of stills) expect(still.params.prompt).toContain("${storyboard}");
+    expect(stills).toHaveLength(1);
+    expect(stills[0].params.referenceOnly).toBe(true);
+    expect(stills[0].params.prompt).toContain("${storyboard}");
+    // Clip 1 animates the still; clip 2 has NO image_url — the run chains
+    // it from clip 1's last frame so characters/product stay consistent.
     const clips = plan.steps.filter((s) => s.agent === "video");
-    expect(clips.length).toBe(2);
-    for (const clip of clips) expect(clip.params.image_url).toMatch(/^\$STEP_\d+_OUTPUT$/);
+    expect(clips).toHaveLength(2);
+    expect(clips[0].params.image_url).toBe("$STEP_2_OUTPUT");
+    expect(clips[1].params.image_url).toBeUndefined();
+    expect(clips[1].params.prompt).toMatch(/continue from where/i);
   });
 
   it("a music video gets the same storyboard-first treatment", async () => {
@@ -328,7 +333,13 @@ describe("buildHeuristicPlan — storyboard-first video productions", () => {
     const agents = plan.steps.map((s) => s.agent);
     expect(agents[0]).toBe("storyboard");
     expect(plan.steps[0].params.storyboard.scenes).toHaveLength(3);
-    expect(plan.steps.filter((s) => s.agent === "image").length).toBe(3); // one still per scene
-    expect(plan.steps.filter((s) => s.agent === "video").length).toBe(3); // one clip per still
+    // One establishing still (referenceOnly); clips 2+ are chain-fed.
+    expect(plan.steps.filter((s) => s.agent === "image").length).toBe(1);
+    expect(plan.steps.filter((s) => s.agent === "image")[0].params.referenceOnly).toBe(true);
+    const clips = plan.steps.filter((s) => s.agent === "video");
+    expect(clips).toHaveLength(3);
+    expect(clips[0].params.image_url).toBe("$STEP_2_OUTPUT");
+    expect(clips[1].params.image_url).toBeUndefined();
+    expect(clips[2].params.image_url).toBeUndefined();
   });
 });

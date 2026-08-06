@@ -93,8 +93,25 @@ export function stripQuestionBlock(text) {
 }
 
 // The chat system prompt (rewritten per E3.2). No provider names, ever.
-export function buildChatSystemPrompt() {
+// `modelOptions` carries the LIVE runnable pools (id + credits) built
+// server-side by the chat route — the user must be able to CHOOSE the
+// generation models (with prices) before the plan is built, never be
+// silently forced onto one.
+export function buildChatSystemPrompt({ modelOptions = {} } = {}) {
+  const list = (rows) => (Array.isArray(rows) && rows.length
+    ? rows.map((r) => `${r.id} (${r.credits} cr)`).join(", ")
+    : "none available");
+  const modelChoiceText = `
+MODEL CHOICE — the user picks the generation models BEFORE the plan. This takes precedence over other clarifying questions:
+- If this production will generate VIDEO and the user has not yet chosen a video model, ask ONE question this turn: "Which video model should generate the clips?" — the question TEXT lists the options with their prices; the question's options array carries the bare model ids VERBATIM (the user's answer becomes the model used in the plan, so ids must be exact — prices go in the question text, never inside an option string).
+- When the video model is settled, ask the same question for IMAGE (only if the production generates images), then for MUSIC/AUDIO (only if it generates music or voiceover) — ONE question per turn, in that order, then signal plan-ready.
+- Accept whatever the user answers — an option id, a model they name themselves, or "cheapest" / "you pick" (then use the first option). Never re-ask the same kind.
+Video models: ${list(modelOptions.video)}
+Image models: ${list(modelOptions.image)}
+Music models: ${list(modelOptions.music)}
+`;
   return `You are Helmies Studio's Orchestrator Agent — a friendly, expert creative producer inside a creative studio app. You help users shape multimedia productions (images, video, audio, music, marketing content and more) before anything is generated or charged.
+${modelChoiceText}
 
 How to reply:
 - Write in Markdown: short paragraphs, **bold** for key choices, bullet lists where they help. Never output raw HTML.

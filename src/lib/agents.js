@@ -12,6 +12,7 @@ import { assembleVideos } from "@/lib/video-assembly";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind, requiresMediaInput } from "@/lib/model-catalog-core.mjs";
 import { isVoiceoverInstruction } from "@/lib/voiceover-guard";
+import { chainStepIfNeeded } from "@/lib/video-chain";
 import { log } from "@/lib/log";
 import prisma from "@/lib/prisma";
 
@@ -53,9 +54,10 @@ STORYBOARD-FIRST — REQUIRED for every production that contains video clips (fi
 - Step 1 is ALWAYS a "storyboard" step. Its params.storyboard is the COMPLETE storyboard JSON you draft right here, covering the WHOLE video:
   { "scenario": "<one-paragraph narrative of the whole video>", "characters": [ { "name": "<character name>", "role": "<role in the story>", "appearance": "<hair, skin, build, clothing, distinguishing marks — the SAME words every sheet reuses>", "shots": ["full body", "face front", "face side", "face 3/4"] } ], "scenes": [ { "id": 1, "title": "<scene title>", "description": "<what happens, where, who is in it>", "location": "<setting>", "time": "<time of day>", "camera": "<shot size and movement>", "characters": ["<names from the characters list>"] } ] }
   Include EVERY character that appears (main and background), with shots covering full body and face angles so a character sheet can be generated. Include every scene of the whole video.
-- Then, one "image" step per character: { "agent": "image", "task": "Character sheet — <name>", "params": { "model": "<runnable image model>", "prompt": "Character sheet for <name>: <appearance>, full body + face front + face side + face 3/4 views, same person in every view, consistent outfit, neutral background. Storyboard: \${storyboard}", "aspect_ratio": "1:1" } } — the \${storyboard} token is replaced at run time with the accepted storyboard, so the sheet matches it exactly.
-- Then, one "image" step per scene: { "agent": "image", "task": "Scene still N — <title>", "params": { "model": "<runnable image model>", "prompt": "<the scene composed as a cinematic still, subject/composition/lighting/camera — 15-40 words>. Storyboard: \${storyboard}", "aspect_ratio": "<same ratio as the video, e.g. 9:16>" } }.
-- Then, one "video" step PER SCENE that animates that scene's still: { "agent": "video", "task": "Clip N — <title>", "params": { "model": "<runnable video model>", "image_url": "$STEP_<n>_OUTPUT", "prompt": "<the motion: what moves, how, camera behavior — 15-40 words>", "aspect_ratio": "<same ratio>" } }. Video steps carry the scene still as image_url so the clip matches the storyboard. Only when the brief has no visual direction at all may a scene's video step be text-to-video without image_url.
+- Then, one "image" step per character — marked referenceOnly (an internal reference, never part of the final output): { "agent": "image", "task": "Character sheet — <name>", "params": { "model": "<runnable image model>", "prompt": "Character sheet for <name>: <appearance>, full body + face front + face side + face 3/4 views, same person in every view, consistent outfit, neutral background. Storyboard: \${storyboard}", "aspect_ratio": "1:1", "referenceOnly": true } } — the \${storyboard} token is replaced at run time with the accepted storyboard, so the sheet matches it exactly.
+- Then, ONE "image" step for the FIRST scene — the establishing still, also referenceOnly: { "agent": "image", "task": "Scene still 1 — <title>", "params": { "model": "<runnable image model>", "prompt": "<the first scene composed as a cinematic still, subject/composition/lighting/camera — 15-40 words>. Storyboard: \${storyboard}", "aspect_ratio": "<same ratio as the video, e.g. 9:16>", "referenceOnly": true } }.
+- Then, one "video" step PER SCENE. The FIRST clip animates the establishing still: { "agent": "video", "task": "Clip 1 — <title>", "params": { "model": "<runnable video model>", "image_url": "$STEP_<n>_OUTPUT", "prompt": "<the motion: what moves, how, camera behavior — 15-40 words>", "aspect_ratio": "<same ratio>" } }. EVERY LATER clip has NO image_url: the run automatically chains each clip from the PREVIOUS clip's last frame (first-frame reference), so characters, products and environments stay consistent across scenes instead of drifting — give each later clip a prompt that CONTINUES from where the previous scene ended, with its own camera and motion.
+- "referenceOnly": true marks an image as an internal generation reference: it runs and later steps may reference it, but it never appears among the final results.
 - The accepted storyboard is the plan's step 1 output; \${storyboard} in any later step's params is replaced with it at run time, so user edits flow into every sheet, still and clip automatically.
 
 EVERY STEP CARRIES FINISHED CONTENT, NEVER INSTRUCTIONS:
@@ -711,19 +713,19 @@ export async function buildHeuristicPlan(userMessage, context = {}) {
         { id: 3, title: "Finale", description: `Sweeping finale scene for ${subject}`, location: "Studio set", time: "Night", camera: "Wide pull-out", characters: [] },
       ],
     };
-    const still = (n, title, shot) => ({
+    const still = (title, shot) => ({
       agent: "image",
-      task: `Scene still ${n} — ${title}`,
-      params: { model: imageModel, endpoint: imageModel, prompt: `${shot} Storyboard: \${storyboard}`, aspect_ratio: ratio },
+      task: `Scene still 1 — ${title}`,
+      params: { model: imageModel, endpoint: imageModel, prompt: `${shot} Storyboard: \${storyboard}`, aspect_ratio: ratio, referenceOnly: true },
     });
     steps.push(
       { agent: "storyboard", task: "Storyboard — scenes and shot plan", params: { brief: userMessage, storyboard } },
-      still(1, "Opening", `Opening scene for ${subject}: wide establishing frame, cinematic lighting, slow push-in, rich color grade.`),
-      still(2, "Feature", `Feature scene for ${subject}: dynamic medium close-up, rhythmic motion, dramatic side light, shallow depth of field.`),
-      still(3, "Finale", `Finale scene for ${subject}: sweeping wide angle, light shifting to a bold accent color, slow pull-out ending on a striking silhouette.`),
+      // One establishing still; clips 2+ chain from the previous clip's
+      // last frame (the run injects it) so the video stays consistent.
+      still("Opening", `Opening scene for ${subject}: wide establishing frame, cinematic lighting, slow push-in, rich color grade.`),
       { agent: "video", task: "Clip 1 — opening", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_2_OUTPUT", prompt: `Push slowly into the opening scene for ${subject}.`, duration: 5, aspect_ratio: ratio } },
-      { agent: "video", task: "Clip 2 — feature", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_3_OUTPUT", prompt: `Feature shot for ${subject}: rhythmic motion, dramatic side light, shallow depth of field.`, duration: 5, aspect_ratio: ratio } },
-      { agent: "video", task: "Clip 3 — finale", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_4_OUTPUT", prompt: `Finale for ${subject}: sweeping wide angle, slow pull-out ending on a striking silhouette.`, duration: 5, aspect_ratio: ratio } },
+      { agent: "video", task: "Clip 2 — feature", params: { model: videoModel, endpoint: videoModel, prompt: `Continue from where the opening ended: feature shot for ${subject}, rhythmic motion, dramatic side light, shallow depth of field.`, duration: 5, aspect_ratio: ratio } },
+      { agent: "video", task: "Clip 3 — finale", params: { model: videoModel, endpoint: videoModel, prompt: `Continue from where the feature shot ended: finale for ${subject}, sweeping wide angle, slow pull-out ending on a striking silhouette.`, duration: 5, aspect_ratio: ratio } },
       {
         agent: "music",
         task: "Original track",
@@ -752,18 +754,15 @@ export async function buildHeuristicPlan(userMessage, context = {}) {
     };
     steps.push(
       { agent: "storyboard", task: "Storyboard — scenes and shot plan", params: { brief: userMessage, storyboard } },
+      // One establishing still (referenceOnly — an internal reference, not
+      // part of the final output); clip 2 chains from clip 1's last frame.
       {
         agent: "image",
-        task: "Hero still",
-        params: { model: imageModel, endpoint: imageModel, prompt: `Hero still of ${subject}: cinematic composition, soft key light, shallow depth of field, premium product photography. Storyboard: \${storyboard}`, aspect_ratio: ratio },
-      },
-      {
-        agent: "image",
-        task: "Scene still — Closing",
-        params: { model: imageModel, endpoint: imageModel, prompt: `Closing scene of ${subject}: hero framing, golden-hour glow, confident final hold. Storyboard: \${storyboard}`, aspect_ratio: ratio },
+        task: "Scene still 1 — establishing",
+        params: { model: imageModel, endpoint: imageModel, prompt: `Establishing scene of ${subject}: cinematic composition, soft key light, shallow depth of field, premium product photography. Storyboard: \${storyboard}`, aspect_ratio: ratio, referenceOnly: true },
       },
       { agent: "video", task: "Clip 1 — opening", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_2_OUTPUT", prompt: `Opening shot for ${subject}: slow reveal, warm natural light, gentle camera drift, inviting atmosphere.`, duration: 5, aspect_ratio: ratio } },
-      { agent: "video", task: "Clip 2 — closing", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_3_OUTPUT", prompt: `Closing shot for ${subject}: hero framing, golden-hour glow, subtle slow motion, confident final hold.`, duration: 5, aspect_ratio: ratio } },
+      { agent: "video", task: "Clip 2 — closing", params: { model: videoModel, endpoint: videoModel, prompt: `Continue from where the opening shot ended: closing shot for ${subject}, hero framing, golden-hour glow, subtle slow motion, confident final hold.`, duration: 5, aspect_ratio: ratio } },
       {
         agent: "voiceover",
         task: "Narration",
@@ -802,7 +801,7 @@ export async function buildHeuristicPlan(userMessage, context = {}) {
       {
         agent: "image",
         task: userMessage,
-        params: { model: imageModel, endpoint: imageModel, prompt: `${userMessage} Storyboard: \${storyboard}`, aspect_ratio: ratio },
+        params: { model: imageModel, endpoint: imageModel, prompt: `${userMessage} Storyboard: \${storyboard}`, aspect_ratio: ratio, referenceOnly: true },
       },
       { agent: "video", task: "Animate the generated image", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_2_OUTPUT", prompt: userMessage, duration: 5, aspect_ratio: ratio } },
       { agent: "export", task: "Final clip", params: { name: "Final clip" } },
@@ -1470,10 +1469,20 @@ async function executePlannedRun(userId, agentRun, plan, sessionId, emit) {
 
   try {
     for (let i = 0; i < plan.steps.length; i++) {
-      const step = plan.steps[i];
+      let step = plan.steps[i];
       const quoted = breakdown[i]?.credits ?? 0;
       const remainingQuoted = breakdown.slice(i + 1).reduce((a, b) => a + (b?.credits || 0), 0);
       const budget = { quoted, max: debitedTotal - actualUsed - remainingQuoted };
+
+      // Last-frame chaining (2026-08-06): a video step with no reference of
+      // its own inherits the PREVIOUS clip's last frame as its first-frame
+      // reference, so characters, products and environments stay consistent
+      // across scenes instead of drifting (owner defect: every scene of a
+      // bedsheet ad looked different). Best-effort — extraction failure
+      // degrades to running the step as planned.
+      if (["video", "i2v"].includes(normalizeAgentKey(step.agent))) {
+        step = await chainStepIfNeeded(step, outputs);
+      }
 
       emit?.({ type: "step_start", step: i + 1, agent: step.agent, task: step.task });
 
@@ -1483,12 +1492,13 @@ async function executePlannedRun(userId, agentRun, plan, sessionId, emit) {
         actualUsed += stepCredits;
         outputs.push(output);
         const displayOutput = displayOutputFor(step, output);
-        // The storyboard JSON stays in `outputs` (later steps resolve
-        // ${storyboard} from it) but never leaks into the user-facing
-        // outputs grid — the client renders it as a storyboard card from the
-        // step result instead.
+        // The storyboard JSON and reference-only media (scene stills,
+        // character sheets — the images the clips are generated FROM, not
+        // the deliverables) stay in `outputs` for $STEP chaining and
+        // ${storyboard} resolution, but never leak into the user-facing
+        // outputs grid. The step list still shows they ran.
         const isStoryboard = normalizeAgentKey(step.agent) === "storyboard";
-        displayOutputs.push(isStoryboard ? null : displayOutput);
+        displayOutputs.push(isStoryboard || step.params?.referenceOnly ? null : displayOutput);
         stepResults.push({
           step: i + 1, agent: step.agent, status: "completed",
           output: isStoryboard ? displayOutput : (typeof displayOutput === "string" ? displayOutput.slice(0, 500) : displayOutput),
@@ -1683,7 +1693,11 @@ export async function executeAgentStep(userId, {
 
   try {
     const cleanPrevious = Array.isArray(previousOutputs) ? previousOutputs : [];
-    const { output } = await executeStepWithRetry(step, cleanPrevious, 0, { quoted, max: quoted });
+    // Same last-frame chaining as the run loop: a reference-less video step
+    // inherits the newest previous clip's last frame as its first-frame
+    // reference (best-effort).
+    const chainedStep = await chainStepIfNeeded(step, cleanPrevious);
+    const { output } = await executeStepWithRetry(chainedStep, cleanPrevious, 0, { quoted, max: quoted });
     const displayOutput = displayOutputFor(step, output);
 
     let generationId = null;
