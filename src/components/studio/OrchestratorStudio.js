@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
-import { parseQuestionBlock, stripQuestionBlock } from "@/lib/agent-chat";
+import { parseQuestionBlock, stripQuestionBlock, parsePlanReadyBlock, stripPlanReadyBlock } from "@/lib/agent-chat";
 import {
   Brief, SpendMeter, Group, Specs, Confirm, Sheet,
   IcSpark, IcFlow, IcCheck, IcAlert, IcChevron, IcExternal, IcInfo,
@@ -51,6 +51,11 @@ const AGENT_NAMES = {
   website: "Website",
   marketing: "Marketing",
   coding: "Code",
+  i2v: "Animate",
+  upscale: "Upscale",
+  music: "Music",
+  voiceover: "Voiceover",
+  export: "Deliverable",
 };
 
 const STATUS_WORD = { pending: "waiting", running: "running", done: "done", failed: "failed" };
@@ -207,18 +212,42 @@ function RunCard({ run }) {
   );
 }
 
-/* ── Typed outputs (assembled) → AssetCards, ungated (E3.5) ────────────── */
+/* ── Typed outputs (assembled) → AssetCards, ungated (E3.5) ──────────────
+   A9 (owner defect 5): when the run names a final deliverable (the export
+   step's result, or the assembled cut), it is presented FIRST and
+   prominently — the collected assets sit beneath it, not around it in an
+   undifferentiated grid. */
 function AssetGrid({ assembled }) {
+  const deliverable =
+    assembled?.deliverable && isUrl(assembled.deliverable.url) ? assembled.deliverable : null;
   const media = [
     ...(assembled?.images || []),
     ...(assembled?.videos || []),
     ...(assembled?.audio || []),
-  ].filter((entry) => isUrl(entry?.url));
+  ].filter((entry) => isUrl(entry?.url) && (!deliverable || entry.url !== deliverable.url));
   const text = (assembled?.text || []).filter((entry) => entry?.content?.trim?.());
-  if (!media.length && !text.length) return null;
+  if (!deliverable && !media.length && !text.length) return null;
 
   return (
     <div className="hs-stack" style={{ gap: "var(--s-3)" }}>
+      {deliverable && (
+        <section
+          className="hs-card"
+          data-testid="agent-deliverable"
+          aria-label="Final deliverable"
+          style={{ padding: "var(--s-3)" }}
+        >
+          <header style={{ display: "flex", alignItems: "center", gap: "var(--s-2)", marginBottom: "var(--s-3)" }}>
+            <IcCheck className="hs-icon-sm" />
+            <span className="hs-label" style={{ margin: 0 }}>Final deliverable</span>
+            <span className="hs-hint" style={{ marginLeft: "auto" }}>{deliverable.name || ""}</span>
+          </header>
+          <AssetCard url={deliverable.url} label={deliverable.name || "Final deliverable"} gated={false} />
+        </section>
+      )}
+      {deliverable && (media.length > 0 || text.length > 0) && (
+        <span className="hs-label" style={{ margin: 0 }}>Collected assets</span>
+      )}
       {media.map((entry) => (
         <AssetCard
           key={`${entry.step}-${entry.url}`}
@@ -613,6 +642,68 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     setAtBottom(true);
   }, []);
 
+  /* ── Plan core — one JSON quote, no credits spent (A9) ────────────────
+     Shared by the manual "Plan production" button, the plan-card revision
+     path, AND the auto-plan trigger (a ```plan-ready block in a chat
+     reply). `history` carries the conversation so the server plans from
+     everything agreed in chat — "ok" is enough; nothing needs re-pasting.
+     `silent` skips the user bubble (the auto path isn't a user turn). */
+  const runPlan = useCallback(async ({ brief = "", history = [], silent = false } = {}) => {
+    const text = brief.trim();
+    const askId = nextId();
+    const replyId = nextId();
+    setError("");
+    setAtBottom(true);
+    setMessages((prev) => [
+      ...prev,
+      ...(silent || !text ? [] : [{ id: askId, role: "user", text }]),
+      { id: replyId, role: "agent", text: "", thinking: "costing" },
+    ]);
+    setBusy("plan");
+
+    try {
+      const sid = await ensureSession();
+      if (text) autoTitle(text);
+      /* `stream: false` is required — the route streams SSE by default and the
+         previous build called .json() on that stream, so no plan ever landed. */
+      const res = await apiFetch("/api/agent/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, messages: history, stream: false, sessionId: sid }),
+        timeout: 120000,
+        retries: 0,
+      });
+      const data = await res.json();
+      if (data?.error) throw new Error(data.error);
+      const steps = Array.isArray(data?.steps) ? data.steps : [];
+      if (!steps.length) {
+        throw new Error("The agent returned a plan with no steps. Describe the production in more detail and plan again.");
+      }
+
+      const lastUserTurn = [...history].reverse().find((m) => m.role === "user")?.content || "";
+      patch(replyId, {
+        text: data.summary || `Here is a ${steps.length}-step production. Check the total, then approve it.`,
+        thinking: false,
+        request: text || lastUserTurn,
+        plan: {
+          steps,
+          summary: data.summary,
+          estimate: data.estimate,
+          totalCredits: data.totalCredits,
+          maxCredits: data.maxCredits,
+          planSource: data.planSource,
+          degraded: data.degraded,
+        },
+      });
+      loadBalance();
+    } catch (err) {
+      setError(err?.message || "Planning failed.");
+      setMessages((prev) => prev.filter((m) => m.id !== replyId));
+    } finally {
+      setBusy("");
+    }
+  }, [patch, loadBalance, ensureSession, autoTitle]);
+
   /* ── Chat — streams, costs nothing ───────────────────────────────────── */
   /* `textOverride` lets a QuestionCard answer go out as a normal user
      message without touching the composer's draft — and also lets <Brief>
@@ -652,25 +743,43 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     const ctrl = new AbortController();
     abortRef.current = ctrl;
 
+    /* A9 auto-plan (owner defect 3): when the reply ends with a
+       ```plan-ready block, the plan endpoint is called AUTOMATICALLY once
+       the chat stream settles — no button press. The trigger runs after
+       `finally` releases the chat busy-state so runPlan takes over cleanly;
+       the manual "Plan production" button stays as the escape hatch. */
+    let planTrigger = null;
+
     try {
       const sid = await ensureSession();
       autoTitle(text);
       const { res, json } = await openStream("/api/agent/chat", { messages: history, sessionId: sid }, ctrl.signal);
 
+      let full = "";
       if (json) {
         if (json.error) throw new Error(json.error);
-        patch(replyId, { text: json.content || "" });
+        full = json.content || "";
+        patch(replyId, { text: full });
       } else {
         let tokens = 0;
         await readSSE(res, (event) => {
           if (event.type === "token" && event.content) {
             tokens += 1;
+            full += event.content;
             patch(replyId, (m) => ({ ...m, text: m.text + event.content }));
           }
         });
         if (!tokens) {
           throw new Error("The agent's reply came back empty. Send the message again.");
         }
+      }
+
+      const ready = parsePlanReadyBlock(full);
+      if (ready) {
+        planTrigger = {
+          brief: ready.brief,
+          history: [...history, { role: "assistant", content: full }],
+        };
       }
     } catch (err) {
       if (err?.name === "AbortError") {
@@ -683,7 +792,11 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       if (abortRef.current === ctrl) abortRef.current = null;
       setBusy("");
     }
-  }, [input, busy, messages, patch, ensureSession, autoTitle]);
+
+    if (planTrigger) {
+      await runPlan({ brief: planTrigger.brief, history: planTrigger.history, silent: true });
+    }
+  }, [input, busy, messages, patch, ensureSession, autoTitle, runPlan]);
 
   /* Answering the agent's question sends the choice as the next message —
      the composer's own draft (if the user was mid-typing something else)
@@ -694,63 +807,21 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     send(answer, { clearInput: false });
   }, [busy, patch, send]);
 
-  /* ── Plan — one JSON quote, no credits spent ─────────────────────────── */
+  /* ── Plan — the manual escape hatch and the revision path ────────────── */
   /* `textOverride` lets a plan-card revision request re-plan without
-     touching the composer's draft. */
+     touching the composer's draft. The conversation always travels along
+     (A9), so pressing the button with an empty composer after a chat —
+     or after just "ok" — still plans the full discussed production. */
   const propose = useCallback(async (textOverride) => {
+    if (busy) return;
     const text = (typeof textOverride === "string" ? textOverride : input).trim();
-    if (!text || busy) return;
-
-    const askId = nextId();
-    const replyId = nextId();
+    const history = messages
+      .filter((m) => m.text)
+      .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text }));
+    if (!text && !history.length) return;
     if (typeof textOverride !== "string") setInput("");
-    setError("");
-    setAtBottom(true);
-    setMessages((prev) => [
-      ...prev,
-      { id: askId, role: "user", text },
-      { id: replyId, role: "agent", text: "", thinking: "costing" },
-    ]);
-    setBusy("plan");
-
-    try {
-      const sid = await ensureSession();
-      autoTitle(text);
-      /* `stream: false` is required — the route streams SSE by default and the
-         previous build called .json() on that stream, so no plan ever landed. */
-      const res = await apiFetch("/api/agent/plan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, stream: false, sessionId: sid }),
-        timeout: 120000,
-        retries: 0,
-      });
-      const data = await res.json();
-      const steps = Array.isArray(data?.steps) ? data.steps : [];
-      if (!steps.length) {
-        throw new Error("The agent returned a plan with no steps. Describe the production in more detail and plan again.");
-      }
-
-      patch(replyId, {
-        text: data.summary || `Here is a ${steps.length}-step production. Check the total, then approve it.`,
-        thinking: false,
-        request: text,
-        plan: {
-          steps,
-          summary: data.summary,
-          estimate: data.estimate,
-          totalCredits: data.totalCredits,
-          maxCredits: data.maxCredits,
-        },
-      });
-      loadBalance();
-    } catch (err) {
-      setError(err?.message || "Planning failed.");
-      setMessages((prev) => prev.filter((m) => m.id !== replyId));
-    } finally {
-      setBusy("");
-    }
-  }, [input, busy, patch, loadBalance, ensureSession, autoTitle]);
+    await runPlan({ brief: text, history, silent: !text });
+  }, [input, busy, messages, runPlan]);
 
   /* ══ Review-mode execution (EDITSv1 E3.5) ══════════════════════════════
      The client walks the approved plan one /api/agent/step call at a time.
@@ -1292,9 +1363,10 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
               <span className="hs-empty__mark"><IcSpark /></span>
               <h3>Describe what you want made</h3>
               <p>
-                Talk it through first — the agent asks questions and costs nothing. When the shape
-                is right, choose <b>Plan production</b> and you will get every step with its price
-                before anything runs.
+                Talk it through first — the agent asks a couple of questions and costs nothing.
+                Once the shape is right it builds the complete costed plan automatically — every
+                asset, every step, every price — and nothing runs until you approve it.
+                (<b>Plan production</b> forces a plan at any moment.)
               </p>
               <div className="hs-chips" style={{ justifyContent: "center", marginTop: "var(--s-2)" }}>
                 {EXAMPLES.map((example) => (
@@ -1318,7 +1390,9 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
                  becomes a QuestionCard (the LAST block wins — same parser
                  the server persists with). */
               const question = !mine && message.text ? parseQuestionBlock(message.text) : null;
-              const prose = question ? stripQuestionBlock(message.text) : message.text;
+              /* A9: the ```plan-ready block is a machine signal — never shown. */
+              let prose = !mine && message.text ? stripPlanReadyBlock(message.text) : message.text;
+              if (question) prose = stripQuestionBlock(prose);
               const showThinking =
                 !mine && !message.text && !message.plan && !message.run &&
                 (message.thinking || busy === "chat");
@@ -1495,7 +1569,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
               type="button"
               className="hs-btn hs-btn--ghost hs-btn--sm"
               onClick={propose}
-              disabled={!input.trim() || !!busy}
+              disabled={(!input.trim() && !messages.some((m) => m.text)) || !!busy}
               title="Turn this brief into a costed, step-by-step plan"
             >
               <IcFlow className="hs-icon-sm" /> Plan production

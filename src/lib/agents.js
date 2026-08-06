@@ -11,6 +11,8 @@ import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { assembleVideos } from "@/lib/video-assembly";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind } from "@/lib/model-catalog-core.mjs";
+import { isVoiceoverInstruction } from "@/lib/voiceover-guard";
+import { log } from "@/lib/log";
 import prisma from "@/lib/prisma";
 
 // ── Agent definitions ──
@@ -41,23 +43,40 @@ Available specialist agents:
 
 For complex creative requests, delegate planning to the creative_director and use specialists for their domain. For simple requests, use the tool agents (image/video/audio) directly.
 
+PLAN THE COMPLETE PRODUCTION — never a fragment:
+- Enumerate EVERY asset the request implies, one step per asset: each individual image, each individual video clip, the music track, the voiceover. A one-step plan is only correct when the user asked for exactly one asset.
+- A music video = several video-clip steps + one "music" step + "assembly". A promo/launch film = hero image(s) + video clips + a "voiceover" step + a "music" step + "assembly". A product ad = product stills + clips + voiceover + music + assembly.
+- Whenever the plan produces MORE THAN ONE timed asset (video clips, music, voiceover), add an "assembly" step to join them into the final cut, and finish with an "export" step that names the deliverable.
+- Asset step agents: "image", "video", "i2v" (animate an earlier image), "music", "voiceover", "assembly", "export".
+
+EVERY STEP CARRIES FINISHED CONTENT, NEVER INSTRUCTIONS:
+- "voiceover" steps: params.text is the FINAL narration script written out in full — the exact words the voice will speak, in the user's language and tone. The speech model reads that text VERBATIM, so an instruction placed there gets spoken aloud.
+  WRONG: { "agent": "voiceover", "params": { "text": "Generate a warm voiceover about our linen bedding" } }  ← the voice would literally say this sentence
+  RIGHT: { "agent": "voiceover", "params": { "text": "Some mornings deserve to last longer. Pure linen, woven for the way you actually sleep. This is rest, redesigned." } }
+- "music" steps: params.prompt is a finished style/mood/genre description ("dreamy synthwave, 100 BPM, warm analog pads, nostalgic night-drive energy"), never "make music for this".
+- "image"/"video"/"i2v" steps: params.prompt is a finished cinematic visual prompt (subject, composition, lighting, camera, mood) — 15-40 words for video steps.
+
 Respond ONLY in JSON format:
 {
   "steps": [
-    { "agent": "image", "task": "Generate a hero image of...", "params": { "model": "<an id from the runnable image models list below>", "prompt": "...", "aspect_ratio": "16:9" }, "estimatedCredits": 5 },
-    { "agent": "video", "task": "Animate the hero image", "params": { "model": "<an id from the runnable video models list below>", "image_url": "$STEP_1_OUTPUT", "prompt": "..." }, "estimatedCredits": 15 }
+    { "agent": "image", "task": "Hero still", "params": { "model": "<an id from the runnable image models list below>", "prompt": "...", "aspect_ratio": "16:9" }, "estimatedCredits": 5 },
+    { "agent": "video", "task": "Clip 1 — opening shot", "params": { "model": "<an id from the runnable video models list below>", "prompt": "...", "duration": 5 }, "estimatedCredits": 15 },
+    { "agent": "i2v", "task": "Animate the hero still", "params": { "model": "<an id from the runnable video models list below>", "image_url": "$STEP_1_OUTPUT", "prompt": "..." }, "estimatedCredits": 15 },
+    { "agent": "music", "task": "Score", "params": { "model": "<an id from the runnable music models list below>", "prompt": "..." }, "estimatedCredits": 8 },
+    { "agent": "voiceover", "task": "Narration", "params": { "model": "<an id from the runnable voiceover models list below>", "text": "..." }, "estimatedCredits": 5 },
+    { "agent": "assembly", "task": "Join the clips into the final cut", "params": {} },
+    { "agent": "export", "task": "Final launch film", "params": { "name": "Launch film" } }
   ],
   "summary": "Brief description of the plan",
-  "totalCredits": 20,
-  "maxCredits": 25
+  "totalCredits": 48,
+  "maxCredits": 55
 }
 
 Rules:
 - Reference previous step outputs as $STEP_N_OUTPUT
-- Always specify a "model" for every image/video/audio step, using ONLY an exact id from the "Currently runnable models" list appended to this prompt — providers retire models constantly, so an id you recall from training data or an earlier turn may no longer exist; never guess one
+- Always specify a "model" for every image/video/i2v/music/voiceover step, using ONLY an exact id from the "Currently runnable models" list appended to this prompt — providers retire models constantly, so an id you recall from training data or an earlier turn may no longer exist; never guess one
 - Include estimatedCredits per step and totalCredits + maxCredits for the plan
-- Keep steps minimal and efficient
-- If the user asks for something simple, use a single step
+- When session defaults (appended below) name a preferred model, quality or aspect, use them unless the brief demands otherwise
 - When a brand kit is provided, route through brand_guardian first
 - For multi-shot video, use the storyboard agent for shot planning`,
   },
@@ -192,13 +211,29 @@ async function runnableModelHint() {
     const [images, videos, audioRows] = await Promise.all([
       getRunnableModelsForType("image", { limit: 6 }),
       getRunnableModelsForType("video", { limit: 6 }),
-      getRunnableModelsForType("audio", { limit: 6 }),
+      // A wide audio slice, split by audioKind below: "music" steps need a
+      // genuine composer and "voiceover" steps a genuine TTS reader — the
+      // SAME honest sub-classification the studios and defaultRunnableModel
+      // already gate their pools on. A flat cheapest-6 audio list buried the
+      // composers under transform utilities and gave the planner nothing it
+      // could safely put on a music or voiceover step.
+      getRunnableModelsForType("audio", { limit: 50 }),
     ]);
+    const musicRows = audioRows.filter((row) => audioKind(row) === "music").slice(0, 6);
+    const ttsRows = audioRows.filter((row) => {
+      const kind = audioKind(row);
+      return kind === "tts" || kind === "dialogue";
+    }).slice(0, 6);
     const line = (label, rows) => {
       const ids = rows.map(runnableProviderModelId).filter(Boolean);
       return ids.length ? `- ${label}: ${ids.join(", ")}` : null;
     };
-    const lines = [line("image", images), line("video", videos), line("audio", audioRows)].filter(Boolean);
+    const lines = [
+      line("image", images),
+      line("video", videos),
+      line("music", musicRows),
+      line("voiceover", ttsRows),
+    ].filter(Boolean);
     if (!lines.length) return "";
     return `\n\nCurrently runnable models — use ONLY an exact id from this list in a step's "model" param:\n${lines.join("\n")}`;
   } catch {
@@ -206,28 +241,131 @@ async function runnableModelHint() {
   }
 }
 
+// ── Session defaults for the planner (A9 task 5) ──────────────────────────
+// When the session has stored model/quality preferences (E3 settings), the
+// planner is told about them as soft defaults — the plan route loads them
+// off the session row and passes them in `context.settings`.
+function sessionDefaultsHint(context) {
+  const s = context?.settings;
+  if (!s || typeof s !== "object") return "";
+  const parts = [];
+  if (typeof s.imageModel === "string" && s.imageModel) parts.push(`image model ${s.imageModel}`);
+  if (typeof s.videoModel === "string" && s.videoModel) parts.push(`video model ${s.videoModel}`);
+  if (typeof s.audioModel === "string" && s.audioModel) parts.push(`audio model ${s.audioModel}`);
+  if (typeof s.quality === "string" && s.quality) parts.push(`quality ${s.quality}`);
+  if (typeof s.aspect === "string" && s.aspect) parts.push(`aspect ratio ${s.aspect}`);
+  if (!parts.length) return "";
+  return `\n\nSession defaults (use unless the brief demands otherwise): ${parts.join("; ")}.`;
+}
+
+// The planner's user turn: any extra context, the FULL conversation when the
+// caller supplies one (A9 — "ok" in chat must be enough; nothing should ever
+// need re-pasting into the brief box), then the request itself.
+function buildPlanUserContent(userMessage, context = {}) {
+  const { conversation, settings, ...rest } = context || {};
+  const parts = [];
+  if (rest && Object.keys(rest).length) parts.push(`Context: ${JSON.stringify(rest)}`);
+  if (Array.isArray(conversation) && conversation.length) {
+    const transcript = conversation
+      .filter((m) => m && typeof m.content === "string" && m.content.trim())
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.trim()}`)
+      .join("\n");
+    // Newest-tail cap so a very long chat can't blow the context window —
+    // the distilled brief travels in `userMessage` regardless.
+    parts.push(`Conversation so far — plan the COMPLETE production agreed here:\n${transcript.slice(-8000)}`);
+  }
+  parts.push(`Request: ${userMessage}`);
+  return parts.join("\n\n");
+}
+
+// The LLM is asked for raw JSON but sometimes wraps it in markdown fences or
+// commentary — strip fences, then take the outermost {...} span (the same
+// tolerance director-planner.js's extractJsonObject already applies).
+export function extractPlanJson(text) {
+  if (typeof text !== "string") return null;
+  const cleaned = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return cleaned.slice(start, end + 1);
+}
+
+const STRICT_JSON_RETRY_HINT =
+  "Your previous reply was not a valid plan. Reply with ONLY one valid JSON object matching the required plan schema — no markdown fences, no commentary before or after it.";
+
+// A complete plan with real narration scripts is LONG — the old 2000-token
+// cap truncated exactly the plans the new contract demands, the JSON parse
+// failed on the truncated tail, and the failure degraded SILENTLY to the
+// heuristic (production incident: a 7-turn launch-film brief came back as
+// "Heuristic plan: 1 step(s)" with one audio step and no log anywhere).
+const PLAN_MAX_TOKENS = 8000;
+
+async function llmPlanOnce(messages) {
+  const response = await llmComplete(messages, { maxTokens: PLAN_MAX_TOKENS, temperature: 0.3 });
+  const jsonText = extractPlanJson(response);
+  if (!jsonText) throw new Error("planner reply contained no JSON object");
+  const json = JSON.parse(jsonText);
+  if (!Array.isArray(json.steps) || !json.steps.length) throw new Error("planner reply had no steps");
+  return json;
+}
+
+// One LLM planning request with ONE strict-JSON retry (mirroring
+// director-planner.js's generateLlmPlan) and LOUD failure logging — a
+// planner degradation must never again be invisible in production logs.
+// Returns the parsed plan JSON, or null when both attempts failed (the
+// caller then falls back to the heuristic and MARKS the plan as degraded).
+async function requestLlmPlan(userMessage, context = {}) {
+  const system = AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context) + (await runnableModelHint());
+  const user = buildPlanUserContent(userMessage, context);
+  try {
+    return await llmPlanOnce([
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ]);
+  } catch (err) {
+    try { log.error("agent_plan_llm_failed", { error: err?.message, willRetry: true }); } catch {}
+    try {
+      return await llmPlanOnce([
+        { role: "system", content: system },
+        { role: "user", content: `${user}\n\n${STRICT_JSON_RETRY_HINT}` },
+      ]);
+    } catch (retryErr) {
+      try { log.error("agent_plan_llm_failed", { error: retryErr?.message, willRetry: false, degradedToHeuristic: true }); } catch {}
+      return null;
+    }
+  }
+}
+
+// A heuristic plan handed out where the LLM planner was expected must SAY
+// SO — production incident: a degraded plan was presented as the real
+// thing, and the only tell was its own "Heuristic plan: N step(s)" summary
+// text. `planSource` travels to the client, which renders an honest
+// "quick draft" notice on the plan card.
+async function heuristicFallbackPlan(userMessage, context, { degraded }) {
+  const plan = await buildHeuristicPlan(userMessage, context);
+  const estimate = await estimateAgentTask(plan.steps || []);
+  return { ...plan, estimate, planSource: "heuristic", degraded: !!degraded };
+}
+
 // ── Plan a task with token-by-token streaming ──
 export async function planTaskStream(userMessage, context = {}) {
   const hasLLM = process.env.OPENROUTER_KEY;
 
   if (!hasLLM) {
-    const plan = await buildHeuristicPlan(userMessage, context);
-    const estimate = await estimateAgentTask(plan.steps || []);
-    return { stream: null, plan: { ...plan, estimate } };
+    return { stream: null, plan: await heuristicFallbackPlan(userMessage, context, { degraded: false }) };
   }
 
   const messages = [
-    { role: "system", content: AGENTS.orchestrator.systemPrompt + (await runnableModelHint()) },
-    { role: "user", content: `Context: ${JSON.stringify(context)}\n\nRequest: ${userMessage}` },
+    { role: "system", content: AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context) + (await runnableModelHint()) },
+    { role: "user", content: buildPlanUserContent(userMessage, context) },
   ];
 
   let llmReadable;
   try {
-    llmReadable = await llmStream(messages, { maxTokens: 2000, temperature: 0.3 });
-  } catch {
-    const plan = await buildHeuristicPlan(userMessage, context);
-    const estimate = await estimateAgentTask(plan.steps || []);
-    return { stream: null, plan: { ...plan, estimate } };
+    llmReadable = await llmStream(messages, { maxTokens: PLAN_MAX_TOKENS, temperature: 0.3 });
+  } catch (err) {
+    try { log.error("agent_plan_llm_failed", { error: err?.message, path: "stream", degradedToHeuristic: true }); } catch {}
+    return { stream: null, plan: await heuristicFallbackPlan(userMessage, context, { degraded: true }) };
   }
 
   const encoder = new TextEncoder();
@@ -260,22 +398,21 @@ export async function planTaskStream(userMessage, context = {}) {
         }
 
         // After stream ends, parse accumulated text as plan
-        const cleaned = buffer.replace(/```json\n?/g, "").replace(/```/g, "").trim();
         let plan;
         try {
-          const json = JSON.parse(cleaned);
-          const estimate = await estimateAgentTask(json.steps || []);
-          plan = { ...json, estimate };
-        } catch {
-          plan = await buildHeuristicPlan(userMessage, context);
-          const estimate = await estimateAgentTask(plan.steps || []);
-          plan = { ...plan, estimate };
+          const json = JSON.parse(extractPlanJson(buffer) || "");
+          if (!Array.isArray(json.steps) || !json.steps.length) throw new Error("planner reply had no steps");
+          const estimate = await estimateAgentTask(json.steps);
+          plan = { ...json, estimate, planSource: "llm" };
+        } catch (err) {
+          try { log.error("agent_plan_llm_failed", { error: err?.message, path: "stream-parse", degradedToHeuristic: true }); } catch {}
+          plan = await heuristicFallbackPlan(userMessage, context, { degraded: true });
         }
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "plan", plan })}\n\n`));
-      } catch {
-        const fallback = await buildHeuristicPlan(userMessage, context);
-        const estimate = await estimateAgentTask(fallback.steps || []);
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "plan", plan: { ...fallback, estimate } })}\n\n`));
+      } catch (err) {
+        try { log.error("agent_plan_llm_failed", { error: err?.message, path: "stream-read", degradedToHeuristic: true }); } catch {}
+        const fallback = await heuristicFallbackPlan(userMessage, context, { degraded: true });
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "plan", plan: fallback })}\n\n`));
       }
       controller.close();
     },
@@ -288,27 +425,17 @@ export async function planTaskStream(userMessage, context = {}) {
 export async function planTask(userMessage, context = {}) {
   const hasLLM = process.env.OPENROUTER_KEY;
 
-  if (!hasLLM) {
-    const plan = await buildHeuristicPlan(userMessage, context);
-    const estimate = await estimateAgentTask(plan.steps || []);
-    return { ...plan, estimate };
+  if (hasLLM) {
+    const json = await requestLlmPlan(userMessage, context);
+    if (json) {
+      const estimate = await estimateAgentTask(json.steps);
+      return { ...json, estimate, planSource: "llm" };
+    }
+    // requestLlmPlan already retried once and logged both failures loudly.
+    return heuristicFallbackPlan(userMessage, context, { degraded: true });
   }
 
-  const messages = [
-    { role: "system", content: AGENTS.orchestrator.systemPrompt + (await runnableModelHint()) },
-    { role: "user", content: `Context: ${JSON.stringify(context)}\n\nRequest: ${userMessage}` },
-  ];
-
-  try {
-    const response = await llmComplete(messages, { maxTokens: 2000, temperature: 0.3 });
-    const json = JSON.parse(response.replace(/```json\n?/g, "").replace(/```/g, "").trim());
-    const estimate = await estimateAgentTask(json.steps || []);
-    return { ...json, estimate };
-  } catch {
-    const plan = await buildHeuristicPlan(userMessage, context);
-    const estimate = await estimateAgentTask(plan.steps || []);
-    return { ...plan, estimate };
-  }
+  return heuristicFallbackPlan(userMessage, context, { degraded: false });
 }
 
 // The cheapest currently-runnable model for a capability, straight from the
@@ -357,43 +484,152 @@ export async function defaultRunnableModel(agentKind, { wantsVoice = false } = {
   return LAST_RESORT_FALLBACKS[agentKind]?.[0] || agentKind;
 }
 
-// ── Heuristic plan when no LLM available ──
-async function buildHeuristicPlan(userMessage, context = {}) {
+// ── Heuristic plan when no LLM available (or the LLM planner failed) ──────
+// A9 rewrite. Two hard-won rules:
+//
+// 1. CLASSIFY BY THE PRIMARY DELIVERABLE, never by a stray keyword.
+//    Production incident: a 30-second launch-film brief contained the
+//    section label "Audio: Natural ambient sounds…", the old keyword order
+//    matched /audio/ first, and the user was charged for ONE audio
+//    generation of an entire film brief. Film/video classes are therefore
+//    checked BEFORE any audio/marketing keyword can claim the request.
+//
+// 2. EMIT COMPLETE PRODUCTIONS with composed content — template strings
+//    from the brief, never bare instructions (a voiceover step's text is
+//    words a voice can speak; executeVoiceoverStep's guard backstops this).
+
+const capitalize = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+// The subject of the production — the brief with its production-speak
+// prefix ("Create a 30-second launch film for …") peeled off, so composed
+// prompts/narration talk about the THING, not about the film about the
+// thing. Falls back to the whole brief when nothing recognizable leads.
+export function briefSubject(userMessage) {
+  const brief = String(userMessage || "").trim().replace(/\s+/g, " ");
+  const stripped = brief
+    .replace(/^(please\s+)?(create|make|produce|generate|plan|design|build|shoot|compose|write)\s+/i, "")
+    .replace(/^(me\s+|us\s+)?(an?|the)\s+/i, "")
+    .replace(/^[\w-]*\s*(launch film|launch video|music video|lyric video|product ad|product film|brand video|promo(?:tional)?(?: video| film)?|commercial|advert(?:isement)?|trailer|film|video|reel|clip)\s*(for|about|of|:)?\s*/i, "")
+    .trim();
+  return (stripped || brief).slice(0, 220);
+}
+
+export async function buildHeuristicPlan(userMessage, context = {}) {
   const lower = userMessage.toLowerCase();
+  const settings = context?.settings && typeof context.settings === "object" ? context.settings : {};
+  const subject = briefSubject(userMessage);
   const steps = [];
 
-  const hasVideo = lower.match(/video|animate|motion|clip|movie|film/);
-  const hasAudio = lower.match(/audio|music|voice|sound|song|singing/);
-  const hasWebsite = lower.match(/website|landing page|web page|html|site/);
-  const hasMarketing = lower.match(/marketing|ad|campaign|social|ugc|brand/);
-  const hasCode = lower.match(/code|function|component|api|script|debug/);
+  const isWebsite = /website|landing page|web page|\bhtml\b|\bweb site\b/.test(lower);
+  const isMusicVideo = /\bmusic video\b|\blyric video\b/.test(lower);
+  // The primary-deliverable classes: a film/commercial/promo/ad brief is a
+  // VIDEO PRODUCTION regardless of what its Audio:/Music: section labels say.
+  const isFilmPromo = /\b(launch film|launch video|product film|product ad|brand video|promo(?:tional)?(?: video| film)?|commercial|advert(?:isement)?|trailer|\bfilm\b)\b/.test(lower);
+  const isCode = /\bcode\b|\bfunction\b|\bcomponent\b|\bapi\b|\bdebug\b|\bbug\b/.test(lower);
+  const isMarketing = /\bmarketing\b|\bcampaign\b|\bsocial (media )?post|\bugc\b|ad copy|\bnewsletter\b/.test(lower);
+  const isGenericVideo = /video|animate|motion|clip|movie/.test(lower);
+  const isAudioOnly = /audio|music|voice|sound|song|singing|narrat|speech|speak/.test(lower);
 
-  if (hasWebsite) {
+  const videoModelFor = async () => settings.videoModel || await defaultRunnableModel("video");
+  const imageModelFor = async () => settings.imageModel || await defaultRunnableModel("image");
+  const musicModelFor = async () => settings.audioModel || await defaultRunnableModel("audio", { wantsVoice: false });
+  const ttsModelFor = async () => await defaultRunnableModel("audio", { wantsVoice: true });
+
+  const videoStep = (task, prompt, model) => ({
+    agent: "video",
+    task,
+    params: { model, endpoint: model, prompt, duration: 5, ...(settings.aspect ? { aspect_ratio: settings.aspect } : {}) },
+  });
+
+  let summary = "";
+
+  if (isWebsite) {
     steps.push({ agent: "website", task: userMessage, params: { prompt: userMessage } });
-  } else if (hasCode) {
+    summary = "One-step website build.";
+  } else if (isMusicVideo) {
+    const videoModel = await videoModelFor();
+    const musicModel = await musicModelFor();
+    steps.push(
+      videoStep("Clip 1 — opening", `Opening shot for ${subject}: wide establishing frame, cinematic lighting, slow push-in, rich color grade.`, videoModel),
+      videoStep("Clip 2 — feature", `Feature shot for ${subject}: dynamic medium close-up, rhythmic motion, dramatic side light, shallow depth of field.`, videoModel),
+      videoStep("Clip 3 — finale", `Finale shot for ${subject}: sweeping wide angle, light shifting to a bold accent color, slow pull-out ending on a striking silhouette.`, videoModel),
+      {
+        agent: "music",
+        task: "Original track",
+        params: { model: musicModel, endpoint: musicModel, prompt: `Original track for ${subject}: driving rhythm, cinematic build, modern polished production, memorable hook.`, duration: 30 },
+      },
+      { agent: "assembly", task: "Join the clips into the final cut", params: {} },
+      { agent: "export", task: "Final music video", params: { name: "Music video" } },
+    );
+    summary = `Complete music video for ${subject}: three clips, an original track, assembled into one final video.`;
+  } else if (isFilmPromo) {
+    const imageModel = await imageModelFor();
+    const videoModel = await videoModelFor();
+    const musicModel = await musicModelFor();
+    const ttsModel = await ttsModelFor();
+    const narration = `Some things are worth slowing down for. ${capitalize(subject)} — crafted with care, made for real life. Experience it for yourself, today.`;
+    steps.push(
+      {
+        agent: "image",
+        task: "Hero still",
+        params: { model: imageModel, endpoint: imageModel, prompt: `Hero still of ${subject}: cinematic composition, soft key light, shallow depth of field, premium product photography.`, aspect_ratio: settings.aspect || "16:9" },
+      },
+      videoStep("Clip 1 — opening", `Opening shot for ${subject}: slow reveal, warm natural light, gentle camera drift, inviting atmosphere.`, videoModel),
+      videoStep("Clip 2 — closing", `Closing shot for ${subject}: hero framing, golden-hour glow, subtle slow motion, confident final hold.`, videoModel),
+      {
+        agent: "voiceover",
+        task: "Narration",
+        params: { model: ttsModel, endpoint: ttsModel, text: narration, prompt: narration },
+      },
+      {
+        agent: "music",
+        task: "Underscore",
+        params: { model: musicModel, endpoint: musicModel, prompt: `Warm, uplifting underscore for ${subject}: gentle build, soft percussion, modern cinematic production, understated and premium.`, duration: 30 },
+      },
+      { agent: "assembly", task: "Join the clips into the final cut", params: {} },
+      { agent: "export", task: "Final film", params: { name: "Final film" } },
+    );
+    summary = `Complete production for ${subject}: hero still, two clips, narration and underscore, assembled into the final film.`;
+  } else if (isCode) {
     steps.push({ agent: "coding", task: userMessage, params: { prompt: userMessage } });
-  } else if (hasMarketing) {
+    summary = "One-step coding task.";
+  } else if (isMarketing) {
     steps.push({ agent: "marketing", task: userMessage, params: { prompt: userMessage } });
-  } else if (hasAudio) {
-    // A voice/narration/speech request wants a TTS reader, not a music
-    // composer — unless the message ALSO names music explicitly (e.g. "add
-    // a singing voiceover"), which keeps the music request as the primary
-    // intent. Anything else defaults to "music" (defaultRunnableModel's own
-    // default), matching the broader hasAudio match (music/sound/song/
-    // singing) this branch is already gated on.
-    const wantsVoice = /voice|narrat|speak|read aloud/.test(lower) && !/music|song|singing/.test(lower);
+    summary = "One-step marketing content task.";
+  } else if (isGenericVideo) {
+    const imageModel = await imageModelFor();
+    const videoModel = await videoModelFor();
+    steps.push(
+      {
+        agent: "image",
+        task: userMessage,
+        params: { model: imageModel, endpoint: imageModel, prompt: userMessage, aspect_ratio: settings.aspect || "1:1" },
+      },
+      { agent: "video", task: "Animate the generated image", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_1_OUTPUT", prompt: userMessage, duration: 5 } },
+      { agent: "export", task: "Final clip", params: { name: "Final clip" } },
+    );
+    summary = `Still plus animated clip for ${subject}.`;
+  } else if (isAudioOnly) {
+    // Only reached when NO film/video class claimed the brief — a genuine
+    // audio-first request. Voice vs music by explicit voice words, exactly
+    // as before, but emitted as the honest step kind so the voiceover
+    // guard and per-kind model pools apply.
+    const wantsVoice = /voice|narrat|speak|read aloud|speech/.test(lower) && !/music|song|singing/.test(lower);
     const audioModel = await defaultRunnableModel("audio", { wantsVoice });
-    steps.push({ agent: "audio", task: userMessage, params: { _modelId: audioModel, endpoint: audioModel, prompt: userMessage, duration: 30 } });
-  } else {
-    const imageModel = await defaultRunnableModel("image");
-    steps.push({ agent: "image", task: userMessage, params: { model: imageModel, endpoint: imageModel, prompt: userMessage, aspect_ratio: "1:1" } });
-    if (hasVideo) {
-      const videoModel = await defaultRunnableModel("video");
-      steps.push({ agent: "video", task: "Animate the generated image", params: { model: videoModel, endpoint: videoModel, image_url: "$STEP_1_OUTPUT", prompt: userMessage, duration: 5 } });
+    if (wantsVoice) {
+      steps.push({ agent: "voiceover", task: userMessage, params: { model: audioModel, endpoint: audioModel, text: userMessage, prompt: userMessage } });
+      summary = "One voiceover recording.";
+    } else {
+      steps.push({ agent: "music", task: userMessage, params: { model: settings.audioModel || audioModel, endpoint: settings.audioModel || audioModel, prompt: userMessage, duration: 30 } });
+      summary = "One original music track.";
     }
+  } else {
+    const imageModel = await imageModelFor();
+    steps.push({ agent: "image", task: userMessage, params: { model: imageModel, endpoint: imageModel, prompt: userMessage, aspect_ratio: settings.aspect || "1:1" } });
+    summary = "One image generation.";
   }
 
-  return { steps, summary: `Heuristic plan: ${steps.length} step(s)` };
+  return { steps, summary };
 }
 
 // ── Execute a single step ──
@@ -569,8 +805,32 @@ async function executeMusicStep(params) {
   return await executeAudioStep(params);
 }
 
+// A9 safety guard (owner defect 1: "the voiceover SAYS the prompt"): the
+// planner contract puts the FINISHED narration in params.text, but plans
+// can be old, heuristic, or hand-edited — so the execution path runs the
+// cheap instruction-shape detector and, when it triggers, spends ONE
+// llmComplete call turning the instruction into the script it asked for.
+// The TTS model then speaks the script, never the instruction. On a rewrite
+// failure the original text still runs (a paid step must not die on an LLM
+// hiccup — and the planner contract remains the first line of defense).
 async function executeVoiceoverStep(params) {
-  return await executeAudioStep(params);
+  const script = [params.text, params.prompt].find((v) => typeof v === "string" && v.trim())?.trim() || "";
+  let finalScript = script;
+  if (isVoiceoverInstruction(script)) {
+    try {
+      const rewritten = await llmComplete([
+        { role: "system", content: "You write final narration scripts for text-to-speech. Reply with ONLY the exact words the voice should speak — no title, no quotes, no stage directions, no commentary." },
+        { role: "user", content: `Write the final narration script for: ${script}` },
+      ], { maxTokens: 800, temperature: 0.6 });
+      if (typeof rewritten === "string" && rewritten.trim()) finalScript = rewritten.trim();
+    } catch { /* speak the original rather than fail the paid step */ }
+  }
+  const next = { ...params };
+  if (finalScript) {
+    next.text = finalScript;
+    next.prompt = finalScript;
+  }
+  return await executeAudioStep(next);
 }
 
 // Assembly — joins every video this run has produced so far, in order.
@@ -641,8 +901,11 @@ const LAST_RESORT_FALLBACKS = {
 };
 
 // Steps whose output is a media URL worth logging as a Generation record
-// (website/coding return code/text, not a media URL).
-const MEDIA_AGENT_KEYS = new Set(["image", "video", "audio", "marketing"]);
+// (website/coding return code/text, not a media URL). A9: the workflow-kind
+// steps the planner now emits (i2v/upscale/music/voiceover) produce media
+// too — without them here their outputs got no Generation row AND their raw
+// provider URLs went user-facing un-proxied.
+const MEDIA_AGENT_KEYS = new Set(["image", "video", "audio", "marketing", "i2v", "upscale", "music", "voiceover"]);
 const isMediaAgent = (agent) => MEDIA_AGENT_KEYS.has(normalizeAgentKey(agent));
 
 // Confirms a LAST_RESORT_FALLBACKS id is STILL actually runnable in this
@@ -844,8 +1107,20 @@ const isHttpUrl = (v) => typeof v === "string" && /^https?:\/\//i.test(v);
 const proxiedUrl = (url) => `/api/media/proxy?url=${encodeURIComponent(url)}`;
 
 // Display form of a step output: media URLs go through the app's own proxy
-// so no provider hostname is ever user-facing; text passes through.
+// so no provider hostname is ever user-facing; text passes through. An
+// export step's result object (A9) carries raw URLs inside — its deliverable
+// and manifest entries are proxied the same way before anything user-facing
+// sees them.
 function displayOutputFor(step, output) {
+  if (output && typeof output === "object" && output.kind === "export") {
+    return {
+      ...output,
+      url: isHttpUrl(output.url) ? proxiedUrl(output.url) : output.url,
+      manifest: Array.isArray(output.manifest)
+        ? output.manifest.map((entry) => (isHttpUrl(entry?.url) ? { ...entry, url: proxiedUrl(entry.url) } : entry))
+        : output.manifest,
+    };
+  }
   if (isMediaAgent(step.agent) && isHttpUrl(output)) return proxiedUrl(output);
   return output;
 }
@@ -1192,13 +1467,24 @@ export async function executeAgentStep(userId, {
 }
 
 // ── Assemble outputs into a coherent package ──
+// A9: `deliverable` names THE final product (owner defect 5) — the export
+// step's own result when one ran, else the assembled cut (the newest video)
+// when an assembly step produced one. The client renders it prominently
+// with the collected assets beneath.
 export function assembleOutputs(outputs, steps) {
   const images = [];
   const videos = [];
   const audio = [];
   const text = [];
+  let deliverable = null;
 
   outputs.forEach((output, i) => {
+    if (output && typeof output === "object" && output.kind === "export") {
+      if (typeof output.url === "string" && output.url) {
+        deliverable = { url: output.url, name: output.name || "Deliverable" };
+      }
+      return; // never dump the export manifest into the text bucket
+    }
     if (!output || typeof output !== "string") {
       text.push({ step: i + 1, agent: steps[i]?.agent, content: typeof output === "string" ? output : JSON.stringify(output)?.slice(0, 500) });
       return;
@@ -1214,5 +1500,11 @@ export function assembleOutputs(outputs, steps) {
     }
   });
 
-  return { images, videos, audio, text, total: outputs.length };
+  // No export step ran, but an assembly joined clips — the assembled cut
+  // (by construction the newest video) IS the deliverable.
+  if (!deliverable && videos.length && Array.isArray(steps) && steps.some((s) => normalizeAgentKey(s?.agent) === "assembly")) {
+    deliverable = { url: videos[videos.length - 1].url, name: "Assembled video" };
+  }
+
+  return { images, videos, audio, text, deliverable, total: outputs.length };
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
 import { matchesGroup } from "@/lib/capability-groups";
+import { audioKind } from "@/lib/model-catalog-core.mjs";
 import {
   ModelPicker, RatioPicker, Segmented, SpendMeter, Sheet,
   IcFlow, IcCheck,
@@ -30,6 +31,8 @@ const AGENT_NAMES = {
   quality_control: "Quality control", cost_optimizer: "Cost optimizer",
   assembly: "Assembly", image: "Image", video: "Video", audio: "Audio",
   website: "Website", marketing: "Marketing", coding: "Code",
+  i2v: "Animate", upscale: "Upscale", music: "Music", voiceover: "Voiceover",
+  export: "Deliverable",
 };
 const agentName = (a) => AGENT_NAMES[a] || String(a || "Step").replace(/_/g, " ");
 
@@ -38,14 +41,21 @@ const normalizeKind = (agent) => String(agent || "").trim().toLowerCase().replac
 /* Which steps offer model editing, and which catalog models fit them.
    Filters go through capability groups (the catalog's real vocabulary) with
    a modelType fallback for rows whose capability is missing. */
-const EDITABLE_KINDS = new Set(["image", "video", "audio"]);
+const EDITABLE_KINDS = new Set(["image", "video", "audio", "i2v", "upscale", "music", "voiceover"]);
 
 // Exported for the review surface (E3.5): the Edit sheet's model-override
-// pool uses the same per-step filtering as the plan card.
+// pool uses the same per-step filtering as the plan card. A9: every step
+// kind the planner now emits gets a pool from the RIGHT capability group —
+// music steps offer only genuine composers (audioKind "music"), voiceover
+// steps only speech readers (audioKind "tts"/"dialogue"), the same honest
+// sub-classification the Music/Audio studios already gate on.
 export function modelsForStep(step, models) {
   const kind = normalizeKind(step.agent);
   if (kind === "image") {
     return models.filter((m) => matchesGroup(m, "tti") || matchesGroup(m, "iti") || m.modelType === "image");
+  }
+  if (kind === "upscale") {
+    return models.filter((m) => matchesGroup(m, "iti") || m.modelType === "image");
   }
   if (kind === "video") {
     const wantsI2V = !!step.params?.image_url;
@@ -54,6 +64,18 @@ export function modelsForStep(step, models) {
         ? matchesGroup(m, "i2v") || m.modelType === "video"
         : matchesGroup(m, "ttv") || matchesGroup(m, "i2v") || m.modelType === "video",
     );
+  }
+  if (kind === "i2v") {
+    return models.filter((m) => matchesGroup(m, "i2v") || m.modelType === "video");
+  }
+  if (kind === "music") {
+    return models.filter((m) => audioKind(m) === "music");
+  }
+  if (kind === "voiceover") {
+    return models.filter((m) => {
+      const sub = audioKind(m);
+      return sub === "tts" || sub === "dialogue";
+    });
   }
   if (kind === "audio") {
     return models.filter((m) => matchesGroup(m, "audio") || m.modelType === "audio" || m.modelType === "music");
@@ -193,6 +215,13 @@ export default function PlanApproval({
           {steps.length} {steps.length === 1 ? "step" : "steps"}
         </span>
       </header>
+
+      {plan?.degraded && (
+        <p className="hs-notice" style={{ margin: "var(--s-3) var(--s-4) 0" }} data-testid="plan-degraded-notice">
+          Quick draft plan — the full planner was unavailable just now, so this is a simpler
+          fallback. Review each step (or re-plan in a moment) before approving.
+        </p>
+      )}
 
       <div role="list">
         {steps.map((step, i) => {
