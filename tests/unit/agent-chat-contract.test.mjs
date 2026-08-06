@@ -81,9 +81,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toMatch(/Do not output plan JSON/i);
   });
 
-  it("points the user at plan review before anything is charged", () => {
-    expect(prompt).toMatch(/Plan production/);
+  it("signals plan-readiness with the fenced plan-ready block and keeps approval as the money gate (A9)", () => {
+    expect(prompt).toMatch(/plan-ready/);
+    expect(prompt).toMatch(/"brief"/);
     expect(prompt).toMatch(/approve/i);
+    expect(prompt).toMatch(/nothing runs and nothing is charged/i);
+  });
+
+  it("caps the interrogation: at most 2-3 questions across the whole conversation (A9)", () => {
+    expect(prompt).toMatch(/AT MOST 2-3 questions/i);
+    expect(prompt).toMatch(/Do not interrogate/i);
   });
 
   it("never names a provider", () => {

@@ -52,8 +52,10 @@ import { executeAgentRun, executeAgentRunStream } from "@/lib/agents";
 
 // No keyword matches video/audio/website/marketing/code — buildHeuristicPlan
 // falls through to a single "image" step, fallback cost 2 credits.
+// (A9 renamed the heuristic summary from "Heuristic plan: 1 step(s)" to an
+// honest human description; the debit description carries that summary.)
 const USER_MESSAGE = "Create a hero shot";
-const EXPECTED_SUMMARY = "Heuristic plan: 1 step(s)";
+const EXPECTED_SUMMARY = "One image generation.";
 const EXPECTED_TOTAL = 2;
 
 async function drainStream(stream) {

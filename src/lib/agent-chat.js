@@ -17,6 +17,46 @@
 
 const QUESTION_BLOCK_RE = /```question\s*\n([\s\S]*?)```/g;
 
+// A9 — the auto-plan signal. When the assistant judges it has enough to
+// plan, it ends its reply with a fenced block
+//
+//   ```plan-ready
+//   {"brief":"<the complete distilled production brief>"}
+//   ```
+//
+// The client, on seeing it, calls the plan endpoint automatically — no
+// button press. Parsed with the same last-block-wins discipline as the
+// question block, and the same client/server sharing guarantee.
+const PLAN_READY_BLOCK_RE = /```plan-ready\s*\n?([\s\S]*?)```/g;
+
+// Parses the LAST ```plan-ready block. Returns { brief } (brief may be ""
+// when the model omitted or malformed the JSON — the SIGNAL still counts,
+// and the caller falls back to the conversation as the brief source) or
+// null when no block is present.
+export function parsePlanReadyBlock(text) {
+  if (!text || typeof text !== "string") return null;
+  let match = null;
+  for (const m of text.matchAll(PLAN_READY_BLOCK_RE)) match = m;
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    const brief = typeof parsed?.brief === "string" ? parsed.brief.trim() : "";
+    return { brief };
+  } catch {
+    return { brief: "" };
+  }
+}
+
+// The prose around the plan-ready block (rendered as markdown; the block
+// itself is never shown to the user).
+export function stripPlanReadyBlock(text) {
+  if (!text || typeof text !== "string") return text || "";
+  const matches = [...text.matchAll(PLAN_READY_BLOCK_RE)];
+  if (!matches.length) return text;
+  const last = matches[matches.length - 1];
+  return (text.slice(0, last.index) + text.slice(last.index + last[0].length)).trim();
+}
+
 // Parses the LAST ```question block out of `text`. Returns
 // { question, options, allowCustom } or null when there is no
 // (well-formed) block — malformed JSON degrades to plain prose, never an
@@ -65,6 +105,13 @@ How to reply:
 \`\`\`
 
   Give 2-4 short options. Put nothing after that block. If you are not asking a question this turn, do not include the block at all.
-- When you know enough to proceed, stop asking. Say you're ready and tell the user to press "Plan production" to review every step and its price — nothing runs and nothing is charged until they approve that plan.
+- Ask AT MOST 2-3 questions in the WHOLE conversation, and only ones whose answer genuinely changes the production (format, length, tone — not trivia). Do not interrogate. Prefer sensible assumptions you state briefly.
+- The moment you know enough to plan — including when the user says "ok", "go ahead", or answers your last question — STOP asking and END your reply with a fenced code block tagged plan-ready containing one JSON object with the complete distilled production brief:
+
+\`\`\`plan-ready
+{"brief":"A 30-second vertical launch film for a linen bedding brand: 3 cinematic shots of softly lit bedrooms, calm narration, warm ambient music."}
+\`\`\`
+
+  The brief must capture EVERYTHING agreed in the conversation (subject, format, length, tone, any scripts or copy). Put nothing after that block. The studio then builds the full costed plan automatically and shows it for review — nothing runs and nothing is charged until the user approves it.
 - Keep replies concise and concrete. Do not output plan JSON in chat, and never mention internal model vendors or backend services.`;
 }

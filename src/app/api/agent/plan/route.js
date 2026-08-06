@@ -25,6 +25,8 @@ async function persistPlanTurn(sessionId, message, plan) {
         estimate: plan.estimate,
         totalCredits: plan.totalCredits,
         maxCredits: plan.maxCredits,
+        planSource: plan.planSource,
+        degraded: plan.degraded,
       }),
     });
   } catch { /* history is best-effort — a failed append must never fail the quote */ }
@@ -40,12 +42,33 @@ export async function POST(req) {
     if (!rl.allowed) return apiError({ code: "rate_limited", extra: { retryAfter: rl.retryAfter } });
 
     const body = await req.json();
-    const message = body.message || body.prompt;
-    const context = body.context || {};
-    if (!message) return apiError({ code: "bad_request", message: "Message required" });
+    const context = body.context && typeof body.context === "object" ? { ...body.context } : {};
 
     const session = await resolveOwnedSession(user.id, body.sessionId);
     const sessionId = session?.id || null;
+
+    // A9 — the conversation IS the brief source. The client sends its chat
+    // history so the planner plans from EVERYTHING agreed there, not just
+    // whatever happens to sit in the composer ("ok" must be enough).
+    const conversation = Array.isArray(body.messages)
+      ? body.messages
+          .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+          .slice(-40)
+          .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }))
+      : [];
+    if (conversation.length) context.conversation = conversation;
+
+    // A9 task 5 — the session's stored preferences (E3 settings) reach the
+    // planner as defaults. Client-sent context can not override them: the
+    // session row is the source of truth.
+    if (session?.settings && typeof session.settings === "object") {
+      context.settings = session.settings;
+    }
+
+    const lastUserTurn = [...conversation].reverse().find((m) => m.role === "user")?.content;
+    const message = body.message || body.prompt ||
+      (conversation.length ? lastUserTurn || "Plan the complete production discussed in the conversation." : null);
+    if (!message) return apiError({ code: "bad_request", message: "Message required" });
 
     const shouldStream = body.stream !== false;
 
