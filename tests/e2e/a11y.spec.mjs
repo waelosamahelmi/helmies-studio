@@ -162,32 +162,51 @@ test.describe("keyboard traversal", () => {
     // and fixtures/studio-actions.mjs), so a bare label/role locator can
     // resolve to a doomed duplicate as well as the surviving element.
     const visible = (locator) => locator.and(page.locator(":visible"));
-    const promptField = visible(page.getByLabel("Creative brief"));
+    // U1: below 900px the composer is collapsed — the prompt textarea lives
+    // inside the expanding composer sheet, and the collapsed bar carries
+    // the peek trigger plus the primary action. The traversal targets are
+    // therefore the peek trigger, the model trigger and the primary action;
+    // the textarea's own keyboard path is proven right after, through the
+    // sheet, with the same focus-in / Escape-returns semantics the model
+    // sheet is held to.
+    const composerTrigger = visible(page.getByRole("button", { name: "Open the brief composer" }));
     const modelTrigger = visible(page.getByRole("button", { name: "Model", exact: true }));
-    const submit = visible(page.getByRole("button", { name: /^Generate/ }));
+    const submit = visible(page.getByTestId("brief-primary"));
 
     // Tab from the top of the page (no pre-focused element) until all three
     // targets have been visited at least once — proves each is genuinely
     // keyboard-reachable in normal page order, not just individually
-    // focusable via a direct .focus() call.
-    const reached = { prompt: false, model: false, submit: false };
-    for (let i = 0; i < 80 && !(reached.prompt && reached.model && reached.submit); i++) {
+    // focusable via a direct .focus() call. (The collapsed primary action
+    // is never disabled: with an empty brief it opens the composer instead,
+    // so it is always in the tab order.)
+    const reached = { composer: false, model: false, submit: false };
+    for (let i = 0; i < 80 && !(reached.composer && reached.model && reached.submit); i++) {
       await page.keyboard.press("Tab");
-      if (await promptField.evaluate((el) => el === document.activeElement)) {
-        reached.prompt = true;
-        // An empty brief correctly disables "Generate" (Brief.js's `ready`
-        // check) and a disabled button is correctly absent from the tab
-        // order — not a bug. Type into the now-focused field so the button
-        // is enabled by the time traversal reaches it, same as a real user
-        // composing a prompt before tabbing onward.
-        await page.keyboard.type("Accessibility keyboard traversal check");
-      }
+      if (await composerTrigger.evaluate((el) => el === document.activeElement)) reached.composer = true;
       if (await modelTrigger.evaluate((el) => el === document.activeElement)) reached.model = true;
       if (await submit.evaluate((el) => el === document.activeElement)) reached.submit = true;
     }
-    expect(reached, "Tab must reach the prompt field, the model-picker trigger, and the submit button").toEqual({
-      prompt: true, model: true, submit: true,
+    expect(reached, "Tab must reach the composer trigger, the model-picker trigger, and the primary action").toEqual({
+      composer: true, model: true, submit: true,
     });
+
+    // The composer sheet: opening moves focus in, the brief is typeable,
+    // Escape closes and returns focus to the trigger.
+    await composerTrigger.focus();
+    await expect(composerTrigger).toBeFocused();
+    await page.keyboard.press("Enter");
+    const composerDialog = page.getByRole("dialog", { name: "Brief" });
+    await expect(composerDialog).toBeVisible();
+    await expect
+      .poll(() => composerDialog.evaluate((el) => el.contains(document.activeElement)))
+      .toBe(true);
+    const promptField = composerDialog.getByLabel("Creative brief");
+    await promptField.focus();
+    await page.keyboard.type("Accessibility keyboard traversal check");
+    await expect(promptField).toHaveValue(/traversal check/);
+    await page.keyboard.press("Escape");
+    await expect(composerDialog).toBeHidden();
+    await expect(composerTrigger).toBeFocused();
 
     // Opening the sheet moves focus INTO it (src/components/studio/kit/
     // Sheet.js focuses its own dialog container on open).
