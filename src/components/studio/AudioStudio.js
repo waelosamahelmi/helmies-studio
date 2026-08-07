@@ -699,6 +699,7 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
         </div>
 
         <Brief
+          tool="audio"
           value={text}
           onChange={setText}
           onSubmit={generate}

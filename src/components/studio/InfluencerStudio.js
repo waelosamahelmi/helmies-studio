@@ -242,6 +242,7 @@ export default function InfluencerStudio({ initialModel, templateConfig, onCredi
       </div>
 
       <Brief
+        tool="perform"
         value={scene}
         onChange={setScene}
         onSubmit={generate}

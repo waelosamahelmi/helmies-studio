@@ -274,6 +274,7 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
     <Workspace controls={controls} inspector={inspector} inspectorLabel="Campaign">
       <div className="st-work__stage">
         <Stage
+          prompt={prompt}
           generating={generating}
           result={result}
           error={error}
@@ -292,6 +293,7 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
       </div>
 
       <Brief
+        tool="marketing"
         value={prompt}
         onChange={setPrompt}
         onSubmit={generate}

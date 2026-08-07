@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Sheet } from "./Sheet";
 import { SpendMeter } from "./Spend";
 import { IcSpark, IcUpload, IcClose, IcBolt } from "./Icons";
+import History from "./History";
 import { shouldSubmitOnKeyDown, isEnterSendGesture } from "@/lib/brief-keydown";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -60,6 +61,10 @@ export default function Brief({
   onEnhance,
   enhancing = false,
   extras = null,
+
+  /** Which studio this dock belongs to. Only used to order the recall list
+      (this tool's own briefs first). Omit to hide the recall control. */
+  tool = null,
 
   maxChars = 2000,
   submitLabel = "Generate",
@@ -242,6 +247,13 @@ export default function Brief({
                 {enhancing ? <span className="hs-spin" style={{ width: 12, height: 12 }} /> : <IcSpark className="hs-icon-sm" />}
                 {enhancing ? "Expanding" : "Expand brief"}
               </button>
+            )}
+            {tool && (
+              <History
+                tool={tool}
+                disabled={generating || disabled}
+                onPick={(prompt) => { applyChange(prompt); ref.current?.focus(); }}
+              />
             )}
             {extras}
           </div>

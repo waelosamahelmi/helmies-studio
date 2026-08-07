@@ -50,7 +50,7 @@ export default function AudioToolsStudio({ initialModel, templateConfig, onCredi
   const [source, setSource] = useState(null);
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   const available = useMemo(
     () => (models || []).filter(
@@ -165,12 +165,15 @@ export default function AudioToolsStudio({ initialModel, templateConfig, onCredi
           settings={[kind ? KIND_LABEL[kind] : null, source ? "Source attached" : null].filter(Boolean).join(" · ")}
           onCancel={cancel}
           onRetry={generate}
+          onEditSettings={reset}
+          note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
           onNew={reset}
           idle={idle}
         />
       </div>
 
       <Brief
+        tool="audio"
         value={prompt}
         onChange={setPrompt}
         onSubmit={generate}

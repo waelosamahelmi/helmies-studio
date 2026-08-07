@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/ToastProvider";
 import { apiFetch } from "@/lib/client-fetch";
+import { recordPrompt } from "@/lib/studio-history";
 
 /* ══════════════════════════════════════════════════════════════════════════
    useAsyncGeneration
@@ -80,6 +81,11 @@ export function useAsyncGeneration() {
   const submit = useCallback(async (tool, model, params = {}) => {
     const run = ++runId.current;
     const mine = () => alive.current && runId.current === run;
+
+    /* Recorded at submit, not on success: a brief that failed on a provider
+       error is exactly the one the user most wants to recall and retry.
+       Every tool routes through here, so none of them needs its own copy. */
+    recordPrompt({ tool, prompt: params.prompt, model });
 
     clearAll();
     setLoading(true);

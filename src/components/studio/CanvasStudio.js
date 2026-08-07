@@ -2095,6 +2095,7 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
         )}
 
         <Brief
+          tool="image"
           value={prompt}
           onChange={setPrompt}
           onSubmit={generate}

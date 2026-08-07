@@ -582,6 +582,7 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
         </div>
 
         <Brief
+          tool="perform"
           value={direction}
           onChange={setDirection}
           onSubmit={generate}

@@ -701,6 +701,7 @@ export default function MusicStudio({ initialModel, templateConfig, onCreditsCha
         </div>
 
         <Brief
+          tool="music"
           value={brief}
           onChange={setBrief}
           onSubmit={generate}
