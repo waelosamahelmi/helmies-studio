@@ -385,7 +385,6 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
 
   const { cost, affordable, balance, shortfall } = useCreditCost("v2v", model?.id || "", costParams);
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const { peaks, real } = useWaveform(voiceUrl);
   const { ref, playing, current, duration: voiceLength, toggle, seek } = useTransport(voiceUrl);

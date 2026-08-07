@@ -156,7 +156,6 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
       : { duration: duration || undefined, aspect_ratio: ratio, video_url: source?.url },
   );
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const copy = JOBS[job];
   const missingSource = !source?.url;

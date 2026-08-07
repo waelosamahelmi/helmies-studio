@@ -88,7 +88,6 @@ export default function InfluencerStudio({ initialModel, templateConfig, onCredi
     aspect_ratio: ratio,
   });
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   /* ── The persona sentence ─────────────────────────────────────────────── */
   const segments = useMemo(() => {

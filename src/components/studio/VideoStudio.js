@@ -178,7 +178,6 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     image_url: sourceImage?.url,
   });
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const needsImage = mode === "i2v";
   const missingSource = needsImage && !sourceImage?.url;

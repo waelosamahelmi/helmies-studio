@@ -194,7 +194,6 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     image_url: reference?.url,
   });
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const cinematic = !editing && preset === "cinematic";
   const influencer = !editing && preset === "influencer";
@@ -537,7 +536,6 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
     image_url: source?.url,
   });
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const ready = !!source?.url && !!model && affordable && !generating;
 

@@ -461,7 +461,6 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
 
   const { cost, affordable, balance, shortfall } = useCreditCost("audio", model?.id || "", costParams);
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const url = mediaUrl(result);
   const { peaks, real } = useWaveform(url);

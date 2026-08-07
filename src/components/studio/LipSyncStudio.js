@@ -380,7 +380,6 @@ export default function LipSyncStudio({ initialModel, templateConfig, onCreditsC
 
   const { cost, affordable, balance, shortfall } = useCreditCost("lipsync", model?.id || "", costParams);
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const { peaks, real } = useWaveform(voiceUrl);
   const { ref, playing, current, duration, toggle, seek } = useTransport(voiceUrl);

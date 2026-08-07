@@ -55,6 +55,19 @@ export function useAsyncGeneration() {
     return () => { alive.current = false; clearAll(); };
   }, [clearAll]);
 
+  /* A finished job changes the balance. The shell already listens for this
+     to refresh credits — but it was only ever dispatched by the 10s job
+     poller, so 14 tools each carried their own
+     `useEffect(() => { if (result) onCreditsChanged?.() }, [result])`
+     to cover the gap, and any tool that forgot it showed a stale balance.
+     Firing it here covers every tool, including the ones (Canvas,
+     Director) whose flows never used that effect. */
+  const announceSettled = useCallback(() => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("generation:settled"));
+    }
+  }, []);
+
   const finish = useCallback(() => {
     clearAll();
     if (alive.current) { setLoading(false); setStage(null); }
@@ -114,6 +127,7 @@ export function useAsyncGeneration() {
         const url = data.outputUrl || data.url;
         setResult({ ...data, url, creditsUsed: data.creditsUsed });
         notifyGeneration?.(tool, url);
+        announceSettled();
         finish();
         return;
       }
@@ -149,6 +163,7 @@ export function useAsyncGeneration() {
             const url = s.outputUrl || s.url;
             setResult({ ...s, url, creditsUsed: s.creditsUsed ?? data.creditsUsed, elapsed: s.elapsed });
             notifyGeneration?.(tool, url);
+            announceSettled();
             finish();
             return;
           }
@@ -199,7 +214,7 @@ export function useAsyncGeneration() {
       setError(e && typeof e === "object" && e.status ? e : e?.message || "Could not start the generation.");
       finish();
     }
-  }, [clearAll, finish, notifyGeneration]);
+  }, [clearAll, finish, notifyGeneration, announceSettled]);
 
   return { loading, result, error, elapsed, stage, retryInfo, submit, cancel, reset };
 }

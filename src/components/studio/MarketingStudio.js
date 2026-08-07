@@ -134,7 +134,6 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
     images_list: references,
   });
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const generate = useCallback(() => {
     if (!model) return;

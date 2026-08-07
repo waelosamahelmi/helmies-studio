@@ -146,7 +146,6 @@ export default function ClippingStudio({ onCreditsChanged }) {
     return_coordinates_only: coordsOnly,
   });
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   /* ── The run's highlights become the ranges on the track ──────────────── */
   useEffect(() => {

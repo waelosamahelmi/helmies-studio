@@ -81,7 +81,6 @@ export default function AudioToolsStudio({ initialModel, templateConfig, onCredi
 
   const { cost, affordable, balance, shortfall } = useCreditCost("audio", model?.id || "", costParams);
 
-  useEffect(() => { if (result) onCreditsChanged?.(); }, [result, onCreditsChanged]);
 
   const generate = useCallback(() => {
     if (!model || !prompt.trim()) return;
