@@ -1235,6 +1235,9 @@
 
 /* Surface */
 .st-canvas__surface {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
   grid-area: surface;
   position: relative;
   display: grid;
@@ -2635,6 +2638,7 @@ select.st-layer__role option {
 @media (pointer: coarse) {
   .st-shot__tools   .hs-tip[data-tip]::after,
   .st-shot__foot    .hs-tip[data-tip]::after,
+  .st-canvas__tools .hs-tip[data-tip]::after,
   .st-clip__actions .hs-tip[data-tip]::after {
     content: attr(data-tip);
     position: static;
@@ -2719,6 +2723,31 @@ select.st-layer__role option {
   .st-range__grip { width: 44px; }
   .st-range__grip--l { left: -22px; }
   .st-range__grip--r { right: -22px; }
+
+  /* Canvas selection handles were 9px and the rotate dot 11px — far under
+     the 44px a fingertip needs, and on a small layer the eight of them
+     physically overlap. The dot stays its drawn size (it is the visual
+     anchor); an invisible ::after grows only the touch target. The corner
+     handles keep priority by sitting above the edge ones. */
+  .st-canvas__handle::after,
+  .st-canvas__spin::after {
+    content: "";
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  .st-canvas__handle--nw,
+  .st-canvas__handle--ne,
+  .st-canvas__handle--sw,
+  .st-canvas__handle--se { z-index: 2; }
+
+  /* The edge handles cannot be caught reliably between four 44px corner
+     targets on a small layer — corners resize both axes anyway. */
+  .st-canvas__handle--n,
+  .st-canvas__handle--e,
+  .st-canvas__handle--s,
+  .st-canvas__handle--w { display: none; }
 }
 
 /* ── The canvas had no canvas (E7.4) ───────────────────────────────────────

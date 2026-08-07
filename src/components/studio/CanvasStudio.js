@@ -440,9 +440,11 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
   const alive = useRef(true);
   const placed = useRef(null);
   const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { panRef.current = pan; }, [pan]);
 
   const { upload } = useUpload();
   const { models, loading: loadingModels } = useModelCatalog({});
@@ -675,14 +677,33 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
 
   const fit = useCallback(() => {
     const r = surfaceRef.current?.getBoundingClientRect();
-    if (!r) return;
+    if (!r || !r.width || !r.height) return;
     const { w, h } = sceneRef.current;
-    const z = clamp(Math.min((r.width - 72) / w, (r.height - 72) / h), MIN_ZOOM, MAX_ZOOM);
+    /* The inset was a flat 72px, a desktop margin. On a phone the surface is
+       ~200px tall, so it ate a third of the usable height and the paper came
+       out a third the size it could be. Scale it to the box instead. */
+    const inset = Math.min(72, Math.min(r.width, r.height) * 0.08);
+    const z = clamp(Math.min((r.width - inset) / w, (r.height - inset) / h), MIN_ZOOM, MAX_ZOOM);
     setPan({ x: 0, y: 0 });
     setZoom(z);
   }, []);
 
-  useEffect(() => { fit(); /* once, on mount */ }, []);
+  /* Re-fit when the surface changes size — a phone rotation, the on-screen
+     keyboard opening, or the dock growing. Previously this ran once on
+     mount, so rotating left the paper at a stale scale and off-centre. */
+  useEffect(() => {
+    fit();
+    const el = surfaceRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      /* Coalesce: a rotation fires several times as layout settles. */
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(fit);
+    });
+    ro.observe(el);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  }, [fit]);
 
   /* React attaches wheel passively, so the listener is native */
   useEffect(() => {
@@ -708,9 +729,11 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     const ox = e.clientX, oy = e.clientY;
     const start = pan;
     const move = (ev) => setPan({ x: start.x + (ev.clientX - ox), y: start.y + (ev.clientY - oy) });
-    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+    const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up); };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }, [pan]);
 
   /* ══════════════════════════════════════════════════════════════════════
@@ -750,10 +773,12 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       endGesture();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }, [toDoc, patch, endGesture]);
 
   const startResize = useCallback((e, id, corner) => {
@@ -803,10 +828,12 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       endGesture();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }, [toDoc, patch, endGesture]);
 
   const startRotate = useCallback((e, id) => {
@@ -829,10 +856,12 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       endGesture();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }, [toDoc, patch, endGesture]);
 
   const startDraw = useCallback((e) => {
@@ -848,6 +877,7 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     const up = (ev) => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       const p = toDoc(ev.clientX, ev.clientY);
       const w = Math.abs(p.x - start.x), h = Math.abs(p.y - start.y);
       setDraft(null);
@@ -874,6 +904,7 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   }, [toDoc, tool, addLayer, textDefaults, shapeDefaults]);
 
   /* ── Brush / eraser freehand path ─────────────────────────────────────── */
@@ -930,7 +961,79 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
     }
   }, [tool, brushDefaults, upload, addLayer]);
 
+  /* ══════════════════════════════════════════════════════════════════════
+     PINCH TO ZOOM, TWO FINGERS TO PAN
+     ──────────────────────────────────────────────────────────────────────
+     The surface sets `touch-action: none`, so the browser hands us every
+     touch and gives back nothing — without this, a phone had no way to zoom
+     or pan at all beyond tapping the two zoom buttons, on a canvas whose
+     range is 0.05–8.
+
+     Tracked here rather than in onSurfacePointerDown's gesture branches
+     because a pinch must be able to INTERRUPT a drag that already started:
+     the second finger lands after the first, by which point a move gesture
+     is live. `cancelActive` tears that down before the pinch takes over.
+     ══════════════════════════════════════════════════════════════════════ */
+  const touches = useRef(new Map());
+  const pinch = useRef(null);
+
+  const pinchGeometry = useCallback(() => {
+    const pts = Array.from(touches.current.values());
+    if (pts.length < 2) return null;
+    const [a, b] = pts;
+    return {
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      cx: (a.x + b.x) / 2,
+      cy: (a.y + b.y) / 2,
+    };
+  }, []);
+
+  const onSurfaceTouchDown = useCallback((e) => {
+    if (e.pointerType !== "touch") return false;
+    touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.current.size !== 2) return false;
+
+    /* The first finger already started a move/draw gesture. Tear it down so
+       the pinch owns the surface, and so releasing does not commit a stray
+       one-pixel drag on the layer that happened to be under the thumb. */
+    window.dispatchEvent(new Event("pointercancel"));
+
+    const g = pinchGeometry();
+    if (!g) return false;
+    pinch.current = {
+      dist: g.dist, cx: g.cx, cy: g.cy,
+      zoom: zoomRef.current, pan: { ...panRef.current },
+    };
+    return true;
+  }, [pinchGeometry]);
+
+  const onSurfaceTouchMove = useCallback((e) => {
+    if (e.pointerType !== "touch") return;
+    if (!touches.current.has(e.pointerId)) return;
+    touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    const p = pinch.current;
+    if (!p) return;
+    const g = pinchGeometry();
+    if (!g || !p.dist) return;
+
+    e.preventDefault();
+    /* Zoom about the pinch midpoint, and pan by however far that midpoint
+       travelled — so the canvas tracks the fingers rather than the centre. */
+    const next = clamp(p.zoom * (g.dist / p.dist), MIN_ZOOM, MAX_ZOOM);
+    setZoom(next);
+    setPan({ x: p.pan.x + (g.cx - p.cx), y: p.pan.y + (g.cy - p.cy) });
+  }, [pinchGeometry]);
+
+  const onSurfaceTouchUp = useCallback((e) => {
+    if (e.pointerType !== "touch") return;
+    touches.current.delete(e.pointerId);
+    if (touches.current.size < 2) pinch.current = null;
+  }, []);
+
   const onSurfacePointerDown = useCallback((e) => {
+    /* A second finger turns whatever is happening into a pinch. */
+    if (onSurfaceTouchDown(e)) return;
     if (e.button === 1 || tool === "hand") { startPan(e); return; }
     if (e.button !== 0) return;
     if (editingId) { setEditingId(null); return; }
@@ -967,17 +1070,25 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
       const up = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
         finishBrushStroke();
       };
       window.addEventListener("pointermove", move);
       window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
       return;
     }
     const hit = hitTest(toDoc(e.clientX, e.clientY));
-    if (!hit) { setSelectedId(null); return; }
+    if (!hit) {
+      setSelectedId(null);
+      /* Dragging empty space pans. The surface sets `touch-action: none`, so
+         without this a phone can only move the view via the hand tool. */
+      if (e.pointerType === "touch") startPan(e);
+      return;
+    }
     setSelectedId(hit.id);
     if (!hit.locked) startMove(e, hit.id);
-  }, [tool, editingId, startPan, startDraw, hitTest, toDoc, startMove, pan, zoom, brushDefaults]);
+  }, [tool, editingId, startPan, startDraw, hitTest, toDoc, startMove, pan, zoom, brushDefaults, onSurfaceTouchDown]);
 
   const onSurfaceDoubleClick = useCallback((e) => {
     const hit = hitTest(toDoc(e.clientX, e.clientY));
@@ -1744,9 +1855,35 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
         />
       )}
 
+      {/* Editable, not just reported. Precise placement used to be arrow-key
+          only, so on a phone a layer could only ever be dropped wherever the
+          finger happened to land. */}
       <div className="hs-row" style={{ gap: "var(--s-2)", flexWrap: "wrap" }}>
+        {[
+          { k: "x", label: "X" },
+          { k: "y", label: "Y" },
+          { k: "width", label: "W" },
+          { k: "height", label: "H" },
+        ].map(({ k, label }) => (
+          <label key={k} className="hs-row" style={{ gap: 4, alignItems: "center" }}>
+            <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>{label}</span>
+            <input
+              type="number"
+              className="hs-input"
+              style={{ width: 68, fontSize: 12 }}
+              aria-label={`Layer ${label}`}
+              value={Math.round(selected[k] ?? 0)}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (!Number.isFinite(n)) return;
+                const min = k === "width" || k === "height" ? 1 : -100000;
+                patch(selected.id, { [k]: Math.max(min, Math.round(n)) }, `${k}:${selected.id}`);
+              }}
+            />
+          </label>
+        ))}
         <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>
-          {Math.round(selected.width)}×{Math.round(selected.height)} · {Math.round(selected.x)},{Math.round(selected.y)} · {Math.round(selected.rotation || 0)}°
+          {Math.round(selected.rotation || 0)}°
         </span>
       </div>
 
@@ -1848,8 +1985,9 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
           <button
             key={id}
             type="button"
-            className={`st-canvas__tool${tool === id ? " is-active" : ""}`}
+            className={`st-canvas__tool hs-tip${tool === id ? " is-active" : ""}`}
             aria-pressed={tool === id}
+            data-tip={label}
             title={`${label} (${key})`}
             aria-label={`${label} (${key})`}
             onClick={() => setTool(id)}
@@ -1860,10 +1998,10 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
 
         <span className="st-canvas__sep" />
 
-        <button type="button" className="st-canvas__tool" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
+        <button type="button" className="st-canvas__tool hs-tip" data-tip="Undo" title="Undo (Ctrl+Z)" aria-label="Undo" disabled={!canUndo} onClick={undo}>
           <IcUndo />
         </button>
-        <button type="button" className="st-canvas__tool" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
+        <button type="button" className="st-canvas__tool hs-tip" data-tip="Redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo" disabled={!canRedo} onClick={redo}>
           <IcRedo />
         </button>
       </div>
@@ -1908,6 +2046,9 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
         className="st-canvas__surface"
         style={{ cursor }}
         onPointerDown={onSurfacePointerDown}
+        onPointerMove={onSurfaceTouchMove}
+        onPointerUp={onSurfaceTouchUp}
+        onPointerCancel={onSurfaceTouchUp}
         onDoubleClick={onSurfaceDoubleClick}
         onDrop={onDrop}
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
@@ -1954,7 +2095,7 @@ export default function CanvasStudio({ initialModel, templateConfig, onCreditsCh
                   {handles.map((h) => (
                     <span
                       key={h}
-                      className="st-canvas__handle"
+                      className={`st-canvas__handle st-canvas__handle--${h}`}
                       style={handlePos[h]}
                       onPointerDown={(e) => startResize(e, selected.id, h)}
                     />
