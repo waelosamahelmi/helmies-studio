@@ -13,11 +13,14 @@ import { OBSERVABLE_ATTRIBUTES } from "./entity-core.mjs";
 import { publicBaseUrl } from "./provider-payload-core.mjs";
 import { log } from "./log.js";
 
-// The SAME default visual-intelligence.js and llmComplete already use, and
-// the only one proven to answer on this account. Naming a model from memory
-// is how this shipped broken the first time: "google/gemini-2.0-flash-001"
-// came back 404 "No endpoints found".
-const VISION_MODEL = process.env.VISION_MODEL || "deepseek/deepseek-v4-flash";
+// Verified against this account's OpenRouter key on 2026-08-08: it answers
+// 200 with a usable description in ~3s. The previous default,
+// deepseek/deepseek-v4-flash, is TEXT-ONLY — OpenRouter rejects it with 404
+// "No endpoints found that support image input" — so every image analysis
+// this app attempted had been failing. Do not change this to a model id from
+// memory; list https://openrouter.ai/api/v1/models and check that
+// architecture.input_modalities includes "image".
+const VISION_MODEL = process.env.VISION_MODEL || "qwen/qwen3.7-flash";
 
 const FIELD_GUIDE = {
   ageAppearance: "how old they read on camera, e.g. 'early thirties'",

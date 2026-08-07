@@ -4,7 +4,14 @@ import prisma from "@/lib/prisma";
 // Provider-agnostic image analysis. Uses a multimodal LLM via KIE's
 // OpenAI-compatible chat completions endpoint.
 
-const VISION_MODEL = process.env.VISION_MODEL || "deepseek/deepseek-v4-flash";
+// Verified against this account's OpenRouter key on 2026-08-08: it answers
+// 200 with a usable description in ~3s. The previous default,
+// deepseek/deepseek-v4-flash, is TEXT-ONLY — OpenRouter rejects it with 404
+// "No endpoints found that support image input" — so every image analysis
+// this app attempted had been failing. Do not change this to a model id from
+// memory; list https://openrouter.ai/api/v1/models and check that
+// architecture.input_modalities includes "image".
+const VISION_MODEL = process.env.VISION_MODEL || "qwen/qwen3.7-flash";
 
 export async function analyzeImage(imageUrl, options = {}) {
   if (!imageUrl) throw new Error("Image URL required");
