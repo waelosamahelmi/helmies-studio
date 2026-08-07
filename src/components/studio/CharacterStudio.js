@@ -653,13 +653,20 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
     [models]
   );
 
+  /* Pick by what the model can DO, never by name. Naming a favourite is how
+     a studio ends up pointing at a row somebody deactivated — which is
+     exactly what happened to nano-banana-pro mid-session. Preference order:
+     it must take references at all, more reference slots beat fewer (several
+     angles of the same face hold identity better than one), then cheapest. */
   useEffect(() => {
     if (model || !referenceModels.length) return;
-    setModel(
-      referenceModels.find((m) => /nano-banana-pro/i.test(m.id)) ||
-      referenceModels.find((m) => /nano-banana/i.test(m.id)) ||
-      referenceModels[0]
-    );
+    const ranked = [...referenceModels].sort((a, b) => {
+      const slotA = imageReferenceSlot(a.schema);
+      const slotB = imageReferenceSlot(b.schema);
+      if (!!slotA?.multiple !== !!slotB?.multiple) return slotA?.multiple ? -1 : 1;
+      return (a.credits ?? Infinity) - (b.credits ?? Infinity);
+    });
+    setModel(ranked[0]);
   }, [referenceModels, model]);
 
   const busy = Object.values(running).some((s) => s === "queued" || s === "running");
