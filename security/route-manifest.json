@@ -759,6 +759,18 @@
     "notes": "2026-08-07 Phase C1.2: one owned entity. A non-owner gets the same not_found as a non-existent id, so this cannot probe for other users' characters. A locked identity rejects attribute/reference edits with 409 until it is explicitly unlocked."
   },
   {
+    "path": "/api/entities/[id]/describe",
+    "file": "src/app/api/entities/[id]/describe/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/analyze",
+    "stateChanging": false,
+    "notes": "2026-08-07 Phase C: reads a character's observable traits off their OWN reference photographs with the vision model and returns them as suggestions. Writes nothing and spends no credits \u2014 the ordinary PATCH saves whatever the user keeps. Owner-scoped; a non-owner gets the uniform not_found. Shares the /api/analyze rate limit because it is the same class of LLM read."
+  },
+  {
     "path": "/api/entities/[id]/references",
     "file": "src/app/api/entities/[id]/references/route.js",
     "methods": [

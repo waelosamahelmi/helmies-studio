@@ -13,6 +13,7 @@ import {
 import {
   ATTRIBUTE_KEYS, REFERENCE_KINDS,
   IDENTITY_PACK, missingPackAngles, imageReferenceSlot, canRenderIdentityAngle,
+  isObservable, voiceReferences, VOICE_REFERENCE_KIND,
 } from "@/lib/entity-core.mjs";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -334,33 +335,19 @@ export default function CharacterStudio() {
               onError={setError}
             />
 
-            <IdentityFields entity={editing} locked={locked} onPatch={patch} />
+            <IdentityFields entity={editing} locked={locked} onPatch={patch} onError={setError} onNotice={setNotice} />
 
             {editing.kind === "character" && (
-              <Fieldset title="Voice" hint="Used whenever this character speaks.">
-                {voices.length ? (
-                  <Field label="Voice profile" hint="Only profiles that finished cloning are listed.">
-                    <select
-                      className="hs-select"
-                      value={editing.voiceId || ""}
-                      disabled={locked}
-                      onChange={(e) => {
-                        const v = voices.find((p) => p.id === e.target.value);
-                        patch(editing.id, { voiceId: v?.id || null, voiceName: v?.name || null },
-                          v ? `${v.name} attached.` : "Voice removed.");
-                      }}
-                    >
-                      <option value="">No voice</option>
-                      {voices.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-                    </select>
-                  </Field>
-                ) : (
-                  <p className="hs-hint" style={{ display: "flex", gap: "var(--s-2)", alignItems: "center", margin: 0 }}>
-                    <IcMic className="hs-icon-sm" />
-                    No cloned voices yet. Make one in Audio, then attach it here.
-                  </p>
-                )}
-              </Fieldset>
+              <VoiceSection
+                entity={editing}
+                locked={locked}
+                voices={voices}
+                onPatch={patch}
+                onAddReference={addReference}
+                onDropReference={dropReference}
+                onError={setError}
+                onNotice={setNotice}
+              />
             )}
 
             <Fieldset title="Status" hint={status.note}>
@@ -546,10 +533,42 @@ export default function CharacterStudio() {
 /* ══════════════════════════════════════════════════════════════════════
    IDENTITY FIELDS
    ══════════════════════════════════════════════════════════════════════ */
-function IdentityFields({ entity, locked, onPatch }) {
+function IdentityFields({ entity, locked, onPatch, onError, onNotice }) {
   const [name, setName] = useState(entity.name);
   const [description, setDescription] = useState(entity.description || "");
   const [attributes, setAttributes] = useState(entity.attributes || {});
+  const [reading, setReading] = useState(false);
+  const [suggested, setSuggested] = useState(null);   // keys the photo just filled
+
+  const hasPhotos = (entity.references || []).some((r) => r.kind !== VOICE_REFERENCE_KIND);
+
+  /* The photograph answers for itself. Nothing is saved until the user
+     accepts — we never silently rewrite somebody's character — and a field
+     they have already written is left alone. */
+  const readFromPhotos = useCallback(async () => {
+    setReading(true);
+    try {
+      const res = await apiFetch(`/api/entities/${entity.id}/describe`, { method: "POST", timeout: 120000, retries: 0 });
+      const data = await res.json();
+      const filled = {};
+      for (const [key, value] of Object.entries(data.attributes || {})) {
+        if ((attributes[key] || "").trim()) continue; // never overwrite their words
+        filled[key] = value;
+      }
+      if (!Object.keys(filled).length) {
+        onNotice?.("Nothing new to add — the photograph agrees with what is already written.");
+        return;
+      }
+      setAttributes((a) => ({ ...a, ...filled }));
+      setSuggested(new Set(Object.keys(filled)));
+      await onPatch(entity.id, { attributes: { ...attributes, ...filled } });
+      onNotice?.(`Read ${Object.keys(filled).length} details from the photograph. Correct anything that is wrong.`);
+    } catch (e) {
+      onError?.(e?.message || "The photograph could not be read.");
+    } finally {
+      setReading(false);
+    }
+  }, [entity.id, attributes, onPatch, onError, onNotice]);
 
   useEffect(() => {
     setName(entity.name);
@@ -597,25 +616,60 @@ function IdentityFields({ entity, locked, onPatch }) {
       {/* Two columns from 720px up: a character carries nineteen of these,
           and a single stacked column turns the editor into a scroll marathon
           where nothing is comparable to anything next to it. */}
-      <div className="st-fields">
-      {(ATTRIBUTE_KEYS[entity.kind] || []).map((key) => {
-        const [label, hint] = FIELD_LABELS[key] || [key, ""];
-        return (
-          <Field key={key} label={label} hint={hint}>
-            {(id) => (
-              <input
-                id={id} className="hs-input" value={attributes[key] || ""} disabled={locked} maxLength={400}
-                onChange={(e) => setAttributes((a) => ({ ...a, [key]: e.target.value }))}
-                onBlur={(e) => {
-                  if ((entity.attributes || {})[key] === e.target.value) return;
-                  onPatch(entity.id, { attributes: { ...attributes, [key]: e.target.value } });
-                }}
-              />
+      {(() => {
+        const keys = ATTRIBUTE_KEYS[entity.kind] || [];
+        const groups = entity.kind === "character"
+          ? [
+              { keys: keys.filter(isObservable), title: "What the camera sees", hint: hasPhotos ? "Read from your photographs. Correct anything that is wrong — these words go into every shot." : "Describe them. With no photograph, this is the only thing telling the model who they are." },
+              { keys: keys.filter((k) => !isObservable(k)), title: "Direction", hint: "No photograph can tell us these. They shape how the character is written and performed." },
+            ]
+          : [{ keys, title: null, hint: null }];
+
+        return groups.filter((g) => g.keys.length).map((group) => (
+          <div key={group.title || "all"}>
+            {group.title && (
+              <div className="hs-row hs-row--between" style={{ marginBottom: "var(--s-2)" }}>
+                <div>
+                  <span className="hs-label" style={{ margin: 0 }}>{group.title}</span>
+                  {group.hint && <p className="hs-hint" style={{ marginTop: 2 }}>{group.hint}</p>}
+                </div>
+                {group.title === "What the camera sees" && hasPhotos && !locked && (
+                  <button
+                    type="button" className="hs-btn hs-btn--outline hs-btn--sm"
+                    onClick={readFromPhotos} disabled={reading}
+                    title="Fill these in from the photographs, without touching anything you have written"
+                  >
+                    {reading ? <span className="hs-spin" /> : <IcSpark className="hs-icon-sm" />}
+                    {reading ? "Reading…" : "Read from photograph"}
+                  </button>
+                )}
+              </div>
             )}
-          </Field>
-        );
-      })}
-      </div>
+            <div className="st-fields">
+              {group.keys.map((key) => {
+                const [label, hint] = FIELD_LABELS[key] || [key, ""];
+                return (
+                  <Field key={key} label={label} hint={suggested?.has(key) ? "Read from your photograph" : hint}>
+                    {(id) => (
+                      <input
+                        id={id} className="hs-input" value={attributes[key] || ""} disabled={locked} maxLength={400}
+                        onChange={(e) => {
+                          setAttributes((a) => ({ ...a, [key]: e.target.value }));
+                          if (suggested?.has(key)) setSuggested((prev) => { const n = new Set(prev); n.delete(key); return n; });
+                        }}
+                        onBlur={(e) => {
+                          if ((entity.attributes || {})[key] === e.target.value) return;
+                          onPatch(entity.id, { attributes: { ...attributes, [key]: e.target.value } });
+                        }}
+                      />
+                    )}
+                  </Field>
+                );
+              })}
+            </div>
+          </div>
+        ));
+      })()}
     </Fieldset>
   );
 }
@@ -947,6 +1001,162 @@ function ReferenceShelf({ entity, locked, hideAngles, onAddReference, onDropRefe
           />
         </>
       )}
+    </Fieldset>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   VOICE — a recording, or a sample generated and kept
+   ──────────────────────────────────────────────────────────────────────
+   Two different things, deliberately side by side. A voice PROFILE is a
+   clone: it can say anything, and making one needs the wizard in Audio. A
+   voice REFERENCE is just audio of how somebody sounds, which several video
+   models take directly (wan-2.7-r2v's reference_voice, seedance's
+   reference_audio_urls) with no cloning involved. For a film where one
+   person plays two versions of themselves, the reference is usually the
+   shorter route, so it belongs here rather than behind another studio.
+   ══════════════════════════════════════════════════════════════════════ */
+function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropReference, onError, onNotice }) {
+  const { models } = useModelCatalog();
+  const [line, setLine] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refs = voiceReferences(entity);
+
+  /* Cheapest speech model wins: this is a record of a timbre, not a
+     performance, and the take gets kept or discarded by ear anyway. */
+  const speechModel = useMemo(() => {
+    const usable = (models || [])
+      .filter((m) => ["text-to-speech", "tts"].includes(m.capability) && m.schema?.fields?.prompt)
+      .sort((a, b) => (a.credits ?? Infinity) - (b.credits ?? Infinity));
+    return usable[0] || null;
+  }, [models]);
+
+  const generateSample = useCallback(async () => {
+    if (!speechModel || !line.trim()) return;
+    setBusy(true);
+    try {
+      const res = await apiFetch("/api/generate/async", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ tool: "audio", model: speechModel.id, prompt: line.trim(), expand: false }),
+      });
+      const submitted = await res.json();
+      const started = Date.now();
+      for (;;) {
+        if (Date.now() - started > 4 * 60 * 1000) {
+          throw new Error("The sample is taking unusually long. It is still running — reopen this record shortly.");
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+        const gen = await (await apiFetch(`/api/generations/status?id=${submitted.generationId}`)).json();
+        if (gen.status === "completed" && gen.outputUrl) {
+          await onAddReference(entity.id, {
+            url: gen.outputUrl, kind: VOICE_REFERENCE_KIND, label: line.trim().slice(0, 60), source: "generated",
+          });
+          setLine("");
+          onNotice?.("Sample kept as this character's voice.");
+          return;
+        }
+        if (gen.status === "failed") throw new Error(gen.error || "The sample failed.");
+      }
+    } catch (e) {
+      onError?.(e?.message || "The sample could not be made.");
+    } finally {
+      setBusy(false);
+    }
+  }, [speechModel, line, entity.id, onAddReference, onError, onNotice]);
+
+  return (
+    <Fieldset
+      title="Voice"
+      hint="How they sound. A model that accepts a voice reference is given this automatically, the same way it is given the face."
+    >
+      {refs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
+          {refs.map((ref) => (
+            <div key={ref.id} className="hs-row" style={{ gap: "var(--s-3)" }}>
+              <audio src={ref.url} controls style={{ flex: 1, height: 32 }} />
+              <span className="hs-mono hs-mute" style={{ fontSize: 10, whiteSpace: "nowrap" }}>
+                {ref.source === "generated" ? "Generated" : "Yours"}
+              </span>
+              {!locked && (
+                <button
+                  type="button" className="hs-btn hs-btn--sm hs-btn--icon hs-btn--danger"
+                  onClick={() => onDropReference(entity.id, ref.id)}
+                  aria-label={`Remove ${ref.label || "this voice reference"}`}
+                >
+                  <IcTrash className="hs-icon-sm" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!locked && (
+        <>
+          <Field label="Upload a recording" hint="Twenty seconds of clear speech is plenty, and it is the strongest option — it is actually them.">
+            <Dropzone
+              value={null}
+              accept="audio/*"
+              label="Drop an audio file or click to browse"
+              onChange={async (file) => {
+                if (!file?.url) return;
+                try {
+                  await onAddReference(entity.id, {
+                    url: file.url, kind: VOICE_REFERENCE_KIND, label: file.name, source: "user", locked: true,
+                  });
+                } catch (e) {
+                  onError?.(e?.message || "That recording could not be attached.");
+                }
+              }}
+            />
+          </Field>
+
+          {speechModel && (
+            <Field
+              label="Or build one from a line"
+              hint={`Made with ${speechModel.displayName || speechModel.id}${speechModel.credits != null ? ` · ${speechModel.credits} credits` : ""}. Keep the take you like and it becomes the reference.`}
+            >
+              <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
+                <input
+                  className="hs-input"
+                  style={{ flex: 1, minWidth: 220 }}
+                  value={line}
+                  maxLength={300}
+                  placeholder="A low, tired voice, mid-thirties, quiet room"
+                  onChange={(e) => setLine(e.target.value)}
+                />
+                <button type="button" className="hs-btn hs-btn--sm" onClick={generateSample} disabled={busy || !line.trim()}>
+                  {busy ? <span className="hs-spin" /> : <IcMic className="hs-icon-sm" />}
+                  {busy ? "Making…" : "Make a sample"}
+                </button>
+              </div>
+            </Field>
+          )}
+        </>
+      )}
+
+      <Field
+        label="Cloned voice profile"
+        hint={voices.length
+          ? "A clone can say anything, not just this sample. Made in Audio."
+          : "None yet — the clone wizard lives in Audio. A reference above works without one."}
+      >
+        {(id) => (
+          <select
+            id={id} className="hs-select" value={entity.voiceId || ""} disabled={locked || !voices.length}
+            onChange={(e) => {
+              const v = voices.find((p) => p.id === e.target.value);
+              onPatch(entity.id, { voiceId: v?.id || null, voiceName: v?.name || null },
+                v ? `${v.name} attached.` : "Voice profile removed.");
+            }}
+          >
+            <option value="">No cloned profile</option>
+            {voices.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+        )}
+      </Field>
     </Fieldset>
   );
 }

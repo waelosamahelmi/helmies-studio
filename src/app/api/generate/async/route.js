@@ -111,12 +111,20 @@ export async function POST(req) {
       // Owner-scoped load: an id the caller does not own is simply not
       // returned, so this can never inject somebody else's face.
       const { getOwnedEntities } = await import("@/lib/entities");
-      const { entityPromptBlock, selectEntityReferences, imageReferenceSlot, applyEntityReferences, computeAttributeDigest } =
-        await import("@/lib/entity-core.mjs");
+      const {
+        entityPromptBlock, selectEntityReferences, imageReferenceSlot, applyEntityReferences,
+        computeAttributeDigest, voiceReferenceSlot, voiceReferences,
+      } = await import("@/lib/entity-core.mjs");
 
       const entities = await getOwnedEntities(user.id, requestedEntityIds);
       if (entities.length) {
         const slot = imageReferenceSlot(dbPricing.inputSchema);
+        // Some families take the voice the same way they take the face —
+        // wan-2.7-r2v's reference_voice, seedance's reference_audio_urls. A
+        // character carrying a recording should sound like themselves without
+        // anyone wiring it per shot.
+        const voiceSlot = voiceReferenceSlot(dbPricing.inputSchema);
+        const voiceUrls = [];
         const purpose = typeof body.entityPurpose === "string" && body.entityPurpose ? body.entityPurpose : "default";
 
         const blocks = [];
@@ -134,10 +142,14 @@ export async function POST(req) {
             const perEntity = Math.max(1, Math.floor(slot.max / entities.length));
             for (const ref of selectEntityReferences(entity, { purpose, max: perEntity })) urls.push(ref.url);
           }
+          if (voiceSlot) for (const ref of voiceReferences(entity)) voiceUrls.push(ref.url);
         }
         entityPromptPrefix = blocks.filter(Boolean).join("\n");
         if (slot && urls.length) {
           effectiveParams = applyEntityReferences(params, dbPricing.inputSchema, urls, { slot });
+        }
+        if (voiceSlot && voiceUrls.length) {
+          effectiveParams = applyEntityReferences(effectiveParams, dbPricing.inputSchema, voiceUrls, { slot: voiceSlot });
         }
       }
     }

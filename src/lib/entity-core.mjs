@@ -22,19 +22,22 @@ export const REFERENCE_KINDS = {
     // mislabel it and mark the front as covered, so the real front angle
     // would never get made. Every pack angle is generated FROM these.
     "source",
+    "voice",          // a recording or kept sample of how they sound
     "sheet",          // the multi-angle character sheet
     "face_front",
     "face_34",
     "face_side",
     "full_body",
     "half_body",
-    "outfit",
+    "outfit",       // a garment or full look they wear
+    "accessory",    // glasses, a watch, a ring
+    "prop",         // something they carry or handle — a phone, a cup
     "expression",
     "action",
     "other",
   ],
   product: ["front", "side", "back", "closeup", "logo", "packaging", "in_use", "other"],
-  environment: ["wide", "detail", "texture", "lighting", "viewpoint", "other"],
+  environment: ["wide", "detail", "texture", "lighting", "viewpoint", "time_of_day", "weather", "other"],
 };
 
 // Attribute keys we understand per kind. Unknown keys are dropped rather
@@ -50,6 +53,31 @@ export const ATTRIBUTE_KEYS = {
   product: ["materials", "colors", "finish", "dimensionsNotes", "branding", "condition", "notes"],
   environment: ["lighting", "timeOfDay", "weather", "viewpoint", "mood", "architecture", "scale", "notes"],
 };
+
+// Which character traits a photograph can actually show. Everything here is
+// something we can read off a reference and should never make somebody type
+// out by hand — the photo already says it, and hand-typed guesses that
+// contradict the photo are worse than nothing.
+//
+// The remainder (personality, speaking style, language, notes) is DIRECTION:
+// no camera can tell you how someone talks or who they are, so those stay a
+// human's job whether or not a reference exists.
+export const OBSERVABLE_ATTRIBUTES = [
+  "ageAppearance", "genderPresentation", "ethnicity", "face", "skin", "hair",
+  "eyes", "build", "heightImpression", "distinctiveFeatures", "wardrobe",
+  "accessories", "makeup", "defaultExpression", "posture",
+];
+
+export const isObservable = (key) => OBSERVABLE_ATTRIBUTES.includes(key);
+
+// Audio the user gave us for this character: a recording of the voice, or a
+// generated sample they decided to keep. Models with a voice slot
+// (wan-2.7-r2v's reference_voice, seedance's reference_audio_urls) are fed
+// from these the same way image references feed the image slot.
+export const VOICE_REFERENCE_KIND = "voice";
+
+export const voiceReferences = (entity) =>
+  (entity?.references || []).filter((r) => r.kind === VOICE_REFERENCE_KIND);
 
 // Human labels used when composing the prompt block. Order here IS the order
 // the attributes are written in — most identity-defining first, because some
@@ -297,7 +325,7 @@ const PURPOSE_PRIORITY = {
     closeup: ["face_front", "face_34", "face_side", "sheet", "source"],
     wide: ["full_body", "half_body", "sheet", "face_front", "source"],
     action: ["full_body", "action", "half_body", "sheet", "source"],
-    wardrobe: ["outfit", "full_body", "half_body", "sheet", "source"],
+    wardrobe: ["outfit", "accessory", "prop", "full_body", "half_body", "sheet", "source"],
     expression: ["expression", "face_front", "face_34", "sheet", "source"],
     sheet: ["sheet", "face_front", "full_body", "source"],
     // Building the identity pack itself: the photograph the user actually
@@ -315,6 +343,10 @@ const PURPOSE_PRIORITY = {
   environment: {
     wide: ["wide", "viewpoint", "detail"],
     detail: ["detail", "texture", "wide"],
+    // A place is not one look. Returning to it at a different hour is the
+    // same room with different light, and the reference has to say which.
+    time_of_day: ["time_of_day", "lighting", "wide"],
+    weather: ["weather", "wide", "lighting"],
     default: ["wide", "detail", "texture"],
   },
 };
@@ -349,6 +381,10 @@ export function selectEntityReferences(entity, { purpose = "default", max = 4 } 
   const seen = new Set();
   const out = [];
   for (const ref of sorted) {
+    // Voice recordings live in the same references array but are never an
+    // image: handing one to an image slot would send an mp3 where a face
+    // belongs.
+    if (ref.kind === VOICE_REFERENCE_KIND) continue;
     if (seen.has(ref.url)) continue;
     seen.add(ref.url);
     out.push(ref);
