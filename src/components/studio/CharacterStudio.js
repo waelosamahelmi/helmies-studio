@@ -12,7 +12,7 @@ import {
 } from "@/components/studio/kit";
 import {
   ATTRIBUTE_KEYS, REFERENCE_KINDS,
-  IDENTITY_PACK, missingPackAngles, imageReferenceSlot, isStillImageModel,
+  IDENTITY_PACK, missingPackAngles, imageReferenceSlot, canRenderIdentityAngle,
 } from "@/lib/entity-core.mjs";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -624,8 +624,13 @@ function IdentityFields({ entity, locked, onPatch }) {
    IDENTITY SHEET — coverage by angle, and how the gaps get filled
    ══════════════════════════════════════════════════════════════════════ */
 function IdentitySheet({ entity, locked, onAddReference, onDropReference, onError, onNotice }) {
-  const { models } = useModelCatalog({ modelType: "image" });
-  const [model, setModel] = useState(null);
+  /* NO modelType filter. The strongest reference models — seedream/5-pro,
+     qwen3/pro, nano-banana-edit — are filed under modelType "i2i", not
+     "image", so asking for type=image hid every one of them. The kit's own
+     guidance is to take the whole catalog and filter by capability, because
+     the DB's modelType values are fragmented. */
+  const { models } = useModelCatalog();
+  const [modelId, setModelId] = useState(null);
   const [picking, setPicking] = useState(false);
   const [running, setRunning] = useState({});
   const [spent, setSpent] = useState(0);
@@ -651,8 +656,16 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
      video rows stored as capability "text-to-image", so without it this
      picker offered Veo 3 for generating somebody's face. */
   const referenceModels = useMemo(
-    () => (models || []).filter((m) => imageReferenceSlot(m.schema) && isStillImageModel(m.schema)),
+    () => (models || []).filter(canRenderIdentityAngle),
     [models]
+  );
+
+  /* ModelPicker hands back an ID, not a model — the same contract every other
+     studio uses (`onSelect={setModelId}`). Storing the argument as the model
+     is what made the header read "Using undefined" and sent no model at all. */
+  const model = useMemo(
+    () => referenceModels.find((m) => m.id === modelId) || null,
+    [referenceModels, modelId]
   );
 
   /* Pick by what the model can DO, never by name. Naming a favourite is how
@@ -661,15 +674,15 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
      it must take references at all, more reference slots beat fewer (several
      angles of the same face hold identity better than one), then cheapest. */
   useEffect(() => {
-    if (model || !referenceModels.length) return;
+    if (modelId || !referenceModels.length) return;
     const ranked = [...referenceModels].sort((a, b) => {
       const slotA = imageReferenceSlot(a.schema);
       const slotB = imageReferenceSlot(b.schema);
       if (!!slotA?.multiple !== !!slotB?.multiple) return slotA?.multiple ? -1 : 1;
       return (a.credits ?? Infinity) - (b.credits ?? Infinity);
     });
-    setModel(ranked[0]);
-  }, [referenceModels, model]);
+    setModelId(ranked[0]?.id ?? null);
+  }, [referenceModels, modelId]);
 
   const busy = Object.values(running).some((s) => s === "queued" || s === "running");
 
@@ -860,7 +873,7 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
                       <ModelPicker
                         models={referenceModels}
                         value={model?.id}
-                        onSelect={(m) => { setModel(m); setPicking(false); }}
+                        onSelect={(id) => { setModelId(id); setPicking(false); }}
                         label="Model for the missing angles"
                         emptyHint="No image model here accepts a reference photograph."
                       />

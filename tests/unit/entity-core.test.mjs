@@ -12,6 +12,7 @@ import {
   IDENTITY_PACK,
   missingPackAngles,
   isStillImageModel,
+  canRenderIdentityAngle,
 } from "@/lib/entity-core.mjs";
 
 const ref = (over = {}) => ({
@@ -298,5 +299,57 @@ describe("isStillImageModel", () => {
       .filter(([, schema]) => imageReferenceSlot(schema) && isStillImageModel(schema))
       .map(([id]) => id);
     expect(offered.sort()).toEqual(Object.keys(REAL_IMAGE_EDITORS).sort());
+  });
+});
+
+describe("canRenderIdentityAngle", () => {
+  // Shaped from live catalog rows, capability included — the edit models are
+  // filed under i2i, which is why asking the catalog for type=image hid every
+  // one of them from the Cast picker.
+  const M = {
+    seedreamPro:  { id: "seedream/5-pro-image-to-image", capability: "image-to-image", schema: { fields: { prompt: {}, image_urls: {}, aspect_ratio: {}, quality: {} } } },
+    qwen3Pro:     { id: "qwen3/pro-image-to-image",      capability: "image-to-image", schema: { fields: { prompt: {}, image_urls: {}, resolution: {}, seed: {} } } },
+    nanoBanana2:  { id: "nano-banana-2",                 capability: "image",          schema: { fields: { prompt: {}, image_input: {}, aspect_ratio: {} } } },
+    fluxText:     { id: "flux-2/pro-text-to-image",      capability: "text-to-image",  schema: { fields: { prompt: {}, resolution: {} } } },
+    upscaler:     { id: "topaz/image-upscale",           capability: "image-upscale",  schema: { fields: { image_url: {}, scale: {} } } },
+    bgRemover:    { id: "recraft/remove-background",     capability: "background-removal", schema: { fields: { image_url: {} } } },
+    veo3AsImage:  { id: "generate-veo-3-video",          capability: "text-to-image",  schema: { fields: { prompt: {}, duration: {}, image_urls: {} } } },
+    seedance:     { id: "bytedance/seedance-2",          capability: "video",          schema: { fields: { prompt: {}, duration: {}, reference_image_urls: {} } } },
+    lipsync:      { id: "kling/ai-avatar-pro",           capability: "avatar-video",   schema: { fields: { prompt: {}, audio_url: {}, image_url: {} } } },
+  };
+
+  it("offers the edit models regardless of which modelType family they sit in", () => {
+    expect(canRenderIdentityAngle(M.seedreamPro)).toBe(true);
+    expect(canRenderIdentityAngle(M.qwen3Pro)).toBe(true);
+    expect(canRenderIdentityAngle(M.nanoBanana2)).toBe(true);
+  });
+
+  it("rejects a model that takes no reference — it would invent a new face", () => {
+    expect(canRenderIdentityAngle(M.fluxText)).toBe(false);
+  });
+
+  it("rejects tools that take an image but cannot render a new angle of someone", () => {
+    // Both live in the iti capability group and both accept an image, so the
+    // group alone is not a sufficient test.
+    expect(canRenderIdentityAngle(M.upscaler)).toBe(false);
+    expect(canRenderIdentityAngle(M.bgRemover)).toBe(false);
+  });
+
+  it("rejects video models, including one the catalog files as text-to-image", () => {
+    expect(canRenderIdentityAngle(M.veo3AsImage)).toBe(false);
+    expect(canRenderIdentityAngle(M.seedance)).toBe(false);
+  });
+
+  it("rejects lip-sync, which passes the parameter test but is not an image family", () => {
+    // No duration, no video-named field — only the capability check keeps it
+    // out, which is why both tests are needed.
+    expect(isStillImageModel(M.lipsync.schema)).toBe(true);
+    expect(canRenderIdentityAngle(M.lipsync)).toBe(false);
+  });
+
+  it("survives junk", () => {
+    expect(canRenderIdentityAngle(null)).toBe(false);
+    expect(canRenderIdentityAngle({})).toBe(false);
+    expect(canRenderIdentityAngle({ capability: "image" })).toBe(false);
   });
 });

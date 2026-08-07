@@ -417,6 +417,28 @@ export function voiceReferenceSlot(schema) {
 // A model's parameters do not lie the way its metadata does: anything that
 // takes a duration, or names a video anywhere in its inputs, produces time,
 // not a frame.
+// Capabilities that render a still we could use as a reference angle.
+// Deliberately excludes image-upscale and background-removal: both live in
+// the `iti` capability group and both take an image, but neither can render
+// somebody from a new angle — offering them here would be offering a control
+// that cannot do the job.
+export const IDENTITY_CAPABILITIES = new Set([
+  "text-to-image", "image", "image-to-image", "i2i", "image-edit",
+]);
+
+// Can this model render one angle of an identity pack?
+//
+// Three tests, deliberately overlapping. Capability narrows it to the image
+// families — but that column is not trustworthy on its own (live video rows
+// are stored as "text-to-image"), so the schema tests are what actually keep
+// a video model out, and they read the model's own parameters. The
+// capability check alone would let Veo 3 through; the schema check alone
+// would let a background remover through.
+export function canRenderIdentityAngle(model) {
+  if (!model || !IDENTITY_CAPABILITIES.has(model.capability)) return false;
+  return isStillImageModel(model.schema) && !!imageReferenceSlot(model.schema);
+}
+
 export function isStillImageModel(schema) {
   const fields = schema?.fields;
   if (!fields || typeof fields !== "object") return false;
