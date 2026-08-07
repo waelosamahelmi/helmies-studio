@@ -1,6 +1,23 @@
 // SAFETY: integration tests connect to TEST_DATABASE_URL and refuse anything
 // that is not a local database. The .env DATABASE_URL points at production —
 // it must never be reachable from here.
+// Read TEST_DATABASE_URL out of .env when it is not already exported. This
+// deliberately does NOT use dotenv: a full load would also pull the
+// production DATABASE_URL into this process, and the whole point of this
+// file is that production is unreachable from here. Only the one key is
+// ever taken, and it still has to pass the local-host check below.
+if (!process.env.TEST_DATABASE_URL) {
+  const { readFileSync } = await import("node:fs");
+  try {
+    const line = readFileSync(new URL("../../.env", import.meta.url), "utf8")
+      .split(/\r?\n/)
+      .find((l) => /^\s*TEST_DATABASE_URL\s*=/.test(l));
+    if (line) {
+      process.env.TEST_DATABASE_URL = line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "");
+    }
+  } catch { /* no .env — the explicit-env path below still applies */ }
+}
+
 const url = process.env.TEST_DATABASE_URL;
 if (!url) {
   throw new Error("TEST_DATABASE_URL not set — integration tests need a disposable local Postgres (see README).");

@@ -84,6 +84,20 @@ import { refundCredits, settleReservation, releaseReservation } from "@/lib/wall
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { extractKieResults } from "@/lib/media-download";
 import { advanceTemplateRun } from "@/lib/template-runner";
+import { advanceAgentRun } from "@/lib/agent-runner";
+import { recordGenerationAsset } from "@/lib/assets-core";
+
+// Phase A: agent-run steps follow the exact CRITICAL-1 pattern documented
+// above for template runs — the run's ONE reservation is owned by
+// advanceAgentRun; this webhook only terminalizes the generation and then
+// hands off (never settles/releases a step's own nonexistent reservation).
+async function safeAdvanceAgentRun(runId) {
+  try {
+    await advanceAgentRun(runId);
+  } catch (err) {
+    console.error(`[generation-webhook] advanceAgentRun FAILED for agent run ${runId}:`, err.message);
+  }
+}
 
 // Never let a template run's own money/chaining logic throw out of the
 // webhook — mirrors job-runner.js's identical safeAdvanceTemplateRun (kept
@@ -200,6 +214,8 @@ export async function handleGenerationWebhook(body) {
       }
 
       const isTemplateStep = Boolean(job?.payload?.templateRunId);
+      const isAgentStep = Boolean(job?.payload?.agentRunId);
+      const isRunStep = isTemplateStep || isAgentStep;
 
       let won = false;
       await prisma.$transaction(async (tx) => {
@@ -211,11 +227,9 @@ export async function handleGenerationWebhook(body) {
         });
         won = transitioned.count > 0;
 
-        // CRITICAL-1: a template-run step never held its own reservation
-        // (src/lib/template-runner.js settles the run's ONE reservation
-        // only once, via advanceTemplateRun, called AFTER this transaction
-        // commits below) — settle here only for a normal generation.
-        if (won && !isTemplateStep && generation.creditsUsed > 0) {
+        // CRITICAL-1 / Phase A: a run step (template or agent) never held
+        // its own reservation — settle here only for a normal generation.
+        if (won && !isRunStep && generation.creditsUsed > 0) {
           // Never let a settle failure roll back a successful ingest —
           // mirrors job-runner.js's safeSettle exactly (a credit-side
           // failure must never mask the original provider/ingest result).
@@ -252,12 +266,24 @@ export async function handleGenerationWebhook(body) {
       if (won && isTemplateStep) {
         await safeAdvanceTemplateRun(job.payload.templateRunId);
       }
+      if (won && isAgentStep) {
+        // A1.4.3: durable agent media steps land in the asset library too.
+        try {
+          const fresh = await prisma.generation.findUnique({ where: { id: generation.id } });
+          await recordGenerationAsset(fresh || { ...generation, outputUrl: localUrl || generation.outputUrl });
+        } catch (err) {
+          log.error("asset_record_wrapper_failed", { generationId: generation.id, err });
+        }
+        await safeAdvanceAgentRun(job.payload.agentRunId);
+      }
 
       return { status: 200, response: { success: true, downloaded: !!localUrl } };
     }
 
     if (isFail) {
       const isTemplateStep = Boolean(job?.payload?.templateRunId);
+      const isAgentStep = Boolean(job?.payload?.agentRunId);
+      const isRunStep = isTemplateStep || isAgentStep;
 
       const txResult = await prisma.$transaction(async (tx) => {
         // Conditional write: only the delivery that actually transitions the
@@ -278,12 +304,11 @@ export async function handleGenerationWebhook(body) {
           });
         }
 
-        // CRITICAL-1: a template-run step's failure closes out the WHOLE
-        // run (release-or-refund of its one reservation, via
-        // advanceTemplateRun, called AFTER this transaction commits below)
+        // CRITICAL-1 / Phase A: a run step's failure closes out the WHOLE
+        // run via its runner (called AFTER this transaction commits below)
         // — this step's own Generation never held its own reservation, so
         // skip the normal per-generation release/refund below entirely.
-        if (!isTemplateStep && generation.creditsUsed > 0) {
+        if (!isRunStep && generation.creditsUsed > 0) {
           // Release the still-active reservation when there is one (the
           // common post-Task-5 case — nothing has settled yet); fall back
           // to refundCredits only when there's nothing active to release
@@ -302,7 +327,7 @@ export async function handleGenerationWebhook(body) {
               `Refund: ${errorMsg || "Failed generation"}`, tx);
           }
         }
-        return { refunded: !isTemplateStep && generation.creditsUsed > 0, won: true };
+        return { refunded: !isRunStep && generation.creditsUsed > 0, won: true };
       });
 
       if (txResult.alreadyProcessed) {
@@ -313,6 +338,9 @@ export async function handleGenerationWebhook(body) {
       // — only the delivery that won the CAS advances the run, exactly once.
       if (txResult.won && isTemplateStep) {
         await safeAdvanceTemplateRun(job.payload.templateRunId);
+      }
+      if (txResult.won && isAgentStep) {
+        await safeAdvanceAgentRun(job.payload.agentRunId);
       }
 
       return { status: 200, response: { success: true, refunded: txResult.refunded } };

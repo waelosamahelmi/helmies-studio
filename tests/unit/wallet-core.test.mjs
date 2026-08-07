@@ -14,6 +14,10 @@ vi.mock("@/lib/prisma", () => {
     // lookup unchanged — tests/integration/reservation-expiry.int.test.mjs
     // covers the TemplateRun branch itself against the real DB.
     templateRun: { findUnique: vi.fn().mockResolvedValue(null) },
+    // Phase A (A1.5): the AgentRun branch is checked before the Generation
+    // lookup for the same reason. Null by default so the Generation-keyed
+    // tests below are unaffected; the branch has its own describe block.
+    agentRun: { findUnique: vi.fn().mockResolvedValue(null) },
     user: { findUnique: vi.fn(), update: vi.fn() },
   };
   const prisma = { ...models, $transaction: vi.fn(async (fn) => fn(prisma)) };
@@ -170,6 +174,62 @@ describe("sweepExpiredReservations", () => {
     const result = await sweepExpiredReservations();
 
     expect(result).toEqual({ released: 1, settled: 0, skipped: 1 });
+  });
+
+  // ── A1.5: durable AgentRun reservations (keyed by the run id) ──────────
+  // These reservations must never be resolved by the Generation fallback:
+  // an executing run settles itself exactly once when its last step lands.
+  const agentReservation = (over = {}) => {
+    prisma.creditReservation.findMany.mockResolvedValue([
+      { id: "resA", walletId: "w1", generationId: "run-1", amount: 20, status: "active", wallet: { userId: "u1" } },
+    ]);
+    prisma.creditReservation.findFirst.mockResolvedValue({ id: "resA", amount: 20, walletId: "w1" });
+    prisma.creditWallet.update.mockResolvedValue({ id: "w1", userId: "u1", available: 120, reserved: 0 });
+    prisma.creditReservation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.creditLedger.create.mockResolvedValue({});
+    prisma.agentRun.findUnique.mockResolvedValue({ id: "run-1", status: "executing", creditsUsed: 0, ...over });
+  };
+
+  it("skips an executing agent run regardless of TTL — its own advance settles it", async () => {
+    agentReservation({ status: "executing" });
+
+    const result = await sweepExpiredReservations();
+
+    expect(result).toEqual({ released: 0, settled: 0, skipped: 1 });
+    expect(prisma.creditWallet.update).not.toHaveBeenCalled();
+    expect(prisma.generation.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("settles a completed agent run at its recorded actual spend", async () => {
+    agentReservation({ status: "completed", creditsUsed: 12 });
+
+    const result = await sweepExpiredReservations();
+
+    expect(result).toEqual({ released: 0, settled: 1, skipped: 0 });
+    expect(prisma.creditWallet.update).toHaveBeenCalledWith({
+      where: { userId: "u1" },
+      data: { reserved: { decrement: 20 }, available: { increment: 8 } },
+    });
+  });
+
+  it("releases a failed agent run in full — failed work is never charged", async () => {
+    agentReservation({ status: "failed", creditsUsed: 0 });
+
+    const result = await sweepExpiredReservations();
+
+    expect(result).toEqual({ released: 1, settled: 0, skipped: 0 });
+    expect(prisma.creditWallet.update).toHaveBeenCalledWith({
+      where: { userId: "u1" },
+      data: { reserved: { decrement: 20 }, available: { increment: 20 } },
+    });
+  });
+
+  it("releases a cancelled agent run", async () => {
+    agentReservation({ status: "cancelled" });
+
+    const result = await sweepExpiredReservations();
+
+    expect(result).toEqual({ released: 1, settled: 0, skipped: 0 });
   });
 
   it("returns all-zero counts and touches nothing when no reservations are expired", async () => {

@@ -55,7 +55,7 @@ import prisma from "@/lib/prisma";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { detectAbuse } from "@/lib/security";
 import { generateImage, generateVideo, generateI2V } from "@/lib/generation";
-import { executeAgentStep, executeStepWithRetry, defaultRunnableModel, resolveUserRequestedModels, pinUserRequestedModels, resolveMentionRows } from "@/lib/agents";
+import { executeStepWithRetry, defaultRunnableModel, resolveUserRequestedModels, pinUserRequestedModels, resolveMentionRows } from "@/lib/agents";
 
 // The exact production shape reported for the two dead models that used to
 // be the ENTIRE hardcoded image fallback chain.
@@ -106,96 +106,12 @@ beforeEach(() => {
   refundCredits.mockResolvedValue({});
 });
 
-describe("executeAgentStep — validate before charging (never debit for a model that cannot run)", () => {
-  it("a deprecated model is swapped for the cheapest runnable substitute and debitWallet is charged the SUBSTITUTE's re-quote, not the dead model's", async () => {
-    seedCatalog([FLUX_DEV, NANO_BANANA_2, QWEN_IMAGE_MAX]);
-    generateImage.mockResolvedValue({ url: "https://cdn.example/img.png" });
-
-    const step = { agent: "image", task: "Generate a hero image", params: { model: "flux-dev", prompt: "a kettle", aspect_ratio: "16:9" } };
-    const result = await executeAgentStep("u1", { plan: approvedPlan([step]), stepIndex: 0 });
-
-    // Substituted to the CHEAPEST runnable model (nano-banana-2, 3 credits)
-    // over the pricier one (qwen-image-max, 6) — never the dead flux-dev.
-    expect(generateImage).toHaveBeenCalledTimes(1);
-    expect(generateImage.mock.calls[0][0]).toMatchObject({ endpoint: "google/nano-banana-2-lite" });
-
-    expect(debitWallet).toHaveBeenCalledTimes(1);
-    expect(debitWallet.mock.calls[0][1]).toBe(3); // the substitute's re-quote, NOT flux-dev's stale 10
-    expect(result.creditsUsed).toBe(3);
-
-    // The Generation row records the model that actually ran.
-    expect(prisma.generation.create.mock.calls[0][0].data.model).toBe("google/nano-banana-2-lite");
-  });
-
-  it("never calls debitWallet at all when no runnable substitute fits the step's approved budget", async () => {
-    // flux-dev's own stale quote is only 1 credit — cheaper than every real
-    // runnable replacement (3 and 6) — so a substitution would overspend
-    // the approved budget. The step must fail with ZERO debit rather than
-    // silently charging more than was approved.
-    seedCatalog([{ ...FLUX_DEV, creditsCost: 1 }, NANO_BANANA_2, QWEN_IMAGE_MAX]);
-
-    const step = { agent: "image", task: "Generate a hero image", params: { model: "flux-dev", prompt: "a kettle" } };
-    const err = await executeAgentStep("u1", { plan: approvedPlan([step]), stepIndex: 0 }).catch((e) => e);
-
-    expect(err).toBeInstanceOf(Error);
-    expect(err.code).toBe("model_unavailable");
-    expect(err.message).toMatch(/no longer available/i);
-    expect(err.message).not.toMatch(/kie|alibaba|dashscope/i); // never leaks the provider
-
-    expect(debitWallet).not.toHaveBeenCalled();
-    expect(refundCredits).not.toHaveBeenCalled(); // nothing to refund — nothing was ever charged
-    expect(generateImage).not.toHaveBeenCalled(); // the dead model is never even attempted
-    expect(prisma.agentRun.create).not.toHaveBeenCalled(); // fails before the AgentRun row is even written
-  });
-
-  it("never calls debitWallet when the catalog has no runnable model for this capability at all", async () => {
-    seedCatalog([FLUX_DEV, NANO_BANANA_OLD]); // both deprecated, no replacement of any kind
-
-    const step = { agent: "image", task: "Generate a hero image", params: { model: "flux-dev", prompt: "x" } };
-    const err = await executeAgentStep("u1", { plan: approvedPlan([step]), stepIndex: 0 }).catch((e) => e);
-
-    expect(err.code).toBe("model_unavailable");
-    expect(debitWallet).not.toHaveBeenCalled();
-    expect(generateImage).not.toHaveBeenCalled();
-  });
-
-  it("a runnable model is executed unchanged — no substitution, no extra catalog cost", async () => {
-    seedCatalog([NANO_BANANA_2]);
-    generateImage.mockResolvedValue({ url: "https://cdn.example/img.png" });
-
-    const step = { agent: "image", task: "hero", params: { model: "google/nano-banana-2-lite", prompt: "a kettle" } };
-    const result = await executeAgentStep("u1", { plan: approvedPlan([step]), stepIndex: 0 });
-
-    expect(generateImage.mock.calls[0][0]).toMatchObject({ endpoint: "google/nano-banana-2-lite" });
-    expect(debitWallet.mock.calls[0][1]).toBe(3);
-    expect(result.creditsUsed).toBe(3);
-  });
-
-  // ── Regression test: the exact production incident ──────────────────────
-  it("REGRESSION: { agent: image, params: { model: flux-dev } } never 500s — it runs on a substituted model", async () => {
-    seedCatalog([FLUX_DEV, NANO_BANANA_OLD, NANO_BANANA_2, QWEN_IMAGE_MAX]);
-    generateImage.mockResolvedValue({ url: "https://cdn.example/hero.png" });
-
-    const step = { agent: "image", params: { model: "flux-dev" } };
-    const result = await executeAgentStep("u1", { plan: approvedPlan([step]), stepIndex: 0 }).catch((e) => e);
-
-    // Either outcome is acceptable per spec (run on a substitute, or a
-    // clean actionable error) — but it must NEVER be an unbranded crash.
-    if (result instanceof Error) {
-      expect(result.code).toBe("model_unavailable");
-      expect(typeof result.message).toBe("string");
-      expect(result.message.length).toBeGreaterThan(0);
-    } else {
-      expect(result.output).toBeDefined();
-      expect(generateImage).toHaveBeenCalledTimes(1);
-      expect(generateImage.mock.calls[0][0].endpoint).not.toBe("flux-dev");
-    }
-    // With this catalog (a comfortable runnable replacement available) the
-    // fix's actual, correct behavior is to succeed on the substitute.
-    expect(result).not.toBeInstanceOf(Error);
-    expect(generateImage.mock.calls[0][0].endpoint).toBe("google/nano-banana-2-lite");
-  });
-});
+// NOTE: the "executeAgentStep — validate before charging" block that lived
+// here tested the retired in-request executor, which debited the full
+// estimate up front. Phase A replaced that path with durable runs: the
+// same invariants (validate the model BEFORE any money moves, substitute
+// only within the approved ceiling, never charge when nothing can run) are
+// asserted against startAgentRun in tests/unit/agent-runner.test.mjs.
 
 describe("executeStepWithRetry — catalog-driven fallback selection returns only runnable models", () => {
   it("never attempts the deprecated model — substitutes and succeeds on the first try", async () => {

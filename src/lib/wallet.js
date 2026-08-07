@@ -283,6 +283,28 @@ export async function sweepExpiredReservations() {
         continue;
       }
 
+      // Phase A (A1.5): a durable AgentRun's reservation is keyed by the run
+      // id. Same contract as the TemplateRun branch: an executing run is
+      // never touched regardless of TTL (its own advance settles exactly
+      // once); completed settles its actual spend; failed/cancelled release.
+      // Without this branch the sweep would release a live run's
+      // reservation via the Generation fallback below and the run's own
+      // settle would double-grant.
+      const agentRun = jobId ? await prisma.agentRun.findUnique({ where: { id: jobId } }) : null;
+
+      if (agentRun) {
+        if (agentRun.status === "executing" || agentRun.status === "pending") {
+          skipped++;
+        } else if (agentRun.status === "completed") {
+          await settleReservation(userId, jobId, agentRun.creditsUsed);
+          settled++;
+        } else {
+          await releaseReservation(userId, jobId);
+          released++;
+        }
+        continue;
+      }
+
       const generation = jobId
         ? await prisma.generation.findUnique({ where: { id: jobId } })
         : null;

@@ -32,6 +32,7 @@ import "dotenv/config";
 import { hostname } from "node:os";
 import { claimNextJob, reapExpiredLeases, failJob } from "../src/lib/job-queue.js";
 import { runJob } from "../src/lib/job-runner.js";
+import { sweepStaleAgentRuns } from "../src/lib/agent-runner.js";
 import prisma from "../src/lib/prisma.js";
 import { log } from "../src/lib/log.js";
 
@@ -119,6 +120,17 @@ async function main() {
       if (count > 0) wlog("info", "reaped_expired_leases", { count });
     } catch (err) {
       wlog("error", "worker_reap_failed", { err });
+    }
+    // A1.8: agent runs whose driving process died (web deploy, PM2 restart)
+    // leave steps queued/running with live jobs — those recover on their own
+    // via job completion -> advanceAgentRun. This sweep catches the OTHER
+    // case: a run stuck `executing` with no live work at all (its last
+    // advance was lost mid-flight), re-deriving state idempotently.
+    try {
+      const { swept, advanced } = await sweepStaleAgentRuns();
+      if (swept > 0) wlog("info", "swept_stale_agent_runs", { swept, advanced });
+    } catch (err) {
+      wlog("error", "agent_run_sweep_failed", { err });
     }
   }, REAP_INTERVAL_MS);
   reapTimer.unref?.();

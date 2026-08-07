@@ -955,6 +955,40 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     onCreditsChanged?.();
   }, [patchReview, patch, loadBalance, onCreditsChanged]);
 
+  /* A1.9: single review steps are durable server-side runs now — the POST
+     returns {queued, runId} immediately and the worker does the work, so a
+     browser close or deploy no longer loses the step (or its refund). We
+     poll the run row until terminal and map it back to the legacy step
+     response shape the review loop was built on. */
+  const waitForStepRun = useCallback(async (runId) => {
+    const started = Date.now();
+    for (;;) {
+      const res = await apiFetch(`/api/agent/run/${runId}`, { retries: 0 });
+      if (!res.ok) throw new Error("Could not read the step's run status.");
+      const run = (await res.json())?.run;
+      if (!run) throw new Error("Run not found.");
+      if (["completed", "failed", "cancelled"].includes(run.status)) {
+        const stepRow = Array.isArray(run.steps) ? run.steps[0] : null;
+        if (run.status !== "completed" || (stepRow && !["succeeded", "completed"].includes(stepRow.status))) {
+          throw new Error(run.error || stepRow?.error || "The step failed. It was not charged.");
+        }
+        const displayOutputs = Array.isArray(run.result?.outputs) ? run.result.outputs : [];
+        const displayOutput = displayOutputs.find((o) => o != null) ?? null;
+        const rawOutput = stepRow?.output ?? stepRow?.outputUrl ?? null;
+        return {
+          output: displayOutput ?? rawOutput,
+          rawOutput,
+          assembled: run.result?.assembled ?? null,
+          creditsUsed: typeof run.creditsUsed === "number" ? run.creditsUsed : undefined,
+        };
+      }
+      if (Date.now() - started > 30 * 60 * 1000) {
+        throw new Error("The step is taking unusually long — it keeps running in the background; check your sessions.");
+      }
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+  }, []);
+
   const runReviewStep = useCallback(async (id, index) => {
     const ctx = reviewRuns.current.get(id);
     if (!ctx) return;
@@ -975,10 +1009,11 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
           stepIndex: index,
           previousOutputs: ctx.rawOutputs.slice(0, index).map((o) => o ?? null),
         }),
-        timeout: 600000,
+        timeout: 60000,
         retries: 0,
       });
-      const data = await res.json();
+      const queued = await res.json();
+      const data = await waitForStepRun(queued.runId);
       ctx.rawOutputs[index] = data.rawOutput ?? data.output ?? null;
       const media = !!(data.assembled &&
         (data.assembled.images?.length || data.assembled.videos?.length || data.assembled.audio?.length));
@@ -1003,7 +1038,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       setError(err?.message || "The step failed. It was not charged — try it again.");
       loadBalance();
     }
-  }, [patchReviewItem, patchReview, finishReview, loadBalance]);
+  }, [patchReviewItem, patchReview, finishReview, loadBalance, waitForStepRun]);
 
   const acceptStep = useCallback((id, index) => {
     if (busy) return;
@@ -1035,10 +1070,11 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
           ...(overrides ? { paramOverrides: overrides } : {}),
           previousOutputs: ctx.rawOutputs.slice(0, index).map((o) => o ?? null),
         }),
-        timeout: 600000,
+        timeout: 60000,
         retries: 0,
       });
-      const data = await res.json();
+      const queued = await res.json();
+      const data = await waitForStepRun(queued.runId);
       ctx.rawOutputs[index] = data.rawOutput ?? data.output ?? null;
       const media = !!(data.assembled &&
         (data.assembled.images?.length || data.assembled.videos?.length || data.assembled.audio?.length));
@@ -1067,7 +1103,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     } finally {
       loadBalance();
     }
-  }, [busy, patchReview, patchReviewItem, runReviewStep, loadBalance]);
+  }, [busy, patchReview, patchReviewItem, runReviewStep, loadBalance, waitForStepRun]);
 
   /* Rewrite $STEP_N_OUTPUT references for the remaining sub-plan: refs to
      already-completed steps get their real output substituted; refs to

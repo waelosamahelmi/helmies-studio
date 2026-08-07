@@ -33,9 +33,11 @@ vi.mock("@/lib/credit-packs", () => ({ CREDIT_PACKS: [] }));
 vi.mock("@/lib/agents", () => ({
   planTask: vi.fn(),
   planTaskStream: vi.fn(),
-  executeAgentRun: vi.fn(),
-  executeAgentRunStream: vi.fn(),
 }));
+// Phase A: /api/agent/run starts a DURABLE run — the route's error envelope
+// now maps agent-runner's errorCode, not the retired in-request executor's.
+vi.mock("@/lib/agent-runner", () => ({ startAgentRun: vi.fn() }));
+vi.mock("@/lib/agent-sessions", () => ({ resolveOwnedSession: vi.fn(async () => null) }));
 vi.mock("@/lib/providers", () => ({
   llmComplete: vi.fn(),
   brandError: vi.fn((t) => "Something went wrong on our end. Please try again."),
@@ -57,7 +59,8 @@ import { getCurrentUser, getCurrentUserWithCredits } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
 import prisma from "@/lib/prisma";
 import { estimateCredits } from "@/lib/pricing-engine";
-import { executeAgentRun } from "@/lib/agents";
+import { startAgentRun } from "@/lib/agent-runner";
+import { planTask } from "@/lib/agents";
 import { getUserWorkflows } from "@/lib/workflows";
 
 import { POST as postEstimate } from "@/app/api/estimate/route.js";
@@ -154,8 +157,15 @@ describe("POST /api/agent/plan — envelope", () => {
 
 describe("POST /api/agent/run — envelope", () => {
   it("402s with insufficient_credits, keeping creditsNeeded/creditsAvailable", async () => {
-    executeAgentRun.mockResolvedValue({
+    // No body.plan → the route plans first, then starts the durable run.
+    planTask.mockResolvedValue({
+      steps: [{ agent: "image", task: "hero", params: { prompt: "x" } }],
+      summary: "go",
+      estimate: { total: 40, breakdown: [] },
+    });
+    startAgentRun.mockResolvedValue({
       error: "Insufficient credits: need 40, have 5",
+      errorCode: "insufficient_credits",
       creditsNeeded: 40,
       creditsAvailable: 5,
     });

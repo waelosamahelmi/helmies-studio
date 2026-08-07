@@ -79,6 +79,26 @@ import { ingestFromUrl } from "./storage/ingest.js";
 // INVOKED later, never touched at module-evaluation time; see
 // template-runner.js's header for the full worker-safety rationale.
 import { advanceTemplateRun } from "./template-runner.js";
+// Phase A: a job whose payload carries `agentRunId` belongs to a durable
+// AgentRun step — src/lib/agent-runner.js owns ALL money movement for those
+// (one reservation per run), exactly like the templateRunId pattern above.
+// `payload.internal` marks a step with no provider call at all (storyboard,
+// assembly, export, persona LLM) — executed in-worker via executeInternalJob.
+// Same hoisted-async circular-import safety as advanceTemplateRun.
+import { advanceAgentRun, executeInternalJob } from "./agent-runner.js";
+import { recordGenerationAsset } from "./assets-core.js";
+
+// A1.4.3: asset writes are best-effort and must never mask the money/advance
+// path (recordGenerationAsset already never throws — this is belt and braces
+// for the caller site).
+async function recordGenerationAssetSafe(generation) {
+  try {
+    const fresh = await prisma.generation.findUnique({ where: { id: generation.id } });
+    await recordGenerationAsset(fresh || generation);
+  } catch (err) {
+    log.error("asset_record_wrapper_failed", { generationId: generation?.id, err });
+  }
+}
 
 // Heartbeat cadence during a long poll — comfortably under job-queue's
 // default 5-minute lease (DEFAULT_LEASE_MS in job-queue.js) so a slow
@@ -213,6 +233,27 @@ async function safeAdvanceTemplateRun(runId) {
   }
 }
 
+// Phase A: same never-throw wrapper for durable agent runs.
+async function safeAdvanceAgentRun(runId) {
+  try {
+    await advanceAgentRun(runId);
+  } catch (err) {
+    console.error(`[job-runner] advanceAgentRun FAILED for agent run ${runId}:`, err.message);
+  }
+}
+
+// Phase A: run the run-level advance for whichever durable engine owns this
+// job (template run, agent run, or neither — per-generation money path).
+async function advanceOwner(job, generation) {
+  if (job.payload?.templateRunId) {
+    await safeAdvanceTemplateRun(job.payload.templateRunId);
+  } else if (job.payload?.agentRunId) {
+    await safeAdvanceAgentRun(job.payload.agentRunId);
+  } else {
+    await releaseOrRefund(generation, job);
+  }
+}
+
 // Conditional transition, mirroring src/lib/generation-webhook.js's own
 // idempotency guard: only the caller that actually flips the row OUT of a
 // non-terminal state gets to act on it. A concurrent winner (the webhook,
@@ -252,16 +293,10 @@ async function handleFailure(job, generation, err) {
   // (failJob above) for operators.
   const won = await tryTransitionGeneration(generation.id, { status: "failed", error: brandForUser(message) });
   if (won) {
-    // Phase 6 Task 3: a template-run step's own Generation never holds its
-    // own reservation — advanceTemplateRun owns the run's ONE reservation
-    // (release-or-refund happens there, reusing this file's own
-    // releaseOrRefund unchanged). Every other job takes the pre-existing
-    // per-generation path.
-    if (job.payload?.templateRunId) {
-      await safeAdvanceTemplateRun(job.payload.templateRunId);
-    } else {
-      await releaseOrRefund(generation, job);
-    }
+    // Phase 6 Task 3 / Phase A: a template-run or agent-run step's own
+    // Generation never holds its own reservation — the run's advance owns
+    // the ONE reservation. Every other job takes the per-generation path.
+    await advanceOwner(job, generation);
   }
   return { outcome: "failed" };
 }
@@ -291,6 +326,25 @@ export async function runJob(job, { workerId, signal } = {}) {
   if (generation.status === "completed" || generation.status === "failed") {
     await completeJob(job.id, {});
     return { outcome: "succeeded" };
+  }
+
+  // Phase A: internal steps (storyboard / assembly / export / persona LLM)
+  // never touch a provider — execute in-worker, then close out exactly like
+  // a provider success would (the step row was already written by
+  // executeInternalJob; the generation completion + advance happen here).
+  if (job.payload?.internal) {
+    try {
+      const result = await executeInternalJob(job.payload);
+      const won = await tryTransitionGeneration(generation.id, {
+        status: "completed",
+        outputUrl: result?.outputUrl || generation.outputUrl,
+      });
+      await completeJob(job.id, {});
+      if (won && job.payload?.agentRunId) await safeAdvanceAgentRun(job.payload.agentRunId);
+      return { outcome: "succeeded" };
+    } catch (err) {
+      return await handleFailure(job, generation, err);
+    }
   }
 
   try {
@@ -344,12 +398,17 @@ export async function runJob(job, { workerId, signal } = {}) {
       outputUrl: localUrl || outputs?.[0] || generation.outputUrl,
     });
     if (won) {
-      // Phase 6 Task 3: same split as handleFailure above — a template-run
-      // step chains to advanceTemplateRun (which settles the run's ONE
-      // reservation only once the LAST step lands) instead of settling this
-      // step's own (nonexistent) per-generation reservation.
+      // Phase 6 Task 3 / Phase A: same split as handleFailure above — a
+      // template-run or agent-run step chains to its runner (which owns the
+      // run's ONE reservation) instead of settling a per-generation
+      // reservation that deliberately does not exist for these jobs.
       if (job.payload?.templateRunId) {
         await safeAdvanceTemplateRun(job.payload.templateRunId);
+      } else if (job.payload?.agentRunId) {
+        // A1.4.3: durable agent media steps land in the asset library too
+        // (the async path historically never wrote Asset rows).
+        await recordGenerationAssetSafe(generation);
+        await safeAdvanceAgentRun(job.payload.agentRunId);
       } else {
         await safeSettle(generation);
       }
@@ -414,15 +473,10 @@ export async function sweepTimedOutJobs() {
       error: TIMEOUT_ERROR_MESSAGE,
     });
     if (won) {
-      // Phase 6 Task 3: same split as handleFailure/runJob above — a
-      // template-run step's timeout closes out the WHOLE run (release-or-
-      // refund of its one reservation) via advanceTemplateRun, not this
-      // step's own nonexistent per-generation reservation.
-      if (job.payload?.templateRunId) {
-        await safeAdvanceTemplateRun(job.payload.templateRunId);
-      } else {
-        await releaseOrRefund(generation, job);
-      }
+      // Phase 6 Task 3 / Phase A: same split as handleFailure/runJob above —
+      // a run step's timeout is closed out by its runner's advance, not by
+      // a per-generation reservation that does not exist for these jobs.
+      await advanceOwner(job, generation);
       refunded++;
     }
     // else: the webhook (or the worker's own runJob) already terminalized

@@ -345,6 +345,18 @@
     "notes": "2026-08-06 background runs: read-only status of ONE owned AgentRun (steps/credits/outputs) — the client polls this while a detached run executes. Owned-scope only, verifyOrigin wired on GET."
   },
   {
+    "path": "/api/agent/run/[id]/cancel",
+    "file": "src/app/api/agent/run/[id]/cancel/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/agent",
+    "stateChanging": true,
+    "notes": "2026-08-07 Phase A1.6.4: owner-only cancel of a durable AgentRun. Sets cancelRequested and kicks advanceAgentRun — pending steps are skipped, in-flight provider work finishes but is never charged, and the reservation remainder is released. Spends no credits itself; a non-owned id is a uniform not_found."
+  },
+  {
     "path": "/api/agent/runs",
     "file": "src/app/api/agent/runs/route.js",
     "methods": [

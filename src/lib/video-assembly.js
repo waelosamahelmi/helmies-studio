@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "crypto";
 import { writeFile, mkdir, unlink, copyFile, rename } from "fs/promises";
 import { join, basename } from "path";
 import { existsSync } from "fs";
-import { validateOutboundUrl } from "@/lib/net-allowlist";
+import { validateOutboundUrl } from "./net-allowlist.js";
 
 const execFileAsync = promisify(execFile);
 const MEDIA_DIR = join(process.cwd(), "public", "media");

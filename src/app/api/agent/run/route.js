@@ -1,18 +1,24 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { executeAgentRun, executeAgentRunStream, executeAgentRunBackground } from "@/lib/agents";
+import { startAgentRun } from "@/lib/agent-runner";
 import { checkRateLimit } from "@/lib/security";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import { apiError } from "@/lib/api-error";
 import { resolveOwnedSession } from "@/lib/agent-sessions";
+import prisma from "@/lib/prisma";
 
-// EDITSv1 E3.2 — honored approvals: when body.plan is present it IS the
-// executed plan. It is passed to the executors as precomputedPlan — the
-// planner is never re-run, the debit ceiling is the approved
-// estimate.total (server-re-quoted; a changed quote rejects instead of
-// silently charging something else). body.sessionId ties the run to an
-// owned AgentSession and persists run/outputs history messages.
+// Phase A — DURABLE AGENT RUNS (EDITSv1 E3.2 honored-approvals preserved):
+// every mode (background, SSE stream, single JSON) now starts ONE durable
+// run via src/lib/agent-runner.js — one reservation per run, steps on the
+// GenerationJob queue, resume-safe across restarts. The HTTP connection is
+// never load-bearing: `stream:true` merely polls the durable run's state
+// and re-emits the legacy SSE frame shapes (step_start / step_complete /
+// run_complete) so the client is unchanged.
+//
+// When body.plan is present it IS the executed plan (never re-planned; the
+// server re-quotes and a higher quote rejects with quote_changed — nothing
+// is reserved). body.sessionId ties the run to an owned AgentSession.
 
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -27,6 +33,9 @@ function errorResponse(result) {
   if (result.errorCode === "blocked") {
     return apiError({ code: "forbidden", message: result.error });
   }
+  if (result.errorCode === "model_unavailable") {
+    return apiError({ code: "invalid_model", message: result.error, retryable: true });
+  }
   // insufficient_credits — and the legacy untagged shape, which only ever
   // meant insufficient credits.
   return apiError({
@@ -34,6 +43,87 @@ function errorResponse(result) {
     message: result.error,
     extra: { creditsNeeded: result.creditsNeeded, creditsAvailable: result.creditsAvailable },
   });
+}
+
+function sseFrame(encoder, event) {
+  return encoder.encode(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+// Poll a durable run and stream the legacy frame vocabulary. Poll cadence
+// 1.5s; hard cap 30 minutes (a run stuck longer is the watchdog's job).
+function streamRun(runId) {
+  const encoder = new TextEncoder();
+  const startedAt = Date.now();
+  const MAX_MS = 30 * 60 * 1000;
+  const stream = new ReadableStream({
+    async start(controller) {
+      const announced = new Set(); // step indexes with step_start sent
+      const completed = new Set(); // step indexes with step_complete sent
+      try {
+        for (;;) {
+          const run = await prisma.agentRun.findUnique({ where: { id: runId } }).catch(() => null);
+          if (!run) break;
+          const stepResults = Array.isArray(run.result?.stepResults) ? run.result.stepResults : [];
+          for (const sr of stepResults) {
+            const n = sr?.step;
+            if (typeof n !== "number") continue;
+            if (!announced.has(n) && sr.status && sr.status !== "pending") {
+              announced.add(n);
+              controller.enqueue(sseFrame(encoder, { type: "step_start", step: n, agent: sr.agent, task: sr.task }));
+            }
+            if (!completed.has(n) && (sr.status === "completed" || sr.status === "failed" || sr.status === "skipped")) {
+              completed.add(n);
+              controller.enqueue(
+                sseFrame(encoder, {
+                  type: "step_complete",
+                  step: n,
+                  status: sr.status === "completed" ? "completed" : "failed",
+                  output: sr.output ?? null,
+                  error: sr.error ?? null,
+                })
+              );
+            }
+          }
+          if (run.status !== "executing" && run.status !== "pending") {
+            controller.enqueue(
+              sseFrame(encoder, {
+                type: "run_complete",
+                status: run.status === "completed" ? "done" : "failed",
+                summary: run.result?.summary || run.task,
+                creditsUsed: run.creditsUsed,
+                outputs: run.result?.outputs || [],
+                assembled: run.result?.assembled || null,
+                error: run.error || null,
+              })
+            );
+            break;
+          }
+          if (Date.now() - startedAt > MAX_MS) {
+            controller.enqueue(
+              sseFrame(encoder, { type: "run_complete", status: "failed", error: "Run is taking unusually long — check back in the session history." })
+            );
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      } finally {
+        controller.close();
+      }
+    },
+  });
+  return new Response(stream, { headers: SSE_HEADERS });
+}
+
+async function buildPlanIfNeeded(userId, message, context, sessionId) {
+  // No approved plan → plan first (planning is free; the quote guard inside
+  // startAgentRun still applies to the freshly computed estimate).
+  const { planTask } = await import("@/lib/agents");
+  const planned = await planTask(userId, message, context);
+  return {
+    steps: planned.steps,
+    summary: planned.summary || message,
+    estimate: planned.estimate,
+  };
 }
 
 export async function POST(req) {
@@ -56,31 +146,47 @@ export async function POST(req) {
     }
 
     const session = await resolveOwnedSession(user.id, body.sessionId);
-    const options = { precomputedPlan: body.plan || null, sessionId: session?.id || null };
 
-    // Background mode (2026-08-06): the run is detached from the request —
-    // debited up front, executed server-side to completion regardless of
-    // whether the browser stays open, its media steps landing in the gallery
-    // and its outcome in the session feed. Returns { queued, runId }
-    // immediately; the client polls GET /api/agent/run/:id for progress.
-    if (body.background === true) {
-      const result = await executeAgentRunBackground(user.id, message, context, options);
-      if (result.error && !result.queued) return errorResponse(result);
-      return NextResponse.json(result);
+    const plan = body.plan
+      ? { ...body.plan, approvedTotal: body.plan?.estimate?.total }
+      : await buildPlanIfNeeded(user.id, message, context, session?.id || null);
+
+    let result;
+    try {
+      result = await startAgentRun({
+        userId: user.id,
+        plan,
+        sessionId: session?.id || null,
+        task: message || plan.summary || "Agent production",
+        mode: body.mode || null,
+        tier: body.tier || null,
+        maxCredits: body.plan?.estimate?.total ?? null,
+        boundOutputs: Array.isArray(body.boundOutputs) ? body.boundOutputs : [],
+      });
+    } catch (err) {
+      return errorResponse({
+        error: err.message,
+        errorCode: err.code,
+        creditsNeeded: err.creditsNeeded,
+        creditsAvailable: err.creditsAvailable,
+      });
     }
 
-    if (shouldStream) {
-      const result = await executeAgentRunStream(user.id, message, context, options);
-      if (result.stream) {
-        return new Response(result.stream, { headers: SSE_HEADERS });
-      }
-      if (result.error) return errorResponse(result);
-      return NextResponse.json(result);
+    if (result?.error) return errorResponse(result);
+    if (!result?.runId) {
+      return apiError({ code: "internal", message: "Run could not be started." });
     }
 
-    const result = await executeAgentRun(user.id, message, context, options);
-    if (result.error && !result.success) return errorResponse(result);
-    return NextResponse.json(result);
+    // Background + default single-JSON modes: return the queued handle; the
+    // client polls GET /api/agent/run/:id. (Single-JSON mode keeps its
+    // legacy "returns immediately" contract — the run is durable now, so
+    // blocking here would only re-implement the poll.)
+    if (body.background === true || !shouldStream) {
+      return NextResponse.json({ queued: true, runId: result.runId, estimate: result.estimate });
+    }
+
+    // SSE mode: stream the durable run's progress in the legacy frame shape.
+    return streamRun(result.runId);
   } catch (e) {
     return authzResponse(e);
   }

@@ -35,7 +35,7 @@ KIE_KEY, OPENROUTER_KEY, Stripe keys, DATABASE_URL, GOOGLE OAuth: SET. WEBHOOK_S
 
 Current problem: every later phase needs the migration, a worker-safe model-resolution module, and shared UI constants. Target: one additive migration; zero `@/`-alias imports in worker-reachable code.
 
-- [ ] 0.1 Create migration `20260807000000_durable_runs_entities_projects` (additive, expand-only):
+- [x] 0.1 Create migration `20260807000000_durable_runs_entities_projects` (additive, expand-only):
   - [x] 0.1.1 `AgentRunStep` table: `id` cuid pk, `runId` (idx), `stepIndex` Int, `stepId` String, `agent` String, `task` Text, `params` Json, `dependsOn` Json (string[]), `kind` String (`media`|`internal`), `status` String default `pending` (pending|queued|running|succeeded|failed|skipped), `attempts` Int default 0, `generationId` String?, `output` Json?, `outputUrl` Text?, `creditsQuoted` Int default 0, `creditsActual` Int?, `modelPlanned` String?, `modelUsed` String?, `substitution` String?, `error` Text?, `startedAt`/`completedAt`/`createdAt`/`updatedAt`; `@@unique([runId, stepId])`, `@@index([runId, status])`.
   - [x] 0.1.2 `AgentRun` add columns: `cancelRequested` Boolean default false, `maxCredits` Int?, `tier` String?, `qcMode` String default `off`, `engine` String default `durable`.
   - [x] 0.1.3 `StudioEntity` table: `id` cuid pk, `userId` (idx), `kind` String (character|product|environment), `name` String, `description` Text?, `attributes` Json default {}, `references` Json default [] (`[{id,url,kind,label,locked,createdAt}]`), `voiceId` String?, `voiceName` String?, `status` String default `draft` (draft|ready|locked), `fingerprint` Text?, timestamps; `@@index([userId, kind])`.
@@ -54,42 +54,109 @@ Problem (verified): `executeAgentRunBackground` = detached promise in web proces
 
 Files: NEW `src/lib/agent-runner.js`; EDIT `src/lib/agents.js`, `src/lib/job-runner.js`, `src/lib/wallet.js`, `src/app/api/agent/run/route.js`, `src/app/api/agent/step/route.js`, `src/app/api/agent/run/[id]/route.js`, `scripts/worker.mjs`, OrchestratorStudio.js.
 
-- [ ] A1.1 `src/lib/agent-runner.js` exports `startAgentRun({ userId, plan, sessionId, task, mode, tier, maxCredits, boundOutputs })`:
-  - [ ] A1.1.1 Validate plan: non-empty steps, `normalizeAgentKey` known, unique stepIds (`step-<n>` assigned when absent), DAG-ify: `dependsOn` derived by scanning params for `$STEP_N_OUTPUT` / `${storyboard}` tokens (N→step index); cycle detection (DFS) → `invalid_plan` on cycle.
-  - [ ] A1.1.2 Server re-quote via `estimateAgentTask`; if client `approvedTotal` present and server total > approvedTotal → `quote_changed` (nothing reserved/created).
-  - [ ] A1.1.3 `reserveCredits(userId, total, runId, TTL=max(60, steps*40))` BEFORE first enqueue; any setup failure after reserve → `releaseOrRefund` + run failed.
-  - [ ] A1.1.4 Create `AgentRun` (status `executing`, `steps` Json kept for back-compat polling shape, `result.boundOutputs`, `maxCredits`, `tier`) + all `AgentRunStep` rows (status pending, `creditsQuoted` from breakdown) in ONE transaction.
-  - [ ] A1.1.5 `enqueueReadySteps(runId)`: ready = pending steps whose dependsOn ⊆ succeeded; per-step: resolve planned model via `resolveRunnableModel`, media-required guard (text-only step + media-required model → substitute), substitution = cheapest runnable ≤ quoted ceiling (`creditsQuoted`); create `Generation` (status processing, creditsUsed 0) + `enqueueJob` idempotencyKey `agent-run-<runId>-<stepId>`, payload `{...params, model: providerModelId, endpoint, callBackUrl, agentRunId, stepId}` for media, `{agentRunId, stepId, internal:true, internalKind}` for internal (storyboard|assembly|export|llm); step status→queued. In-flight media cap = 3 per run (ready steps beyond cap stay pending until advance).
-  - [ ] A1.1.6 Kick: if NO step got enqueued (all-ready set is internal-only), worker tick picks it up (A3.2) — also call `advanceAgentRun` once in-process for immediate start when called from the worker.
-- [ ] A1.2 `advanceAgentRun(runId)` — idempotent, safe to call any number of times:
-  - [ ] A1.2.1 Reload run + steps; not `executing` → no-op. `cancelRequested` → mark pending steps `skipped`, `releaseOrRefund`, status `cancelled`, session message.
-  - [ ] A1.2.2 Sync step outcomes from their Generation rows (completed→succeeded + output/outputUrl + creditsActual=quoted; failed→failed + error).
-  - [ ] A1.2.3 Budget gate: `actualSoFar = Σ creditsActual`; before enqueueing each ready step, `actualSoFar + remainingQuoted ≤ run.maxCredits ?? quotedTotal` else step skipped with `budget_exceeded` (never silently overspend).
-  - [ ] A1.2.4 Enqueue newly-ready steps (A1.1.5 rules, concurrency cap).
-  - [ ] A1.2.5 All terminal: any failed → status `failed`, `releaseOrRefund(userId, runId)` once; all succeeded/skipped-with-optional → status `completed`, `settleReservation(userId, runId, actualTotal)` (actual ≤ reserved, clamp rule reuses wallet logic), assemble `result.outputs`/`result.assembled` (deliverable-first shape preserved), persist AgentMessage `run` + `outputs` (same kinds as today), `User.credits` mirror sync via existing wallet behavior.
-  - [ ] A1.2.6 Progress persistence: after every transition write `result.stepResults` (n, agent, task, status, error, output) so `GET /api/agent/run/[id]` shape is unchanged for the client.
-- [ ] A1.3 `executeInternalStep(step, run, priorOutputs)` in agent-runner: storyboard (approved-draft pass-through free, else LLM strict-JSON — reuse existing `executeStoryboardStep` logic), assembly (`assembleVideos` on succeeded video outputs + transitions; audio bed from run params), export manifest, website/coding/persona/marketing-text (llmComplete). $STEP_N_OUTPUT/${storyboard} resolution identical to current `executeStep`.
-- [ ] A1.4 `src/lib/job-runner.js`: payload branches —
-  - [ ] A1.4.1 `payload.internal === true` → dispatch `executeInternalStep` (no provider submit); success/failure mapped to Generation + step; retryable LLM failures use existing failJob backoff.
-  - [ ] A1.4.2 `payload.agentRunId` → bypass per-generation money (run-level reservation owns it); on terminal, `safeAdvanceAgentRun` (never throws; circular-import-safe lazy dynamic import like template-runner).
-  - [ ] A1.4.3 Media steps inside agent runs DO get Asset rows + lineage on success (close the async-asset gap for this path) via shared `recordGenerationAsset` (Q1.1).
-- [ ] A1.5 `src/lib/wallet.js` `sweepExpiredReservations`: add AgentRun branch BEFORE Generation branch — key matches AgentRun: status executing→skip regardless of TTL; completed→settle `creditsUsed`; failed/cancelled→release. Unit tests for each transition.
-- [ ] A1.6 Routes —
-  - [ ] A1.6.1 `POST /api/agent/run`: `background:true` AND default both → `startAgentRun` (durable), return `{queued:true, runId}`. `stream:true` → start durable run, then emit SSE frames by polling run state (≤2s tick) until terminal (frames `step_start`/`step_complete`/`run_complete` preserved for the client); HTTP connection no longer load-bearing.
-  - [ ] A1.6.2 `POST /api/agent/step`: build a 1-step plan (params + paramOverrides merged), `boundOutputs = previousOutputs`, start durable single-step run; return `{queued:true, runId, stepId}`. Regenerate = same with `regenerate:true`. (Replaces in-request execution + up-front debitWallet.)
-  - [ ] A1.6.3 `GET /api/agent/run/[id]` — unchanged contract; now reads AgentRunStep-backed `result.stepResults`; add `cancelRequested` field.
-  - [ ] A1.6.4 `POST /api/agent/run/[id]/cancel` (NEW): owner-only, sets `cancelRequested`, returns state; running provider jobs finish but no new steps enqueue; reservation released for unexecuted remainder.
-- [ ] A1.7 `agents.js` cleanup: `executeAgentRunBackground`/`executePlannedRun` up-front `debitWallet` path removed from the route flow (kept only as thin delegators to agent-runner or deleted if unreferenced; no behavioral dead code left behind). `executeAgentStep` re-quotes and delegates to the single-step durable run. PRESERVE: planTask/planTaskStream/extractPlanJson/resolveApprovedPlan/storyboard prompt contracts.
-- [ ] A1.8 `scripts/worker.mjs`: add periodic `sweepStaleAgentRuns()` (executing runs with zero active jobs and no step change > 10 min → fail + release) alongside existing reaper; graceful shutdown unchanged.
-- [ ] A1.9 Client (OrchestratorStudio): review-mode Accept/Regenerate consume `{queued, runId}` + poll (reuse existing 3s poll) instead of the 600s in-request body; "Don't ask again" unchanged (already background). No visual regression.
-- [ ] A1.10 Tests —
-  - [ ] A1.10.1 Unit: DAG derive (dependsOn from tokens), cycle rejection, budget gate, advanceAgentRun idempotency (call twice → one settle), cancel path.
-  - [ ] A1.10.2 Integration: full durable agent run (mock provider submit/poll), PM2-kill simulation (complete job via webhook after "restart" → run still completes, exactly one settle), failed step → release remainder, sweep branch transitions.
-  - [ ] A1.10.3 Money: no double charge on duplicate advance; no settle on failed run; reservation TTL sweep skips executing run.
+- [x] A1.1 `src/lib/agent-runner.js` exports `startAgentRun({ userId, plan, sessionId, task, mode, tier, maxCredits, boundOutputs })`:
+  - [x] A1.1.1 Validate plan: non-empty steps, `normalizeAgentKey` known, unique stepIds (`step-<n>` assigned when absent), DAG-ify: `dependsOn` derived by scanning params for `$STEP_N_OUTPUT` / `${storyboard}` tokens (N→step index); cycle detection (DFS) → `invalid_plan` on cycle.
+  - [x] A1.1.2 Server re-quote via `estimateAgentTask`; if client `approvedTotal` present and server total > approvedTotal → `quote_changed` (nothing reserved/created).
+  - [x] A1.1.3 `reserveCredits(userId, total, runId, TTL=max(60, steps*40))` BEFORE first enqueue; any setup failure after reserve → `releaseOrRefund` + run failed.
+  - [x] A1.1.4 Create `AgentRun` (status `executing`, `steps` Json kept for back-compat polling shape, `result.boundOutputs`, `maxCredits`, `tier`) + all `AgentRunStep` rows (status pending, `creditsQuoted` from breakdown) in ONE transaction.
+  - [x] A1.1.5 `enqueueReadySteps(runId)`: ready = pending steps whose dependsOn ⊆ succeeded; per-step: resolve planned model via `resolveRunnableModel`, media-required guard (text-only step + media-required model → substitute), substitution = cheapest runnable ≤ quoted ceiling (`creditsQuoted`); create `Generation` (status processing, creditsUsed 0) + `enqueueJob` idempotencyKey `agent-run-<runId>-<stepId>`, payload `{...params, model: providerModelId, endpoint, callBackUrl, agentRunId, stepId}` for media, `{agentRunId, stepId, internal:true, internalKind}` for internal (storyboard|assembly|export|llm); step status→queued. In-flight media cap = 3 per run (ready steps beyond cap stay pending until advance).
+  - [x] A1.1.6 Kick: if NO step got enqueued (all-ready set is internal-only), worker tick picks it up (A3.2) — also call `advanceAgentRun` once in-process for immediate start when called from the worker.
+- [x] A1.2 `advanceAgentRun(runId)` — idempotent, safe to call any number of times:
+  - [x] A1.2.1 Reload run + steps; not `executing` → no-op. `cancelRequested` → mark pending steps `skipped`, `releaseOrRefund`, status `cancelled`, session message.
+  - [x] A1.2.2 Sync step outcomes from their Generation rows (completed→succeeded + output/outputUrl + creditsActual=quoted; failed→failed + error).
+  - [x] A1.2.3 Budget gate: `actualSoFar = Σ creditsActual`; before enqueueing each ready step, `actualSoFar + remainingQuoted ≤ run.maxCredits ?? quotedTotal` else step skipped with `budget_exceeded` (never silently overspend).
+  - [x] A1.2.4 Enqueue newly-ready steps (A1.1.5 rules, concurrency cap).
+  - [x] A1.2.5 All terminal: any failed → status `failed`, `releaseOrRefund(userId, runId)` once; all succeeded/skipped-with-optional → status `completed`, `settleReservation(userId, runId, actualTotal)` (actual ≤ reserved, clamp rule reuses wallet logic), assemble `result.outputs`/`result.assembled` (deliverable-first shape preserved), persist AgentMessage `run` + `outputs` (same kinds as today), `User.credits` mirror sync via existing wallet behavior.
+  - [x] A1.2.6 Progress persistence: after every transition write `result.stepResults` (n, agent, task, status, error, output) so `GET /api/agent/run/[id]` shape is unchanged for the client.
+- [x] A1.3 `executeInternalStep(step, run, priorOutputs)` in agent-runner: storyboard (approved-draft pass-through free, else LLM strict-JSON — reuse existing `executeStoryboardStep` logic), assembly (`assembleVideos` on succeeded video outputs + transitions; audio bed from run params), export manifest, website/coding/persona/marketing-text (llmComplete). $STEP_N_OUTPUT/${storyboard} resolution identical to current `executeStep`.
+- [x] A1.4 `src/lib/job-runner.js`: payload branches —
+  - [x] A1.4.1 `payload.internal === true` → dispatch `executeInternalStep` (no provider submit); success/failure mapped to Generation + step; retryable LLM failures use existing failJob backoff.
+  - [x] A1.4.2 `payload.agentRunId` → bypass per-generation money (run-level reservation owns it); on terminal, `safeAdvanceAgentRun` (never throws; circular-import-safe lazy dynamic import like template-runner).
+  - [x] A1.4.3 Media steps inside agent runs DO get Asset rows + lineage on success (close the async-asset gap for this path) via shared `recordGenerationAsset` (Q1.1).
+- [x] A1.5 `src/lib/wallet.js` `sweepExpiredReservations`: add AgentRun branch BEFORE Generation branch — key matches AgentRun: status executing→skip regardless of TTL; completed→settle `creditsUsed`; failed/cancelled→release. Unit tests for each transition.
+- [x] A1.6 Routes —
+  - [x] A1.6.1 `POST /api/agent/run`: `background:true` AND default both → `startAgentRun` (durable), return `{queued:true, runId}`. `stream:true` → start durable run, then emit SSE frames by polling run state (≤2s tick) until terminal (frames `step_start`/`step_complete`/`run_complete` preserved for the client); HTTP connection no longer load-bearing.
+  - [x] A1.6.2 `POST /api/agent/step`: build a 1-step plan (params + paramOverrides merged), `boundOutputs = previousOutputs`, start durable single-step run; return `{queued:true, runId, stepId}`. Regenerate = same with `regenerate:true`. (Replaces in-request execution + up-front debitWallet.)
+  - [x] A1.6.3 `GET /api/agent/run/[id]` — unchanged contract; now reads AgentRunStep-backed `result.stepResults`; add `cancelRequested` field.
+  - [x] A1.6.4 `POST /api/agent/run/[id]/cancel` (NEW): owner-only, sets `cancelRequested`, returns state; running provider jobs finish but no new steps enqueue; reservation released for unexecuted remainder.
+- [x] A1.7 `agents.js` cleanup: `executeAgentRunBackground`/`executePlannedRun` up-front `debitWallet` path removed from the route flow (kept only as thin delegators to agent-runner or deleted if unreferenced; no behavioral dead code left behind). `executeAgentStep` re-quotes and delegates to the single-step durable run. PRESERVE: planTask/planTaskStream/extractPlanJson/resolveApprovedPlan/storyboard prompt contracts.
+- [x] A1.8 `scripts/worker.mjs`: add periodic `sweepStaleAgentRuns()` (executing runs with zero active jobs and no step change > 10 min → fail + release) alongside existing reaper; graceful shutdown unchanged.
+- [x] A1.9 Client (OrchestratorStudio): review-mode Accept/Regenerate consume `{queued, runId}` + poll (reuse existing 3s poll) instead of the 600s in-request body; "Don't ask again" unchanged (already background). No visual regression.
+- [x] A1.10 Tests —
+  - [x] A1.10.1 Unit: DAG derive (dependsOn from tokens), cycle rejection, budget gate, advanceAgentRun idempotency (call twice → one settle), cancel path.
+  - [x] A1.10.2 Integration: full durable agent run (mock provider submit/poll), PM2-kill simulation (complete job via webhook after "restart" → run still completes, exactly one settle), failed step → release remainder, sweep branch transitions.
+  - [x] A1.10.3 Money: no double charge on duplicate advance; no settle on failed run; reservation TTL sweep skips executing run.
+
+## PHASE A — VERIFICATION EVIDENCE (2026-08-07)
+
+Green at flip time: `npm run lint` PASS · `npm run typecheck` PASS · `npm test`
+**1674/1674 PASS (121 files)** · `npm run test:integration` **143/148 PASS** (the
+5 failures are pre-existing and unrelated — see "Known-red, not Phase A" below).
+
+New tests backing the flips above:
+- `tests/unit/agent-runner.test.mjs` (17) — DAG derivation, cycle rejection,
+  preflight-before-reserve, substitution ceiling, budget gate, cancel,
+  advance idempotency, internal-step pass-through, stale sweep.
+- `tests/unit/agent-durable-routes.test.mjs` (7) — `/api/agent/run` executes an
+  approved plan verbatim (the planner is never re-run) and `/api/agent/step`
+  merges overrides into a single durable step; refusal envelopes preserved.
+- `tests/integration/agent-run-durable.int.test.mjs` (5) — a real two-step run
+  driven ENTIRELY through `generation-webhook.js` (never `runJob`), which is
+  what a PM2 restart looks like from the provider's side: one reservation,
+  settle exactly once, duplicate delivery never double-settles, a failed step
+  is never charged, cancel releases in full, and the watchdog finalizes a run
+  whose advance was lost. Every case ends with `reconcileWallet().ok`.
+- `tests/unit/wallet-core.test.mjs` — the A1.5 AgentRun sweep branch, one test
+  per transition (executing skipped / completed settled / failed + cancelled
+  released).
+
+### Defect found and fixed during verification
+
+`sweepStaleAgentRuns` decided "work is still in flight" from the AgentRunStep
+status alone. The case the watchdog exists for — an advance lost mid-flight —
+looks exactly like that: generations already terminal, step rows still
+`queued`. The sweep skipped it on every pass, and because `wallet.js`
+deliberately never touches an `executing` run's reservation, those credits had
+no path back to the user. The guard now asks whether the step's *generation*
+is still non-terminal. Covered by both a unit test and the integration sweep
+case.
+
+### Carried forward
+
+- `tests/unit/agent-run-approved.test.mjs` and `tests/unit/agents-credits.test.mjs`
+  were deleted: every test in them exercised `executeAgentRun` /
+  `executeAgentRunStream` / `executeAgentStep`, the up-front-`debitWallet`
+  executors A1.7 removes. The invariants they protected are now asserted
+  against the durable path (see above). The one obsolete block in
+  `agent-model-selection.test.mjs` was removed in place; its other 22 tests
+  still run.
+- OPEN: the two-step integration case failed 2 of 10 runs in one batch
+  (`status` still `executing` after both webhooks) and has not reproduced in
+  ~40 subsequent runs, including under deliberate CPU load. No error is
+  logged on the failing path. Not root-caused — do not treat the durable
+  money path as fully proven until it is.
+
+### Known-red, not Phase A
+
+`template-seeds.int.test.mjs` (3) asserts "exactly twelve" seeds against the 16
+that are live (stale count, belongs to N1.2/N1.5) and needs a fully-seeded
+ModelPricing catalog; `model-catalog-categories.int.test.mjs` (2) needs the
+189-row production-shaped catalog seeded into the test DB (belongs to G1.5/R).
+`metrics.int.test.mjs` passes alone but can fail in-suite on leftover
+`GenerationJob` rows — cross-suite pollution, pre-existing.
+
+### Integration tests are runnable again
+
+They were dead in this working copy (no `TEST_DATABASE_URL` — all 24 suites
+errored at setup). `tests/integration/setup.mjs` now reads that one key out of
+`.env` when it is not exported, deliberately without dotenv so the production
+`DATABASE_URL` can never enter the process. Setup is documented in README.
+
+---
 
 # B. DAG EXECUTION + PARALLELISM
 
-- [ ] B1.1 `src/lib/dag.js` (worker-safe): `buildDag(steps)` (ids, dependsOn), `validateDag` (unknown deps, cycles), `readyNodes(steps)`, `progressFor(steps)` (done/total), `topoLayers`. Unit tests incl. diamond deps + cycle.
+- [x] B1.1 `src/lib/dag.js` (worker-safe): `buildDag(steps)` (ids, dependsOn), `validateDag` (unknown deps, cycles), `readyNodes(steps)`, `progressFor(steps)` (done/total), `topoLayers`. Unit tests incl. diamond deps + cycle.
 - [ ] B1.2 Agent planner (`planTask` + `buildHeuristicPlan`) emits independent root steps without artificial ordering deps; storyboard dependents declare `${storyboard}`; scene stills depend only on storyboard; video clips depend on their still (continuity) — parallelism emerges from the DAG, not hardcoded sequence.
 - [ ] B1.3 Template runner parallelism: `advanceTemplateRun` enqueues ALL ready steps (dependsOn from graph) up to cap 3 instead of strictly-one-running; `$stepN.output` resolution per completed dep only. Existing sequential templates keep working (chains are 1-wide DAGs). Integration test: 2 independent steps run concurrently (both jobs queued after run start).
 - [ ] B1.4 Concurrency limits: `claimNextJob` SQL extended — per-user cap (`USER_JOB_CONCURRENCY`, default 4) and per-provider cap (`PROVIDER_JOB_CONCURRENCY`, default 8) via running-count subselects; env-tunable; unit/integration test with caps=1 proving serialization.

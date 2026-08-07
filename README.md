@@ -95,10 +95,35 @@ provider diagnostics, media cleanup, etc.) — run those directly with
 ```bash
 npm test          # vitest run — unit tests in tests/unit/**/*.test.{js,mjs,ts}
 npm run test:watch
+npm run test:integration   # tests/integration/**/*.int.test.mjs — needs a local Postgres
 ```
 
 Tests run against the `@` path alias (`src/`) with `environment: "node"` — see
 `vitest.config.mjs`. Add new tests under `tests/unit/`.
+
+### Integration tests
+
+Integration tests talk to a real database and refuse to run against anything
+that is not `localhost`/`127.0.0.1` (see `tests/integration/setup.mjs`) — the
+`.env` `DATABASE_URL` points at production and must never be reachable from
+them. Set `TEST_DATABASE_URL` in `.env` to a disposable local Postgres:
+
+```bash
+docker run -d --name helmies-test-pg -p 55432:5432 \
+  -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test postgres:16
+
+# .env
+TEST_DATABASE_URL="postgresql://postgres:test@127.0.0.1:55432/test"
+```
+
+Apply the migration history to it once (and after every new migration):
+
+```bash
+DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy
+```
+
+Each suite truncates the database in `beforeEach`, so never point this at a
+database whose contents you care about.
 
 ## Database & migrations
 
