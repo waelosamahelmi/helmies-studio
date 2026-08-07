@@ -27,6 +27,7 @@ export const GO_KEYS = {
   k: "marketing",    // "m" is taken by music
   w: "workflows",
   b: "brands",
+  c: "cast",         // Cast
   r: "memory",       // Projects
   l: "assets",       // Library
 };

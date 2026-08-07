@@ -3146,3 +3146,63 @@ select.st-layer__role option {
 @media (max-width: 640px) {
   .st-where { display: none; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   IDENTITY SHEET — the Cast studio's spine
+   ──────────────────────────────────────────────────────────────────────────
+   A row of angle slots, filled or empty. This mirrors what
+   selectEntityReferences actually does (it picks a reference BY ANGLE), so
+   the gaps a user sees here are the real gaps the renderer will hit.
+   ══════════════════════════════════════════════════════════════════════════ */
+.st-angles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--s-3);
+}
+@media (max-width: 640px) {
+  .st-angles { grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: var(--s-2); }
+}
+
+.st-angle { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+
+.st-angle__frame {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line-strong);
+  background: var(--ink-200);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.st-angle__frame.is-filled {
+  border-style: solid;
+  border-color: var(--line);
+  background: var(--ink-300);
+}
+.st-angle__frame > img { width: 100%; height: 100%; object-fit: cover; }
+
+/* The empty slot reads as an invitation, not an error — a missing angle is
+   the normal starting state, not a fault. */
+.st-angle__gap {
+  font-family: var(--ff-mono);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--tx-ghost);
+}
+
+.st-angle__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tx-body);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-angle__state {
+  font-family: var(--ff-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tx-ghost);
+}

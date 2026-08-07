@@ -200,6 +200,57 @@ export function normalizeReferences(kind, input, errors = []) {
   return out;
 }
 
+// ── Identity pack ─────────────────────────────────────────────────────────
+// The angles a character has to be seen from before a production can hold
+// them steady. This is not an arbitrary list: it is exactly what
+// selectEntityReferences reaches for — a dialogue close-up wants face_front,
+// a wide wants full_body — so an entity missing these angles will silently
+// fall back to whatever it does have, and the face starts drifting.
+//
+// The prompts deliberately describe a reference photograph rather than a
+// picture: flat even light and a plain background give the video models a
+// clean read of the face instead of baking a mood into the identity.
+export const IDENTITY_PACK = [
+  {
+    kind: "face_front",
+    label: "Front",
+    hint: "Straight on. The anchor every other angle is judged against.",
+    prompt: "Reference photograph, head and shoulders, facing the camera straight on, neutral expression, eyes to lens, flat even lighting, plain mid-grey background, sharp focus, no stylisation.",
+  },
+  {
+    kind: "face_34",
+    label: "Three-quarter",
+    hint: "Turned about 45°. What most dialogue coverage actually sits at.",
+    prompt: "Reference photograph, head and shoulders, face turned forty-five degrees from camera, neutral expression, flat even lighting, plain mid-grey background, sharp focus, no stylisation.",
+  },
+  {
+    kind: "face_side",
+    label: "Profile",
+    hint: "Full profile. Fixes the nose and jaw the other angles guess at.",
+    prompt: "Reference photograph, head and shoulders, full side profile, neutral expression, flat even lighting, plain mid-grey background, sharp focus, no stylisation.",
+  },
+  {
+    kind: "full_body",
+    label: "Full body",
+    hint: "Head to feet. Used by every wide and every walking shot.",
+    prompt: "Reference photograph, full body head to feet, standing straight, arms relaxed at sides, facing camera, flat even lighting, plain mid-grey background, sharp focus, no stylisation.",
+  },
+  {
+    kind: "half_body",
+    label: "Waist up",
+    hint: "The framing most medium shots land on.",
+    prompt: "Reference photograph, waist up, standing, facing camera, neutral expression, flat even lighting, plain mid-grey background, sharp focus, no stylisation.",
+  },
+];
+
+// Which pack angles this entity is still missing. A reference the user
+// uploaded themselves counts — we never regenerate an angle they already
+// gave us.
+export function missingPackAngles(entity) {
+  const have = new Set((entity?.references || []).map((r) => r.kind));
+  return IDENTITY_PACK.filter((a) => !have.has(a.kind));
+}
+
 // ── Prompt composition ────────────────────────────────────────────────────
 // The block is deliberately terse and comma-joined: image/video models
 // weight a dense descriptor far better than prose paragraphs, and every

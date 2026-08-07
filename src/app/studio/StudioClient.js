@@ -23,6 +23,7 @@ import MarketingStudio from "@/components/studio/MarketingStudio";
 import WorkflowStudio from "@/components/studio/WorkflowStudio";
 import BrandKitStudio from "@/components/studio/BrandKitStudio";
 import MemoryStudio from "@/components/studio/MemoryStudio";
+import CharacterStudio from "@/components/studio/CharacterStudio";
 import AssetLibraryStudio from "@/components/studio/AssetLibraryStudio";
 
 /* S1: the 20-tool map consolidated into mode-switching studios. The retired
@@ -41,6 +42,7 @@ const TOOL_COMPONENTS = {
   marketing: MarketingStudio,
   workflows: WorkflowStudio,
   brands: BrandKitStudio,
+  cast: CharacterStudio,
   memory: MemoryStudio,
   assets: AssetLibraryStudio,
 };

@@ -86,6 +86,9 @@ const TOOLS = {
   brands: {
     title: "Brand Kits", description: "Manage visual identity, voice, references, and creative guardrails.", keywords: ["AI brand kit", "brand identity", "creative guardrails"],
   },
+  cast: {
+    title: "Cast", description: "Define a character once — their face from every angle, their voice, what they wear — and every shot renders the same person.", keywords: ["character consistency", "AI character", "reference images", "identity sheet"],
+  },
   memory: {
     title: "Creative Projects", description: "Organize reusable characters, styles, assets, and project memory.", keywords: ["creative projects", "AI memory", "character consistency"],
   },
