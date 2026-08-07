@@ -636,7 +636,6 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
     <Workspace controls={controls} inspector={inspector} inspectorLabel="Model">
       <div className="st-work__stage">
         <Stage
-          prompt={prompt}
           generating={generating}
           result={result}
           error={error}
