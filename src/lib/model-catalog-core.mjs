@@ -1329,6 +1329,21 @@ const QWEN_SCHEMAS = {
     negative_prompt: mkStr(),
     seed: mkNum(),
   } },
+  // The Pro edit row. Same shape as the standard edit above, but the docs
+  // give it an 800-character prompt ceiling, an explicit png|jpeg enum
+  // instead of a free string, and no documented cap on how many images it
+  // takes.
+  "qwen3-pro-image-to-image": { replace: true, fields: {
+    prompt: mkStr({ required: true, maxLength: 800 }),
+    image_urls: mkArr({ required: true, minItems: 1 }),
+    resolution: mkEnum(RES_1K2K, { default: "1K" }),
+    image_size: mkEnum(QWEN_RATIO_SIZES, { default: "16:9" }),
+    output_format: mkEnum(["png", "jpeg"], { default: "png" }),
+    prompt_extend: mkBool({ default: true }),
+    negative_prompt: mkStr({ maxLength: 5000 }),
+    seed: mkNum({ minimum: 0, maximum: 2147483647 }),
+    nsfw_checker: mkBool({ default: true }),
+  } },
 };
 
 const Z_IMAGE_SCHEMAS = {
@@ -1713,6 +1728,28 @@ const SEEDANCE_SCHEMAS = {
   "bytedance-seedance-2-mini": { replace: true, fields: {
     ...SEEDANCE_2_BASE_FIELDS,
     resolution: mkEnum(["480p", "720p"]),
+  } },
+  // Seedance 2.5 does NOT extend the 2.x base: it drops first_frame_url and
+  // last_frame_url entirely (a `frame_key` handle replaces them) and caps
+  // resolution at 720p, so it cannot do the first/last-frame chaining the
+  // 2.0 row is used for. In exchange it takes a 30k-character prompt, runs
+  // to 30 seconds, and addresses individual references from inside the
+  // prompt (@Image1, @Image2) — which is how you put two versions of the
+  // same face in one frame and say which is which.
+  "bytedance-seedance-2-5": { replace: true, fields: {
+    prompt: mkStr({ maxLength: 30000 }),
+    frame_key: mkStr(),
+    reference_image_urls: mkArr(),
+    reference_video_urls: mkArr(),
+    reference_audio_urls: mkArr(),
+    generate_audio: mkBool({ default: true }),
+    return_last_frame: mkBool(),
+    resolution: mkEnum(["480p", "720p"], { default: "720p" }),
+    aspect_ratio: mkEnum(["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "adaptive"], { default: "adaptive" }),
+    duration: mkNum({ minimum: -1, maximum: 30, default: 5 }),
+    output_format: mkEnum(["mp4", "mov"], { default: "mp4" }),
+    web_search: mkBool({ default: false }),
+    nsfw_checker: mkBool({ default: true }),
   } },
   // Real model field uses a DOT: `bytedance/seedance-1.5-pro`.
   "bytedance-seedance-1.5-pro": { replace: true, fields: {

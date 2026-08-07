@@ -90,6 +90,13 @@ const KIE_PRICING_OVERRIDES = {
   "seedance-2": 0.57,
   "seedance-2-fast": 0.50,
   "seedance-2-mini": 0.60,
+  // UNCONFIRMED — carried over from 2.0 because KIE's 2.5 doc page states no
+  // price. Explicit rather than left to getPricing's prefix match, which
+  // would land on the same number by accident. Left at the 2.0 rate on
+  // purpose: falling through to the 0.30 text-to-video default would bill
+  // barely half of what a 2.x video actually costs us. Confirm against
+  // kie.ai/pricing and correct this line.
+  "seedance-2-5": 0.57,
   "seedance-1-5-pro": 0.26,
   "seedance-2.0-i2v": 0.57,
   "wan-2-6-text-to-video": 0.50,
