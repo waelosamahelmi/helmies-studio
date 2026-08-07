@@ -12,7 +12,7 @@ import {
 } from "@/components/studio/kit";
 import {
   ATTRIBUTE_KEYS, REFERENCE_KINDS,
-  IDENTITY_PACK, missingPackAngles, imageReferenceSlot,
+  IDENTITY_PACK, missingPackAngles, imageReferenceSlot, isStillImageModel,
 } from "@/lib/entity-core.mjs";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -643,13 +643,15 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
   const sources = (entity.references || []).filter((r) => r.kind === "source");
   const hasSource = sources.length > 0;
 
-  /* A model that cannot take a reference image would invent a new face on
-     every angle, which is the opposite of what this sheet is for. The test is
-     imageReferenceSlot — the SAME function the server uses to decide where
-     references go — so the list offered here can never include a model whose
-     references the server would then have nowhere to put. */
+  /* Two tests, both read from the model's own parameters rather than its
+     metadata. imageReferenceSlot is the SAME function the server uses to
+     decide where references go, so this list can never offer a model whose
+     references the server would have nowhere to put. isStillImageModel then
+     drops anything that makes time instead of a frame — the catalog has live
+     video rows stored as capability "text-to-image", so without it this
+     picker offered Veo 3 for generating somebody's face. */
   const referenceModels = useMemo(
-    () => (models || []).filter((m) => imageReferenceSlot(m.schema)),
+    () => (models || []).filter((m) => imageReferenceSlot(m.schema) && isStillImageModel(m.schema)),
     [models]
   );
 

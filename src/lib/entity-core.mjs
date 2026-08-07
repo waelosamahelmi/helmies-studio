@@ -404,6 +404,28 @@ export function voiceReferenceSlot(schema) {
   return pickField(schema, VOICE_REFERENCE_FIELDS);
 }
 
+// Does this model produce a STILL, judged by its own parameters?
+//
+// The catalog's capability/modelType columns cannot be trusted for this.
+// Three live rows — generate-veo-3-video, generate-ai-video,
+// generate-aleph-video — are stored as capability "text-to-image",
+// modelType "image", outputModalities ["image"], and are plainly video
+// generators: they carry `duration`, `video_url`, and one of them is named
+// "Generate Veo 3 Video". Filtering on those columns offered Veo 3 as a
+// choice for making a character's face.
+//
+// A model's parameters do not lie the way its metadata does: anything that
+// takes a duration, or names a video anywhere in its inputs, produces time,
+// not a frame.
+export function isStillImageModel(schema) {
+  const fields = schema?.fields;
+  if (!fields || typeof fields !== "object") return false;
+  for (const name of Object.keys(fields)) {
+    if (name === "duration" || /video/i.test(name)) return false;
+  }
+  return true;
+}
+
 // applyEntityReferences(params, schema, urls) — writes `urls` into the right
 // field WITHOUT clobbering what the caller already set there. A shot that
 // already carries a first frame or a user-chosen image keeps it; entity

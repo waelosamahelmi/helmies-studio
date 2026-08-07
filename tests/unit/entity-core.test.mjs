@@ -11,6 +11,7 @@ import {
   isAllowedReferenceUrl,
   IDENTITY_PACK,
   missingPackAngles,
+  isStillImageModel,
 } from "@/lib/entity-core.mjs";
 
 const ref = (over = {}) => ({
@@ -250,5 +251,52 @@ describe("source photographs and the identity pack", () => {
     const out = normalizeReferences("character", [{ url: "https://cdn.example/a.jpg", kind: "source" }], errors);
     expect(errors).toEqual([]);
     expect(out[0].kind).toBe("source");
+  });
+});
+
+describe("isStillImageModel", () => {
+  // These three schemas are copied from live catalog rows that are stored as
+  // capability "text-to-image", modelType "image", outputModalities
+  // ["image"] — and are video generators. Filtering on the catalog's own
+  // columns offered Veo 3 as a way to make a character's face.
+  const MISFILED_AS_IMAGE = {
+    "generate-veo-3-video": { fields: { prompt: {}, duration: {}, watermark: {}, image_urls: {}, model_tier: {}, resolution: {}, aspect_ratio: {} } },
+    "generate-ai-video": { fields: { prompt: {}, quality: {}, duration: {}, image_url: {}, watermark: {}, aspect_ratio: {} } },
+    "generate-aleph-video": { fields: { seed: {}, prompt: {}, video_url: {}, watermark: {}, aspect_ratio: {}, reference_image: {} } },
+  };
+
+  const REAL_IMAGE_EDITORS = {
+    "nano-banana-2": { fields: { prompt: {}, resolution: {}, image_input: {}, aspect_ratio: {}, output_format: {} } },
+    "google/nano-banana-edit": { fields: { prompt: {}, image_urls: {}, aspect_ratio: {}, output_format: {} } },
+    "seedream/4.5-edit": { fields: { prompt: {}, image_urls: {}, aspect_ratio: {} } },
+    "qwen3/pro-image-to-image": { fields: { prompt: {}, image_urls: {}, resolution: {}, image_size: {}, seed: {} } },
+  };
+
+  it("rejects a video model however the catalog has it filed", () => {
+    for (const [id, schema] of Object.entries(MISFILED_AS_IMAGE)) {
+      expect(isStillImageModel(schema), `${id} should be rejected`).toBe(false);
+    }
+  });
+
+  it("keeps the real image editors", () => {
+    for (const [id, schema] of Object.entries(REAL_IMAGE_EDITORS)) {
+      expect(isStillImageModel(schema), `${id} should be kept`).toBe(true);
+    }
+  });
+
+  it("rejects anything carrying a duration or naming a video input", () => {
+    expect(isStillImageModel({ fields: { prompt: {}, duration: {} } })).toBe(false);
+    expect(isStillImageModel({ fields: { prompt: {}, reference_video_urls: {} } })).toBe(false);
+    expect(isStillImageModel({ fields: { prompt: {}, video_url: {} } })).toBe(false);
+    expect(isStillImageModel(null)).toBe(false);
+    expect(isStillImageModel({})).toBe(false);
+  });
+
+  it("combined with imageReferenceSlot, leaves exactly the models that can hold a face", () => {
+    const all = { ...MISFILED_AS_IMAGE, ...REAL_IMAGE_EDITORS, "flux-2/pro-text-to-image": { fields: { prompt: {}, resolution: {} } } };
+    const offered = Object.entries(all)
+      .filter(([, schema]) => imageReferenceSlot(schema) && isStillImageModel(schema))
+      .map(([id]) => id);
+    expect(offered.sort()).toEqual(Object.keys(REAL_IMAGE_EDITORS).sort());
   });
 });
