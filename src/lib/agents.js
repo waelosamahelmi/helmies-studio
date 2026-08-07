@@ -11,6 +11,11 @@ import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { assembleVideos } from "@/lib/video-assembly";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind, requiresMediaInput } from "@/lib/model-catalog-core.mjs";
+import {
+  defaultRunnableModelForKind,
+  pickSubstituteModel as pickSharedSubstituteModel,
+  getFallbackCandidates,
+} from "@/lib/runnable-models";
 import { isVoiceoverInstruction } from "@/lib/voiceover-guard";
 import { chainStepIfNeeded } from "@/lib/video-chain";
 import { log } from "@/lib/log";
@@ -632,23 +637,11 @@ export async function planTask(userMessage, context = {}) {
 // against a mocked catalog, the same rationale scripts/fix-model-
 // categories.mjs's planFixes and this file's own executeStep/
 // executeStepWithRetry already use — see tests/unit/agent-model-selection.test.mjs.
+// Delegates to the unified worker-safe resolver (src/lib/runnable-models.js)
+// — kept as a named export because the heuristic planner AND
+// tests/unit/agent-model-selection.test.mjs import it from here.
 export async function defaultRunnableModel(agentKind, { wantsVoice = false } = {}) {
-  try {
-    if (agentKind === "audio") {
-      const rows = await getRunnableModelsForType("audio", { limit: 50 });
-      const preferredKind = wantsVoice ? "tts" : "music";
-      const fallbackKind = wantsVoice ? "music" : "tts";
-      const generator =
-        rows.find((row) => audioKind(row) === preferredKind) ||
-        rows.find((row) => audioKind(row) === fallbackKind) ||
-        rows[0];
-      if (generator) return runnableProviderModelId(generator);
-    } else {
-      const [row] = await getRunnableModelsForType(agentKind, { limit: 1 });
-      if (row) return runnableProviderModelId(row);
-    }
-  } catch { /* fall through to the last-resort id below */ }
-  return LAST_RESORT_FALLBACKS[agentKind]?.[0] || agentKind;
+  return defaultRunnableModelForKind(agentKind, { wantsVoice });
 }
 
 // ── Heuristic plan when no LLM available (or the LLM planner failed) ──────
@@ -1173,11 +1166,10 @@ const CATALOG_MODEL_KINDS = new Set(["image", "video", "audio"]);
 // AgentRun checks before code ever reaches this point, so this only fires
 // when the catalog itself is empty of runnable rows, not when the DB is
 // merely slow/unreachable.
-const LAST_RESORT_FALLBACKS = {
-  image: ["google/nano-banana-2-lite", "qwen-image-max"],
-  video: ["wan2.6-t2v"],
-  audio: ["suno-v4.5"],
-};
+// LAST_RESORT_FALLBACKS, verifyLastResortIds and the substitution/fallback
+// pool logic now live in src/lib/runnable-models.js (Phase 0.2) so the
+// worker-side runners use the exact same rules; thin wrappers below keep
+// this module's internal call sites unchanged.
 
 // Steps whose output is a media URL worth logging as a Generation record
 // (website/coding return code/text, not a media URL). A9: the workflow-kind
@@ -1187,53 +1179,11 @@ const LAST_RESORT_FALLBACKS = {
 const MEDIA_AGENT_KEYS = new Set(["image", "video", "audio", "marketing", "i2v", "upscale", "music", "voiceover"]);
 const isMediaAgent = (agent) => MEDIA_AGENT_KEYS.has(normalizeAgentKey(agent));
 
-// Confirms a LAST_RESORT_FALLBACKS id is STILL actually runnable in this
-// environment's live catalog before ever treating it as a candidate.
-// Without this, an id that has itself gone stale (or was never present in
-// a given environment's catalog at all) would slip through anyway:
-// estimateCredits' generic per-tool default (pricing-engine.js's
-// getFallbackCost) happily returns SOME number for ANY model string, real
-// or not, so a naive "try to quote it" check can never fail — the exact
-// gap this whole fix closes for the PLANNED model must not be reopened for
-// the last-resort list.
-async function verifyLastResortIds(ids) {
-  const verified = [];
-  for (const id of ids) {
-    const row = await resolveRunnableModel(id).catch(() => null);
-    if (row) verified.push(id);
-  }
-  return verified;
-}
-
-// Picks a single runnable replacement for `excludeModel`, cheapest first —
-// the live catalog first, LAST_RESORT_FALLBACKS only if that comes back
-// empty (and only ids verifyLastResortIds confirms are still actually
-// runnable). Re-quotes every candidate against `params` and skips anything
-// that can't be quoted at all or that would exceed `ceiling` (the caller's
-// budget — see executeAgentStep and executeStepWithRetry below for what
-// "ceiling" means in each context). Returns `{ model, credits }` or null if
-// nothing runnable/affordable exists.
+// Thin wrapper over runnable-models.js pickSubstituteModel, injecting this
+// app's server-side quoter (pricing-engine uses "@/" aliases, so the shared
+// module takes the estimate function as a parameter to stay worker-safe).
 async function pickSubstituteModel(agentKind, excludeModel, params, ceiling) {
-  const tryIds = async (ids) => {
-    for (const subId of ids) {
-      if (!subId || subId === excludeModel) continue;
-      let credits;
-      try {
-        credits = await estimateCredits(agentKind, subId, { ...params, model: subId, endpoint: subId });
-      } catch {
-        continue;
-      }
-      if (typeof ceiling === "number" && credits > ceiling) continue;
-      return { model: subId, credits };
-    }
-    return null;
-  };
-
-  const liveCandidates = await getRunnableModelsForType(agentKind, { excludeModelIds: [excludeModel], limit: 5 }).catch(() => []);
-  const found = await tryIds(liveCandidates.map(runnableProviderModelId));
-  if (found) return found;
-  const lastResort = await verifyLastResortIds((LAST_RESORT_FALLBACKS[agentKind] || []).filter((id) => id !== excludeModel));
-  return tryIds(lastResort);
+  return pickSharedSubstituteModel({ agentKind, excludeModel, params, ceiling, estimateFn: estimateCredits });
 }
 
 // Additional retry-chain candidates (beyond the primary slot) for a step —
@@ -1245,12 +1195,7 @@ async function pickSubstituteModel(agentKind, excludeModel, params, ceiling) {
 // only when the live lookup returns nothing, and only ids
 // verifyLastResortIds confirms are still actually runnable.
 async function getFallbackModels(agentKind, excludeModelIds = [], limit = 2) {
-  if (!CATALOG_MODEL_KINDS.has(agentKind)) return [];
-  const rows = await getRunnableModelsForType(agentKind, { excludeModelIds, limit }).catch(() => []);
-  const ids = rows.map(runnableProviderModelId).filter(Boolean);
-  if (ids.length) return ids;
-  const lastResort = (LAST_RESORT_FALLBACKS[agentKind] || []).filter((id) => !excludeModelIds.includes(id));
-  return verifyLastResortIds(lastResort);
+  return getFallbackCandidates(agentKind, excludeModelIds, limit);
 }
 
 // ── Retry with fallback model + provider (budget-aware, EDITSv1 E3.2) ──

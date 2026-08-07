@@ -37,6 +37,7 @@ model User {
   purchases     TemplatePurchase[]
   agentSessions AgentSession[]
   voiceProfiles VoiceProfile[]
+  studioEntities StudioEntity[]
 
   announcementDismissals AnnouncementDismissal[]
   promoRedemptions       PromoRedemption[]
@@ -116,6 +117,8 @@ model Generation {
   createdAt      DateTime @default(now())
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, status])
+  @@index([userId, tool, status])
   @@schema("public")
 }
 
@@ -166,21 +169,75 @@ model CreditTransaction {
 
 // ── AI Agents ──
 model AgentRun {
-  id               String   @id @default(cuid())
+  id               String         @id @default(cuid())
   userId           String
   agentType        String
-  task             String   @db.Text
-  status           String   @default("pending")
-  creditsEstimated Int      @default(0)
-  creditsUsed      Int      @default(0)
+  task             String         @db.Text
+  status           String         @default("pending")
+  creditsEstimated Int            @default(0)
+  creditsUsed      Int            @default(0)
   steps            Json?
   result           Json?
-  error            String?  @db.Text
+  error            String?        @db.Text
   sessionId        String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // ── Durable agent runs (Phase A) ──
+  // cancelRequested: cooperative cancel — advanceAgentRun stops enqueueing
+  // new work and releases the unexecuted remainder of the reservation.
+  // maxCredits: hard server-side ceiling (defaults to the approved quote).
+  // tier: budget tier used for model selection (best|balanced|cheapest|custom).
+  // qcMode: off|smart — smart enables vision QC retries inside the ceiling.
+  // engine: "durable" for queue-backed runs (legacy in-request runs predate it).
+  cancelRequested  Boolean        @default(false)
+  maxCredits       Int?
+  tier             String?
+  qcMode           String         @default("off")
+  engine           String         @default("durable")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runSteps         AgentRunStep[]
 
+  @@index([userId, status])
+  @@schema("public")
+}
+
+// ── Durable agent run steps (Phase A) ──
+// One row per plan step of a durable AgentRun. Steps form a DAG via
+// dependsOn (plan-local stepIds, derived from $STEP_N_OUTPUT / ${storyboard}
+// token references). kind "media" steps execute through GenerationJob
+// (payload.agentRunId); kind "internal" steps (storyboard|assembly|export|llm)
+// run inside the worker via agent-runner.executeInternalStep. Money lives on
+// the run-level CreditReservation keyed by runId — steps never settle
+// individually; creditsActual is informational per-step attribution.
+model AgentRunStep {
+  id            String    @id @default(cuid())
+  runId         String
+  stepIndex     Int
+  stepId        String
+  agent         String
+  task          String    @db.Text
+  params        Json?
+  dependsOn     Json      @default("[]") // string[] of stepIds
+  kind          String    @default("media") // media|internal
+  status        String    @default("pending") // pending|queued|running|succeeded|failed|skipped
+  attempts      Int       @default(0)
+  generationId  String?
+  output        Json?
+  outputUrl     String?   @db.Text
+  creditsQuoted Int       @default(0)
+  creditsActual Int?
+  modelPlanned  String?
+  modelUsed     String?
+  substitution  String?
+  error         String?   @db.Text
+  startedAt     DateTime?
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  run           AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, stepId])
+  @@index([runId, status])
   @@schema("public")
 }
 
@@ -197,12 +254,15 @@ model AgentSession {
   title     String         @default("New session")
   status    String         @default("active") // active|archived
   settings  Json? // { imageModel, videoModel, audioModel, quality, aspect, autoComplete }
+  projectId String?
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
   messages  AgentMessage[]
 
   @@index([userId, updatedAt])
+  @@index([projectId])
   @@schema("public")
 }
 
@@ -251,11 +311,14 @@ model Workflow {
   status      String        @default("draft")
   isTemplate  Boolean       @default(false)
   isPublic    Boolean       @default(false)
+  projectId   String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
   runs        WorkflowRun[]
 
+  @@index([projectId])
   @@schema("public")
 }
 
@@ -285,6 +348,38 @@ model ProjectMemory {
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, type])
+  @@schema("public")
+}
+
+// ── Studio Entities (Phase C) ──
+// First-class reusable creative identities: characters, products and
+// environments. `attributes` holds the structured identity fields (kind-
+// specific key set, validated in src/lib/entities.js); `references` is a
+// JSON array of { id, url, kind, label, locked, source, createdAt } images.
+// status: draft → ready → locked (locked = attributes immutable, D1.5).
+// `fingerprint` is a deterministic digest of the attributes at generation
+// time so later edits never silently rewrite history.
+model StudioEntity {
+  id          String   @id @default(cuid())
+  userId      String
+  kind        String // character|product|environment
+  name        String
+  description String?  @db.Text
+  attributes  Json     @default("{}")
+  references  Json     @default("[]")
+  voiceId     String?
+  voiceName   String?
+  status      String   @default("draft") // draft|ready|locked
+  fingerprint String?
+  projectId   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, kind])
+  @@index([projectId])
   @@schema("public")
 }
 
@@ -434,9 +529,18 @@ model DirectorPipeline {
   assembledUrl      String?  @db.Text
   assemblyMetadata  Json?
   rerunHistory      Json?
+  // ── Durable director runs (Phase H) ──
+  // cancelRequested: cooperative cancel handled by advanceDirectorPipeline.
+  // concurrency: max in-flight provider jobs for this pipeline (1-5).
+  cancelRequested   Boolean  @default(false)
+  concurrency       Int      @default(3)
+  projectId         String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  project           Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
+  @@index([projectId])
   @@schema("public")
 }
 
@@ -455,6 +559,7 @@ model DirectorShot {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@index([pipelineId])
   @@schema("public")
 }
 
@@ -546,15 +651,19 @@ model Asset {
   parentAssetId    String?
   metadata         Json?
   analysis         Json?
-  isFavorite       Boolean         @default(false)
-  isDeleted        Boolean         @default(false)
+  isFavorite       Boolean          @default(false)
+  isDeleted        Boolean          @default(false)
+  projectId        String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project          Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
   brandAssets      BrandAsset[]
   relations        AssetRelation[] @relation("assetFrom")
   inverseRelations AssetRelation[] @relation("assetTo")
 
+  @@index([userId, isDeleted, type])
+  @@index([projectId])
   @@schema("public")
 }
 
@@ -777,15 +886,23 @@ model ProviderIncident {
 
 // ── Projects ──
 model Project {
-  id          String   @id @default(cuid())
+  id          String           @id @default(cuid())
   userId      String
   name        String
   description String?
+  brief       String?          @db.Text
+  status      String           @default("active") // active|archived
   data        Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assets      Asset[]
+  pipelines   DirectorPipeline[]
+  sessions    AgentSession[]
+  workflows   Workflow[]
+  entities    StudioEntity[]
 
+  @@index([userId, updatedAt])
   @@schema("public")
 }
 
@@ -881,6 +998,8 @@ model Template {
   isPublished     Boolean             @default(false)
   isFeatured      Boolean             @default(false)
   usageLimit      String              @default("unlimited") // "once", "unlimited"
+  // Null on official (seeded/admin) templates; set on user-saved templates (O1).
+  userId          String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   purchases       TemplatePurchase[]
@@ -888,6 +1007,7 @@ model Template {
 
   @@index([toolType, isPublished])
   @@index([category])
+  @@index([userId])
   @@schema("public")
 }
 

@@ -9,6 +9,7 @@ import {
   IcFlow, IcCheck,
 } from "@/components/studio/kit";
 import StoryboardCard from "@/components/studio/agent/StoryboardCard";
+import { agentDisplayName } from "@/lib/agent-names";
 
 /* ══════════════════════════════════════════════════════════════════════════
    PLAN APPROVAL — the one screen read before spending (EDITSv1 E3.4)
@@ -24,18 +25,7 @@ import StoryboardCard from "@/components/studio/agent/StoryboardCard";
 
 const pad = (n) => String(n).padStart(2, "0");
 
-const AGENT_NAMES = {
-  orchestrator: "Orchestrator", creative_director: "Creative director",
-  image_director: "Image director", video_director: "Video director",
-  brand_guardian: "Brand guardian", prompt_engineer: "Prompt engineer",
-  storyboard: "Storyboard", audio_agent: "Audio", vision_analyst: "Vision analyst",
-  quality_control: "Quality control", cost_optimizer: "Cost optimizer",
-  assembly: "Assembly", image: "Image", video: "Video", audio: "Audio",
-  website: "Website", marketing: "Marketing", coding: "Code",
-  i2v: "Animate", upscale: "Upscale", music: "Music", voiceover: "Voiceover",
-  export: "Deliverable",
-};
-const agentName = (a) => AGENT_NAMES[a] || String(a || "Step").replace(/_/g, " ");
+const agentName = agentDisplayName;
 
 const normalizeKind = (agent) => String(agent || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { clock, IcCheck, IcAlert } from "@/components/studio/kit";
+import { agentDisplayName as agentName } from "@/lib/agent-names";
 
 /* ══════════════════════════════════════════════════════════════════════════
    STEP PROGRESS — one plan step's live state (EDITSv1 E3.5)
@@ -11,16 +12,6 @@ import { clock, IcCheck, IcAlert } from "@/components/studio/kit";
    the review loop's /api/agent/step calls or the auto run's step events.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const AGENT_NAMES = {
-  orchestrator: "Orchestrator", creative_director: "Creative director",
-  image_director: "Image director", video_director: "Video director",
-  brand_guardian: "Brand guardian", prompt_engineer: "Prompt engineer",
-  storyboard: "Storyboard", audio_agent: "Audio", vision_analyst: "Vision analyst",
-  quality_control: "Quality control", cost_optimizer: "Cost optimizer",
-  assembly: "Assembly", image: "Image", video: "Video", audio: "Audio",
-  website: "Website", marketing: "Marketing", coding: "Code",
-};
-const agentName = (a) => AGENT_NAMES[a] || String(a || "Step").replace(/_/g, " ");
 const pad = (n) => String(n).padStart(2, "0");
 
 function useElapsed(active) {

@@ -32,35 +32,10 @@ const EXAMPLES = [
   "Compose a 15-second track for a product reel",
 ];
 
-const AGENT_NAMES = {
-  orchestrator: "Orchestrator",
-  creative_director: "Creative director",
-  image_director: "Image director",
-  video_director: "Video director",
-  brand_guardian: "Brand guardian",
-  prompt_engineer: "Prompt engineer",
-  storyboard: "Storyboard",
-  audio_agent: "Audio",
-  vision_analyst: "Vision analyst",
-  quality_control: "Quality control",
-  cost_optimizer: "Cost optimizer",
-  assembly: "Assembly",
-  image: "Image",
-  video: "Video",
-  audio: "Audio",
-  website: "Website",
-  marketing: "Marketing",
-  coding: "Code",
-  i2v: "Animate",
-  upscale: "Upscale",
-  music: "Music",
-  voiceover: "Voiceover",
-  export: "Deliverable",
-};
+import { agentDisplayName as agentName } from "@/lib/agent-names";
 
 const STATUS_WORD = { pending: "waiting", running: "running", done: "done", failed: "failed" };
 
-const agentName = (a) => AGENT_NAMES[a] || String(a || "Step").replace(/_/g, " ");
 const pad = (n) => String(n).padStart(2, "0");
 const isUrl = (s) => typeof s === "string" && /^(https?:\/\/|\/)/.test(s.trim());
 const isVideo = (u) => /\.(mp4|webm|mov|m4v)(\?|$)/i.test(u) || u.includes("/video/");
