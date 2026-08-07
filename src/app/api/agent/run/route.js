@@ -118,7 +118,9 @@ async function buildPlanIfNeeded(userId, message, context, sessionId) {
   // No approved plan → plan first (planning is free; the quote guard inside
   // startAgentRun still applies to the freshly computed estimate).
   const { planTask } = await import("@/lib/agents");
-  const planned = await planTask(userId, message, context);
+  // planTask(userMessage, context) — an extra leading argument here silently
+  // planned from the user's ID string instead of their brief.
+  const planned = await planTask(message, { ...context, userId });
   return {
     steps: planned.steps,
     summary: planned.summary || message,

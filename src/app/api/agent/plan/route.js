@@ -87,7 +87,8 @@ export async function POST(req) {
       return NextResponse.json({ success: true, ...result.plan });
     }
 
-    const plan = await planTask(message, context);
+    // userId lets the planner see the caller's cast (castHint).
+    const plan = await planTask(message, { ...context, userId: user.id });
     await persistPlanTurn(sessionId, message, plan);
     return NextResponse.json({ success: true, ...plan });
   } catch (e) {

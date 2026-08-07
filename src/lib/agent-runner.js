@@ -70,6 +70,7 @@ import { AGENTS, TOOL_AGENT_KEYS, GENERIC_PERSONA_PROMPT } from "./agent-registr
 import { assembleVideos } from "./video-assembly.js";
 import { chainStepIfNeeded } from "./video-chain.js";
 import { log } from "./log.js";
+import { injectEntities, purposeForStep } from "./entity-inject.js";
 
 // How many MEDIA jobs a single run may have in flight at once. Internal
 // (LLM/storyboard/export) steps are cheap and uncapped; assembly is rare.
@@ -292,13 +293,44 @@ async function enqueueStep(run, step, prevOutputs) {
     const endpoint = row?.endpoint || modelId || agentKey;
     const providerModelId = (row && runnableProviderModelId(row)) || modelId || agentKey;
 
+    // C1.9: a plan step naming entities gets their descriptor and their
+    // reference images, exactly as /api/generate/async does. Without this the
+    // agent was the ONE surface that ignored the cast — a step could carry
+    // entityIds and still render a stranger.
+    let finalPrompt = params.prompt || params.text || step.task || "";
+    let entityDigests = null;
+    const entityIds = Array.isArray(step.params?.entityIds) ? step.params.entityIds : [];
+    if (entityIds.length) {
+      try {
+        const injected = await injectEntities({
+          prisma,
+          userId: run.userId,
+          entityIds,
+          params,
+          schema: row?.inputSchema || null,
+          purpose: purposeForStep({ agent: agentKey, task: step.task, prompt: finalPrompt }),
+        });
+        Object.assign(params, injected.params);
+        entityDigests = injected.digests;
+        if (injected.promptPrefix) finalPrompt = `${injected.promptPrefix}
+
+${finalPrompt}`;
+      } catch (err) {
+        // A missing cast must never sink the shot — it renders without the
+        // reference and the run continues.
+        log.warn("agent_entity_inject_failed", { runId: run.id, stepId: step.stepId, err: err?.message });
+      }
+    }
+
     const generation = await prisma.generation.create({
       data: {
         userId: run.userId,
         tool: agentKey,
         model: modelId || agentKey,
-        prompt: params.prompt || params.text || step.task || "",
-        params: persistableParams(params),
+        prompt: finalPrompt,
+        params: entityDigests
+          ? { ...persistableParams(params), entityIds, entityDigest: entityDigests }
+          : persistableParams(params),
         status: "processing",
         creditsUsed: 0,
       },
@@ -309,6 +341,7 @@ async function enqueueStep(run, step, prevOutputs) {
       idempotencyKey: `agent-run-${run.id}-${step.stepId}`,
       payload: {
         ...persistableParams(params),
+        prompt: finalPrompt,
         model: providerModelId,
         endpoint,
         callBackUrl: DEFAULT_WEBHOOK_URL(),

@@ -137,6 +137,30 @@ const MODEL_MENTION_RE = /([a-z][a-z0-9.\-]*?)(?:\s*(?:v\.?)?(\d+(?:\.\d+)*))/gi
 // named part); only-contains 0 (too loose to pin — e.g. "seedance 2"
 // contains-matches the -fast variant too). Returns the top-ranked rows.
 // Exported for unit tests (same rationale as defaultRunnableModel).
+// "@Wael" resolves against the cast before it is ever treated as a model
+// name. Returns the entity ids a message names, so the plan can carry them.
+export async function resolveMentionedEntities(userId, text) {
+  if (!userId || typeof text !== "string" || !text.includes("@")) return [];
+  const fragments = [...text.matchAll(/@([\p{L}\p{N}_-]{2,40})/gu)].map((m) => m[1].toLowerCase());
+  if (!fragments.length) return [];
+  try {
+    const rows = await prisma.studioEntity.findMany({
+      where: { userId },
+      select: { id: true, name: true, kind: true },
+      take: 100,
+    });
+    const hits = [];
+    for (const row of rows) {
+      const name = String(row.name || "").toLowerCase().replace(/\s+/g, "");
+      if (!name) continue;
+      if (fragments.some((f) => f === name || name.startsWith(f) || f.startsWith(name))) hits.push(row);
+    }
+    return hits;
+  } catch {
+    return [];
+  }
+}
+
 export async function resolveMentionRows(fragment, rows) {
   const f = normModelToken(fragment);
   if (f.length < 5) return [];
@@ -313,8 +337,38 @@ async function llmPlanOnce(messages) {
 // planner degradation must never again be invisible in production logs.
 // Returns the parsed plan JSON, or null when both attempts failed (the
 // caller then falls back to the heuristic and MARKS the plan as degraded).
+// C1.9 — the cast the user has already defined. A character here carries
+// reference photographs of a real face; naming its id on a step is what makes
+// that face come out, so the planner has to know the ids exist. Without this
+// it invented descriptions and every shot rendered a different stranger.
+async function castHint(context = {}) {
+  const userId = context?.userId;
+  if (!userId) return "";
+  try {
+    const rows = await prisma.studioEntity.findMany({
+      where: { userId, status: { in: ["ready", "locked"] } },
+      select: { id: true, kind: true, name: true, description: true },
+      orderBy: { updatedAt: "desc" },
+      take: 12,
+    });
+    if (!rows.length) return "";
+    const lines = rows.map((r) => `- ${r.id} · ${r.kind} · ${r.name}${r.description ? ` — ${r.description.slice(0, 100)}` : ""}`);
+    return [
+      "",
+      "",
+      "THE USER'S CAST — characters, products and places they have already defined, with reference images on file:",
+      lines.join("\n"),
+      "",
+      "When a step shows one of these, put its id in that step's params.entityIds (an array). Their appearance is then supplied from the real reference photographs — do NOT describe them in the prompt, and never invent a competing description, because a written description that disagrees with the reference is what makes a face drift. A step that shows nobody from this list omits entityIds entirely.",
+    ].join("\n");
+  } catch {
+    return "";
+  }
+}
+
 async function requestLlmPlan(userMessage, context = {}) {
-  const system = AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context) + (await runnableModelHint(context));
+  const system = AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context)
+    + (await runnableModelHint(context)) + (await castHint(context));
   const user = buildPlanUserContent(userMessage, context);
   try {
     return await llmPlanOnce([
