@@ -13,7 +13,11 @@ import { OBSERVABLE_ATTRIBUTES } from "./entity-core.mjs";
 import { publicBaseUrl } from "./provider-payload-core.mjs";
 import { log } from "./log.js";
 
-const VISION_MODEL = process.env.VISION_MODEL || "google/gemini-2.0-flash-001";
+// The SAME default visual-intelligence.js and llmComplete already use, and
+// the only one proven to answer on this account. Naming a model from memory
+// is how this shipped broken the first time: "google/gemini-2.0-flash-001"
+// came back 404 "No endpoints found".
+const VISION_MODEL = process.env.VISION_MODEL || "deepseek/deepseek-v4-flash";
 
 const FIELD_GUIDE = {
   ageAppearance: "how old they read on camera, e.g. 'early thirties'",
