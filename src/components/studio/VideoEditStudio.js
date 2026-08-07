@@ -363,6 +363,7 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
     <Workspace controls={controls} inspector={inspector} inspectorLabel="Model">
       <div className="st-work__stage">
         <Stage
+          prompt={prompt}
           generating={generating}
           result={result}
           error={error}
@@ -382,6 +383,7 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
 
       {recasting ? recastDock : (
         <Brief
+          tool="video"
           value={prompt}
           onChange={setPrompt}
           onSubmit={generate}

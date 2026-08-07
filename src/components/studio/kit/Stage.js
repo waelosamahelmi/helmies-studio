@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IcDownload, IcRefresh, IcCopy, IcCheck, IcExternal, IcClose } from "./Icons";
 import ErrorPanel from "./ErrorPanel";
+import SendTo from "./SendTo";
 
 /* ══════════════════════════════════════════════════════════════════════════
    STAGE — where the work is shown
@@ -113,6 +114,9 @@ export function Result({
   onNew,
   onDownload,
   actions = [],
+  /** The brief that produced this, carried along on a handoff so the next
+      tool starts with context instead of an empty form. */
+  prompt,
 }) {
   const [copied, setCopied] = useState(false);
   const url = mediaUrl(result);
@@ -171,6 +175,7 @@ export function Result({
           >
             <IcExternal className="hs-icon-sm" /> Open
           </a>
+          <SendTo url={url} result={result} prompt={prompt} />
           {actions.map((a) => (
             <button key={a.id} type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => a.run?.(url, result)}>
               {a.icon}
@@ -247,6 +252,7 @@ export default function Stage({
   onNew,
   onDownload,
   actions,
+  prompt,
   idle,
 }) {
   if (generating) {
@@ -256,7 +262,7 @@ export default function Stage({
     return <Fault error={error} onRetry={onRetry} onEditSettings={onEditSettings} />;
   }
   if (result) {
-    return <Result result={result} model={model} settings={settings} onNew={onNew} onDownload={onDownload} actions={actions} />;
+    return <Result result={result} model={model} settings={settings} onNew={onNew} onDownload={onDownload} actions={actions} prompt={prompt} />;
   }
   return idle || null;
 }

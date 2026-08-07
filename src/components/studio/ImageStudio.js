@@ -11,6 +11,8 @@ import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useStudioMode } from "./useStudioMode";
+import { useHandoff } from "./useHandoff";
+import { preferredRatio } from "@/lib/studio-prefs";
 import ModeBar from "./ModeBar";
 import CanvasStudio from "./CanvasStudio";
 import { matchesGroup } from "@/lib/capability-groups";
@@ -160,12 +162,26 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     if (templateConfig.aperture) setAperture(templateConfig.aperture);
   }, [templateConfig]);
 
+  /* An asset sent from another studio ("Send to → Edit"/"Upscale") arrives
+     as the reference, with the brief that made it, so the next render
+     starts from context rather than an empty form. */
+  const handoff = useHandoff();
+  useEffect(() => {
+    if (!handoff) return;
+    setReference({ url: handoff.url });
+    if (handoff.prompt) setPrompt(handoff.prompt);
+  }, [handoff]);
+
   const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
   const resolutions = model?.resolutions?.length ? model.resolutions : FALLBACK_RES;
 
-  /* Drop settings the chosen model does not offer */
+  /* Drop settings the chosen model does not offer. When the current ratio
+     has to go, fall back to the user's saved default before the model's
+     first option — that Settings preference had no read side until now. */
   useEffect(() => {
-    if (ratios.length && !ratios.includes(ratio)) setRatio(ratios[0]);
+    if (ratios.length && !ratios.includes(ratio)) {
+      setRatio(preferredRatio(ratios) || ratios[0]);
+    }
   }, [ratios, ratio]);
   useEffect(() => {
     const has = resolutions.some((r) => String(r).toLowerCase() === String(resolution).toLowerCase());
@@ -449,6 +465,7 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     <Workspace controls={controls} inspector={inspector} inspectorLabel="Model">
       <div className="st-work__stage">
         <Stage
+          prompt={prompt}
           generating={generating}
           result={result}
           error={error}
@@ -467,6 +484,7 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
       </div>
 
       <Brief
+        tool="image"
         value={prompt}
         onChange={setPrompt}
         onSubmit={generate}
@@ -620,6 +638,7 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
     <Workspace controls={controls} inspector={inspector} inspectorLabel="Model">
       <div className="st-work__stage">
         <Stage
+          prompt={prompt}
           generating={generating}
           result={result}
           error={error}

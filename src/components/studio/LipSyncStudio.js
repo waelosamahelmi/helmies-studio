@@ -11,6 +11,8 @@ import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { matchesGroup } from "@/lib/capability-groups";
+import { useHandoff } from "./useHandoff";
+import { mediaKind } from "@/lib/studio-handoff";
 
 /* ══════════════════════════════════════════════════════════════════════════
    LIP SYNC — two sources, on the .st-wave / .st-pair archetype
@@ -345,6 +347,15 @@ export default function LipSyncStudio({ initialModel, templateConfig, onCreditsC
     if (!templateConfig) return;
     if (templateConfig.model) setModelId(templateConfig.model);
   }, [templateConfig]);
+
+  /* An asset sent from another studio lands on the bench by what it IS:
+     a voice track becomes the audio, a face or a clip becomes the source. */
+  const handoff = useHandoff();
+  useEffect(() => {
+    if (!handoff) return;
+    if (mediaKind(handoff.url) === "audio") setVoice({ url: handoff.url });
+    else setFace({ url: handoff.url });
+  }, [handoff]);
 
   const kind = faceKind(model);
   const usesVideo = kind === "video" || (kind === "either" && pick === "video");

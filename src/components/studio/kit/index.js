@@ -8,6 +8,7 @@
 export { default as Shell } from "./Shell";
 export { default as Workspace } from "./Workspace";
 export { default as Brief } from "./Brief";
+export { default as History } from "./History";
 export { default as ModelPicker } from "./ModelPicker";
 
 export { default as Stage, Rendering, Result, Idle, Fault, Readout, mediaUrl, clock } from "./Stage";

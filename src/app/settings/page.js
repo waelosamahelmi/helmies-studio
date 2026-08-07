@@ -23,6 +23,7 @@ import {
 import { apiFetch } from "@/lib/client-fetch";
 import { CREDIT_PACKS } from "@/lib/credit-packs";
 import { PLAN_NAMES, SUBSCRIPTION_CREDITS } from "@/lib/plan-constants";
+import { PREFS_KEY } from "@/lib/studio-prefs";
 import EmptyState from "@/components/states/EmptyState";
 import LoadingSkeleton from "@/components/states/LoadingSkeleton";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -52,32 +53,30 @@ const PLANS = [
   {
     id: "free", name: PLAN_NAMES.free, monthly: 0, yearly: 0,
     credits: SUBSCRIPTION_CREDITS.free,
-    features: ["Every studio unlocked", "All 70+ models", "Standard resolution"],
+    features: ["Every studio unlocked", "All 130+ models", "No card required"],
   },
   {
     id: "starter", name: PLAN_NAMES.starter, monthly: 24, yearly: 19,
     credits: SUBSCRIPTION_CREDITS.starter,
-    features: ["HD resolution", "Cancel anytime", "Email support"],
+    features: ["Every model in the catalog", "Credits roll over", "Cancel anytime"],
   },
   {
     id: "studio", name: PLAN_NAMES.studio, monthly: 49, yearly: 39,
     credits: SUBSCRIPTION_CREDITS.studio,
-    features: ["4K downloads", "Generation archive", "Priority queue"],
+    features: ["Every model in the catalog", "Credits roll over", "Plan-included templates"],
   },
   {
     id: "pro", name: PLAN_NAMES.pro, monthly: 99, yearly: 79,
     credits: SUBSCRIPTION_CREDITS.pro,
-    features: ["Priority queue", "Batch exports", "API access"],
+    features: ["Every model in the catalog", "Credits roll over", "Plan-included templates"],
   },
 ];
 
-/* Studios that persist a basic/advanced control mode in this browser */
-const MODE_KEYS = [
-  "audio", "cinema", "clipping", "influencer",
-  "lipsync", "marketing", "vibe-motion", "recast",
-].map((t) => `helmies.studio.${t}.mode`);
-
-const DEFAULTS_KEY = "helmies.studio.defaults";
+/* The one key the studios actually read — see src/lib/studio-prefs.js.
+   This replaced a set of per-tool "<tool>.mode" keys that were written here
+   and read by nothing, several of them named for tools that no longer
+   exist (cinema, vibe-motion, recast). */
+const DEFAULTS_KEY = PREFS_KEY;
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 
@@ -639,7 +638,6 @@ const QUALITY = [
 const RATIOS = ["1:1", "3:2", "16:9", "9:16", "4:5"];
 
 function DefaultsPanel() {
-  const [mode, setMode] = useState("basic");
   const [quality, setQuality] = useState("high");
   const [ratio, setRatio] = useState("16:9");
   const [saved, setSaved] = useState(false);
@@ -649,8 +647,6 @@ function DefaultsPanel() {
       const stored = JSON.parse(localStorage.getItem(DEFAULTS_KEY) || "{}");
       if (stored.quality) setQuality(stored.quality);
       if (stored.ratio) setRatio(stored.ratio);
-      const firstMode = localStorage.getItem(MODE_KEYS[0]);
-      if (firstMode) setMode(firstMode);
     } catch {
       /* A corrupt or blocked localStorage just means we keep the defaults. */
     }
@@ -659,7 +655,6 @@ function DefaultsPanel() {
   const save = () => {
     try {
       localStorage.setItem(DEFAULTS_KEY, JSON.stringify({ quality, ratio }));
-      MODE_KEYS.forEach((k) => localStorage.setItem(k, mode));
       setSaved(true);
       setTimeout(() => setSaved(false), 2400);
     } catch {
@@ -675,17 +670,6 @@ function DefaultsPanel() {
       </div>
 
       <div className="pg-panel__body">
-        <div className="hs-field">
-          <span className="hs-label" id="lbl-mode">Control mode</span>
-          <div className="hs-segmented" role="group" aria-labelledby="lbl-mode">
-            <button type="button" aria-pressed={mode === "basic"} onClick={() => setMode("basic")}>Basic</button>
-            <button type="button" aria-pressed={mode === "advanced"} onClick={() => setMode("advanced")}>Advanced</button>
-          </div>
-          <p className="hs-hint">
-            Applies to every studio with a basic / advanced switch. Advanced opens the full parameter set on load.
-          </p>
-        </div>
-
         <div className="hs-field">
           <label className="hs-label" htmlFor="def-quality">Preferred quality</label>
           <select
@@ -714,6 +698,10 @@ function DefaultsPanel() {
               </button>
             ))}
           </div>
+          <p className="hs-hint">
+            Used in Image and Video when the model you pick does not support the
+            ratio already selected. A template or an explicit choice still wins.
+          </p>
         </div>
 
         <div className="hs-row">

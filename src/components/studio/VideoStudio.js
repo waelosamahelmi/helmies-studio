@@ -10,6 +10,8 @@ import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useStudioMode } from "./useStudioMode";
+import { useHandoff } from "./useHandoff";
+import { preferredRatio } from "@/lib/studio-prefs";
 import ModeBar from "./ModeBar";
 import VideoEditStudio from "./VideoEditStudio";
 import ClippingStudio from "./ClippingStudio";
@@ -103,7 +105,7 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
   const [endFrame, setEndFrame] = useState(null);
 
   const { models, loading: loadingModels } = useModelCatalog({});
-  const { loading: generating, result, error, elapsed, stage, submit, cancel, reset } = useAsyncGeneration();
+  const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   const motion = mode === "ttv" && preset === "motion";
 
@@ -137,6 +139,15 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     if (templateConfig.model) setModelId(templateConfig.model);
   }, [templateConfig]);
 
+  /* A still sent from another studio ("Send to → Animate") lands as the
+     source frame, carrying the brief that produced it. */
+  const handoff = useHandoff();
+  useEffect(() => {
+    if (!handoff) return;
+    setSourceImage({ url: handoff.url });
+    if (handoff.prompt) setPrompt(handoff.prompt);
+  }, [handoff]);
+
   const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
   const resolutions = model?.resolutions?.length ? model.resolutions : NONE;
   const durations = useMemo(
@@ -146,7 +157,7 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
 
   /* Drop settings the chosen model does not offer */
   useEffect(() => {
-    if (ratios.length && !ratios.includes(ratio)) setRatio(ratios[0]);
+    if (ratios.length && !ratios.includes(ratio)) setRatio(preferredRatio(ratios) || ratios[0]);
   }, [ratios, ratio]);
 
   useEffect(() => {
@@ -334,6 +345,7 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     <Workspace controls={controls} inspector={inspector} inspectorLabel="Model">
       <div className="st-work__stage">
         <Stage
+          prompt={prompt}
           generating={generating}
           result={result}
           error={error}
@@ -344,12 +356,15 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
           settings={settings}
           onCancel={cancel}
           onRetry={generate}
+          onEditSettings={reset}
+          note={retryInfo ? `Retrying (attempt ${retryInfo.attempts} of ${retryInfo.maxAttempts})…` : undefined}
           onNew={reset}
           idle={idle}
         />
       </div>
 
       <Brief
+        tool="video"
         value={prompt}
         onChange={setPrompt}
         onSubmit={generate}
