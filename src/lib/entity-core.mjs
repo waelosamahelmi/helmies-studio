@@ -54,6 +54,57 @@ export const ATTRIBUTE_KEYS = {
   environment: ["lighting", "timeOfDay", "weather", "viewpoint", "mood", "architecture", "scale", "notes"],
 };
 
+// ── The build, as steps ───────────────────────────────────────────────────
+// Creating a character is a sequence with a fork at the front, not one long
+// form. Presenting it flat is what made the editor feel wrong: the first
+// decision (do you have photographs of them, or are we inventing them?)
+// changes everything downstream, so it belongs first rather than buried
+// among nineteen fields.
+//
+// An environment gets the same shape but not a copy of it. A place is not
+// one look — it is a place at a time, from a viewpoint — so its middle step
+// is times and weather where a character's is wardrobe.
+export const ENTITY_STEPS = {
+  character: [
+    { id: "start",    label: "Start",    blurb: "Photographs of them, or a description to build from." },
+    { id: "identity", label: "Identity", blurb: "The angles every shot reads from." },
+    { id: "look",     label: "Wardrobe", blurb: "What they wear and carry." },
+    { id: "voice",    label: "Voice",    blurb: "How they sound." },
+    { id: "ready",    label: "Ready",    blurb: "Lock it and use it." },
+  ],
+  product: [
+    { id: "start",    label: "Start",    blurb: "Photographs of it, or a description." },
+    { id: "identity", label: "Angles",   blurb: "The sides a shot can be built from." },
+    { id: "ready",    label: "Ready",    blurb: "Lock it and use it." },
+  ],
+  environment: [
+    { id: "start",    label: "Start",    blurb: "Photographs of the place, or a description." },
+    { id: "identity", label: "Views",    blurb: "How the space is seen." },
+    { id: "look",     label: "Times",    blurb: "The same place at another hour, in other weather." },
+    { id: "ready",    label: "Ready",    blurb: "Lock it and use it." },
+  ],
+};
+
+export const stepsFor = (kind) => ENTITY_STEPS[kind] || ENTITY_STEPS.character;
+
+// What each step still needs before it can be called done. Drives the step
+// rail's ticks and the "what now" line — never a blocker, because somebody
+// building a character out of order is not making a mistake.
+export function stepState(entity) {
+  const refs = (entity?.references || []).filter((r) => r.kind !== VOICE_REFERENCE_KIND);
+  const attrs = entity?.attributes || {};
+  const written = OBSERVABLE_ATTRIBUTES.filter((k) => (attrs[k] || "").trim()).length;
+  return {
+    start: Boolean(refs.length || (entity?.description || "").trim() || written),
+    identity: entity?.kind === "character"
+      ? missingPackAngles(entity).length === 0
+      : refs.length >= 2,
+    look: (entity?.references || []).some((r) => ["outfit", "accessory", "prop", "time_of_day", "weather"].includes(r.kind)),
+    voice: voiceReferences(entity).length > 0 || Boolean(entity?.voiceId),
+    ready: entity?.status === "locked",
+  };
+}
+
 // Which character traits a photograph can actually show. Everything here is
 // something we can read off a reference and should never make somebody type
 // out by hand — the photo already says it, and hand-typed guesses that

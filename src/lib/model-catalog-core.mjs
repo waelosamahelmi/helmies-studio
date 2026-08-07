@@ -1700,6 +1700,25 @@ const KLING_SCHEMAS = {
   } },
 };
 
+// ── Google Gemini TTS ──────────────────────────────────────────────────────
+// The voice is a named preset, not a description. Without this the row
+// carried only `prompt`, so every request went out with no voice_name — a
+// required field — and the caller had no way to pick or audition a voice.
+export const GEMINI_TTS_VOICES = [
+  "Achernar", "Achird", "Algenib", "Algieba", "Alnilam", "Aoede", "Autonoe",
+  "Callirrhoe", "Charon", "Despina", "Enceladus", "Erinome", "Fenrir",
+  "Gacrux", "Iapetus", "Kore", "Laomedeia", "Leda", "Orus", "Puck",
+  "Pulcherrima", "Rasalgethi", "Sadachbia", "Sadaltager", "Schedar",
+  "Sulafat", "Umbriel", "Vindemiatrix", "Zephyr", "Zubenelgenubi",
+];
+
+const GEMINI_TTS_SCHEMAS = {
+  "google-gemini-3-1-flash-tts": { replace: true, fields: {
+    prompt: mkStr({ required: true }),
+    voice_name: mkEnum(GEMINI_TTS_VOICES, { required: true, default: "Charon" }),
+  } },
+};
+
 // ── Bytedance Seedance ─────────────────────────────────────────────────────
 const SEEDANCE_2_BASE_FIELDS = {
   prompt: mkStr({ required: true }),
@@ -2086,6 +2105,7 @@ export const M2_FAMILY_SCHEMAS = {
   ...WAN_SCHEMAS,
   ...KLING_SCHEMAS,
   ...SEEDANCE_SCHEMAS,
+  ...GEMINI_TTS_SCHEMAS,
   ...HAILUO_SCHEMAS,
   ...PIXVERSE_SCHEMAS,
   ...MINIMAX_H3_SCHEMAS,

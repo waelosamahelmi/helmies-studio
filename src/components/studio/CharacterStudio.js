@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/client-fetch";
 import ErrorState from "@/components/states/ErrorState";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import {
-  Confirm, Field, Segmented, Dropzone, ModelPicker,
+  Confirm, Field, Segmented, Dropzone,
   useGridRoving, LibrarySearch, LibrarySkeleton,
   IcPersona, IcPalette, IcImage, IcPlus, IcTrash, IcCheck, IcRefresh,
   IcAlert, IcClose, IcLock, IcSpark, IcMic, IcChevronLeft,
@@ -14,7 +14,22 @@ import {
   ATTRIBUTE_KEYS, REFERENCE_KINDS,
   IDENTITY_PACK, missingPackAngles, imageReferenceSlot, canRenderIdentityAngle,
   isObservable, voiceReferences, VOICE_REFERENCE_KIND,
+  stepsFor, stepState,
 } from "@/lib/entity-core.mjs";
+import { GEMINI_TTS_VOICES } from "@/lib/model-catalog-core.mjs";
+
+/* One model does the identity work, and it is not switchable. A picker here
+   was a decision nobody wanted to make in the middle of building a character,
+   and every choice in it renders the same five angles. Ordered by preference;
+   the first that is actually live wins, so a row going inactive degrades
+   instead of breaking (which is exactly what happened to nano-banana-pro). */
+const IDENTITY_MODEL_PREFERENCE = [
+  "seedream/5-pro-image-to-image",
+  "nano-banana-2",
+  "qwen3/pro-image-to-image",
+  "google/nano-banana-edit",
+  "seedream/4.5-edit",
+];
 
 /* ══════════════════════════════════════════════════════════════════════════
    CAST — .st-lib collection browser + .st-sheet identity editor
@@ -136,6 +151,7 @@ export default function CharacterStudio() {
   const [reloads, setReloads] = useState(0);
 
   const [editingId, setEditingId] = useState(null);
+  const [step, setStep] = useState("start");
   const [pending, setPending] = useState(null);
   const [saving, setSaving] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
@@ -198,6 +214,7 @@ export default function CharacterStudio() {
       const data = await res.json();
       setItems((prev) => [data.entity, ...prev]);
       setEditingId(data.entity.id);
+      setStep("start");
     } catch (e) {
       setError(e?.message || `The ${meta.one} could not be created.`);
     } finally {
@@ -293,6 +310,8 @@ export default function CharacterStudio() {
           </div>
         </div>
 
+        <StepRail entity={editing} step={step} onStep={setStep} />
+
         <div className="st-sheet__body">
           <div className="st-sheet__inner">
             {faultNotice}
@@ -315,7 +334,7 @@ export default function CharacterStudio() {
               </div>
             )}
 
-            {editing.kind === "character" && (
+            {step === "identity" && editing.kind === "character" && (
               <IdentitySheet
                 entity={editing}
                 locked={locked}
@@ -326,18 +345,28 @@ export default function CharacterStudio() {
               />
             )}
 
-            <ReferenceShelf
-              entity={editing}
-              locked={locked}
-              hideAngles={editing.kind === "character"}
-              onAddReference={addReference}
-              onDropReference={dropReference}
-              onError={setError}
-            />
+            {/* Products and environments have no five-angle pack, so their
+                Angles/Views step is the plain reference shelf. */}
+            {step === "identity" && editing.kind !== "character" && (
+              <ReferenceShelf
+                entity={editing} locked={locked} hideAngles={false}
+                onAddReference={addReference} onDropReference={dropReference} onError={setError}
+              />
+            )}
 
-            <IdentityFields entity={editing} locked={locked} onPatch={patch} onError={setError} onNotice={setNotice} />
+            {step === "look" && (
+              <LookStep
+                entity={editing} locked={locked}
+                onAddReference={addReference} onDropReference={dropReference}
+                onError={setError} onNotice={setNotice}
+              />
+            )}
 
-            {editing.kind === "character" && (
+            {step === "start" && (
+              <IdentityFields entity={editing} locked={locked} onPatch={patch} onError={setError} onNotice={setNotice} />
+            )}
+
+            {step === "voice" && editing.kind === "character" && (
               <VoiceSection
                 entity={editing}
                 locked={locked}
@@ -350,6 +379,7 @@ export default function CharacterStudio() {
               />
             )}
 
+            {step === "ready" && (
             <Fieldset title="Status" hint={status.note}>
               <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
                 {editing.status === "draft" && (
@@ -371,6 +401,7 @@ export default function CharacterStudio() {
                 )}
               </div>
             </Fieldset>
+            )}
 
             <div className="hs-row hs-row--between" style={{ paddingBottom: "var(--s-6)" }}>
               <span className="hs-mono hs-mute" style={{ fontSize: 10 }}>
@@ -475,7 +506,7 @@ export default function CharacterStudio() {
               return (
                 <div key={item.id} className="st-item" role="listitem">
                   <button
-                    type="button" data-card onClick={() => setEditingId(item.id)}
+                    type="button" data-card onClick={() => { setEditingId(item.id); setStep("start"); }}
                     aria-label={`${item.name} — ${status.label.toLowerCase()}, ${refCount} reference${refCount === 1 ? "" : "s"}. Open the editor.`}
                     style={{
                       display: "block", width: "100%", padding: 0, border: 0,
@@ -685,7 +716,6 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
      the DB's modelType values are fragmented. */
   const { models } = useModelCatalog();
   const [modelId, setModelId] = useState(null);
-  const [picking, setPicking] = useState(false);
   const [running, setRunning] = useState({});
   const [spent, setSpent] = useState(0);
 
@@ -714,9 +744,9 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
     [models]
   );
 
-  /* ModelPicker hands back an ID, not a model — the same contract every other
-     studio uses (`onSelect={setModelId}`). Storing the argument as the model
-     is what made the header read "Using undefined" and sent no model at all. */
+  /* Selection is an id, resolved against the live list — so a pinned model
+     that goes inactive resolves to null and the effect above picks the next
+     one, rather than leaving a stale object nothing can render. */
   const model = useMemo(
     () => referenceModels.find((m) => m.id === modelId) || null,
     [referenceModels, modelId]
@@ -729,6 +759,10 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
      angles of the same face hold identity better than one), then cheapest. */
   useEffect(() => {
     if (modelId || !referenceModels.length) return;
+    const preferred = IDENTITY_MODEL_PREFERENCE.find((id) => referenceModels.some((m) => m.id === id));
+    if (preferred) return setModelId(preferred);
+    // Nothing on the list is live — fall back to whatever can hold the most
+    // references, then to whatever is cheapest.
     const ranked = [...referenceModels].sort((a, b) => {
       const slotA = imageReferenceSlot(a.schema);
       const slotB = imageReferenceSlot(b.schema);
@@ -756,6 +790,9 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
           expand: false,
           entityIds: [entity.id],
           entityPurpose: "identity",
+          // Portrait framing for a body angle, square for a face. Everything
+          // else the model requires is filled from its own schema server-side.
+          aspect_ratio: angle.kind === "full_body" || angle.kind === "half_body" ? "3:4" : "1:1",
         }),
       });
       const submitted = await res.json();
@@ -919,19 +956,9 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
                       {spent > 0 && <span className="hs-mono hs-mute" style={{ fontSize: 10 }}>{spent} spent</span>}
                     </div>
 
-                    <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm"
-                      style={{ alignSelf: "flex-start" }} onClick={() => setPicking((p) => !p)}>
-                      {model ? `Using ${model.displayName || model.id}` : "Choose a model"} · {picking ? "hide" : "change"}
-                    </button>
-                    {picking && (
-                      <ModelPicker
-                        models={referenceModels}
-                        value={model?.id}
-                        onSelect={(id) => { setModelId(id); setPicking(false); }}
-                        label="Model for the missing angles"
-                        emptyHint="No image model here accepts a reference photograph."
-                      />
-                    )}
+                    <span className="hs-mono hs-mute" style={{ fontSize: 10 }}>
+                      {model ? `Rendered by ${model.displayName || model.id}` : "No reference model available"}
+                    </span>
                   </>
                 )}
               </div>
@@ -1019,18 +1046,21 @@ function ReferenceShelf({ entity, locked, hideAngles, onAddReference, onDropRefe
 function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropReference, onError, onNotice }) {
   const { models } = useModelCatalog();
   const [line, setLine] = useState("");
+  const [voiceName, setVoiceName] = useState("Charon");
   const [busy, setBusy] = useState(false);
 
   const refs = voiceReferences(entity);
 
-  /* Cheapest speech model wins: this is a record of a timbre, not a
-     performance, and the take gets kept or discarded by ear anyway. */
-  const speechModel = useMemo(() => {
-    const usable = (models || [])
-      .filter((m) => ["text-to-speech", "tts"].includes(m.capability) && m.schema?.fields?.prompt)
-      .sort((a, b) => (a.credits ?? Infinity) - (b.credits ?? Infinity));
-    return usable[0] || null;
-  }, [models]);
+  /* Pinned, like the identity model. Gemini's TTS takes a NAMED voice rather
+     than a description of one, which is the difference between auditioning a
+     voice and hoping a sentence conjures it. Cheapest-wins used to pick an
+     elevenlabs row at 1 credit — the cheapest models in the catalog and the
+     ones that do not work. */
+  const speechModel = useMemo(
+    () => (models || []).find((m) => m.id === "google/gemini-3-1-flash-tts") || null,
+    [models]
+  );
+  const voiceNames = speechModel?.schema?.fields?.voice_name?.enum || GEMINI_TTS_VOICES;
 
   const generateSample = useCallback(async () => {
     if (!speechModel || !line.trim()) return;
@@ -1039,7 +1069,7 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
       const res = await apiFetch("/api/generate/async", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tool: "audio", model: speechModel.id, prompt: line.trim(), expand: false }),
+        body: JSON.stringify({ tool: "audio", model: speechModel.id, prompt: line.trim(), voice_name: voiceName, expand: false }),
       });
       const submitted = await res.json();
       const started = Date.now();
@@ -1051,7 +1081,7 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
         const gen = await (await apiFetch(`/api/generations/status?id=${submitted.generationId}`)).json();
         if (gen.status === "completed" && gen.outputUrl) {
           await onAddReference(entity.id, {
-            url: gen.outputUrl, kind: VOICE_REFERENCE_KIND, label: line.trim().slice(0, 60), source: "generated",
+            url: gen.outputUrl, kind: VOICE_REFERENCE_KIND, label: `${voiceName} — ${line.trim().slice(0, 50)}`, source: "generated",
           });
           setLine("");
           onNotice?.("Sample kept as this character's voice.");
@@ -1064,7 +1094,7 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
     } finally {
       setBusy(false);
     }
-  }, [speechModel, line, entity.id, onAddReference, onError, onNotice]);
+  }, [speechModel, line, voiceName, entity.id, onAddReference, onError, onNotice]);
 
   return (
     <Fieldset
@@ -1114,25 +1144,34 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
           </Field>
 
           {speechModel && (
-            <Field
-              label="Or build one from a line"
-              hint={`Made with ${speechModel.displayName || speechModel.id}${speechModel.credits != null ? ` · ${speechModel.credits} credits` : ""}. Keep the take you like and it becomes the reference.`}
-            >
-              <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
-                <input
-                  className="hs-input"
-                  style={{ flex: 1, minWidth: 220 }}
-                  value={line}
-                  maxLength={300}
-                  placeholder="A low, tired voice, mid-thirties, quiet room"
-                  onChange={(e) => setLine(e.target.value)}
-                />
-                <button type="button" className="hs-btn hs-btn--sm" onClick={generateSample} disabled={busy || !line.trim()}>
-                  {busy ? <span className="hs-spin" /> : <IcMic className="hs-icon-sm" />}
-                  {busy ? "Making…" : "Make a sample"}
-                </button>
-              </div>
-            </Field>
+            <>
+              <Field label="Or pick a voice and hear it" hint={`${voiceNames.length} voices. Generate a line, listen, and keep the one that sounds like them.`}>
+                {(id) => (
+                  <select id={id} className="hs-select" value={voiceName} onChange={(e) => setVoiceName(e.target.value)}>
+                    {voiceNames.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                )}
+              </Field>
+              <Field
+                label="The line they say"
+                hint={`Made with ${speechModel.displayName || speechModel.id}${speechModel.credits != null ? ` · ${speechModel.credits} credits a take` : ""}. Every take you keep is listed above and playable.`}
+              >
+                <div style={{ display: "flex", gap: "var(--s-2)", flexWrap: "wrap" }}>
+                  <input
+                    className="hs-input"
+                    style={{ flex: 1, minWidth: 220 }}
+                    value={line}
+                    maxLength={300}
+                    placeholder="You're late."
+                    onChange={(e) => setLine(e.target.value)}
+                  />
+                  <button type="button" className="hs-btn hs-btn--sm" onClick={generateSample} disabled={busy || !line.trim()}>
+                    {busy ? <span className="hs-spin" /> : <IcMic className="hs-icon-sm" />}
+                    {busy ? "Making…" : `Hear ${voiceName}`}
+                  </button>
+                </div>
+              </Field>
+            </>
           )}
         </>
       )}
@@ -1157,6 +1196,152 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
           </select>
         )}
       </Field>
+    </Fieldset>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   STEP RAIL
+   ──────────────────────────────────────────────────────────────────────
+   The ticks report what is actually done, read from the record rather than
+   from where somebody has clicked. Every step stays reachable: building a
+   character out of order is not a mistake, so this guides without gating.
+   ══════════════════════════════════════════════════════════════════════ */
+function StepRail({ entity, step, onStep }) {
+  const steps = stepsFor(entity.kind);
+  const done = stepState(entity);
+  const current = steps.find((s) => s.id === step) || steps[0];
+
+  return (
+    <div className="st-steps">
+      <ol className="st-steps__list">
+        {steps.map((s, i) => {
+          const isDone = done[s.id];
+          const isCurrent = s.id === step;
+          return (
+            <li key={s.id} className="st-steps__item">
+              <button
+                type="button"
+                className={`st-step${isCurrent ? " is-current" : ""}${isDone ? " is-done" : ""}`}
+                onClick={() => onStep(s.id)}
+                aria-current={isCurrent ? "step" : undefined}
+                aria-label={`Step ${i + 1}, ${s.label}${isDone ? ", done" : ""}. ${s.blurb}`}
+              >
+                <span className="st-step__mark" aria-hidden="true">
+                  {isDone ? <IcCheck style={{ width: 12, height: 12 }} /> : i + 1}
+                </span>
+                <span className="st-step__label">{s.label}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+      <p className="st-steps__blurb">{current.blurb}</p>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   LOOK — wardrobe and props for a character, times and weather for a place
+   ──────────────────────────────────────────────────────────────────────
+   Each entry is a NAMED thing with its own reference, because "a black wool
+   coat" and "the room at dawn" are items a shot asks for by name, not
+   adjectives buried in one description field.
+   ══════════════════════════════════════════════════════════════════════ */
+const LOOK_KINDS = {
+  character: [
+    { kind: "outfit", label: "Outfit", hint: "A full look — a coat, a suit, what they wear in a scene." },
+    { kind: "accessory", label: "Accessory", hint: "Glasses, a watch, a ring." },
+    { kind: "prop", label: "Prop", hint: "Something they carry or handle — a phone, a cup." },
+  ],
+  environment: [
+    { kind: "time_of_day", label: "Time of day", hint: "The same place at another hour." },
+    { kind: "weather", label: "Weather", hint: "Rain, snow, haze." },
+    { kind: "lighting", label: "Lighting", hint: "A specific lighting state the scene returns to." },
+  ],
+  product: [
+    { kind: "packaging", label: "Packaging", hint: "How it is boxed or presented." },
+    { kind: "in_use", label: "In use", hint: "Being held, worn, operated." },
+  ],
+};
+
+function LookStep({ entity, locked, onAddReference, onDropReference, onError }) {
+  const options = LOOK_KINDS[entity.kind] || LOOK_KINDS.character;
+  const [kind, setKind] = useState(options[0].kind);
+  const [label, setLabel] = useState("");
+
+  const items = (entity.references || []).filter((r) => options.some((o) => o.kind === r.kind));
+  const active = options.find((o) => o.kind === kind) || options[0];
+
+  return (
+    <Fieldset
+      title={entity.kind === "environment" ? "Times and weather" : "Wardrobe and props"}
+      hint={
+        entity.kind === "environment"
+          ? "A place is not one look. Give the space its other hours so a scene can return to it and still be the same room."
+          : "Name each thing and give it a reference. A shot that calls for the coat gets the coat, not a guess."
+      }
+    >
+      {items.length > 0 && (
+        <div className="hs-thumbs">
+          {items.map((ref) => (
+            <div key={ref.id} className="hs-thumb">
+              {/* eslint-disable-next-line @next/next/no-img-element -- consistent with every other studio thumbnail */}
+              <img src={ref.url} alt={ref.label || ref.kind} />
+              {!locked && (
+                <button
+                  type="button" className="hs-thumb__x"
+                  onClick={() => onDropReference(entity.id, ref.id)}
+                  aria-label={`Remove ${ref.label || ref.kind}`}
+                >
+                  <IcClose style={{ width: 11, height: 11 }} />
+                </button>
+              )}
+              <span className="st-angle__label" style={{ position: "absolute", inset: "auto 0 0", textAlign: "center", padding: "2px 4px", background: "rgba(0,0,0,.6)" }}>
+                {ref.label || ref.kind.replace(/_/g, " ")}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!locked && (
+        <>
+          <Field label="What is it?" hint={active.hint}>
+            {(id) => (
+              <select id={id} className="hs-select" value={kind} onChange={(e) => setKind(e.target.value)}>
+                {options.map((o) => <option key={o.kind} value={o.kind}>{o.label}</option>)}
+              </select>
+            )}
+          </Field>
+          <Field label="Name it" hint="What a shot would call it — “black wool coat”, “the room at dawn”.">
+            {(id) => (
+              <input
+                id={id} className="hs-input" value={label} maxLength={80}
+                placeholder={entity.kind === "environment" ? "The room at dawn" : "Black wool coat"}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+            )}
+          </Field>
+          <Dropzone
+            value={null}
+            accept="image/*"
+            label={label.trim() ? `Add a reference for “${label.trim()}”` : "Name it first, then add a reference"}
+            onChange={async (file) => {
+              if (!file?.url) return;
+              if (!label.trim()) { onError?.("Give it a name first — a shot has to be able to ask for it."); return; }
+              try {
+                await onAddReference(entity.id, { url: file.url, kind, label: label.trim(), source: "user" });
+                setLabel("");
+              } catch (e) {
+                onError?.(e?.message || "That could not be attached.");
+              }
+            }}
+          />
+        </>
+      )}
+
+      {locked && !items.length && <p className="hs-hint" style={{ margin: 0 }}>Nothing added.</p>}
     </Fieldset>
   );
 }

@@ -154,6 +154,18 @@ export async function POST(req) {
       }
     }
 
+    // Fill the model's REQUIRED rendering settings before quoting. These were
+    // only applied at submit (providers.js), which is too late: a model like
+    // seedream/5-pro-image-to-image requires quality and aspect_ratio, so a
+    // caller that did not know to send them was rejected by the quote with
+    // "Some settings aren't valid for this model" and never reached the
+    // filling step. Quoting what will actually run is also the honest order —
+    // on models where quality moves the price, the number the user sees is
+    // now the number they pay.
+    const { applyRequiredDefaults } = await import("@/lib/provider-payload-core.mjs");
+    const filled = applyRequiredDefaults(effectiveParams, dbPricing.inputSchema, { modelId: dbPricing.modelId });
+    effectiveParams = filled.params;
+
     let cost = dbPricing.creditsCost;
     let providerCost = dbPricing.providerCost || 0;
     if (dbPricing.pricingRules) {

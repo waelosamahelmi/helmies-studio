@@ -3234,3 +3234,80 @@ select.st-layer__role option {
 }
 .st-angle__make:hover,
 .st-angle__make:focus-visible { color: var(--filament-lit); background: var(--filament-a14); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STEP RAIL — building an identity is a sequence, not one long form
+   ══════════════════════════════════════════════════════════════════════════ */
+.st-steps {
+  border-bottom: 1px solid var(--line);
+  background: var(--ink-050);
+  padding: var(--s-3) var(--s-4);
+}
+.st-steps__list {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.st-steps__list::-webkit-scrollbar { display: none; }
+.st-steps__item { display: flex; align-items: center; flex: 0 0 auto; }
+/* The connector reads as sequence without drawing a separate element. */
+.st-steps__item + .st-steps__item::before {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: var(--line);
+  margin-right: var(--s-2);
+}
+
+.st-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--tx-mute);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 36px;
+}
+.st-step:hover { color: var(--tx-body); background: var(--ink-200); }
+.st-step.is-current { color: var(--tx-body); background: var(--ink-200); border-color: var(--line-strong); }
+
+.st-step__mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  font-family: var(--ff-mono);
+  font-size: 10px;
+  flex: 0 0 auto;
+}
+.st-step.is-done .st-step__mark {
+  background: var(--signal-a12);
+  border-color: rgba(52, 227, 155, 0.3);
+  color: var(--signal);
+}
+.st-step.is-current .st-step__mark { border-color: var(--filament-lit); color: var(--filament-lit); }
+.st-step__label { font-weight: 500; }
+
+.st-steps__blurb {
+  margin: var(--s-2) 0 0;
+  font-size: 12px;
+  color: var(--tx-mute);
+}
+@media (max-width: 640px) {
+  .st-steps { padding: var(--s-2) var(--s-3); }
+  .st-step__label { display: none; }  /* marks alone on a phone; the blurb names the step */
+  .st-steps__blurb { margin-top: var(--s-1); }
+}

@@ -57,6 +57,12 @@ export const FILLABLE_FIELDS = new Set([
   // `image_size`/`image_resolution`/`max_images`. Still no *_url/prompt/
   // text/seed — content is never invented.
   "sound",
+  // A named voice preset is a rendering setting, not content: the words are
+  // the prompt, and which voice reads them has a sensible neutral default.
+  // Required on google/gemini-3-1-flash-tts, so without this any caller that
+  // did not name a voice was rejected outright.
+  "voice_name",
+  "voice",
   "audio",
   // kling-3.0/video (probe round 3, 2026-08-05): with sound/aspect_ratio/
   // mode supplied the provider answered 422 "multi_shots cannot be empty" —
