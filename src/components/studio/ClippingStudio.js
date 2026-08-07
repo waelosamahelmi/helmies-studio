@@ -7,6 +7,7 @@ import {
 } from "@/components/studio/kit";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
+import { apiFetch } from "@/lib/client-fetch";
 
 /* ══════════════════════════════════════════════════════════════════════════
    CLIPPING — .st-cut
@@ -128,6 +129,7 @@ export default function ClippingStudio({ onCreditsChanged }) {
   const [playing, setPlaying] = useState(false);
   const [peaks, setPeaks] = useState([]);
   const [clips, setClips] = useState([]);
+  const [waveNote, setWaveNote] = useState("");
   const [selected, setSelected] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -167,6 +169,7 @@ export default function ClippingStudio({ onCreditsChanged }) {
   useEffect(() => {
     const url = source?.url;
     setPeaks([]);
+    setWaveNote("");
     if (!url || typeof window === "undefined") return;
 
     let dead = false;
@@ -177,7 +180,11 @@ export default function ClippingStudio({ onCreditsChanged }) {
         const res = await fetch(url);
         if (!res.ok) return;
         const size = Number(res.headers.get("content-length") || 0);
-        if (size > MAX_DECODE) return;   // too large to decode in the tab
+        if (size > MAX_DECODE) {
+          /* Silently rendering a bare track looked like a bug. Say why. */
+          if (!dead) setWaveNote("Too large to draw a waveform in the browser — the track still works.");
+          return;
+        }
 
         const bytes = await res.arrayBuffer();
         const Ctx = window.AudioContext || window.webkitAudioContext;
@@ -326,6 +333,48 @@ export default function ClippingStudio({ onCreditsChanged }) {
     });
   }, [source, loading, affordable, highlights, aspect, coordsOnly, submit]);
 
+  /* ── Export the trims ──────────────────────────────────────────────────
+     The whole surface is built around dragging in/out points, and until now
+     nothing consumed them: the edited spans were text you could copy and
+     nothing more, while the empty state promised "you can trim each one
+     before you use it". /api/assemble already runs ffmpeg over
+     `[{url, inSec, outSec}]` — exactly the shape held here — so the trims
+     become a real cut. It renders locally and costs no credits. */
+  const [exporting, setExporting] = useState(false);
+  const [exported, setExported] = useState(null);
+  const [exportError, setExportError] = useState("");
+
+  const trimmable = useMemo(
+    () => clips.filter((c) => c.start != null && c.end != null && c.end > c.start),
+    [clips],
+  );
+
+  const exportTrims = useCallback(async (only) => {
+    const picked = only ? [only] : trimmable;
+    if (!source?.url || !picked.length) return;
+    setExporting(true);
+    setExportError("");
+    setExported(null);
+    try {
+      const res = await apiFetch("/api/assemble", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clips: picked.map((c) => ({ url: source.url, inSec: c.start, outSec: c.end })),
+        }),
+        timeout: 180000,
+        retries: 0,
+      });
+      const data = await res.json();
+      if (data?.url) setExported(data.url);
+      else setExportError("The render finished without returning a file.");
+    } catch (e) {
+      setExportError(e?.message || "That render did not finish.");
+    } finally {
+      setExporting(false);
+    }
+  }, [source, trimmable]);
+
   const copyTimecodes = async () => {
     const lines = clips
       .filter((c) => c.start != null && c.end != null)
@@ -383,7 +432,7 @@ export default function ClippingStudio({ onCreditsChanged }) {
                 onChange={setSource}
                 accept="video/*"
                 label="Drop a video or click to browse"
-                hint="MP4 or WebM, up to 100MB"
+                hint="MP4 or WebM, up to 100MB. Waveform is drawn up to 48MB."
               />
             </div>
           </div>
@@ -392,6 +441,7 @@ export default function ClippingStudio({ onCreditsChanged }) {
 
       {/* ── Ruler · track · playhead ───────────────────────────────────── */}
       <div className="st-cut__time">
+        {waveNote && <p className="hs-hint" style={{ margin: 0 }}>{waveNote}</p>}
         <div className="hs-row hs-row--between" style={{ marginBottom: "var(--s-3)", gap: "var(--s-3)" }}>
           <div className="hs-row" style={{ gap: "var(--s-2)" }}>
             <button
@@ -532,10 +582,24 @@ export default function ClippingStudio({ onCreditsChanged }) {
           <div className="hs-row hs-row--between">
             <span className="hs-label" style={{ margin: 0 }}>Clips</span>
             {spanned.length > 0 && (
-              <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={copyTimecodes}>
-                {copied ? <IcCheck className="hs-icon-sm" /> : <IcCopy className="hs-icon-sm" />}
-                {copied ? "Copied" : "Copy timecodes"}
-              </button>
+              <span className="hs-row" style={{ gap: 2 }}>
+                <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={copyTimecodes}>
+                  {copied ? <IcCheck className="hs-icon-sm" /> : <IcCopy className="hs-icon-sm" />}
+                  {copied ? "Copied" : "Copy timecodes"}
+                </button>
+                {trimmable.length > 1 && (
+                  <button
+                    type="button"
+                    className="hs-btn hs-btn--ghost hs-btn--sm"
+                    onClick={() => exportTrims(null)}
+                    disabled={exporting}
+                    title={`Render all ${trimmable.length} trims into one cut`}
+                  >
+                    {exporting ? <span className="hs-spin" style={{ width: 12, height: 12 }} /> : <IcScissors className="hs-icon-sm" />}
+                    {exporting ? "Rendering" : "Export all"}
+                  </button>
+                )}
+              </span>
             )}
           </div>
 
@@ -576,6 +640,19 @@ export default function ClippingStudio({ onCreditsChanged }) {
                 </span>
               </button>
 
+              {c.start != null && c.end != null && c.end > c.start && (
+                <button
+                  type="button"
+                  className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
+                  onClick={() => exportTrims(c)}
+                  disabled={exporting}
+                  aria-label={`Render clip ${c.no} at the trimmed span`}
+                  title="Render this trim"
+                >
+                  <IcScissors className="hs-icon-sm" />
+                </button>
+              )}
+
               {c.url && (
                 <span className="hs-row" style={{ gap: 2 }}>
                   <a
@@ -600,6 +677,22 @@ export default function ClippingStudio({ onCreditsChanged }) {
             </div>
           ))}
         </div>
+
+        {exported && (
+          <div className="hs-notice hs-notice--signal" style={{ marginTop: "var(--s-3)" }} role="status">
+            <span style={{ flex: 1 }}>Your cut is ready.</span>
+            <a className="hs-btn hs-btn--ghost hs-btn--sm" href={exported} target="_blank" rel="noopener noreferrer">
+              <IcExternal className="hs-icon-sm" /> Open
+            </a>
+            <a className="hs-btn hs-btn--ghost hs-btn--sm" href={exported} download>
+              <IcDownload className="hs-icon-sm" /> Save
+            </a>
+          </div>
+        )}
+
+        {exportError && (
+          <p className="hs-notice hs-notice--fault" style={{ marginTop: "var(--s-3)" }} role="alert">{exportError}</p>
+        )}
 
         <div style={{ marginTop: "auto", paddingTop: "var(--s-5)", display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
           {error && (
