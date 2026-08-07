@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Workspace, Brief, ModelPicker, Stage, Idle, SpendMeter,
+  Workspace, Brief, Commit, ModelPicker, Stage, Idle,
   Field, Group, Segmented, Chips, RatioPicker, Dropzone, Specs,
-  IcScissors, IcSwap, IcBolt, IcClose,
+  IcScissors, IcSwap,
 } from "@/components/studio/kit";
 import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
@@ -74,10 +74,13 @@ const JOBS = {
   },
 };
 
+/* The provider enum is "image" | "video" — it chooses WHICH SOURCE dictates
+   which way the character faces, not a left/right direction. The old
+   "left"/"right" values were not in the schema at all and were rejected. */
 const ORIENTATIONS = [
   { value: "", label: "Auto" },
-  { value: "left", label: "Faces left" },
-  { value: "right", label: "Faces right" },
+  { value: "image", label: "Follow the photo" },
+  { value: "video", label: "Follow the clip" },
 ];
 
 const SPEEDS = [
@@ -104,11 +107,22 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
   const { models, loading: loadingModels } = useModelCatalog({});
   const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
-  /* v2v covers video-to-video and video-upscale; some rows carry an explicit
+  /* Recast is its own pool. It used to filter v2v like the other jobs, but
+     no recast model has ever carried a v2v capability — they infer as
+     "recast" (identity transfer), so the picker silently offered a plain
+     video-to-video model that cannot accept an identity photo, and every
+     run was rejected by the provider after reserving credits.
+
+     v2v covers video-to-video and video-upscale; some rows carry an explicit
      "video-edit" capability that is not in any group yet. */
+  const recasting = job === "recast";
   const available = useMemo(
-    () => (models || []).filter((m) => matchesGroup(m, "v2v") || m.capability === "video-edit"),
-    [models],
+    () => (models || []).filter((m) => (
+      recasting
+        ? matchesGroup(m, "recast")
+        : matchesGroup(m, "v2v") || m.capability === "video-edit"
+    )),
+    [models, recasting],
   );
 
   const model = available.find((m) => m.id === modelId) || available[0] || null;
@@ -143,8 +157,6 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
     if (!durations.includes(Number(duration))) setDuration(durations[0]);
   }, [durations, duration]);
 
-  const recasting = job === "recast";
-
   /* Same tool string in the quote and the submission — a mismatch would
      quote one price and charge another. Recast prices as its own tool, the
      way the standalone RecastStudio always did. */
@@ -171,13 +183,19 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
   const generate = useCallback(() => {
     if (recasting) {
       if (!model || !paired) return;
-      const params = {
-        endpoint: model.endpoint || model.id,
-        image_url: identity.url,
-        video_url: source.url,
-        aspect_ratio: ratio,
-      };
-      if (orientation) params.character_orientation = orientation;
+      /* The two live recast families disagree on field shape, and sending
+         the wrong one is a provider rejection after the credits are held:
+         Kling's motion-control takes ARRAYS (`input_urls`/`video_urls`) and
+         an enum `character_orientation` of "image"|"video"; Wan's animate
+         pair takes singular `image_url`/`video_url` and no orientation. */
+      const kling = /motion-control/.test(model.id);
+      const params = kling
+        ? {
+          input_urls: [identity.url],
+          video_urls: [source.url],
+          ...(orientation ? { character_orientation: orientation } : {}),
+        }
+        : { image_url: identity.url, video_url: source.url };
       if (prompt.trim()) params.prompt = prompt.trim();
       submit("recast", model.id, params);
       return;
@@ -238,10 +256,13 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
         />
       </Field>
 
-      {recasting && (
-        <Field label="Head direction" hint="Auto leaves it to the model. Set it when the identity photo is a profile.">
+      {/* Only the Kling motion-control family accepts this; the Wan animate
+          models have no such field, so showing it there would promise a
+          control that silently does nothing. */}
+      {recasting && /motion-control/.test(model?.id || "") && (
+        <Field label="Facing" hint="Which source decides which way the character faces. Auto leaves it to the model.">
           <Segmented
-            label="Head direction"
+            label="Facing"
             value={orientation}
             onChange={setOrientation}
             options={ORIENTATIONS}
@@ -315,47 +336,42 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
   );
 
   /* ── Recast dock ──────────────────────────────────────────────────────
-     Recast has no required brief, so the action gates on the pairing
-     rather than on text — the same dock the standalone RecastStudio had.
-     Same meter, same button, different condition. */
+     Recast has no REQUIRED brief — it gates on the identity/scene pairing —
+     but it does accept an optional one, and the hand-rolled dock it used to
+     render had no textarea at all, so JOBS.recast.placeholder was copy no
+     user could ever act on. Commit is the shared dock for exactly this
+     case: same meter, same button, same place as every prompted studio,
+     with the optional brief kept above it. */
   const recastDock = (
-    <div className="st-dock-prompt">
-      <div className="st-spend">
-        <SpendMeter
-          cost={cost || 0}
-          balance={balance}
-          affordable={affordable}
-          shortfall={shortfall}
-          label="Cost"
+    <Commit
+      cost={cost || 0}
+      balance={balance}
+      affordable={affordable}
+      shortfall={shortfall}
+      generating={generating}
+      stage={stage}
+      onSubmit={generate}
+      onCancel={cancel}
+      submitLabel="Recast"
+      disabled={!recastReady}
+      blocked={
+        !model ? "No recast model available"
+          : !identity ? "Add the identity photo first"
+            : !source ? "Add the scene footage first"
+              : ""
+      }
+    >
+      <div className="st-brief">
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value.slice(0, 2000))}
+          placeholder={copy.placeholder}
+          aria-label="Optional recast note"
+          rows={2}
+          disabled={generating}
         />
-
-        {generating ? (
-          <button type="button" className="hs-btn hs-btn--outline hs-btn--lg" onClick={cancel}>
-            <span className="hs-spin" />
-            {stage ? String(stage).replace(/_/g, " ") : "Working"}
-            <IcClose className="hs-icon-sm" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="hs-btn hs-btn--primary hs-btn--lg"
-            onClick={generate}
-            disabled={!recastReady}
-            title={
-              !model ? "No recast model available"
-                : !identity ? "Add the identity photo first"
-                  : !source ? "Add the scene footage first"
-                    : !affordable ? "Not enough credits"
-                      : "Recast"
-            }
-          >
-            <IcBolt className="hs-icon-sm" />
-            Recast
-            {cost > 0 && <span className="hs-btn__cost">{cost}</span>}
-          </button>
-        )}
       </div>
-    </div>
+    </Commit>
   );
 
   return (

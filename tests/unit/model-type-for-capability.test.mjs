@@ -32,6 +32,10 @@ describe("modelTypeForCapability — the single source of truth for modelType", 
     "image-to-video": "i2v",
     "video-to-video": "v2v",
     "reference-to-video": "i2v",
+    // Recast takes an identity IMAGE plus the scene VIDEO, so it types as an
+    // image-input model for the same reason reference-to-video does: the
+    // text-only pool must never be able to offer it.
+    recast: "i2v",
     "avatar-video": "lipsync",
     "text-to-speech": "audio",
     audio: "audio",

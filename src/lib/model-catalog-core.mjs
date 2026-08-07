@@ -203,6 +203,9 @@ export const CAPABILITY_TO_MODEL_TYPE = {
   // capability STRING via capability-groups.js (r2v: ["reference-to-video"]),
   // which this modelType mapping never touched.
   "reference-to-video": "i2v",
+  // Recast takes an identity IMAGE plus the scene VIDEO, so it is an
+  // image-input model for pool typing — never offer it for a text-only step.
+  recast: "i2v",
   "avatar-video": "lipsync",
   "text-to-speech": "audio",
   audio: "audio",
@@ -649,6 +652,13 @@ export function inferCapability(path) {
   if (TEXT_TO_VIDEO_MARKERS.test(path)) return "text-to-video";
   if (VIDEO_TO_VIDEO_MARKERS.test(path)) return "video-to-video";
   if (/reference-to-video|r2v/.test(path)) return "reference-to-video";
+  /* Identity transfer — one face/subject placed into an existing clip that
+     keeps its own timing and blocking. These carry `image_url` + `video_url`
+     (or `input_urls` + `video_urls`) and, on the Kling family, an explicit
+     `character_orientation`. Must be tested BEFORE the coarse `video|kling|
+     wan` catch-all below, which otherwise files them as plain "video" and
+     drops them out of every picker that filters by group. */
+  if (/recast|motion-control|animate-replace|animate-move/.test(path)) return "recast";
   if (/upscale/.test(path)) return path.includes("video") ? "video-upscale" : "image-upscale";
   if (/remove-background/.test(path)) return "background-removal";
   if (/text-to-speech|tts|dialogue|voice/.test(path)) return "text-to-speech";

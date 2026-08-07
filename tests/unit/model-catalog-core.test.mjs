@@ -102,8 +102,21 @@ test("inferCapability: img2vid also maps to image-to-video", () => {
 });
 
 test("inferCapability: an id with NO direction marker at all still falls through to the coarse 'video' fallback — conservative by design", () => {
-  for (const id of ["kling/pro", "bytedance/seedance-2", "wan-animate-move", "wan-animate-replace", "wan-speech-to-video", "wan/2-2-animate-move", "pixverse/transition"]) {
+  for (const id of ["kling/pro", "bytedance/seedance-2", "wan-speech-to-video", "pixverse/transition"]) {
     assert.equal(inferCapability(id), "video", `${id} should stay coarse "video" — no unambiguous marker`);
+  }
+});
+
+// The `animate-*` and `motion-control` families DO carry an unambiguous
+// marker: every one of them REQUIRES both an image and a video
+// (`image_url*` + `video_url*`, or `input_urls*` + `video_urls*`) — they
+// place an identity into existing footage. Filing them as coarse "video"
+// put them in the ttv group, where the planner could pick one for a
+// text-only step and the provider rejected every such run. They are their
+// own capability now; see CAPABILITY_GROUPS.recast.
+test("inferCapability: identity-transfer families are recast, not coarse video", () => {
+  for (const id of ["wan-animate-move", "wan-animate-replace", "wan/2-2-animate-move", "kling-3.0/motion-control"]) {
+    assert.equal(inferCapability(id), "recast", `${id} requires an image AND a video — it is identity transfer`);
   }
 });
 
@@ -127,7 +140,7 @@ test("Group membership: no image-to-video/video-to-video model ends up in the tt
     assert.equal(matchesGroup({ capability }, "v2v"), true, `${id} (${capability}) must be in v2v`);
   }
   // Genuinely t2v/multi ids stay in ttv, whether marker-precise or coarse.
-  for (const id of [...t2vIds, "kling/pro", "bytedance/seedance-2", "wan-animate-move", "wan-speech-to-video"]) {
+  for (const id of [...t2vIds, "kling/pro", "bytedance/seedance-2", "wan-speech-to-video"]) {
     const capability = inferCapability(id);
     assert.equal(matchesGroup({ capability }, "ttv"), true, `${id} (${capability}) must be in ttv`);
   }

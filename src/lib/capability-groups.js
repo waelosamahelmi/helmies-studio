@@ -17,6 +17,11 @@ export const CAPABILITY_GROUPS = {
   i2v: ["image-to-video", "i2v"],
   v2v: ["video-to-video", "v2v", "video-upscale"],
   r2v: ["reference-to-video"],
+  // Identity transfer: a face placed into a clip that keeps its own timing
+  // and blocking. Previously these models inferred as coarse "video", which
+  // put them in the ttv group — so the Recast job's picker, which filters
+  // v2v, never showed a single model that could actually recast.
+  recast: ["recast"],
   audio: ["audio", "text-to-speech"],
   lipsync: ["lipsync", "avatar-video"],
 };
