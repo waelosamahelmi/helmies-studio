@@ -61,3 +61,56 @@ describe("absolutizeMediaUrls", () => {
     expect(params.image_url).toBe("/api/media/local/abc.png");
   });
 });
+
+describe("field names are not how media is found (2026-08-07 production failure)", () => {
+  // Every angle of a real identity pack failed at the provider because
+  // nano-banana's reference field is `image_input`, which matched none of the
+  // *_url / *_urls / *_list / reference_images patterns the old
+  // implementation keyed on. It went out as "/api/media/local/….png", which a
+  // provider's servers cannot fetch.
+  const BASE = "https://studio.helmies.fi";
+  beforeEach(() => { process.env.NEXTAUTH_URL = BASE; });
+  afterEach(() => { process.env.NEXTAUTH_URL = ORIGINAL; });
+  const rel = "/api/media/local/abc.png";
+  const abs = `${BASE}${rel}`;
+
+  it("absolutizes the reference fields the live model families actually use", () => {
+    expect(absolutizeMediaUrls({ image_input: [rel] }).image_input).toEqual([abs]);      // nano-banana
+    expect(absolutizeMediaUrls({ reference_image: rel }).reference_image).toBe(abs);      // wan-2.7-r2v
+    expect(absolutizeMediaUrls({ first_frame: rel }).first_frame).toBe(abs);              // wan-2.7-r2v
+    expect(absolutizeMediaUrls({ reference_voice: rel }).reference_voice).toBe(abs);      // wan-2.7-r2v
+    expect(absolutizeMediaUrls({ reference_video: rel }).reference_video).toBe(abs);      // minimax-h3
+    expect(absolutizeMediaUrls({ mask: rel }).mask).toBe(abs);                            // inpainting
+  });
+
+  it("still covers everything the name patterns used to", () => {
+    expect(absolutizeMediaUrls({ image_url: rel }).image_url).toBe(abs);
+    expect(absolutizeMediaUrls({ reference_image_urls: [rel] }).reference_image_urls).toEqual([abs]);
+    expect(absolutizeMediaUrls({ images_list: [rel] }).images_list).toEqual([abs]);
+  });
+
+  it("reaches a path nested inside an object", () => {
+    const out = absolutizeMediaUrls({ elements: [{ image: rel }] });
+    expect(out.elements[0].image).toBe(abs);
+  });
+
+  it("leaves everything that is not an app-relative path untouched", () => {
+    const untouched = {
+      prompt: "/api/media/local/is-just-text-here",  // prose is never a location
+      already: "https://cdn.example/x.png",
+      data: "data:image/png;base64,AAAA",
+      taskId: "abc-123",
+      duration: 5,
+      flag: true,
+      nothing: null,
+    };
+    expect(absolutizeMediaUrls(untouched)).toEqual(untouched);
+  });
+
+  it("survives a self-referential payload instead of recursing forever", () => {
+    const cyclic = { image_input: [rel] };
+    cyclic.self = cyclic;
+    expect(() => absolutizeMediaUrls(cyclic)).not.toThrow();
+    expect(absolutizeMediaUrls(cyclic).image_input).toEqual([abs]);
+  });
+});

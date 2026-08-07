@@ -674,6 +674,10 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
           tool: "image",
           model: model.id,
           prompt: angle.prompt,
+          // The angle prompts are deliberately clinical; expanding them adds
+          // invented look ("editorial", "pale skin tones") to what is meant
+          // to be a plain record of this person.
+          expand: false,
           entityIds: [entity.id],
           entityPurpose: "identity",
         }),

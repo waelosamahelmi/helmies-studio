@@ -206,17 +206,45 @@ function absolutizeValue(value, base) {
   return typeof value === "string" && value.startsWith(APP_RELATIVE_PREFIX) ? `${base}${value}` : value;
 }
 
+// Field NAMES are not a reliable way to find media here. That approach
+// covered *_url / *_urls / *_list / reference_images and shipped looking
+// generic, but the families that matter name their inputs image_input
+// (nano-banana), reference_image / first_frame / reference_voice (wan-r2v)
+// and reference_video — none of which match. A real identity pack failed
+// every angle at the provider because image_input went out as
+// "/api/media/local/….png".
+//
+// So don't guess the field: rewrite any string that IS an app-relative path,
+// wherever it sits, including inside nested arrays and objects. There is no
+// false-positive risk — a value starting with "/api/" can never be
+// meaningful to a provider's servers, whatever field holds it — and nothing
+// else is touched (absolute URLs, data: URIs and provider task ids all pass
+// through unchanged).
+// Fields that carry prose or an identifier rather than a location. A prompt
+// that happens to mention a path is text the user wrote, and a provider task
+// id is opaque — neither is ours to rewrite, however path-shaped it looks.
+const NEVER_A_LOCATION = new Set([
+  "prompt", "negative_prompt", "text", "description", "title", "style",
+  "taskId", "task_id", "requestId", "request_id", "id", "model", "endpoint", "tool",
+]);
+
+function absolutizeDeep(value, base, depth = 0, field = null) {
+  if (typeof value === "string") {
+    return field && NEVER_A_LOCATION.has(field) ? value : absolutizeValue(value, base);
+  }
+  if (depth >= 6) return value; // payloads are shallow; this only stops a cycle
+  if (Array.isArray(value)) return value.map((v) => absolutizeDeep(v, base, depth + 1, field));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = absolutizeDeep(v, base, depth + 1, k);
+    return out;
+  }
+  return value;
+}
+
 export function absolutizeMediaUrls(params = {}) {
   if (!params || typeof params !== "object") return params;
-  const base = publicBaseUrl();
-  const next = { ...params };
-  for (const [name, value] of Object.entries(next)) {
-    const mediaish = /_url$/.test(name) || /_urls$/.test(name) || /_list$/.test(name) || name === "reference_images";
-    if (!mediaish) continue;
-    if (Array.isArray(value)) next[name] = value.map((v) => absolutizeValue(v, base));
-    else next[name] = absolutizeValue(value, base);
-  }
-  return next;
+  return absolutizeDeep(params, publicBaseUrl());
 }
 
 export function applyRequiredDefaults(params = {}, schema = null, opts = {}) {

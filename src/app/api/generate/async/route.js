@@ -204,7 +204,12 @@ export async function POST(req) {
         styleId: body.styleId,
       });
     }
-    if (shouldExpand(finalPrompt)) {
+    // `expand: false` opts out. A reference photograph is a technical brief,
+    // not a creative one: the expander rewrote "flat even lighting, plain
+    // mid-grey background, no stylisation" into "editorial style, pale skin
+    // tones, 8K clarity", which is exactly the kind of invention an identity
+    // reference must not carry.
+    if (body.expand !== false && shouldExpand(finalPrompt)) {
       const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
       finalPrompt = await expandPrompt(finalPrompt, promptType, model);
     }
