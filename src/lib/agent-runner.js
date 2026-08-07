@@ -290,25 +290,25 @@ async function enqueueStep(run, step, prevOutputs) {
       }
     }
 
-    const { modelId, row, substitution } = await resolveStepModel(step, params);
-    const endpoint = row?.endpoint || modelId || agentKey;
-    const providerModelId = (row && runnableProviderModelId(row)) || modelId || agentKey;
-
-    // C1.9: a plan step naming entities gets their descriptor and their
-    // reference images, exactly as /api/generate/async does. Without this the
-    // agent was the ONE surface that ignored the cast — a step could carry
-    // entityIds and still render a stranger.
+    // Entity references FIRST, resolved against the PLANNED model's schema.
+    // Order matters: resolveStepModel nulls out any model that requires media
+    // input when the step has none, and substitutes something cheaper. The
+    // entity's reference photographs ARE that media input — injecting after
+    // resolution meant every character shot was demoted off
+    // seedream/5-pro-image-to-image onto z-image, which takes no reference at
+    // all, so the face was carried by the description alone.
     let finalPrompt = params.prompt || params.text || step.task || "";
     let entityDigests = null;
     const entityIds = Array.isArray(step.params?.entityIds) ? step.params.entityIds : [];
     if (entityIds.length) {
       try {
+        const plannedRow = await resolveRunnableModel(step.params?.model || step.modelPlanned).catch(() => null);
         const injected = await injectEntities({
           prisma,
           userId: run.userId,
           entityIds,
           params,
-          schema: row?.inputSchema || null,
+          schema: plannedRow?.inputSchema || null,
           purpose: purposeForStep({ agent: agentKey, task: step.task, prompt: finalPrompt }),
         });
         Object.assign(params, injected.params);
@@ -322,6 +322,10 @@ ${finalPrompt}`;
         log.warn("agent_entity_inject_failed", { runId: run.id, stepId: step.stepId, err: err?.message });
       }
     }
+
+    const { modelId, row, substitution } = await resolveStepModel(step, params);
+    const endpoint = row?.endpoint || modelId || agentKey;
+    const providerModelId = (row && runnableProviderModelId(row)) || modelId || agentKey;
 
     // Fill the model's REQUIRED rendering settings, exactly as the async route
     // does. Without this a plan step on seedream/5-pro went out with no
