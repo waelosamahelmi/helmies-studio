@@ -12,7 +12,7 @@ import {
 } from "@/components/studio/kit";
 import {
   ATTRIBUTE_KEYS, REFERENCE_KINDS,
-  IDENTITY_PACK, missingPackAngles,
+  IDENTITY_PACK, missingPackAngles, imageReferenceSlot,
 } from "@/lib/entity-core.mjs";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -639,9 +639,15 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
   const missing = missingPackAngles(entity);
   const hasSource = (entity.references || []).length > 0;
 
-  /* A model that cannot take a reference image would invent a new face every
-     time, which is the opposite of what this sheet is for. */
-  const referenceModels = useMemo(() => (models || []).filter((m) => (m.maxImages ?? 0) > 0), [models]);
+  /* A model that cannot take a reference image would invent a new face on
+     every angle, which is the opposite of what this sheet is for. The test is
+     imageReferenceSlot — the SAME function the server uses to decide where
+     references go — so the list offered here can never include a model whose
+     references the server would then have nowhere to put. */
+  const referenceModels = useMemo(
+    () => (models || []).filter((m) => imageReferenceSlot(m.schema)),
+    [models]
+  );
 
   useEffect(() => {
     if (model || !referenceModels.length) return;
