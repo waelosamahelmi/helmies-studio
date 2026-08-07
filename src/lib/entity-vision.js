@@ -36,7 +36,7 @@ const FIELD_GUIDE = {
   wardrobe: "what they are wearing",
   accessories: "glasses, jewellery, watch",
   makeup: "visible makeup, or empty",
-  defaultExpression: "what their face is doing at rest",
+  defaultExpression: "the RESTING shape of their face — brow, eye and mouth set when they are doing nothing. Never record a smile or any expression they happen to be wearing in the photograph",
   posture: "how they hold themselves, only if the frame shows enough",
 };
 
@@ -48,6 +48,7 @@ Rules:
 - Describe the person, never the photograph. No mention of lighting, background, camera, framing, or image quality.
 - Keep each value under 200 characters.
 - Never describe clothing as an identity trait if it looks incidental — put it in wardrobe.
+- A MOOD IS NOT A FEATURE. Whatever the person is doing with their face in this photograph — smiling, laughing, frowning — is what they were doing that day, not who they are. Every word here is repeated into every shot the character ever appears in, so a "warm smile" recorded once puts a smile into a funeral. Describe the face's resting structure and leave the performance to the director.
 
 Reply with ONLY a JSON object whose keys are exactly these, each a string:
 ${Object.entries(FIELD_GUIDE).map(([k, v]) => `  "${k}": ${v}`).join("\n")}`;
