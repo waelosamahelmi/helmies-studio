@@ -8,7 +8,7 @@ import { useModelCatalog } from "./useModelCatalog";
 import StepPalette from "./workflow/StepPalette";
 import StepNode from "./workflow/StepNode";
 import {
-  Sheet, SpendMeter, ModelPicker, Field, Group, Chips, RatioPicker, Specs,
+  Sheet, Commit, ModelPicker, Field, Group, Chips, RatioPicker, Specs,
   IcFlow, IcPlay, IcPlus, IcTrash, IcCheck, IcAlert, IcExternal,
   IcImage, IcVideo, IcMusic, IcMegaphone, IcGrid, IcBrain, IcUpload, IcLayers,
   IcChevron, IcChevronLeft, IcMic, IcFilm, IcZoomIn, IcVolume, IcDownload,
@@ -832,31 +832,20 @@ export default function WorkflowStudio({ onCreditsChanged }) {
           </div>
         </div>
 
-        <div className="st-dock-prompt">
-          <div className="st-spend">
-            <SpendMeter
-              cost={total ?? 0}
-              balance={balance}
-              affordable={affordable}
-              shortfall={shortfall}
-              label="Run cost"
-            />
-            <button
-              type="button"
-              className="hs-btn hs-btn--primary hs-btn--lg"
-              onClick={run}
-              disabled={!!runBlock || !!busy}
-              title={runBlock || `Run all ${steps.length} steps`}
-            >
-              {running ? <span className="hs-spin" /> : <IcPlay className="hs-icon-sm" />}
-              {running ? "Running" : "Run workflow"}
-              {total != null && !running && <span className="hs-btn__cost hs-mono">{total}</span>}
-            </button>
-          </div>
-          {runBlock && !running && (
-            <p className="hs-hint" style={{ marginTop: "var(--s-2)" }}>{runBlock}</p>
-          )}
-        </div>
+        <Commit
+          cost={total ?? 0}
+          balance={balance}
+          affordable={affordable}
+          shortfall={shortfall}
+          meterLabel="Run cost"
+          generating={running}
+          onSubmit={run}
+          submitLabel={running ? "Running" : "Run workflow"}
+          icon={IcPlay}
+          disabled={!!runBlock || !!busy}
+          blocked={runBlock || ""}
+          hint={!running ? runBlock : ""}
+        />
       </div>
 
       {/* Saved list on narrow screens, where .st-flow__side is hidden */}

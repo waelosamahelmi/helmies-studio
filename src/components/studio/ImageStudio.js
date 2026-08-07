@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Workspace, Brief, ModelPicker, Stage, Idle, SpendMeter,
+  Workspace, Brief, Commit, ModelPicker, Stage, Idle,
   Field, Group, Chips, RatioPicker, Dropzone, Specs,
-  IcImage, IcCamera, IcPersona, IcBolt, IcClose,
+  IcImage, IcCamera, IcPersona,
 } from "@/components/studio/kit";
 import { CINEMA_CAMERAS, CINEMA_LENS, CINEMA_FOCAL, CINEMA_APERTURE, INFLUENCER_TABS } from "@/lib/models";
 import { useModelCatalog } from "./useModelCatalog";
@@ -591,45 +591,25 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
     />
   );
 
-  /* No required brief — the action gates on the source, same shape the old
-     RecastStudio dock used. Same meter, same button, different condition. */
+  /* No required brief — the action gates on the source, not on text. */
   const dock = (
-    <div className="st-dock-prompt">
-      <div className="st-spend">
-        <SpendMeter
-          cost={cost || 0}
-          balance={balance}
-          affordable={affordable}
-          shortfall={shortfall}
-          label="Cost"
-        />
-
-        {generating ? (
-          <button type="button" className="hs-btn hs-btn--outline hs-btn--lg" onClick={cancel}>
-            <span className="hs-spin" />
-            {stage ? String(stage).replace(/_/g, " ") : "Working"}
-            <IcClose className="hs-icon-sm" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="hs-btn hs-btn--primary hs-btn--lg"
-            onClick={generate}
-            disabled={!ready}
-            title={
-              !model ? "No upscaling model available"
-                : !source ? "Load the source image first"
-                  : !affordable ? "Not enough credits"
-                    : "Upscale"
-            }
-          >
-            <IcBolt className="hs-icon-sm" />
-            Upscale
-            {cost > 0 && <span className="hs-btn__cost">{cost}</span>}
-          </button>
-        )}
-      </div>
-    </div>
+    <Commit
+      cost={cost || 0}
+      balance={balance}
+      affordable={affordable}
+      shortfall={shortfall}
+      generating={generating}
+      stage={stage}
+      onSubmit={generate}
+      onCancel={cancel}
+      submitLabel="Upscale"
+      disabled={!ready}
+      blocked={
+        !model ? "No upscaling model available"
+          : !source ? "Load the source image first"
+            : ""
+      }
+    />
   );
 
   return (
