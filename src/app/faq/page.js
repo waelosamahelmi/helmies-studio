@@ -26,7 +26,7 @@ const FAQS = [
     category: "General",
     question: "What is Helmies Studio?",
     answer:
-      "Helmies Studio is an all-in-one AI creative platform that gives you access to 70+ state-of-the-art generative AI models across image, video, audio, lip sync, and more. One subscription unlocks every studio with no filters or hidden limits.",
+      "Helmies Studio is an all-in-one AI creative platform that gives you access to 130+ state-of-the-art generative AI models across image, video, audio, lip sync, and more. One subscription unlocks every studio with no filters or hidden limits.",
   },
   {
     category: "General",
@@ -51,7 +51,7 @@ const FAQS = [
     category: "Credits & Pricing",
     question: "What subscription plans are available?",
     answer:
-      `We offer four subscription tiers: Free (${n(SUBSCRIPTION_CREDITS.free)} credits/mo), Starter (${n(SUBSCRIPTION_CREDITS.starter)} credits/mo at €24/mo), Studio (${n(SUBSCRIPTION_CREDITS.studio)} credits/mo at €49/mo), and Pro (${n(SUBSCRIPTION_CREDITS.pro)} credits/mo at €99/mo). Yearly billing saves you 20%. Every plan gives you access to all 70+ models and all 12 studios.`,
+      `We offer four subscription tiers: Free (${n(SUBSCRIPTION_CREDITS.free)} credits/mo), Starter (${n(SUBSCRIPTION_CREDITS.starter)} credits/mo at €24/mo), Studio (${n(SUBSCRIPTION_CREDITS.studio)} credits/mo at €49/mo), and Pro (${n(SUBSCRIPTION_CREDITS.pro)} credits/mo at €99/mo). Yearly billing saves you 20%. Every plan gives you access to all 130+ models and all 12 studios.`,
   },
   {
     category: "Credits & Pricing",
