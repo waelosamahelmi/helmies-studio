@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
+import ErrorState from "@/components/states/ErrorState";
 import {
   Confirm, Modal, Field, Segmented,
-  IcBrain, IcPersona, IcPalette, IcImage, IcSearch, IcPlus, IcTrash,
+  useGridRoving, LibrarySearch, LibrarySkeleton,
+  IcBrain, IcPersona, IcPalette, IcImage, IcPlus, IcTrash,
   IcCopy, IcCheck, IcRefresh, IcAlert, IcClose, IcSettings,
 } from "@/components/studio/kit";
 
@@ -124,8 +126,6 @@ export default function MemoryStudio() {
   const [saving, setSaving] = useState(false);
   const [pending, setPending] = useState(null);
   const [copied, setCopied] = useState("");
-
-  const gridRef = useRef(null);
   const copyTimer = useRef(null);
   useEffect(() => () => clearTimeout(copyTimer.current), []);
 
@@ -241,23 +241,7 @@ export default function MemoryStudio() {
     return list;
   }, [items, query, sort]);
 
-  const onGridKey = (e) => {
-    if (!["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
-    const nodes = Array.from(gridRef.current?.querySelectorAll("[data-card]") || []);
-    const i = nodes.indexOf(document.activeElement);
-    if (i < 0) return;
-    const cols = Math.max(1, String(window.getComputedStyle(gridRef.current).gridTemplateColumns).split(" ").filter(Boolean).length);
-    let next = i;
-    if (e.key === "ArrowRight") next = i + 1;
-    else if (e.key === "ArrowLeft") next = i - 1;
-    else if (e.key === "ArrowDown") next = i + cols;
-    else if (e.key === "ArrowUp") next = i - cols;
-    else if (e.key === "Home") next = 0;
-    else next = nodes.length - 1;
-    if (next < 0 || next >= nodes.length) return;
-    e.preventDefault();
-    nodes[next].focus();
-  };
+  const { gridRef, onGridKey } = useGridRoving();
 
   const openNew = () => setEditor({ mode: "new", id: null, type: kind, name: "", text: "" });
   const openEdit = (item) =>
@@ -285,21 +269,12 @@ export default function MemoryStudio() {
           options={KINDS.map((k) => ({ value: k.value, label: k.label }))}
         />
 
-        <div style={{ position: "relative", flex: "1 1 180px", minWidth: 160, maxWidth: 320 }}>
-          <IcSearch
-            className="hs-icon-sm"
-            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--tx-mute)", pointerEvents: "none" }}
-          />
-          <input
-            type="search"
-            className="hs-input"
-            style={{ paddingLeft: 32 }}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search names and contents"
-            aria-label="Search memory records"
-          />
-        </div>
+        <LibrarySearch
+          value={query}
+          onChange={setQuery}
+          placeholder="Search names and contents"
+          label="Search memory records"
+        />
 
         <select
           className="hs-select"
@@ -322,7 +297,12 @@ export default function MemoryStudio() {
 
       {/* ── Body ─────────────────────────────────────────────────────── */}
       <div className="st-lib__body">
-        {error && (
+        {/* A failed load must not render as "nothing saved yet" — that tells
+            the user their records do not exist when the request merely
+            failed. Nothing loaded means ErrorState REPLACES the list; this
+            banner stays for every other error, which happens alongside
+            content that did load. Same reasoning as AssetLibraryStudio. */}
+        {error && !(shown.length === 0 && !query.trim()) && (
           <div className="hs-notice hs-notice--fault" style={{ marginBottom: "var(--s-4)" }} role="alert">
             <IcAlert className="hs-icon-sm" style={{ marginTop: 2 }} />
             <span style={{ flex: 1 }}>{error}</span>
@@ -339,17 +319,9 @@ export default function MemoryStudio() {
         )}
 
         {loading ? (
-          <div className="st-lib__grid" aria-busy="true" aria-label="Loading memory records">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="st-item">
-                <div className="hs-skel" style={{ aspectRatio: "1", borderRadius: 0 }} />
-                <div className="st-item__body">
-                  <div className="hs-skel" style={{ height: 10, width: "68%" }} />
-                  <div className="hs-skel" style={{ height: 8, width: "44%" }} />
-                </div>
-              </div>
-            ))}
-          </div>
+          <LibrarySkeleton count={8} label="Loading memory records" />
+        ) : error && shown.length === 0 && !query.trim() ? (
+          <ErrorState message={error} onRetry={reload} />
         ) : shown.length === 0 ? (
           <div className="hs-empty">
             <span className="hs-empty__mark"><IcBrain /></span>

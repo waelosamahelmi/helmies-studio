@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
+import ErrorState from "@/components/states/ErrorState";
 import {
   Confirm, Modal, Field, Segmented, Chips,
-  IcPalette, IcSearch, IcPlus, IcTrash, IcCopy, IcCheck, IcRefresh,
+  useGridRoving, LibrarySearch, LibrarySkeleton,
+  IcPalette, IcPlus, IcTrash, IcCopy, IcCheck, IcRefresh,
   IcChevronLeft, IcAlert, IcClose, IcSpark,
 } from "@/components/studio/kit";
 
@@ -245,8 +247,6 @@ export default function BrandKitStudio() {
   const [newName, setNewName] = useState("");
   const [pending, setPending] = useState(null);
   const [copied, setCopied] = useState("");
-
-  const gridRef = useRef(null);
   const copyTimer = useRef(null);
   useEffect(() => () => clearTimeout(copyTimer.current), []);
 
@@ -389,23 +389,7 @@ export default function BrandKitStudio() {
   }, []);
 
   /* ── Grid keyboard movement ─────────────────────────────────────────── */
-  const onGridKey = (e) => {
-    if (!["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
-    const nodes = Array.from(gridRef.current?.querySelectorAll("[data-card]") || []);
-    const i = nodes.indexOf(document.activeElement);
-    if (i < 0) return;
-    const cols = Math.max(1, String(window.getComputedStyle(gridRef.current).gridTemplateColumns).split(" ").filter(Boolean).length);
-    let next = i;
-    if (e.key === "ArrowRight") next = i + 1;
-    else if (e.key === "ArrowLeft") next = i - 1;
-    else if (e.key === "ArrowDown") next = i + cols;
-    else if (e.key === "ArrowUp") next = i - cols;
-    else if (e.key === "Home") next = 0;
-    else next = nodes.length - 1;
-    if (next < 0 || next >= nodes.length) return;
-    e.preventDefault();
-    nodes[next].focus();
-  };
+  const { gridRef, onGridKey } = useGridRoving();
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -425,7 +409,7 @@ export default function BrandKitStudio() {
       <IcAlert className="hs-icon-sm" style={{ marginTop: 2 }} />
       <span style={{ flex: 1 }}>{error}</span>
       <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={() => setReloads((n) => n + 1)}>
-        <IcRefresh className="hs-icon-sm" /> Reload
+        <IcRefresh className="hs-icon-sm" /> Retry
       </button>
     </div>
   );
@@ -618,21 +602,12 @@ export default function BrandKitStudio() {
   return (
     <div className="st-lib">
       <div className="st-lib__bar">
-        <div style={{ position: "relative", flex: "1 1 180px", minWidth: 160, maxWidth: 320 }}>
-          <IcSearch
-            className="hs-icon-sm"
-            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--tx-mute)", pointerEvents: "none" }}
-          />
-          <input
-            type="search"
-            className="hs-input"
-            style={{ paddingLeft: 32 }}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search kits"
-            aria-label="Search brand kits"
-          />
-        </div>
+        <LibrarySearch
+          value={query}
+          onChange={setQuery}
+          placeholder="Search kits"
+          label="Search brand kits"
+        />
 
         <span className="hs-mono hs-mute" style={{ fontSize: 10, letterSpacing: "0.06em" }}>
           {loading ? "—" : `${shown.length} kit${shown.length === 1 ? "" : "s"}`}
@@ -649,20 +624,20 @@ export default function BrandKitStudio() {
       </div>
 
       <div className="st-lib__body">
-        {error && <div style={{ marginBottom: "var(--s-4)" }}>{faultNotice}</div>}
+        {/* A failed load must not render as "No brand kits yet" — that tells
+            the user their data does not exist when the request merely
+            failed. Nothing loaded means ErrorState REPLACES the list; the
+            inline banner stays for every other error, which happens
+            alongside content that did load. Same reasoning as
+            AssetLibraryStudio. */}
+        {error && !(shown.length === 0 && !query.trim()) && (
+          <div style={{ marginBottom: "var(--s-4)" }}>{faultNotice}</div>
+        )}
 
         {loading ? (
-          <div className="st-lib__grid" aria-busy="true" aria-label="Loading brand kits">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="st-item">
-                <div className="hs-skel" style={{ aspectRatio: "1", borderRadius: 0 }} />
-                <div className="st-item__body">
-                  <div className="hs-skel" style={{ height: 10, width: "64%" }} />
-                  <div className="hs-skel" style={{ height: 8, width: "42%" }} />
-                </div>
-              </div>
-            ))}
-          </div>
+          <LibrarySkeleton count={6} label="Loading brand kits" />
+        ) : error && shown.length === 0 && !query.trim() ? (
+          <ErrorState message={error} onRetry={() => setReloads((n) => n + 1)} />
         ) : shown.length === 0 ? (
           <div className="hs-empty">
             <span className="hs-empty__mark"><IcPalette /></span>

@@ -112,6 +112,35 @@ re-applies a stale asset.
 `components/studio/ShortcutHelp.js`. Add a shortcut there, not in a tool, and
 never bind an unmodified key that would swallow a keystroke while typing.
 
+## Collection browsers (`.st-lib`)
+
+Assets, Brand kits and Projects share the parts that were identical in all
+three. Use these rather than pasting a fourth copy:
+
+```js
+const { gridRef, onGridKey } = useGridRoving();   // arrow keys + Home/End
+const { copied, flash } = useCopyFeedback();      // "Copied" that resets itself
+
+<LibrarySearch value={query} onChange={setQuery} placeholder="…" label="…" />
+<LibrarySkeleton count={8} label="Loading …" />
+<LibraryCard kindLabel name meta ariaLabel onOpen frame overlay actions />
+```
+
+`frame` is a slot because it is the one genuinely divergent part (a
+thumbnail, a row of colour bands, an icon over a summary). Fetching,
+pagination, sort options and the detail views stay local — those differ per
+browser and folding them together buys nothing.
+
+`LibraryCard` keeps its `.st-item` wrapper around both the button and the
+actions row. `.st-item__acts` is revealed by `:hover`/`:focus-within` on
+that ancestor, so flattening it removes the actions for keyboard users.
+
+**A failed load is not an empty collection.** When nothing loaded because
+the request failed, render `<ErrorState>` in place of the list — never the
+"nothing here yet" empty state, which tells the user their data does not
+exist. Keep the inline `hs-notice--fault` banner for errors that happen
+alongside content that did load.
+
 ## Layout archetypes (CSS lives in `studio.css`)
 
 | Class | Shape | Use for |

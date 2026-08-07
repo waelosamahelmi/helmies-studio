@@ -5,7 +5,8 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/client-fetch";
 import {
   Confirm, Modal, Specs, Segmented,
-  IcImage, IcVideo, IcMusic, IcSearch, IcDownload, IcCopy, IcCheck,
+  useGridRoving, LibrarySearch, LibrarySkeleton,
+  IcImage, IcVideo, IcMusic, IcDownload, IcCopy, IcCheck,
   IcTrash, IcExternal, IcRefresh, IcLayers, IcAlert, IcClose,
 } from "@/components/studio/kit";
 import EmptyState from "@/components/states/EmptyState";
@@ -87,13 +88,6 @@ function metaLine(a) {
 
 const nameOf = (a) => a?.name || `Untitled ${kindOf(a)}`;
 
-/* ── Roving arrow-key movement across the card grid ───────────────────── */
-function columnsOf(el) {
-  if (!el || typeof window === "undefined") return 1;
-  const cols = window.getComputedStyle(el).gridTemplateColumns;
-  return Math.max(1, String(cols).split(" ").filter(Boolean).length);
-}
-
 export default function AssetLibraryStudio() {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -112,8 +106,6 @@ export default function AssetLibraryStudio() {
   const [open, setOpen] = useState(null);      // asset shown in the detail modal
   const [pending, setPending] = useState(null); // asset awaiting delete confirmation
   const [copied, setCopied] = useState("");
-
-  const gridRef = useRef(null);
   const sentinelRef = useRef(null);
   const copyTimer = useRef(null);
 
@@ -242,23 +234,7 @@ export default function AssetLibraryStudio() {
     [assets],
   );
 
-  const onGridKey = (e) => {
-    if (!["ArrowRight", "ArrowLeft", "ArrowUp", "ArrowDown", "Home", "End"].includes(e.key)) return;
-    const nodes = Array.from(gridRef.current?.querySelectorAll("[data-card]") || []);
-    const i = nodes.indexOf(document.activeElement);
-    if (i < 0) return;
-    const cols = columnsOf(gridRef.current);
-    let next = i;
-    if (e.key === "ArrowRight") next = i + 1;
-    else if (e.key === "ArrowLeft") next = i - 1;
-    else if (e.key === "ArrowDown") next = i + cols;
-    else if (e.key === "ArrowUp") next = i - cols;
-    else if (e.key === "Home") next = 0;
-    else next = nodes.length - 1;
-    if (next < 0 || next >= nodes.length) return;
-    e.preventDefault();
-    nodes[next].focus();
-  };
+  const { gridRef, onGridKey } = useGridRoving();
 
   const filtering = query.trim() !== "" || favouritesOnly || type !== "all";
 
@@ -281,21 +257,12 @@ export default function AssetLibraryStudio() {
           options={TYPES}
         />
 
-        <div style={{ position: "relative", flex: "1 1 180px", minWidth: 160, maxWidth: 320 }}>
-          <IcSearch
-            className="hs-icon-sm"
-            style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--tx-mute)", pointerEvents: "none" }}
-          />
-          <input
-            type="search"
-            className="hs-input"
-            style={{ paddingLeft: 32 }}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search name, model or source"
-            aria-label="Search loaded assets"
-          />
-        </div>
+        <LibrarySearch
+          value={query}
+          onChange={setQuery}
+          placeholder="Search name, model or source"
+          label="Search loaded assets"
+        />
 
         <select
           className="hs-select"
@@ -342,17 +309,7 @@ export default function AssetLibraryStudio() {
         )}
 
         {loading ? (
-          <div className="st-lib__grid" aria-busy="true" aria-label="Loading assets">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <div key={i} className="st-item">
-                <div className="hs-skel" style={{ aspectRatio: "1", borderRadius: 0 }} />
-                <div className="st-item__body">
-                  <div className="hs-skel" style={{ height: 10, width: "72%" }} />
-                  <div className="hs-skel" style={{ height: 8, width: "48%" }} />
-                </div>
-              </div>
-            ))}
-          </div>
+          <LibrarySkeleton count={12} label="Loading assets" />
         ) : shown.length === 0 && !filtering && error ? (
           <ErrorState message={error} onRetry={() => setReloads((n) => n + 1)} />
         ) : shown.length === 0 ? (
