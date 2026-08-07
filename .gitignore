@@ -53,3 +53,10 @@ public/media/_seg_*.mp4
 public/media/_tmp_*
 public/media/_concat_*.txt
 .claude/
+
+# runtime output — model generations and user uploads. Regenerable or
+# user-supplied, and binary, so keeping them out of history stops every
+# re-render from bloating the repo. Supersedes the per-pattern
+# public/media rules above; those stay for clarity about what lands here.
+/public/media/
+/public/uploads/
