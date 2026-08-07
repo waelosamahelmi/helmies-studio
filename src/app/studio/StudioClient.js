@@ -10,6 +10,7 @@ import { TOOL_IDS } from "@/components/studio/kit/tools";
 import CommandPalette from "@/components/studio/CommandPalette";
 import ErrorBoundary from "@/components/studio/v6/ErrorBoundary";
 import { useToast } from "@/components/ToastProvider";
+import ShortcutHelp, { GO_KEYS } from "@/components/studio/ShortcutHelp";
 
 import OrchestratorStudio from "@/components/studio/OrchestratorStudio";
 import ImageStudio from "@/components/studio/ImageStudio";
@@ -52,6 +53,8 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
   const [credits, setCredits] = useState(null);
   const [running, setRunning] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [keysOpen, setKeysOpen] = useState(false);
+  const chordRef = useRef(null);
   const [templateConfig, setTemplateConfig] = useState(null);
   const [isPending, startTransition] = useTransition();
 
@@ -140,17 +143,51 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
     return () => { dead = true; clearTimeout(timer); };
   }, []);
 
-  /* ⌘K / Ctrl+K */
+  /* Global shortcuts.
+
+     Typing must never be hijacked: a bare "g" is a letter in a brief, not a
+     command. So the unmodified keys are ignored while focus is in a field,
+     and only the modified ones (⌘K) work everywhere. `?` opens the map —
+     shortcuts nobody can discover may as well not exist. */
   useEffect(() => {
+    const typing = (el) =>
+      !!el && (el.isContentEditable
+        || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
+
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      const mod = e.metaKey || e.ctrlKey;
+
+      if (mod && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+        return;
+      }
+
+      if (e.altKey || typing(document.activeElement)) return;
+
+      if (e.key === "?") {
+        e.preventDefault();
+        setKeysOpen((v) => !v);
+        return;
+      }
+
+      /* g then a tool letter — the two-key idiom from Gmail and GitHub,
+         which is what a keyboard user reaches for first. */
+      if (!mod && e.key.toLowerCase() === "g") {
+        chordRef.current = window.setTimeout(() => { chordRef.current = null; }, 1200);
+        return;
+      }
+      if (chordRef.current) {
+        const target = GO_KEYS[e.key.toLowerCase()];
+        window.clearTimeout(chordRef.current);
+        chordRef.current = null;
+        if (target) { e.preventDefault(); select(target); }
       }
     };
+
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [select]);
 
   const Tool = TOOL_COMPONENTS[active] || OrchestratorStudio;
 
@@ -160,6 +197,7 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
         active={active}
         onSelect={select}
         onCommand={() => setPaletteOpen(true)}
+        onKeys={() => setKeysOpen(true)}
         credits={credits}
         running={running}
       >
@@ -192,6 +230,8 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
         onSelect={select}
         active={active}
       />
+
+      <ShortcutHelp open={keysOpen} onClose={() => setKeysOpen(false)} />
     </MotionConfig>
   );
 }

@@ -97,6 +97,7 @@ export default function Shell({
   active,
   onSelect,
   onCommand,
+  onKeys,
   credits,
   running = 0,
   children,
@@ -165,6 +166,17 @@ export default function Shell({
             </Link>
           )}
           <Credits credits={credits} />
+          {onKeys && (
+            <button
+              type="button"
+              className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon hs-tip st-keys-btn"
+              data-tip="Keyboard shortcuts (?)"
+              aria-label="Keyboard shortcuts"
+              onClick={onKeys}
+            >
+              <kbd className="hs-kbd" style={{ pointerEvents: "none" }}>?</kbd>
+            </button>
+          )}
           <ThemeToggle />
           <Link
             href="/settings"

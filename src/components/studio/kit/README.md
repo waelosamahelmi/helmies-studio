@@ -71,6 +71,47 @@ apiFetch(url, init)  // from "@/lib/client-fetch"
 **Throws** `ApiError` on any non-2xx — `res.ok` is always true at the call site,
 so `if (!res.ok)` guards are dead code. Use try/catch. `err.status` is the code.
 
+## Cross-tool systems (shared, wire once — never per tool)
+
+Three capabilities span every studio. Each is recorded or rendered in ONE
+place so a new tool inherits it for free. Do not reimplement them locally.
+
+**Prompt history.** Recorded in `useAsyncGeneration`'s `submit` — every tool
+routes through it, so nothing needs to call `recordPrompt` itself. Surfaced
+by the `<History>` control inside `<Brief>`: pass `tool="<TOOL_ID>"` to Brief
+and the recall button appears. Recorded at submit, not on success, because a
+brief that failed is the one you most want back.
+
+```js
+<Brief tool="image" value={prompt} onChange={setPrompt} … />
+```
+
+**Result handoff.** `<Stage>` renders a *Send to* menu on every result via
+`kit/SendTo.js`, so a still can be animated or lip-synced without a
+download/re-upload round trip. Targets come from `mediaKind(url)` in
+`@/lib/studio-handoff` — a video is never offered "Animate". Pass `prompt` to
+`<Stage>` so the brief travels with the asset.
+
+To RECEIVE a handoff, a tool reads it once with `useHandoff()` and applies
+what it understands, exactly like inbound `templateConfig`:
+
+```js
+const handoff = useHandoff();
+useEffect(() => {
+  if (!handoff) return;
+  setSourceImage({ url: handoff.url });
+  if (handoff.prompt) setPrompt(handoff.prompt);
+}, [handoff]);
+```
+
+The payload is cleared on read, so returning to the tool later never
+re-applies a stale asset.
+
+**Keyboard.** Global shortcuts live in `StudioClient`, and the map users read
+(`?`) is generated from the same `GO_KEYS` the listener uses — see
+`components/studio/ShortcutHelp.js`. Add a shortcut there, not in a tool, and
+never bind an unmodified key that would swallow a keystroke while typing.
+
 ## Layout archetypes (CSS lives in `studio.css`)
 
 | Class | Shape | Use for |
