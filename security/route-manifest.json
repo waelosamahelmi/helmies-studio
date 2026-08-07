@@ -25,7 +25,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 (final round): verifyOrigin wired on POST/PUT/PATCH/DELETE (GET read-only, unchecked). EDITSv1 E8.3 added PUT — the full, explicitly validated campaign edit that did not exist before (create/toggle/delete only, so fixing a typo meant deleting the campaign and its metrics). PATCH is narrowed to the isActive switch, the one thing it was ever actually called with. Both write through one shared field mapper, so a field cannot be settable on create and silently ignored on edit — which is exactly how `audience` ended up write-only. The impressions/clicks counters are deliberately NOT writable from here: they are facts about what happened."
+    "notes": "Task 3 (final round): verifyOrigin wired on POST/PUT/PATCH/DELETE (GET read-only, unchecked). EDITSv1 E8.3 added PUT \u2014 the full, explicitly validated campaign edit that did not exist before (create/toggle/delete only, so fixing a typo meant deleting the campaign and its metrics). PATCH is narrowed to the isActive switch, the one thing it was ever actually called with. Both write through one shared field mapper, so a field cannot be settable on create and silently ignored on edit \u2014 which is exactly how `audience` ended up write-only. The impressions/clicks counters are deliberately NOT writable from here: they are facts about what happened."
   },
   {
     "path": "/api/admin/audit",
@@ -38,18 +38,6 @@
     "rateLimit": "none",
     "stateChanging": false,
     "notes": ""
-  },
-  {
-    "path": "/api/admin/cms-content/publish",
-    "file": "src/app/api/admin/cms-content/publish/route.js",
-    "methods": [
-      "POST"
-    ],
-    "auth": "admin",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/admin/cms-content",
@@ -66,6 +54,18 @@
     "notes": "Task 3 (final round): verifyOrigin wired on POST/PATCH (GET read-only, unchecked)."
   },
   {
+    "path": "/api/admin/cms-content/publish",
+    "file": "src/app/api/admin/cms-content/publish/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "admin",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
+  },
+  {
     "path": "/api/admin/credit-packs",
     "file": "src/app/api/admin/credit-packs/route.js",
     "methods": [
@@ -76,7 +76,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked; no PATCH exists on this file) — reviewer flagged this as a genuine gap: POST creates purchasable CreditPack rows."
+    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked; no PATCH exists on this file) \u2014 reviewer flagged this as a genuine gap: POST creates purchasable CreditPack rows."
   },
   {
     "path": "/api/admin/flags",
@@ -125,20 +125,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "Phase 7 Task 2. Read-only aggregation (collectMetrics) — no DB writes, so unchecked for origin like every other GET-only admin route."
-  },
-  {
-    "path": "/api/admin/ops",
-    "file": "src/app/api/admin/ops/route.js",
-    "methods": [
-      "GET",
-      "POST"
-    ],
-    "auth": "admin",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "Phase 7 Task 3. Reads/sets maintenance mode (FeatureFlag) and per-provider kill switch (ProviderConfig.isActive) via @/lib/ops-flags. verifyOrigin wired on POST (GET read-only, unchecked). Deliberately exempt from middleware's own maintenance-mode 503 (/api/admin/* prefix) so an operator can always reach this to toggle maintenance back off."
+    "notes": "Phase 7 Task 2. Read-only aggregation (collectMetrics) \u2014 no DB writes, so unchecked for origin like every other GET-only admin route."
   },
   {
     "path": "/api/admin/models",
@@ -164,7 +151,20 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "Diagnostic reachability probe (HEAD to provider baseUrl) only — writes nothing to the DB despite being a POST."
+    "notes": "Diagnostic reachability probe (HEAD to provider baseUrl) only \u2014 writes nothing to the DB despite being a POST."
+  },
+  {
+    "path": "/api/admin/ops",
+    "file": "src/app/api/admin/ops/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "admin",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Phase 7 Task 3. Reads/sets maintenance mode (FeatureFlag) and per-provider kill switch (ProviderConfig.isActive) via @/lib/ops-flags. verifyOrigin wired on POST (GET read-only, unchecked). Deliberately exempt from middleware's own maintenance-mode 503 (/api/admin/* prefix) so an operator can always reach this to toggle maintenance back off."
   },
   {
     "path": "/api/admin/plans",
@@ -177,7 +177,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked; no PATCH exists on this file) — reviewer flagged this as a genuine gap: SubscriptionPlan rows here are the sole source of truth for which Stripe price a checkout charges."
+    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked; no PATCH exists on this file) \u2014 reviewer flagged this as a genuine gap: SubscriptionPlan rows here are the sole source of truth for which Stripe price a checkout charges."
   },
   {
     "path": "/api/admin/pricing",
@@ -205,7 +205,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked) — reviewer flagged this as a genuine gap: manages discount-code eligibility/value."
+    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked) \u2014 reviewer flagged this as a genuine gap: manages discount-code eligibility/value."
   },
   {
     "path": "/api/admin/prompt-guides",
@@ -257,7 +257,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked) — reviewer flagged this as a genuine gap (forged cross-site admin-session POST could silently grant wallet credits via grantCredits), not intentional staging."
+    "notes": "Task 3 origin-check target. Task 3 fix: verifyOrigin wired on POST (GET read-only, unchecked) \u2014 reviewer flagged this as a genuine gap (forged cross-site admin-session POST could silently grant wallet credits via grantCredits), not intentional staging."
   },
   {
     "path": "/api/admin/sync/catalog",
@@ -294,7 +294,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. PATCH can grant the admin role and directly adjust a user's wallet balance — the highest-privilege mutation in the app. Task 3: verifyOrigin wired on PATCH (GET read-only, unchecked)."
+    "notes": "Task 3 origin-check target. PATCH can grant the admin role and directly adjust a user's wallet balance \u2014 the highest-privilege mutation in the app. Task 3: verifyOrigin wired on PATCH (GET read-only, unchecked)."
   },
   {
     "path": "/api/agent/chat",
@@ -306,7 +306,7 @@
     "originCheck": true,
     "rateLimit": "/api/agent",
     "stateChanging": true,
-    "notes": "EDITSv1 E3.2: streams an LLM chat completion; when body.sessionId names an OWNED AgentSession, both sides of the turn are persisted as AgentMessage rows (appendMessage), so this is now state-changing — verifyOrigin wired on POST."
+    "notes": "EDITSv1 E3.2: streams an LLM chat completion; when body.sessionId names an OWNED AgentSession, both sides of the turn are persisted as AgentMessage rows (appendMessage), so this is now state-changing \u2014 verifyOrigin wired on POST."
   },
   {
     "path": "/api/agent/plan",
@@ -318,7 +318,7 @@
     "originCheck": true,
     "rateLimit": "/api/agent",
     "stateChanging": true,
-    "notes": "EDITSv1 E3.2: still a pure server-side quote (nothing runs/charged), but when body.sessionId names an OWNED AgentSession the brief + plan are persisted as AgentMessage rows for resume — verifyOrigin wired on POST."
+    "notes": "EDITSv1 E3.2: still a pure server-side quote (nothing runs/charged), but when body.sessionId names an OWNED AgentSession the brief + plan are persisted as AgentMessage rows for resume \u2014 verifyOrigin wired on POST."
   },
   {
     "path": "/api/agent/run",
@@ -330,7 +330,7 @@
     "originCheck": true,
     "rateLimit": "/api/agent",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Delegates to executeAgentRun/executeAgentRunStream, which create AgentRun and Generation rows and spend credits — same billing surface as /api/generate/*. Task 3 fix: verifyOrigin wired on POST — reviewer flagged this as the same shape as workflows/[id]/run and generate/async (cookie-session, state-changing, credit-consuming), which WERE wired in the original pass; leaving it unwired was an inconsistency, not staging."
+    "notes": "Task 3 origin-check target. Delegates to executeAgentRun/executeAgentRunStream, which create AgentRun and Generation rows and spend credits \u2014 same billing surface as /api/generate/*. Task 3 fix: verifyOrigin wired on POST \u2014 reviewer flagged this as the same shape as workflows/[id]/run and generate/async (cookie-session, state-changing, credit-consuming), which WERE wired in the original pass; leaving it unwired was an inconsistency, not staging."
   },
   {
     "path": "/api/agent/run/[id]",
@@ -342,7 +342,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "2026-08-06 background runs: read-only status of ONE owned AgentRun (steps/credits/outputs) — the client polls this while a detached run executes. Owned-scope only, verifyOrigin wired on GET."
+    "notes": "2026-08-06 background runs: read-only status of ONE owned AgentRun (steps/credits/outputs) \u2014 the client polls this while a detached run executes. Owned-scope only, verifyOrigin wired on GET."
   },
   {
     "path": "/api/agent/run/[id]/cancel",
@@ -354,7 +354,7 @@
     "originCheck": true,
     "rateLimit": "/api/agent",
     "stateChanging": true,
-    "notes": "2026-08-07 Phase A1.6.4: owner-only cancel of a durable AgentRun. Sets cancelRequested and kicks advanceAgentRun — pending steps are skipped, in-flight provider work finishes but is never charged, and the reservation remainder is released. Spends no credits itself; a non-owned id is a uniform not_found."
+    "notes": "2026-08-07 Phase A1.6.4: owner-only cancel of a durable AgentRun. Sets cancelRequested and kicks advanceAgentRun \u2014 pending steps are skipped, in-flight provider work finishes but is never charged, and the reservation remainder is released. Spends no credits itself; a non-owned id is a uniform not_found."
   },
   {
     "path": "/api/agent/runs",
@@ -369,18 +369,6 @@
     "notes": "2026-08-06 background runs: read-only list of the user's AgentRun rows (optionally scoped to a session) so a resumed session can re-attach a still-executing run. Owned-scope only, verifyOrigin wired on GET."
   },
   {
-    "path": "/api/agent/step",
-    "file": "src/app/api/agent/step/route.js",
-    "methods": [
-      "POST"
-    ],
-    "auth": "user",
-    "originCheck": true,
-    "rateLimit": "/api/agent",
-    "stateChanging": true,
-    "notes": "EDITSv1 E3.2. Executes exactly ONE approved-plan step (per-asset Accept/Regenerate/Edit): debits exactly the step's SERVER-computed quote (model/prompt overrides re-quoted server-side; fallbacks capped at the same quote), writes the Generation row for media steps, refunds in full on failure. Same billing surface as /api/agent/run — verifyOrigin wired on POST."
-  },
-  {
     "path": "/api/agent/sessions",
     "file": "src/app/api/agent/sessions/route.js",
     "methods": [
@@ -391,7 +379,7 @@
     "originCheck": true,
     "rateLimit": "/api/agent",
     "stateChanging": true,
-    "notes": "EDITSv1 E3.1. GET lists the caller's active AgentSession rows (read-only, unchecked); POST creates one — verifyOrigin wired on POST, rate-limited via the shared '/api/agent' key."
+    "notes": "EDITSv1 E3.1. GET lists the caller's active AgentSession rows (read-only, unchecked); POST creates one \u2014 verifyOrigin wired on POST, rate-limited via the shared '/api/agent' key."
   },
   {
     "path": "/api/agent/sessions/[id]",
@@ -405,7 +393,19 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "EDITSv1 E3.1. GET returns one owned session + its messages (404s identically for missing and other users' sessions); PATCH renames/updates settings, DELETE archives (soft delete) — verifyOrigin wired on PATCH/DELETE (GET read-only, unchecked)."
+    "notes": "EDITSv1 E3.1. GET returns one owned session + its messages (404s identically for missing and other users' sessions); PATCH renames/updates settings, DELETE archives (soft delete) \u2014 verifyOrigin wired on PATCH/DELETE (GET read-only, unchecked)."
+  },
+  {
+    "path": "/api/agent/step",
+    "file": "src/app/api/agent/step/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/agent",
+    "stateChanging": true,
+    "notes": "EDITSv1 E3.2. Executes exactly ONE approved-plan step (per-asset Accept/Regenerate/Edit): debits exactly the step's SERVER-computed quote (model/prompt overrides re-quoted server-side; fallbacks capped at the same quote), writes the Generation row for media steps, refunds in full on failure. Same billing surface as /api/agent/run \u2014 verifyOrigin wired on POST."
   },
   {
     "path": "/api/analyze",
@@ -430,7 +430,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "EDITSv1 E8.2: read-only, anonymous callers allowed, but the result is now PER-VIEWER (audience + plan targeting + this user's dismissals), so it carries Cache-Control: private, no-store — a shared cache serving one viewer's targeted campaigns to another is the whole risk here. Previously returned the raw e.message from any failure to unauthenticated callers; now goes through the apiError envelope, which logs the cause server-side against an errorId and returns nothing internal. Targeting internals (audience, planTargets) and the metrics counters are stripped from the response shape."
+    "notes": "EDITSv1 E8.2: read-only, anonymous callers allowed, but the result is now PER-VIEWER (audience + plan targeting + this user's dismissals), so it carries Cache-Control: private, no-store \u2014 a shared cache serving one viewer's targeted campaigns to another is the whole risk here. Previously returned the raw e.message from any failure to unauthenticated callers; now goes through the apiError envelope, which logs the cause server-side against an errorId and returns nothing internal. Targeting internals (audience, planTargets) and the metrics counters are stripped from the response shape."
   },
   {
     "path": "/api/announcements/[id]/click",
@@ -442,19 +442,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "EDITSv1 E8.2. PUBLIC + STATE-CHANGING BY DESIGN, reviewed: a promotion on a public page is seen mostly by signed-out visitors and impressions are counted for them, so restricting clicks to signed-in users would leave the owner reading a click-through rate whose numerator is systematically missing. Blast radius is one integer: the handler can only add 1 to SiteAnnouncement.clicks on one row — it reads nothing, returns nothing about the campaign, and cannot reach any user's data. Protections: verifyOrigin (so another site cannot drive it from a visitor's browser) plus a hashed-IP limiter via checkAnonLimit (30 / 5min). rateLimit is 'none' here because that field tracks checkRateLimit/RATE_LIMITS keys only, per the auth/register precedent; the real limiter is src/lib/rate-limit.js's checkAnonLimit."
-  },
-  {
-    "path": "/api/announcements/[id]/impression",
-    "file": "src/app/api/announcements/[id]/impression/route.js",
-    "methods": [
-      "POST"
-    ],
-    "auth": "public",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "EDITSv1 E8.2. PUBLIC + STATE-CHANGING BY DESIGN, reviewed — same rationale, protections and blast radius as the sibling /click route (one integer, SiteAnnouncement.impressions), open to anonymous callers because a click count without a matching impression count measures nothing. Kept OUT of GET /api/announcements deliberately: a mutating GET would be incremented by every prefetch and speculative fetch, inflating the count with views no human had. verifyOrigin plus checkAnonLimit (60 / 5min)."
+    "notes": "EDITSv1 E8.2. PUBLIC + STATE-CHANGING BY DESIGN, reviewed: a promotion on a public page is seen mostly by signed-out visitors and impressions are counted for them, so restricting clicks to signed-in users would leave the owner reading a click-through rate whose numerator is systematically missing. Blast radius is one integer: the handler can only add 1 to SiteAnnouncement.clicks on one row \u2014 it reads nothing, returns nothing about the campaign, and cannot reach any user's data. Protections: verifyOrigin (so another site cannot drive it from a visitor's browser) plus a hashed-IP limiter via checkAnonLimit (30 / 5min). rateLimit is 'none' here because that field tracks checkRateLimit/RATE_LIMITS keys only, per the auth/register precedent; the real limiter is src/lib/rate-limit.js's checkAnonLimit."
   },
   {
     "path": "/api/announcements/[id]/dismiss",
@@ -466,7 +454,19 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "EDITSv1 E8.2: persists a signed-in user's dismissal so a campaign closed on one device stays closed on the next (it used to be localStorage-only). Auth required — an anonymous viewer has no account to hang the row off and keeps the localStorage path. Idempotent by construction via the (announcementId, userId) compound unique, so a double-submit is an update, not a duplicate or a 500."
+    "notes": "EDITSv1 E8.2: persists a signed-in user's dismissal so a campaign closed on one device stays closed on the next (it used to be localStorage-only). Auth required \u2014 an anonymous viewer has no account to hang the row off and keeps the localStorage path. Idempotent by construction via the (announcementId, userId) compound unique, so a double-submit is an update, not a duplicate or a 500."
+  },
+  {
+    "path": "/api/announcements/[id]/impression",
+    "file": "src/app/api/announcements/[id]/impression/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "public",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E8.2. PUBLIC + STATE-CHANGING BY DESIGN, reviewed \u2014 same rationale, protections and blast radius as the sibling /click route (one integer, SiteAnnouncement.impressions), open to anonymous callers because a click count without a matching impression count measures nothing. Kept OUT of GET /api/announcements deliberately: a mutating GET would be incremented by every prefetch and speculative fetch, inflating the count with views no human had. verifyOrigin plus checkAnonLimit (60 / 5min)."
   },
   {
     "path": "/api/assemble",
@@ -478,7 +478,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "NO rate limit — video assembly (transcode/concat) is CPU/IO-expensive and unbounded per-user; flagged as a DoS/cost-abuse anomaly. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
+    "notes": "NO rate limit \u2014 video assembly (transcode/concat) is CPU/IO-expensive and unbounded per-user; flagged as a DoS/cost-abuse anomaly. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/assets",
@@ -506,7 +506,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "NextAuth's own sign-in/callback/session/csrf endpoints (export const { GET, POST } = handlers — not detected by the export-function regex, so this file's methods here are hand-verified from src/lib/auth.js, not regex-extracted). Inherently must be reachable pre-session; creates/updates sessions and, on OAuth callback, User rows via the Prisma adapter. This is a 5th public+stateChanging route NOT in the Task 2 brief's enumerated exception list (stripe/webhook, webhooks/*, auth/register, contact) — flagged prominently in the task report for explicit sign-off. NextAuth has its own CSRF-token protection for the credentials flow, independent of this app's Task 3 origin-check work. Origin check N/A here specifically: must be reachable pre-session (sign-in itself), and NextAuth carries its own independent CSRF-token protection for the credentials flow — layering this app's verifyOrigin on top is out of scope for Task 3."
+    "notes": "NextAuth's own sign-in/callback/session/csrf endpoints (export const { GET, POST } = handlers \u2014 not detected by the export-function regex, so this file's methods here are hand-verified from src/lib/auth.js, not regex-extracted). Inherently must be reachable pre-session; creates/updates sessions and, on OAuth callback, User rows via the Prisma adapter. This is a 5th public+stateChanging route NOT in the Task 2 brief's enumerated exception list (stripe/webhook, webhooks/*, auth/register, contact) \u2014 flagged prominently in the task report for explicit sign-off. NextAuth has its own CSRF-token protection for the credentials flow, independent of this app's Task 3 origin-check work. Origin check N/A here specifically: must be reachable pre-session (sign-in itself), and NextAuth carries its own independent CSRF-token protection for the credentials flow \u2014 layering this app's verifyOrigin on top is out of scope for Task 3."
   },
   {
     "path": "/api/auth/register",
@@ -518,19 +518,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception. Rate-limited by a custom in-memory per-IP counter (10 attempts/10min) local to this file, NOT the shared checkRateLimit/RATE_LIMITS map (rateLimit is 'none' here because the manifest's rateLimit field tracks checkRateLimit keys only). First-ever registered user is auto-promoted to admin (bootstrap) with no further gate. IP is read from X-Forwarded-For, trivially spoofable without a trusted reverse proxy in front. Origin check N/A: public-by-design signup endpoint (Task 2's enumerated public+stateChanging exception) — a pre-session caller has no session cookie for CSRF to ride on, so origin verification does not apply here the way it does to cookie-session routes."
-  },
-  {
-    "path": "/api/brand-kits/fingerprint",
-    "file": "src/app/api/brand-kits/fingerprint/route.js",
-    "methods": [
-      "POST"
-    ],
-    "auth": "user",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "No rate limit despite invoking Visual Intelligence analysis across all brand assets (extractBrandFingerprint, confirmed to prisma.brandKit.update) — an expensive operation; flagged as anomaly. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
+    "notes": "Public by design \u2014 Task 2 brief's enumerated public+stateChanging exception. Rate-limited by a custom in-memory per-IP counter (10 attempts/10min) local to this file, NOT the shared checkRateLimit/RATE_LIMITS map (rateLimit is 'none' here because the manifest's rateLimit field tracks checkRateLimit keys only). First-ever registered user is auto-promoted to admin (bootstrap) with no further gate. IP is read from X-Forwarded-For, trivially spoofable without a trusted reverse proxy in front. Origin check N/A: public-by-design signup endpoint (Task 2's enumerated public+stateChanging exception) \u2014 a pre-session caller has no session cookie for CSRF to ride on, so origin verification does not apply here the way it does to cookie-session routes."
   },
   {
     "path": "/api/brand-kits",
@@ -546,6 +534,18 @@
     "rateLimit": "none",
     "stateChanging": true,
     "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/PATCH/DELETE (GET read-only, unchecked)."
+  },
+  {
+    "path": "/api/brand-kits/fingerprint",
+    "file": "src/app/api/brand-kits/fingerprint/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "No rate limit despite invoking Visual Intelligence analysis across all brand assets (extractBrandFingerprint, confirmed to prisma.brandKit.update) \u2014 an expensive operation; flagged as anomaly. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/canvas",
@@ -584,7 +584,7 @@
     "originCheck": false,
     "rateLimit": "/api/contact",
     "stateChanging": true,
-    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception. Rate-limited via the shared checkRateLimit, keyed by user id when signed in or an `ip:`-prefixed IP otherwise (5 per 10min). Origin check N/A: public-by-design endpoint (Task 2's enumerated public+stateChanging exception), reachable by design from anywhere (e.g. an embedded contact form) and already rate-limited; not a cookie-session CSRF surface."
+    "notes": "Public by design \u2014 Task 2 brief's enumerated public+stateChanging exception. Rate-limited via the shared checkRateLimit, keyed by user id when signed in or an `ip:`-prefixed IP otherwise (5 per 10min). Origin check N/A: public-by-design endpoint (Task 2's enumerated public+stateChanging exception), reachable by design from anywhere (e.g. an embedded contact form) and already rate-limited; not a cookie-session CSRF surface."
   },
   {
     "path": "/api/credits",
@@ -608,7 +608,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Phase 8 Task A2. Bearer CRON_SECRET, identical pattern to /api/cron/automation; fails closed (401) if unset or mismatched. Evaluates Phase 7's collectMetrics() through evaluateAlerts (src/lib/alerts.js, pure), writes FeatureFlag dedup-state rows (key prefix alert_state:) via filterDueAlerts, and posts to ALERT_WEBHOOK_URL via deliverAlerts when configured (a logged no-op otherwise) — hence stateChanging:true (the FeatureFlag writes). Not a Task 3 origin-check target — same rationale as /api/cron/automation: an external cron dispatcher with a bearer secret, not a browser session, so no Origin/Referer header to check."
+    "notes": "Phase 8 Task A2. Bearer CRON_SECRET, identical pattern to /api/cron/automation; fails closed (401) if unset or mismatched. Evaluates Phase 7's collectMetrics() through evaluateAlerts (src/lib/alerts.js, pure), writes FeatureFlag dedup-state rows (key prefix alert_state:) via filterDueAlerts, and posts to ALERT_WEBHOOK_URL via deliverAlerts when configured (a logged no-op otherwise) \u2014 hence stateChanging:true (the FeatureFlag writes). Not a Task 3 origin-check target \u2014 same rationale as /api/cron/automation: an external cron dispatcher with a bearer secret, not a browser session, so no Origin/Referer header to check."
   },
   {
     "path": "/api/cron/automation",
@@ -620,7 +620,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Bearer CRON_SECRET; fails closed (401) if unset or mismatched. Runs autoDisableFailingModels + autoSuspendAbusiveUsers (confirmed DB writes). Not a Task 3 origin-check target — caller is an external cron dispatcher with a bearer secret, not a browser session. Origin check N/A: bearer CRON_SECRET from an external cron dispatcher, not a browser session — no Origin/Referer header to check."
+    "notes": "Bearer CRON_SECRET; fails closed (401) if unset or mismatched. Runs autoDisableFailingModels + autoSuspendAbusiveUsers (confirmed DB writes). Not a Task 3 origin-check target \u2014 caller is an external cron dispatcher with a bearer secret, not a browser session. Origin check N/A: bearer CRON_SECRET from an external cron dispatcher, not a browser session \u2014 no Origin/Referer header to check."
   },
   {
     "path": "/api/cron/sync-kie",
@@ -632,7 +632,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Bearer CRON_SECRET; fails closed with 503 if unset (cron/automation instead returns 401 for the same unset-secret case — a harmless status-code inconsistency between the two cron routes, not a vulnerability). Not a Task 3 origin-check target. Origin check N/A: authenticated by a bearer CRON_SECRET from an external cron dispatcher, not a browser session — no Origin/Referer header to check."
+    "notes": "Bearer CRON_SECRET; fails closed with 503 if unset (cron/automation instead returns 401 for the same unset-secret case \u2014 a harmless status-code inconsistency between the two cron routes, not a vulnerability). Not a Task 3 origin-check target. Origin check N/A: authenticated by a bearer CRON_SECRET from an external cron dispatcher, not a browser session \u2014 no Origin/Referer header to check."
   },
   {
     "path": "/api/dev/logs",
@@ -644,7 +644,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "ANOMALY: NOT requireAdminUser/role-based RBAC — uses a hardcoded 2-address DEV_EMAILS allowlist checked against the NextAuth session email via auth(), independent of the User.role column. A role='admin' DB user not in DEV_EMAILS is refused (403); conversely a DEV_EMAILS address whose DB role isn't 'admin' still passes. Also execs `pm2 logs` for helmies-app/helmies-bites/helmies-studio/all (cross-app log disclosure) gated only by that hardcoded list, with no rate limit. Recommend migrating to requireAdminUser in a follow-up."
+    "notes": "ANOMALY: NOT requireAdminUser/role-based RBAC \u2014 uses a hardcoded 2-address DEV_EMAILS allowlist checked against the NextAuth session email via auth(), independent of the User.role column. A role='admin' DB user not in DEV_EMAILS is refused (403); conversely a DEV_EMAILS address whose DB role isn't 'admin' still passes. Also execs `pm2 logs` for helmies-app/helmies-bites/helmies-studio/all (cross-app log disclosure) gated only by that hardcoded list, with no rate limit. Recommend migrating to requireAdminUser in a follow-up."
   },
   {
     "path": "/api/director/execute",
@@ -656,7 +656,19 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Delegates to executeProductionPipeline, which drives a multi-shot generation pipeline (multiple credit-spending Generation rows via DirectorPipeline) — same cost profile as /api/generate/* but with NO rate limit. Flagged as anomaly alongside director/plan and director/rerun. Task 3 fix: verifyOrigin wired on POST — reviewer flagged this as the same shape as workflows/[id]/run and generate/async (cookie-session, state-changing, credit-consuming), which WERE wired in the original pass; leaving it unwired was an inconsistency, not staging."
+    "notes": "Task 3 origin-check target. Delegates to executeProductionPipeline, which drives a multi-shot generation pipeline (multiple credit-spending Generation rows via DirectorPipeline) \u2014 same cost profile as /api/generate/* but with NO rate limit. Flagged as anomaly alongside director/plan and director/rerun. Task 3 fix: verifyOrigin wired on POST \u2014 reviewer flagged this as the same shape as workflows/[id]/run and generate/async (cookie-session, state-changing, credit-consuming), which WERE wired in the original pass; leaving it unwired was an inconsistency, not staging."
+  },
+  {
+    "path": "/api/director/generate-shot",
+    "file": "src/app/api/director/generate-shot/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "EDITSv1 E4.2. Generates ONE asset (image|video) for ONE planned shot before full execution \u2014 creates the DirectorShot row when missing, debits EXACTLY that shot's server-quoted per-kind cost (pipeline.costEstimate.shotCosts) through the wallet ledger, refunds on failure, 409s while the pipeline is executing. Same no-rate-limit anomaly class as director/execute and director/rerun. verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/director/plan",
@@ -671,18 +683,6 @@
     "notes": "Creates a DirectorPipeline row (confirmed). No rate limit on plan creation. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
-    "path": "/api/director/generate-shot",
-    "file": "src/app/api/director/generate-shot/route.js",
-    "methods": [
-      "POST"
-    ],
-    "auth": "user",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "EDITSv1 E4.2. Generates ONE asset (image|video) for ONE planned shot before full execution — creates the DirectorShot row when missing, debits EXACTLY that shot's server-quoted per-kind cost (pipeline.costEstimate.shotCosts) through the wallet ledger, refunds on failure, 409s while the pipeline is executing. Same no-rate-limit anomaly class as director/execute and director/rerun. verifyOrigin wired on POST (only method on this file)."
-  },
-  {
     "path": "/api/director/plan/[id]",
     "file": "src/app/api/director/plan/[id]/route.js",
     "methods": [
@@ -693,7 +693,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "EDITSv1 E4.1. GET returns the stored DirectorPipeline plan (caller-scoped, 404 on other users'). PATCH edits the plan via updateProductionPlan — cost estimate and shot validation are recomputed SERVER-SIDE from the edited shots (client can never set its own price), and edits are refused (409) while the pipeline is executing/completed. verifyOrigin wired on PATCH (GET read-only, unchecked)."
+    "notes": "EDITSv1 E4.1. GET returns the stored DirectorPipeline plan (caller-scoped, 404 on other users'). PATCH edits the plan via updateProductionPlan \u2014 cost estimate and shot validation are recomputed SERVER-SIDE from the edited shots (client can never set its own price), and edits are refused (409) while the pipeline is executing/completed. verifyOrigin wired on PATCH (GET read-only, unchecked)."
   },
   {
     "path": "/api/director/rerun",
@@ -705,19 +705,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Re-runs a generation shot (credit-spending) with no rate limit — same anomaly class as director/execute. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
-  },
-  {
-    "path": "/api/director/timeline-chat",
-    "file": "src/app/api/director/timeline-chat/route.js",
-    "methods": [
-      "POST"
-    ],
-    "auth": "user",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": false,
-    "notes": "EDITSv1 E4.4. Translates a natural-language instruction into a CONSTRAINED timeline op list ({ops:[trim|reorder|remove|split]}) via llmComplete over the pipeline's real clip list. Ops are validated server-side (src/lib/timeline-ops.js) against the actual clip count; invalid/unknown ops 422 with the invalid_params envelope. NEVER assembles — the client applies ops locally and the user still clicks Re-assemble (which hits /api/assemble). No DB writes, but origin-checked anyway: cookie-session POST that spends LLM tokens on a caller-supplied body (same rationale as templates/[slug]/quote)."
+    "notes": "Re-runs a generation shot (credit-spending) with no rate limit \u2014 same anomaly class as director/execute. Task 3 (final round): verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/director/status",
@@ -732,8 +720,60 @@
     "notes": ""
   },
   {
-    "path": "/api/estimate/batch",
-    "file": "src/app/api/estimate/batch/route.js",
+    "path": "/api/director/timeline-chat",
+    "file": "src/app/api/director/timeline-chat/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "EDITSv1 E4.4. Translates a natural-language instruction into a CONSTRAINED timeline op list ({ops:[trim|reorder|remove|split]}) via llmComplete over the pipeline's real clip list. Ops are validated server-side (src/lib/timeline-ops.js) against the actual clip count; invalid/unknown ops 422 with the invalid_params envelope. NEVER assembles \u2014 the client applies ops locally and the user still clicks Re-assemble (which hits /api/assemble). No DB writes, but origin-checked anyway: cookie-session POST that spends LLM tokens on a caller-supplied body (same rationale as templates/[slug]/quote)."
+  },
+  {
+    "path": "/api/entities",
+    "file": "src/app/api/entities/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/entities",
+    "stateChanging": true,
+    "notes": "2026-08-07 Phase C1.2: the caller's characters/products/environments. Owner-scoped list + create; spends no credits. Reference urls are restricted to our own media or https (entity-core.isAllowedReferenceUrl) so an entity can never point server-side fetches at an arbitrary scheme."
+  },
+  {
+    "path": "/api/entities/[id]",
+    "file": "src/app/api/entities/[id]/route.js",
+    "methods": [
+      "GET",
+      "PATCH",
+      "DELETE"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/entities",
+    "stateChanging": true,
+    "notes": "2026-08-07 Phase C1.2: one owned entity. A non-owner gets the same not_found as a non-existent id, so this cannot probe for other users' characters. A locked identity rejects attribute/reference edits with 409 until it is explicitly unlocked."
+  },
+  {
+    "path": "/api/entities/[id]/references",
+    "file": "src/app/api/entities/[id]/references/route.js",
+    "methods": [
+      "POST",
+      "DELETE"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/entities",
+    "stateChanging": true,
+    "notes": "2026-08-07 Phase C1.2: append/remove ONE reference. Separate from the whole-array PATCH specifically so two concurrent uploads cannot lose each other's image. Same lock rule and url allowlist as above."
+  },
+  {
+    "path": "/api/estimate",
+    "file": "src/app/api/estimate/route.js",
     "methods": [
       "POST"
     ],
@@ -744,8 +784,8 @@
     "notes": "Pure pricing calculation; no persistence."
   },
   {
-    "path": "/api/estimate",
-    "file": "src/app/api/estimate/route.js",
+    "path": "/api/estimate/batch",
+    "file": "src/app/api/estimate/batch/route.js",
     "methods": [
       "POST"
     ],
@@ -765,7 +805,7 @@
     "originCheck": true,
     "rateLimit": "/api/generate/async",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Unlike the 13 synchronous /api/generate/* tool routes (which go through handleGeneration in src/lib/generation-handler.js and accept EITHER a session OR an API key via authenticateApiKey), this route calls getCurrentUserWithCredits() only — API-key callers cannot use the async submission path. Classified 'user', not 'mixed(user+apikey)'; flagged as an inconsistency worth a product decision (intentional scope-limit vs. a gap). Task 3: verifyOrigin wired unconditionally on POST — this route authenticates via session cookie only (getCurrentUserWithCredits, no authenticateApiKey branch), so unlike the mixed(user+apikey) generate/* tool routes there is no api-key path to exempt. Phase 4A Task 5: no auth/originCheck/stateChanging change — this route now enqueues a durable GenerationJob (src/lib/job-queue.js) instead of calling the provider inline; it ends with the credit reservation ACTIVE (settle moved to the job runner / completion webhook) rather than settled synchronously as before."
+    "notes": "Task 3 origin-check target. Unlike the 13 synchronous /api/generate/* tool routes (which go through handleGeneration in src/lib/generation-handler.js and accept EITHER a session OR an API key via authenticateApiKey), this route calls getCurrentUserWithCredits() only \u2014 API-key callers cannot use the async submission path. Classified 'user', not 'mixed(user+apikey)'; flagged as an inconsistency worth a product decision (intentional scope-limit vs. a gap). Task 3: verifyOrigin wired unconditionally on POST \u2014 this route authenticates via session cookie only (getCurrentUserWithCredits, no authenticateApiKey branch), so unlike the mixed(user+apikey) generate/* tool routes there is no api-key path to exempt. Phase 4A Task 5: no auth/originCheck/stateChanging change \u2014 this route now enqueues a durable GenerationJob (src/lib/job-queue.js) instead of calling the provider inline; it ends with the credit reservation ACTIVE (settle moved to the job runner / completion webhook) rather than settled synchronously as before."
   },
   {
     "path": "/api/generate/audio",
@@ -777,7 +817,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/audio",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/cinema",
@@ -789,7 +829,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/cinema",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/clipping",
@@ -801,7 +841,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/clipping",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/i2i",
@@ -813,7 +853,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/i2i",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/i2v",
@@ -825,7 +865,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/i2v",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/image",
@@ -837,7 +877,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/image",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/influencer",
@@ -849,7 +889,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/influencer",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/lipsync",
@@ -861,7 +901,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/lipsync",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/marketing",
@@ -873,7 +913,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/marketing",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/motion",
@@ -885,7 +925,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/motion",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/recast",
@@ -897,7 +937,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/recast",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/v2v",
@@ -909,7 +949,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/v2v",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generate/video",
@@ -921,7 +961,7 @@
     "originCheck": false,
     "rateLimit": "/api/generate/video",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey → getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header — a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) — deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
+    "notes": "Task 3 origin-check target for the session-cookie half of `mixed`; the API-key half is a bearer credential immune to CSRF. Auth/billing/rate-limit logic lives entirely in src/lib/generation-handler.js's handleGeneration (authenticateApiKey \u2192 getCurrentUserWithCredits fallback; checkRateLimit(user.id, `/api/generate/${tool}`)). Task 3 decision: NOT wired to verifyOrigin. The api-key half of this mixed(user+apikey) route is a legitimate server-to-server/machine caller that never sends an Origin or Referer header \u2014 a blanket verifyOrigin(req) would incorrectly 403 that traffic. Correctly scoping this needs auth-path branching (apply the check only on the session-cookie branch, mirroring how generate/async is auth-only-by-session and was wired unconditionally) \u2014 deferred to a follow-up task across all 13 mixed(user+apikey) generate/* tool routes, not done in Task 3."
   },
   {
     "path": "/api/generations",
@@ -957,7 +997,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "Phase 7 Task 3. Public liveness/readiness probe; also the signal middleware.js polls (same-origin fetch) to decide whether to show the maintenance page — must never itself be blocked by maintenance mode. Read-only (isMaintenanceMode only), no DB writes."
+    "notes": "Phase 7 Task 3. Public liveness/readiness probe; also the signal middleware.js polls (same-origin fetch) to decide whether to show the maintenance page \u2014 must never itself be blocked by maintenance mode. Read-only (isMaintenanceMode only), no DB writes."
   },
   {
     "path": "/api/media/local/[name]",
@@ -969,7 +1009,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "Path-basename-sanitized static file serving from public/media and public/uploads; .svg deliberately excluded from the extension→MIME map to prevent stored-XSS via image/svg+xml."
+    "notes": "Path-basename-sanitized static file serving from public/media and public/uploads; .svg deliberately excluded from the extension\u2192MIME map to prevent stored-XSS via image/svg+xml."
   },
   {
     "path": "/api/media/proxy",
@@ -981,7 +1021,7 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "SSRF-guarded outbound proxy (validateOutboundUrl + manual redirect-chain re-validation, max 3 hops) for an attacker-supplied `url` query param. NO rate limit — an unauthenticated caller can drive unlimited outbound fetches through this server; flagged as anomaly (bandwidth/SSRF-surface abuse vector even with the host allowlist in place)."
+    "notes": "SSRF-guarded outbound proxy (validateOutboundUrl + manual redirect-chain re-validation, max 3 hops) for an attacker-supplied `url` query param. NO rate limit \u2014 an unauthenticated caller can drive unlimited outbound fetches through this server; flagged as anomaly (bandwidth/SSRF-surface abuse vector even with the host allowlist in place)."
   },
   {
     "path": "/api/memory",
@@ -996,7 +1036,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/DELETE. Task 3 fix: PATCH also wired (GET read-only, unchecked) — reviewer confirmed PATCH does the identical caller-scoped updateMany as POST/DELETE on this file, with no rationale for the earlier asymmetry."
+    "notes": "Task 3 origin-check target. Task 3: verifyOrigin wired on POST/DELETE. Task 3 fix: PATCH also wired (GET read-only, unchecked) \u2014 reviewer confirmed PATCH does the identical caller-scoped updateMany as POST/DELETE on this file, with no rationale for the earlier asymmetry."
   },
   {
     "path": "/api/models/catalog",
@@ -1044,7 +1084,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "EDITSv1 E8.4: the endpoint a customer's promo code previously had nowhere to go to — PromoCode was a full admin CRUD screen over a table nothing read, with no redemption path, no input field and currentUses never incremented. State-changing because a credit-grant code is redeemed here: credits land via wallet.js's grantCredits (ledger row and all — never a direct balance write), with the PromoRedemption row and the currentUses increment in the SAME transaction, so a double-submit cannot grant twice. Discount codes are only previewed here and record nothing; they are claimed at checkout. Rate-limited per USER (not IP) via checkAnonLimit, 20 attempts / 10min — the threat is guessing at the code space and the account is the axis that identifies the guesser. rateLimit is 'none' here because that field tracks checkRateLimit/RATE_LIMITS keys only, per the auth/register precedent."
+    "notes": "EDITSv1 E8.4: the endpoint a customer's promo code previously had nowhere to go to \u2014 PromoCode was a full admin CRUD screen over a table nothing read, with no redemption path, no input field and currentUses never incremented. State-changing because a credit-grant code is redeemed here: credits land via wallet.js's grantCredits (ledger row and all \u2014 never a direct balance write), with the PromoRedemption row and the currentUses increment in the SAME transaction, so a double-submit cannot grant twice. Discount codes are only previewed here and record nothing; they are claimed at checkout. Rate-limited per USER (not IP) via checkAnonLimit, 20 attempts / 10min \u2014 the threat is guessing at the code space and the account is the axis that identifies the guesser. rateLimit is 'none' here because that field tracks checkRateLimit/RATE_LIMITS keys only, per the auth/register precedent."
   },
   {
     "path": "/api/prompt/compile",
@@ -1080,7 +1120,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. No rate limit on Stripe Checkout Session creation — repeated calls hit Stripe's API directly and upsert a Subscription row each time; same anomaly class as stripe/portal, stripe/topup POST, and templates/purchase. Task 3: verifyOrigin wired on POST."
+    "notes": "Task 3 origin-check target. No rate limit on Stripe Checkout Session creation \u2014 repeated calls hit Stripe's API directly and upsert a Subscription row each time; same anomaly class as stripe/portal, stripe/topup POST, and templates/purchase. Task 3: verifyOrigin wired on POST."
   },
   {
     "path": "/api/stripe/portal",
@@ -1105,7 +1145,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "GET is public (lists active CreditPack rows — price list only, no PII, no auth check). POST requires user auth, creates a Stripe Checkout Session and possibly a placeholder Subscription row; no rate limit — same Stripe-API-abuse anomaly as stripe/checkout. Task 3 origin-check target (POST only). Task 3: verifyOrigin wired on POST only (GET stays public/unchecked)."
+    "notes": "GET is public (lists active CreditPack rows \u2014 price list only, no PII, no auth check). POST requires user auth, creates a Stripe Checkout Session and possibly a placeholder Subscription row; no rate limit \u2014 same Stripe-API-abuse anomaly as stripe/checkout. Task 3 origin-check target (POST only). Task 3: verifyOrigin wired on POST only (GET stays public/unchecked)."
   },
   {
     "path": "/api/stripe/webhook",
@@ -1117,7 +1157,34 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Public by design — Task 2 brief's enumerated public+stateChanging exception, and a Phase 1-2 fact ('signature-verified public'). Protected by Stripe signature verification (stripe-signature header + STRIPE_WEBHOOK_SECRET via stripe.webhooks.constructEvent) — NOT the WEBHOOK_SECRET/CRON_SECRET bearer pattern used by /api/webhooks/* and /api/cron/*. Idempotent via a unique constraint on StripeEvent.stripeEventId claimed inside the same transaction as every credit grant. Not a Task 3 origin-check target — Stripe's servers call this directly, not a browser. Origin check N/A: Stripe's servers call this directly (signature-verified via stripe-signature/STRIPE_WEBHOOK_SECRET) — never a browser, so no Origin/Referer header to check."
+    "notes": "Public by design \u2014 Task 2 brief's enumerated public+stateChanging exception, and a Phase 1-2 fact ('signature-verified public'). Protected by Stripe signature verification (stripe-signature header + STRIPE_WEBHOOK_SECRET via stripe.webhooks.constructEvent) \u2014 NOT the WEBHOOK_SECRET/CRON_SECRET bearer pattern used by /api/webhooks/* and /api/cron/*. Idempotent via a unique constraint on StripeEvent.stripeEventId claimed inside the same transaction as every credit grant. Not a Task 3 origin-check target \u2014 Stripe's servers call this directly, not a browser. Origin check N/A: Stripe's servers call this directly (signature-verified via stripe-signature/STRIPE_WEBHOOK_SECRET) \u2014 never a browser, so no Origin/Referer header to check."
+  },
+  {
+    "path": "/api/templates",
+    "file": "src/app/api/templates/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "admin",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "GET is public (published template listing). POST requires requireAdmin. Task 3 origin-check target (POST only). Task 3 (final round): verifyOrigin wired on POST (GET stays public/unchecked)."
+  },
+  {
+    "path": "/api/templates/[slug]",
+    "file": "src/app/api/templates/[slug]/route.js",
+    "methods": [
+      "GET",
+      "PUT",
+      "DELETE"
+    ],
+    "auth": "admin",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "GET is public (template detail + optional personalized hasAccess via a best-effort auth() call). PUT/DELETE require requireAdmin. Task 3 origin-check target (PUT/DELETE only). Task 3 (final round): verifyOrigin wired on PUT/DELETE (GET stays public/unchecked)."
   },
   {
     "path": "/api/templates/[slug]/apply",
@@ -1129,7 +1196,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "ANOMALY: GET with a side effect — unconditionally calls recordTemplateUse() on every successful call, decrementing usage against the caller's TemplatePurchase. Violates HTTP GET safety/idempotency and is reachable via a plain cookie-riding cross-site GET (e.g. an <img>/<link> tag) with no CSRF protection possible for a GET (Task 3's origin-check work targets state-changing requests broadly, but GET requests are typically exempted by convention — this route is exactly why that convention is dangerous here). Recommend converting to POST in a follow-up. Task 3 (final round): verifyOrigin wired on the GET handler itself — deliberate exception to \"GET stays open\", because this GET has a real side effect (recordTemplateUse) and is the anomaly this note already flags. Origin/Referer fallback still catches a cross-site <img>/<link>-tag GET, which is exactly the vector described above."
+    "notes": "ANOMALY: GET with a side effect \u2014 unconditionally calls recordTemplateUse() on every successful call, decrementing usage against the caller's TemplatePurchase. Violates HTTP GET safety/idempotency and is reachable via a plain cookie-riding cross-site GET (e.g. an <img>/<link> tag) with no CSRF protection possible for a GET (Task 3's origin-check work targets state-changing requests broadly, but GET requests are typically exempted by convention \u2014 this route is exactly why that convention is dangerous here). Recommend converting to POST in a follow-up. Task 3 (final round): verifyOrigin wired on the GET handler itself \u2014 deliberate exception to \"GET stays open\", because this GET has a real side effect (recordTemplateUse) and is the anomaly this note already flags. Origin/Referer fallback still catches a cross-site <img>/<link>-tag GET, which is exactly the vector described above."
   },
   {
     "path": "/api/templates/[slug]/publish",
@@ -1153,7 +1220,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": "Phase 6 Task 2. Pure server-authoritative quote (quoteTemplate/quoteCatalogModel against ModelPricing) for the currently published TemplateVersion — no persistence, but origin-checked anyway since it's a cookie-session POST accepting a caller-supplied inputs body. verifyOrigin wired on POST (only method on this file)."
+    "notes": "Phase 6 Task 2. Pure server-authoritative quote (quoteTemplate/quoteCatalogModel against ModelPricing) for the currently published TemplateVersion \u2014 no persistence, but origin-checked anyway since it's a cookie-session POST accepting a caller-supplied inputs body. verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/templates/[slug]/run",
@@ -1165,21 +1232,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Phase 6 Task 3. Reserves credits (startTemplateRun) and creates a TemplateRun + enqueues the first step's GenerationJob — same money-path shape as /api/generate/async and /api/workflows/[id]/run. verifyOrigin wired on POST (only method on this file)."
-  },
-  {
-    "path": "/api/templates/[slug]",
-    "file": "src/app/api/templates/[slug]/route.js",
-    "methods": [
-      "GET",
-      "PUT",
-      "DELETE"
-    ],
-    "auth": "admin",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "GET is public (template detail + optional personalized hasAccess via a best-effort auth() call). PUT/DELETE require requireAdmin. Task 3 origin-check target (PUT/DELETE only). Task 3 (final round): verifyOrigin wired on PUT/DELETE (GET stays public/unchecked)."
+    "notes": "Phase 6 Task 3. Reserves credits (startTemplateRun) and creates a TemplateRun + enqueues the first step's GenerationJob \u2014 same money-path shape as /api/generate/async and /api/workflows/[id]/run. verifyOrigin wired on POST (only method on this file)."
   },
   {
     "path": "/api/templates/library",
@@ -1203,7 +1256,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. Creates a Stripe Checkout Session (onetime pricing model) or a TemplatePurchase row (subscription-included model) per call; no rate limit — same Stripe-API-abuse anomaly noted on stripe/checkout et al. Task 3: verifyOrigin wired on POST."
+    "notes": "Task 3 origin-check target. Creates a Stripe Checkout Session (onetime pricing model) or a TemplatePurchase row (subscription-included model) per call; no rate limit \u2014 same Stripe-API-abuse anomaly noted on stripe/checkout et al. Task 3: verifyOrigin wired on POST."
   },
   {
     "path": "/api/templates/purchase/verify",
@@ -1215,7 +1268,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "GET with a side effect: calls createTemplatePurchase() (idempotent upsert) after verifying the Stripe session's metadata.userId matches the caller. Same GET-mutates-state pattern flagged on templates/[slug]/apply, though this one is more defensible as a post-Stripe-redirect landing endpoint than a directly client-triggerable action. Task 3 (final round): verifyOrigin wired on the GET handler itself, same rationale as templates/[slug]/apply — this GET has a real side effect (createTemplatePurchase)."
+    "notes": "GET with a side effect: calls createTemplatePurchase() (idempotent upsert) after verifying the Stripe session's metadata.userId matches the caller. Same GET-mutates-state pattern flagged on templates/[slug]/apply, though this one is more defensible as a post-Stripe-redirect landing endpoint than a directly client-triggerable action. Task 3 (final round): verifyOrigin wired on the GET handler itself, same rationale as templates/[slug]/apply \u2014 this GET has a real side effect (createTemplatePurchase)."
   },
   {
     "path": "/api/templates/runs/[runId]",
@@ -1228,19 +1281,6 @@
     "rateLimit": "none",
     "stateChanging": false,
     "notes": "Phase 6 Task 5. Read-only poll of a TemplateRun's status/per-step state, scoped to the caller (a run owned by someone else 404s the same as one that doesn't exist)."
-  },
-  {
-    "path": "/api/templates",
-    "file": "src/app/api/templates/route.js",
-    "methods": [
-      "GET",
-      "POST"
-    ],
-    "auth": "admin",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "GET is public (published template listing). POST requires requireAdmin. Task 3 origin-check target (POST only). Task 3 (final round): verifyOrigin wired on POST (GET stays public/unchecked)."
   },
   {
     "path": "/api/upload",
@@ -1266,7 +1306,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "Task 3 origin-check target. POST mints a new API key (a bearer credential usable against the mixed(user+apikey) generate routes) with no rate limit — an attacker holding a hijacked session could mint unlimited long-lived keys. Task 3: verifyOrigin wired on POST/DELETE (GET read-only, unchecked)."
+    "notes": "Task 3 origin-check target. POST mints a new API key (a bearer credential usable against the mixed(user+apikey) generate routes) with no rate limit \u2014 an attacker holding a hijacked session could mint unlimited long-lived keys. Task 3: verifyOrigin wired on POST/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/voice-profiles",
@@ -1279,7 +1319,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "S2. GET lists the caller's VoiceProfile rows (read-only, unchecked; ?status=ready feeds the TTS/Music vocal pickers); POST creates one at the start of the voice-clone wizard — verifyOrigin wired on POST."
+    "notes": "S2. GET lists the caller's VoiceProfile rows (read-only, unchecked; ?status=ready feeds the TTS/Music vocal pickers); POST creates one at the start of the voice-clone wizard \u2014 verifyOrigin wired on POST."
   },
   {
     "path": "/api/voice-profiles/[id]",
@@ -1293,19 +1333,7 @@
     "originCheck": true,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "S2. GET reads one owned profile (404s identically for missing and other users' profiles); PATCH advances the wizard state (status/voiceId/name, status validated against the enum), DELETE removes — verifyOrigin wired on PATCH/DELETE (GET read-only, unchecked)."
-  },
-  {
-    "path": "/api/webhooks/generation-complete",
-    "file": "src/app/api/webhooks/generation-complete/route.js",
-    "methods": [
-      "POST"
-    ],
-    "auth": "webhook",
-    "originCheck": false,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "Bearer WEBHOOK_SECRET or CRON_SECRET; fails closed with 503 if neither is configured, 401 on mismatch. Marks generations failed and mints refunds — an unauthenticated version of this endpoint would be a direct fraud vector. Not a Task 3 origin-check target — the generation provider calls this directly, no browser session involved. Origin check N/A: bearer WEBHOOK_SECRET/CRON_SECRET from the generation provider, not a browser session — no Origin/Referer header to check."
+    "notes": "S2. GET reads one owned profile (404s identically for missing and other users' profiles); PATCH advances the wizard state (status/voiceId/name, status validated against the enum), DELETE removes \u2014 verifyOrigin wired on PATCH/DELETE (GET read-only, unchecked)."
   },
   {
     "path": "/api/webhooks/generation",
@@ -1317,7 +1345,32 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": true,
-    "notes": "ANOMALY: byte-for-byte identical implementation to webhooks/generation-complete (same bearer-secret check, same handleGenerationWebhook call) — appears to be a duplicate/legacy alias route. Worth confirming which URL the active provider webhook actually targets and removing the other. Not a Task 3 origin-check target. Origin check N/A: authenticated by a bearer WEBHOOK_SECRET/CRON_SECRET from the generation provider, not a browser session — no Origin/Referer header to check."
+    "notes": "ANOMALY: byte-for-byte identical implementation to webhooks/generation-complete (same bearer-secret check, same handleGenerationWebhook call) \u2014 appears to be a duplicate/legacy alias route. Worth confirming which URL the active provider webhook actually targets and removing the other. Not a Task 3 origin-check target. Origin check N/A: authenticated by a bearer WEBHOOK_SECRET/CRON_SECRET from the generation provider, not a browser session \u2014 no Origin/Referer header to check."
+  },
+  {
+    "path": "/api/webhooks/generation-complete",
+    "file": "src/app/api/webhooks/generation-complete/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "webhook",
+    "originCheck": false,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Bearer WEBHOOK_SECRET or CRON_SECRET; fails closed with 503 if neither is configured, 401 on mismatch. Marks generations failed and mints refunds \u2014 an unauthenticated version of this endpoint would be a direct fraud vector. Not a Task 3 origin-check target \u2014 the generation provider calls this directly, no browser session involved. Origin check N/A: bearer WEBHOOK_SECRET/CRON_SECRET from the generation provider, not a browser session \u2014 no Origin/Referer header to check."
+  },
+  {
+    "path": "/api/workflows",
+    "file": "src/app/api/workflows/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "Task 3 origin-check target (POST only). Task 3: verifyOrigin wired on POST (GET read-only, unchecked)."
   },
   {
     "path": "/api/workflows/[id]/publish",
@@ -1357,18 +1410,5 @@
     "rateLimit": "/api/workflow",
     "stateChanging": true,
     "notes": "Task 3 origin-check target. Only POST (executeWorkflow) is rate-limited via the '/api/workflow' key; DELETE (deleteWorkflow) and PATCH (updateWorkflow/publishWorkflow) have no rate limit. Task 3: verifyOrigin wired on POST/DELETE/PATCH (all methods on this file)."
-  },
-  {
-    "path": "/api/workflows",
-    "file": "src/app/api/workflows/route.js",
-    "methods": [
-      "GET",
-      "POST"
-    ],
-    "auth": "user",
-    "originCheck": true,
-    "rateLimit": "none",
-    "stateChanging": true,
-    "notes": "Task 3 origin-check target (POST only). Task 3: verifyOrigin wired on POST (GET read-only, unchecked)."
   }
 ]

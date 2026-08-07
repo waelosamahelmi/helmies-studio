@@ -32,6 +32,9 @@ const RATE_LIMITS = {
   "/api/workflow": { window: 60000, max: 5 },
   "/api/workflow/regen": { window: 60000, max: 10 },
   "/api/upload": { window: 60000, max: 30 },
+  // Entities (characters/products/environments) — cheap metadata writes, but
+  // the reference-append endpoint is upload-adjacent, so keep it bounded.
+  "/api/entities": { window: 60000, max: 30 },
   // Public form — keyed by IP for signed-out visitors.
   "/api/contact": { window: 600000, max: 5 },
 };

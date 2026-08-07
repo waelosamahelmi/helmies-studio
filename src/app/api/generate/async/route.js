@@ -93,10 +93,59 @@ export async function POST(req) {
     if (!dbPricing || dbPricing.isActive === false || dbPricing.isDeprecated) {
       return apiError({ code: "model_not_priced", extra: { model } });
     }
+    // ── Phase C1.8.1 — entity references ──────────────────────────────────
+    // `entityIds` names the caller's OWN characters/products/environments.
+    // Their descriptor is prefixed onto the prompt and their reference images
+    // are written into whichever field THIS model actually exposes (seedance's
+    // reference_image_urls, wan-r2v's reference_image, nano-banana's
+    // image_input, ...). Resolved BEFORE the quote so the user is priced for
+    // what really runs — reference images move the cost on some models.
+    const requestedEntityIds = Array.isArray(body.entityIds)
+      ? body.entityIds.filter((v) => typeof v === "string" && v).slice(0, 8)
+      : [];
+    let entityPromptPrefix = "";
+    let entityDigests = null;
+    let effectiveParams = params;
+
+    if (requestedEntityIds.length) {
+      // Owner-scoped load: an id the caller does not own is simply not
+      // returned, so this can never inject somebody else's face.
+      const { getOwnedEntities } = await import("@/lib/entities");
+      const { entityPromptBlock, selectEntityReferences, imageReferenceSlot, applyEntityReferences, computeAttributeDigest } =
+        await import("@/lib/entity-core.mjs");
+
+      const entities = await getOwnedEntities(user.id, requestedEntityIds);
+      if (entities.length) {
+        const slot = imageReferenceSlot(dbPricing.inputSchema);
+        const purpose = typeof body.entityPurpose === "string" && body.entityPurpose ? body.entityPurpose : "default";
+
+        const blocks = [];
+        const urls = [];
+        entityDigests = {};
+        for (const entity of entities) {
+          blocks.push(entityPromptBlock(entity));
+          // Snapshot what the entity looked like AT RENDER TIME — a later
+          // edit to the character must never rewrite the history of a shot
+          // that already rendered from the old version.
+          entityDigests[entity.id] = computeAttributeDigest(entity);
+          if (slot) {
+            // Share the model's reference budget across the entities in the
+            // shot instead of letting the first one consume all of it.
+            const perEntity = Math.max(1, Math.floor(slot.max / entities.length));
+            for (const ref of selectEntityReferences(entity, { purpose, max: perEntity })) urls.push(ref.url);
+          }
+        }
+        entityPromptPrefix = blocks.filter(Boolean).join("\n");
+        if (slot && urls.length) {
+          effectiveParams = applyEntityReferences(params, dbPricing.inputSchema, urls, { slot });
+        }
+      }
+    }
+
     let cost = dbPricing.creditsCost;
     let providerCost = dbPricing.providerCost || 0;
     if (dbPricing.pricingRules) {
-      const quote = await quoteCatalogModel(model, { ...params, prompt: prompt || "" });
+      const quote = await quoteCatalogModel(model, { ...effectiveParams, prompt: prompt || "" });
       if (!quote.valid) return apiError({ code: "invalid_params", details: quote.errors });
       cost = quote.credits;
       providerCost = quote.providerCost;
@@ -159,6 +208,12 @@ export async function POST(req) {
       const promptType = tool === "image" || tool === "i2i" ? "image" : tool === "video" || tool === "i2v" || tool === "v2v" ? "video" : "audio";
       finalPrompt = await expandPrompt(finalPrompt, promptType, model);
     }
+    // Entity descriptors go on AFTER expansion: the expander rewrites the
+    // creative brief, and it must not get the chance to paraphrase a locked
+    // identity into something else.
+    if (entityPromptPrefix) {
+      finalPrompt = finalPrompt ? `${entityPromptPrefix}\n\n${finalPrompt}` : entityPromptPrefix;
+    }
 
     const webhookUrl = `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
     const staticModel = MODEL_REGISTRY[model];
@@ -176,7 +231,18 @@ export async function POST(req) {
     // making job-runner.js skip THIS generation's own settle/release
     // entirely and instead call advanceTemplateRun against a run the
     // attacker doesn't even own.
-    const { endpoint: _ep, templateRunId: _trid, stepId: _sid, ...cleanParams } = params;
+    // entityIds/entityPurpose are OUR vocabulary, not the provider's — they
+    // are stripped here (like endpoint/templateRunId above) so they never
+    // ride along in the outbound request body. Their effect is already baked
+    // into finalPrompt and effectiveParams' reference field.
+    const {
+      endpoint: _ep,
+      templateRunId: _trid,
+      stepId: _sid,
+      entityIds: _eids,
+      entityPurpose: _epurpose,
+      ...cleanParams
+    } = effectiveParams;
     const providerModelId = dbPricing?.providerModelId || staticModel?.providerModelId || model;
     const payload = { ...cleanParams, model: providerModelId, prompt: finalPrompt, endpoint, callBackUrl: webhookUrl };
     if (!body.negative_prompt) {
@@ -196,7 +262,9 @@ export async function POST(req) {
         // client happened to submit.
         model: dbPricing.modelId,
         prompt: prompt || "",
-        params: body,
+        // D1.7 lineage: body already carries entityIds; the digest records
+        // WHICH version of each entity this shot actually rendered from.
+        params: entityDigests ? { ...body, entityDigest: entityDigests } : body,
         status: "pending",
         creditsUsed: cost,
         providerCost,

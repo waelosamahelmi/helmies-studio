@@ -694,7 +694,17 @@ export async function llmComplete(messages, options = {}) {
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content || "";
+  const choice = data.choices?.[0];
+  const content = choice?.message?.content || "";
+  // A reply cut off at max_tokens comes back as perfectly ordinary text that
+  // simply stops mid-structure. Without finish_reason the caller cannot tell
+  // that apart from a malformed answer, so it retries the same expensive call
+  // and gets truncated again at the same place. Opt-in so every existing
+  // caller keeps receiving a plain string.
+  if (options.withMeta) {
+    return { content, finishReason: choice?.finish_reason || null, truncated: choice?.finish_reason === "length" };
+  }
+  return content;
 }
 
 export async function llmStream(messages, options = {}) {
