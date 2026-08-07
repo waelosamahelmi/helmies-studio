@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Dropzone, Field, RatioPicker, Stepper, Toggle, SpendMeter, clock,
-  IcScissors, IcPlay, IcPause, IcExternal, IcDownload, IcCopy, IcCheck, IcBolt, IcClose,
+  Commit, Dropzone, Field, RatioPicker, Stepper, Toggle, clock,
+  IcScissors, IcPlay, IcPause, IcExternal, IcDownload, IcCopy, IcCheck, IcClose,
 } from "@/components/studio/kit";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
@@ -149,10 +149,16 @@ export default function ClippingStudio({ onCreditsChanged }) {
   });
 
 
-  /* ── The run's highlights become the ranges on the track ──────────────── */
+  /* ── The run's highlights become the ranges on the track ────────────────
+     Hand-drawn ranges survive: a re-run used to replace the whole list, so
+     any span the user had drawn or trimmed was silently destroyed. */
   useEffect(() => {
     const next = readClips(result);
-    setClips(next);
+    if (!next.length) return;
+    setClips((prev) => {
+      const mine = prev.filter((c) => String(c.id).startsWith("draft-"));
+      return [...next, ...mine].map((c, i) => ({ ...c, no: i + 1 }));
+    });
     setSelected(next[0]?.id ?? null);
   }, [result]);
 
@@ -246,12 +252,48 @@ export default function ClippingStudio({ onCreditsChanged }) {
     }
   };
 
+  /* ── Drawing a range by hand ──────────────────────────────────────────
+     Ranges could only ever come from the model, so cutting a span you
+     already know meant paying for a run and hoping it guessed. A drag on
+     empty track now draws a range directly; a click (no meaningful travel)
+     still scrubs, which is what a click on a timeline should do. */
   const scrub = (e) => {
     const el = trackRef.current;
     if (!el || !duration) return;
     const rect = el.getBoundingClientRect();
-    const at = ((e.clientX - rect.left) / rect.width) * duration;
-    seek(at);
+    const atFrom = (clientX) => {
+      const f = (clientX - rect.left) / rect.width;
+      return Math.max(0, Math.min(1, f)) * duration;
+    };
+
+    const from = atFrom(e.clientX);
+    let drew = false;
+    const draftId = `draft-${Date.now()}`;
+
+    const move = (ev) => {
+      const to = atFrom(ev.clientX);
+      if (!drew && Math.abs(to - from) < MIN_SPAN) return;
+      const start = Math.min(from, to);
+      const end = Math.max(from, to);
+      if (!drew) {
+        drew = true;
+        setClips((prev) => [...prev, { id: draftId, no: prev.length + 1, title: "Manual clip", start, end }]);
+        setSelected(draftId);
+      } else {
+        setClips((prev) => prev.map((c) => (c.id === draftId ? { ...c, start, end } : c)));
+      }
+    };
+
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      if (!drew) seek(from);
+    };
+
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
 
   /* ── Range editing ────────────────────────────────────────────────────── */
@@ -608,7 +650,7 @@ export default function ClippingStudio({ onCreditsChanged }) {
               {loading
                 ? "The model is watching the video. Clips appear here as soon as it reports back."
                 : ready
-                  ? "No clips yet. Run the tool and the highlights land here."
+                  ? "No clips yet. Drag across the track to cut a span yourself, or run the tool and the highlights land here."
                   : "Add a video to begin."}
             </p>
           )}
@@ -639,6 +681,21 @@ export default function ClippingStudio({ onCreditsChanged }) {
                     : "no timecodes returned"}
                 </span>
               </button>
+
+              {String(c.id).startsWith("draft-") && (
+                <button
+                  type="button"
+                  className="hs-btn hs-btn--ghost hs-btn--sm hs-btn--icon"
+                  onClick={() => {
+                    setClips((prev) => prev.filter((x) => x.id !== c.id).map((x, i) => ({ ...x, no: i + 1 })));
+                    setSelected((sel) => (sel === c.id ? null : sel));
+                  }}
+                  aria-label={`Remove clip ${c.no}`}
+                  title="Remove this range"
+                >
+                  <IcClose className="hs-icon-sm" />
+                </button>
+              )}
 
               {c.start != null && c.end != null && c.end > c.start && (
                 <button
@@ -694,45 +751,22 @@ export default function ClippingStudio({ onCreditsChanged }) {
           <p className="hs-notice hs-notice--fault" style={{ marginTop: "var(--s-3)" }} role="alert">{exportError}</p>
         )}
 
-        <div style={{ marginTop: "auto", paddingTop: "var(--s-5)", display: "flex", flexDirection: "column", gap: "var(--s-3)" }}>
-          {error && (
-            <p className="hs-notice hs-notice--fault" role="alert">
-              {error}
-            </p>
-          )}
-
-          <SpendMeter
-            cost={cost || 0}
-            balance={balance}
-            affordable={affordable}
-            shortfall={shortfall}
-            label="Cost"
-          />
-
-          {loading ? (
-            <button type="button" className="hs-btn hs-btn--outline hs-btn--block" onClick={cancel}>
-              <span className="hs-spin" />
-              {stage ? String(stage).replace(/_/g, " ") : "Working"}
-              <span className="hs-mono" style={{ marginLeft: "auto" }}>{clock(elapsed)}</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="hs-btn hs-btn--primary hs-btn--block"
-              onClick={generate}
-              disabled={!ready || !affordable}
-              title={
-                !ready ? "Add a video first"
-                : !affordable ? "Not enough credits"
-                : "Find the highlights"
-              }
-            >
-              <IcBolt className="hs-icon-sm" />
-              {result ? "Run again" : "Find highlights"}
-              {cost > 0 && <span className="hs-btn__cost">{cost}</span>}
-            </button>
-          )}
-        </div>
+        <Commit
+          block
+          cost={cost || 0}
+          balance={balance}
+          affordable={affordable}
+          shortfall={shortfall}
+          generating={loading}
+          stage={stage}
+          elapsed={elapsed}
+          error={error}
+          onSubmit={generate}
+          onCancel={cancel}
+          submitLabel={result ? "Run again" : "Find highlights"}
+          disabled={!ready}
+          blocked={!ready ? "Add a video first" : ""}
+        />
       </aside>
     </div>
   );
