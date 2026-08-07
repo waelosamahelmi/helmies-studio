@@ -3218,3 +3218,19 @@ select.st-layer__role option {
 @media (min-width: 720px) {
   .st-fields { grid-template-columns: 1fr 1fr; column-gap: var(--s-4); }
 }
+
+/* An empty angle slot is a control: it makes that one angle on its own, so a
+   single bad result never costs the whole pack again. */
+.st-angle__make {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--tx-ghost);
+  cursor: pointer;
+  transition: color .12s ease, background .12s ease;
+}
+.st-angle__make:hover,
+.st-angle__make:focus-visible { color: var(--filament-lit); background: var(--filament-a14); }

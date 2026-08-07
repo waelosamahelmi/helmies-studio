@@ -637,7 +637,11 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
   }, [entity.references]);
 
   const missing = missingPackAngles(entity);
-  const hasSource = (entity.references || []).length > 0;
+  /* The photographs the user handed us. Every pack angle is derived from
+     these, so one casual snapshot is enough to start — we never ask them to
+     go and shoot a profile themselves. */
+  const sources = (entity.references || []).filter((r) => r.kind === "source");
+  const hasSource = sources.length > 0;
 
   /* A model that cannot take a reference image would invent a new face on
      every angle, which is the opposite of what this sheet is for. The test is
@@ -671,7 +675,7 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
           model: model.id,
           prompt: angle.prompt,
           entityIds: [entity.id],
-          entityPurpose: angle.kind === "full_body" || angle.kind === "half_body" ? "wide" : "closeup",
+          entityPurpose: "identity",
         }),
       });
       const submitted = await res.json();
@@ -724,14 +728,29 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
         {IDENTITY_PACK.map((angle) => {
           const ref = byKind.get(angle.kind);
           const state = running[angle.kind];
-          return (
+            const pending = state === "queued" || state === "running";
+            /* An empty slot is a control, not a placeholder: one angle can be
+               made (or remade) on its own, so a single bad result never means
+               paying for the whole pack again. */
+            const canMakeOne = !locked && !ref && !pending && hasSource && !!model;
+            return (
             <div key={angle.kind} className="st-angle" role="listitem">
               <div className={`st-angle__frame${ref ? " is-filled" : ""}`}>
                 {ref ? (
                   // eslint-disable-next-line @next/next/no-img-element -- consistent with every other studio thumbnail
                   <img src={ref.url} alt={`${angle.label} reference`} />
-                ) : state === "queued" || state === "running" ? (
+                ) : pending ? (
                   <span className="hs-spin" aria-label={`Generating the ${angle.label.toLowerCase()} angle`} />
+                ) : canMakeOne ? (
+                  <button
+                    type="button"
+                    className="st-angle__make"
+                    onClick={() => generateAngle(angle)}
+                    aria-label={`Generate the ${angle.label.toLowerCase()} angle${model?.credits != null ? ` for ${model.credits} credits` : ""}`}
+                    title={`Generate just this angle${model?.credits != null ? ` — ${model.credits} credits` : ""}`}
+                  >
+                    <IcSpark className="hs-icon-sm" />
+                  </button>
                 ) : (
                   <span className="st-angle__gap" aria-hidden="true">+</span>
                 )}
@@ -748,23 +767,43 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
                 {ref ? (ref.source === "generated" ? "Generated" : "Yours") : state === "failed" ? "Failed" : "Missing"}
               </span>
             </div>
-          );
+            );
         })}
       </div>
 
       {!locked && (
         <>
-          <Field label="Your photographs" hint="Start here. Anything you upload is treated as the truth and is never regenerated.">
+          <Field
+            label="Your photographs"
+            hint="Any picture of them will do. Every angle above is generated from these, and the photographs themselves are never altered or regenerated."
+          >
+            {sources.length > 0 && (
+              <div className="hs-thumbs" style={{ marginBottom: "var(--s-2)" }}>
+                {sources.map((ref) => (
+                  <div key={ref.id} className="hs-thumb">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- consistent with every other studio thumbnail */}
+                    <img src={ref.url} alt={ref.label || "Your photograph"} />
+                    <button
+                      type="button" className="hs-thumb__x"
+                      onClick={() => onDropReference(entity.id, ref.id)}
+                      aria-label={`Remove ${ref.label || "this photograph"}`}
+                    >
+                      <IcClose style={{ width: 11, height: 11 }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <Dropzone
               value={null}
               accept="image/*"
-              label="Drop a photograph or click to browse"
-              hint="Front-on first, then a three-quarter and a profile if you have them"
+              label={sources.length ? "Add another photograph" : "Drop a photograph or click to browse"}
+              hint={sources.length ? "More angles of them make every generated angle more accurate" : "One clear picture of their face is enough to start"}
               onChange={async (file) => {
                 if (!file?.url) return;
                 try {
                   await onAddReference(entity.id, {
-                    url: file.url, kind: "face_front", label: file.name, source: "user", locked: true,
+                    url: file.url, kind: "source", label: file.name, source: "user", locked: true,
                   });
                 } catch (e) {
                   onError?.(e?.message || "That photograph could not be attached.");
@@ -779,8 +818,8 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
                 <span>
                   {hasSource
-                    ? `${missing.length} angle${missing.length === 1 ? "" : "s"} still missing. They are generated from the photographs above, so they stay the same person.`
-                    : "Upload at least one photograph first — the missing angles are generated from what you give us, not invented."}
+                    ? `${missing.length} angle${missing.length === 1 ? "" : "s"} to make. Every one is generated from your photographs, so it stays the same person.`
+                    : "Add one photograph of them first. Every angle is generated from what you give us — nothing here is invented from a description."}
                 </span>
 
                 {hasSource && (
@@ -790,7 +829,7 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
                         onClick={fillGaps} disabled={busy || !model}
                         title={!model ? "No image model here accepts a reference photograph" : ""}>
                         {busy ? <span className="hs-spin" /> : <IcSpark className="hs-icon-sm" />}
-                        {busy ? "Generating…" : `Generate ${missing.length} missing angle${missing.length === 1 ? "" : "s"}`}
+                        {busy ? "Generating…" : `Generate ${missing.length === IDENTITY_PACK.length ? "all " : ""}${missing.length} angle${missing.length === 1 ? "" : "s"}`}
                       </button>
                       {model?.credits != null && (
                         <span className="hs-mono hs-mute" style={{ fontSize: 10 }}>

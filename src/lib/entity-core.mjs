@@ -16,6 +16,12 @@ export const ENTITY_KINDS = ["character", "product", "environment"];
 // typo can never silently become an unselectable reference.
 export const REFERENCE_KINDS = {
   character: [
+    // What the user actually handed us. Deliberately NOT an angle: a photo
+    // somebody uploads is whatever it happens to be — a holiday snap, a
+    // three-quarter, a full body — and claiming it is the front would both
+    // mislabel it and mark the front as covered, so the real front angle
+    // would never get made. Every pack angle is generated FROM these.
+    "source",
     "sheet",          // the multi-angle character sheet
     "face_front",
     "face_34",
@@ -287,14 +293,18 @@ export function entityPromptBlock(entity) {
 // from.
 const PURPOSE_PRIORITY = {
   character: {
-    dialogue: ["face_front", "face_34", "face_side", "half_body", "sheet"],
-    closeup: ["face_front", "face_34", "face_side", "sheet"],
-    wide: ["full_body", "half_body", "sheet", "face_front"],
-    action: ["full_body", "action", "half_body", "sheet"],
-    wardrobe: ["outfit", "full_body", "half_body", "sheet"],
-    expression: ["expression", "face_front", "face_34", "sheet"],
-    sheet: ["sheet", "face_front", "full_body"],
-    default: ["face_front", "full_body", "face_34", "sheet"],
+    dialogue: ["face_front", "face_34", "face_side", "half_body", "sheet", "source"],
+    closeup: ["face_front", "face_34", "face_side", "sheet", "source"],
+    wide: ["full_body", "half_body", "sheet", "face_front", "source"],
+    action: ["full_body", "action", "half_body", "sheet", "source"],
+    wardrobe: ["outfit", "full_body", "half_body", "sheet", "source"],
+    expression: ["expression", "face_front", "face_34", "sheet", "source"],
+    sheet: ["sheet", "face_front", "full_body", "source"],
+    // Building the identity pack itself: the photograph the user actually
+    // gave us outranks anything we generated, so each new angle is derived
+    // from the real person rather than from our own last guess.
+    identity: ["source", "sheet", "face_front", "face_34", "full_body"],
+    default: ["face_front", "full_body", "face_34", "sheet", "source"],
   },
   product: {
     product_hero: ["front", "closeup", "side", "packaging"],

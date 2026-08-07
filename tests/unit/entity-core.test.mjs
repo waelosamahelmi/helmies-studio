@@ -9,6 +9,8 @@ import {
   voiceReferenceSlot,
   applyEntityReferences,
   isAllowedReferenceUrl,
+  IDENTITY_PACK,
+  missingPackAngles,
 } from "@/lib/entity-core.mjs";
 
 const ref = (over = {}) => ({
@@ -197,5 +199,56 @@ describe("computeAttributeDigest", () => {
     const before = computeAttributeDigest(character());
     const after = computeAttributeDigest(character({ references: [ref({ kind: "face_front", locked: true })] }));
     expect(after).not.toBe(before);
+  });
+});
+
+describe("source photographs and the identity pack", () => {
+  const withSource = character({
+    references: [ref({ id: "snap", kind: "source", locked: true, url: "https://cdn.example/snap.jpg" })],
+  });
+
+  it("a photograph the user uploaded never claims to be a pack angle", () => {
+    // Labelling an arbitrary upload "face_front" would both mislabel it and
+    // mark the front as covered, so the real front angle would never be made.
+    expect(missingPackAngles(withSource).map((a) => a.kind)).toEqual(IDENTITY_PACK.map((a) => a.kind));
+    expect(missingPackAngles(withSource)).toHaveLength(5);
+  });
+
+  it("a generated angle does satisfy its own slot", () => {
+    const filled = character({
+      references: [ref({ kind: "source", locked: true }), ref({ kind: "face_front", source: "generated" })],
+    });
+    expect(missingPackAngles(filled).map((a) => a.kind)).not.toContain("face_front");
+    expect(missingPackAngles(filled)).toHaveLength(4);
+  });
+
+  it("building the pack reads the real photograph before anything we generated", () => {
+    const mixed = character({
+      references: [
+        ref({ id: "gen-front", kind: "face_front", source: "generated", url: "https://cdn.example/gen.png" }),
+        ref({ id: "snap", kind: "source", locked: true, url: "https://cdn.example/snap.jpg" }),
+      ],
+    });
+    const picked = selectEntityReferences(mixed, { purpose: "identity", max: 2 });
+    expect(picked[0].id).toBe("snap");
+  });
+
+  it("ordinary shots still reach for the angle they need, with the photograph as backstop", () => {
+    const mixed = character({
+      references: [
+        ref({ id: "snap", kind: "source", url: "https://cdn.example/snap.jpg" }),
+        ref({ id: "body", kind: "full_body", url: "https://cdn.example/body.png" }),
+      ],
+    });
+    expect(selectEntityReferences(mixed, { purpose: "wide", max: 1 })[0].id).toBe("body");
+    // A character with nothing but a snapshot still gets it, rather than nothing.
+    expect(selectEntityReferences(withSource, { purpose: "closeup", max: 1 })[0].id).toBe("snap");
+  });
+
+  it("accepts 'source' as a character reference kind rather than coercing it away", () => {
+    const errors = [];
+    const out = normalizeReferences("character", [{ url: "https://cdn.example/a.jpg", kind: "source" }], errors);
+    expect(errors).toEqual([]);
+    expect(out[0].kind).toBe("source");
   });
 });
