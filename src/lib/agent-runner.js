@@ -71,6 +71,7 @@ import { assembleVideos } from "./video-assembly.js";
 import { chainStepIfNeeded } from "./video-chain.js";
 import { log } from "./log.js";
 import { injectEntities, purposeForStep } from "./entity-inject.js";
+import { applyRequiredDefaults } from "./provider-payload-core.mjs";
 
 // How many MEDIA jobs a single run may have in flight at once. Internal
 // (LLM/storyboard/export) steps are cheap and uncapped; assembly is rare.
@@ -320,6 +321,17 @@ ${finalPrompt}`;
         // reference and the run continues.
         log.warn("agent_entity_inject_failed", { runId: run.id, stepId: step.stepId, err: err?.message });
       }
+    }
+
+    // Fill the model's REQUIRED rendering settings, exactly as the async route
+    // does. Without this a plan step on seedream/5-pro went out with no
+    // `quality` and the provider rejected it — the fix had been applied to
+    // one caller instead of to the shared path, which is the same mistake the
+    // entity injection made.
+    const withDefaults = applyRequiredDefaults(params, row?.inputSchema || null, { modelId: modelId || agentKey });
+    Object.assign(params, withDefaults.params);
+    if (Object.keys(withDefaults.filled).length) {
+      log.info("agent_step_defaults_filled", { runId: run.id, stepId: step.stepId, filled: withDefaults.filled });
     }
 
     const generation = await prisma.generation.create({
