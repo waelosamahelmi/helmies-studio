@@ -3206,3 +3206,15 @@ select.st-layer__role option {
   text-transform: uppercase;
   color: var(--tx-ghost);
 }
+
+/* Attribute grid inside a record editor. A character carries nineteen short
+   fields; stacked in one column the editor becomes a scroll marathon and
+   nothing sits next to the thing it should be compared with. */
+.st-fields {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--s-4);
+}
+@media (min-width: 720px) {
+  .st-fields { grid-template-columns: 1fr 1fr; column-gap: var(--s-4); }
+}

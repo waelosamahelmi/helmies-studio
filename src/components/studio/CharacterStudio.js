@@ -594,6 +594,10 @@ function IdentityFields({ entity, locked, onPatch }) {
         )}
       </Field>
 
+      {/* Two columns from 720px up: a character carries nineteen of these,
+          and a single stacked column turns the editor into a scroll marathon
+          where nothing is comparable to anything next to it. */}
+      <div className="st-fields">
       {(ATTRIBUTE_KEYS[entity.kind] || []).map((key) => {
         const [label, hint] = FIELD_LABELS[key] || [key, ""];
         return (
@@ -611,6 +615,7 @@ function IdentityFields({ entity, locked, onPatch }) {
           </Field>
         );
       })}
+      </div>
     </Fieldset>
   );
 }
