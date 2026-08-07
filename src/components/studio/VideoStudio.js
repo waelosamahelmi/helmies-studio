@@ -38,10 +38,11 @@ import { matchesGroup } from "@/lib/capability-groups";
    StudioClient's ErrorBoundary applies per tool.
    ══════════════════════════════════════════════════════════════════════════ */
 
-const MODES = ["ttv", "i2v", "edit", "clips"];
+const MODES = ["ttv", "i2v", "cast", "edit", "clips"];
 const MODE_OPTIONS = [
   { value: "ttv", label: "Text to Video" },
   { value: "i2v", label: "Image to Video" },
+  { value: "cast", label: "Cast" },
   { value: "edit", label: "Edit" },
   { value: "clips", label: "Clips" },
 ];
@@ -84,6 +85,11 @@ const MODE_COPY = {
     placeholder: "Describe what should move, and how the camera behaves.",
     idle: "Load the still you want to animate, then describe the motion. What stays still matters as much as what moves.",
   },
+  cast: {
+    empty: "No reference-to-video models in the catalog yet.",
+    placeholder: "Describe the shot this character appears in — where they are, what they do, how the camera moves.",
+    idle: "Give the same person or product a few reference photos, then describe any shot. The likeness carries across every take, so a series holds together.",
+  },
 };
 
 const MOTION_COPY = {
@@ -101,6 +107,7 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
   const [move, setMove] = useState("static");
 
   const [sourceImage, setSourceImage] = useState(null);
+  const [refs, setRefs] = useState([]);
   const [startFrame, setStartFrame] = useState(null);
   const [endFrame, setEndFrame] = useState(null);
 
@@ -113,12 +120,13 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
      Under the Motion preset the pool is the same t2v group, but models that
      name themselves for designed movement float to the top — the retired
      MotionStudio's ordering, without its silent fallback. */
+  const casting = mode === "cast";
   const available = useMemo(() => {
-    const pool = (models || []).filter((m) => matchesGroup(m, mode));
+    const pool = (models || []).filter((m) => matchesGroup(m, casting ? "r2v" : mode));
     if (!motion) return pool;
     const named = pool.filter((m) => /motion|graphic|animate|loop/i.test(`${m.displayName || ""} ${m.id || ""}`));
     return named.length ? [...named, ...pool.filter((m) => !named.includes(m))] : pool;
-  }, [models, mode, motion]);
+  }, [models, mode, motion, casting]);
 
   const model = available.find((m) => m.id === modelId) || available[0] || null;
 
@@ -144,9 +152,11 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
   const handoff = useHandoff();
   useEffect(() => {
     if (!handoff) return;
-    setSourceImage({ url: handoff.url });
+    /* In Cast the arriving still is a likeness to hold, not a first frame. */
+    if (casting) setRefs((r) => (r.length ? r : [{ url: handoff.url }]));
+    else setSourceImage({ url: handoff.url });
     if (handoff.prompt) setPrompt(handoff.prompt);
-  }, [handoff]);
+  }, [handoff, casting]);
 
   const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
   const resolutions = model?.resolutions?.length ? model.resolutions : NONE;
@@ -180,7 +190,8 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
 
 
   const needsImage = mode === "i2v";
-  const missingSource = needsImage && !sourceImage?.url;
+  const refUrls = useMemo(() => refs.map((r) => r?.url).filter(Boolean), [refs]);
+  const missingSource = (needsImage && !sourceImage?.url) || (casting && refUrls.length === 0);
 
   const generate = useCallback(() => {
     if (!model || missingSource) return;
@@ -193,12 +204,23 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     if (duration) params.duration = Number(duration);
     if (move !== "static") params.camera_motion = move;
     if (needsImage && sourceImage?.url) params.image_url = sourceImage.url;
+    /* Cast: the reference-to-video families name this field three different
+       ways, and sending the wrong one is a provider rejection after the
+       credits are held. pixverse takes `image_references`, minimax takes
+       `reference_image_urls`, wan takes a singular `reference_image`. */
+    if (casting && refUrls.length) {
+      const id = model.id || "";
+      if (/pixverse/.test(id)) params.image_references = refUrls;
+      else if (/minimax/.test(id)) params.reference_image_urls = refUrls;
+      else if (/wan/.test(id)) params.reference_image = refUrls[0];
+      else params.image_references = refUrls;
+    }
     if (startFrame?.url) params.first_frame_url = startFrame.url;
     if (endFrame?.url) params.last_frame_url = endFrame.url;
     submit("video", model.id, params);
   }, [
     model, missingSource, submit, prompt, ratio, resolution, duration, move,
-    needsImage, sourceImage, startFrame, endFrame,
+    needsImage, sourceImage, startFrame, endFrame, casting, refUrls,
   ]);
 
   const copy = MODE_COPY[mode];
@@ -216,6 +238,24 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
             ]}
             value={preset || ""}
             onChange={(v) => onPreset?.(v || null)}
+          />
+        </Field>
+      )}
+
+      {casting && (
+        <Field
+          label="Character references"
+          hint="Up to four photos of the same subject. More angles hold the likeness steadier across the shot."
+          error={missingSource && prompt.trim() ? "Add at least one reference photo before generating." : undefined}
+        >
+          <Dropzone
+            value={refs}
+            onChange={setRefs}
+            accept="image/*"
+            multiple
+            max={4}
+            label="Drop reference photos or browse"
+            hint="JPG, PNG or WebP"
           />
         </Field>
       )}

@@ -29,6 +29,7 @@ export const HANDOFF_TARGETS = {
   image: [
     { tool: "video", mode: "i2v", label: "Animate", hint: "Turn this still into motion" },
     { tool: "perform", mode: "lipsync", label: "Make it talk", hint: "Add a voice and lip sync" },
+    { tool: "video", mode: "cast", label: "Cast in a shot", hint: "Keep this likeness across new shots" },
     { tool: "image", mode: "edit", label: "Edit", hint: "Re-render with a change" },
     { tool: "image", mode: "upscale", label: "Upscale", hint: "Raise the resolution" },
   ],

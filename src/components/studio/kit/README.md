@@ -112,6 +112,36 @@ re-applies a stale asset.
 `components/studio/ShortcutHelp.js`. Add a shortcut there, not in a tool, and
 never bind an unmodified key that would swallow a keystroke while typing.
 
+## Committing work that has no brief
+
+`<Brief>` will not submit while its textarea is empty — correct for a
+prompted studio, wrong for one whose action gates on an uploaded pairing.
+Use `<Commit>` there instead of hand-rolling the meter-and-button row:
+
+```js
+<Commit
+  cost={cost} balance={balance} affordable={affordable} shortfall={shortfall}
+  generating={generating} stage={stage}
+  onSubmit={generate} onCancel={cancel}
+  submitLabel="Recast"
+  disabled={!ready}
+  blocked={!model ? "No recast model available" : !source ? "Add the footage first" : ""}
+>
+  {/* anything that belongs above the meter — an optional brief, a count */}
+</Commit>
+```
+
+`blocked` is a sentence, not a boolean: it becomes the button's title, so
+the user is told what is missing instead of meeting a dead control.
+
+**A model's capability decides which picker can see it.** Two features
+shipped broken because their models inferred as coarse `"video"`: Recast
+offered a video-to-video model that cannot take an identity photo, and
+reference-to-video had five live models no studio surfaced. When adding a
+tool, check `inferCapability` files its models where the group expects
+them, and pin it with a test — the failure is invisible until a real run is
+rejected after credits are held.
+
 ## Collection browsers (`.st-lib`)
 
 Assets, Brand kits and Projects share the parts that were identical in all
