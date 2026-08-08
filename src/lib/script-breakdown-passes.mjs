@@ -128,11 +128,31 @@ export const parseStructureReply = (text) => {
    script, and a conversation plays out in one take rather than five. */
 /* How often to cut, which follows from how long a take can be. A model
    that holds thirty seconds does not want a cut every six. */
+/* Cut when the CAMERA has to move, not every time something happens.
+   ────────────────────────────────────────────────────────────────────────
+   "Cut on every change — a new camera position, a new speaker, a new
+   action" was written to stop the opposite failure, a 28-second take
+   carrying eight events that rendered as none of them. It over-corrected.
+   A man crossing a room to a chair came back as TEN camera setups: wide,
+   medium-behind, close profile, over-shoulder, medium-side, wide again,
+   medium, close, over-shoulder, wide. Nobody shoots that. The read was
+   inventing a new angle for every beat because a new beat was told to mean
+   a new shot, and each angle is another generation, another cut, another
+   chance for the room to change.
+
+   A beat is a unit of ACTION. A shot is a unit of CAMERA. They are not the
+   same thing, and one setup can hold several beats when the frame does not
+   need to move to show them. */
 export function pacingRules({ max = 10 } = {}) {
   const held = max >= 20
     ? ` A take may be held up to ${max} seconds when a SINGLE action fills it — a long look, a slow approach, one unbroken exchange.`
     : "";
-  return `- BE SPECIFIC AND CUT ON EVERY CHANGE. A new camera position, a new speaker, a new action, a reveal, an object that matters — each is its own shot. Precision beats economy: a scene of many exactly-specified shots renders correctly, and one of a few overloaded shots renders as mush.${held}`;
+  return [
+    "- USE THE FEWEST CAMERA SETUPS THE SCENE NEEDS. Cut when the camera MUST move — when the audience has to see something this frame cannot show, or the scene tightens and you go closer. Do NOT invent a new angle for every beat: several beats in a row can play in ONE setup when nothing about the framing has to change, and that is how scenes are actually shot.",
+    "- A NEW SPEAKER IS NOT A NEW SHOT. Two people talking where the camera does not move is one take, not one shot per line. A voice from OFF-SCREEN is never a reason to move the camera at all — there is nobody new to look at.",
+    "- Worked example: a man crosses a room toward a chair, a voice stops him, he answers without turning, he walks on and sits down. That is THREE or FOUR shots — the crossing, the stop-and-answer, the arrival, the sit. It is not ten.",
+    `- Still be SPECIFIC inside each shot: name the framing, the light and what moves. Precision within a setup is what makes it render; more setups is not.${held}`,
+  ].join("\n");
 }
 
 /* How long a shot is, decided by what happens in it.
@@ -315,7 +335,7 @@ export function budgetRule(budget) {
 
    Length and content are different axes. A thirty-second take is one
    action HELD for thirty seconds, not six actions compressed into it. */
-export const BEAT_RULE = `- ONE SHOT IS ONE BEAT, whatever its length. A shot is a single continuous action seen from one camera position: a man walking toward a chair IS a shot; him arriving, being spoken to, and sitting down is THREE. If your description contains "then", or a second character starting to do something, or a sound arriving from off-screen, you have written more than one shot — split it. A long take means holding ONE action longer, never packing more events into it. A model handed several events at once renders an average of them and none of them properly. The ONE exception is a montage of flashes, which is a single beat made of fragments — see the montage rule below.`;
+export const BEAT_RULE = `- ONE SHOT IS ONE BEAT, whatever its length. A shot is a single continuous action seen from one camera position: a man walking toward a chair IS a shot; him arriving, being spoken to, and sitting down is THREE. If your description contains "then", or a second character starting to do something UNRELATED to the first, you have written more than one shot — split it. A sound or a voice arriving from off-screen is NOT one of these: the frame stays where it is and the person in it reacts, which is the same shot continuing. A long take means holding ONE action longer, never packing more events into it. A model handed several events at once renders an average of them and none of them properly. The ONE exception is a montage of flashes, which is a single beat made of fragments — see the montage rule below.`;
 
 /** Did the scene come back within its budget? */
 export const sceneIsWithinBudget = (shots, budget) => (shots?.length || 0) <= budget.ceiling;

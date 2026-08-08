@@ -12,6 +12,7 @@
 // for flat-native shareable configs. @eslint/eslintrc / FlatCompat is kept as
 // a devDependency per the brief in case a future legacy-only config needs it.
 import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
+import globals from "globals";
 
 const eslintConfig = [
   {
@@ -55,6 +56,23 @@ const eslintConfig = [
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/refs": "off",
     },
+  },
+  {
+    /* A name that does not exist is a page that does not load.
+       ────────────────────────────────────────────────────────────────────
+       "Scenario & format" threw `imageChoices is not defined` and took the
+       whole tab down with it: model pickers had been added to the JSX while
+       their state and props were never wired up. Both `npm run lint` and
+       `npm run typecheck` passed on that file — next/core-web-vitals leaves
+       no-undef off, on the assumption TypeScript is watching, and these are
+       plain .js components that tsc never checks.
+
+       So nothing at all stood between a typo and a broken page. Turning the
+       rule on across src reports ZERO existing violations, which means it
+       costs nothing today and catches the whole class tomorrow. */
+    files: ["src/**/*.{js,jsx,mjs}"],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: { "no-undef": "error" },
   },
 ];
 

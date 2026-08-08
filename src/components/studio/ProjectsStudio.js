@@ -1506,12 +1506,24 @@ function WriteScenario({ projectId, hasDraft, onWritten }) {
 }
 
 /* ── Scenario & format ──────────────────────────────────────────────────── */
-function SetupTab({ project, settings, kinds, onSave }) {
+/* Scenario & format.
+   ────────────────────────────────────────────────────────────────────────
+   The model pickers below reference imageChoices, videoChoices, imageModel
+   and videoMode. None of them existed: the pickers were added to the JSX
+   and their state and props were never wired up, so opening this tab threw
+   "imageChoices is not defined" and took the whole page down. The caller
+   was already passing `models` and `modelsLoading` — the signature just
+   never destructured them. */
+function SetupTab({ project, settings, kinds, onSave, models = [], modelsLoading = false }) {
   const [name, setName] = useState(project.name || "");
   const [brief, setBrief] = useState(project.brief || "");
   const [kind, setKind] = useState(settings.kind || "movie");
   const [aspectRatio, setAspectRatio] = useState(settings.aspectRatio || "16:9");
   const [resolution, setResolution] = useState(settings.resolution || "720p");
+  const [imageModel, setImageModel] = useState(settings.imageModel || "");
+  const [videoModel, setVideoModel] = useState(settings.videoModel || "");
+  const [voiceModel, setVoiceModel] = useState(settings.voiceModel || "");
+  const [videoMode, setVideoMode] = useState(settings.videoMode || "auto");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -1519,17 +1531,34 @@ function SetupTab({ project, settings, kinds, onSave }) {
     setBrief(project.brief || "");
   }, [project.id, project.name, project.brief]);
 
+  /* Only models that can actually do the job, filtered on the SCHEMA and on
+     the ratio this project shoots in — the same rules the render path uses,
+     so nothing offered here can be refused later. */
+  const imageChoices = useMemo(() => imageModelsFor(models, { aspectRatio }), [models, aspectRatio]);
+  const videoChoices = useMemo(() => videoModelsFor(models, { aspectRatio }), [models, aspectRatio]);
+  const voiceChoices = useMemo(() => voiceModelsFor(models), [models]);
+
   const dirty =
     name !== (project.name || "") ||
     brief !== (project.brief || "") ||
     kind !== (settings.kind || "movie") ||
     aspectRatio !== (settings.aspectRatio || "16:9") ||
-    resolution !== (settings.resolution || "720p");
+    resolution !== (settings.resolution || "720p") ||
+    imageModel !== (settings.imageModel || "") ||
+    videoModel !== (settings.videoModel || "") ||
+    voiceModel !== (settings.voiceModel || "") ||
+    videoMode !== (settings.videoMode || "auto");
 
   const save = async () => {
     setSaving(true);
     await onSave(
-      { name, brief, settings: { kind, aspectRatio, resolution } },
+      {
+        name,
+        brief,
+        // Every chosen model travels with the save. Sending only the format
+        // would quietly drop the model choices this tab exists to make.
+        settings: { kind, aspectRatio, resolution, imageModel, videoModel, voiceModel, videoMode },
+      },
       "Saved. Every new scene inherits this.",
     );
     setSaving(false);

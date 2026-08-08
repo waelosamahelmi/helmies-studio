@@ -122,7 +122,7 @@ describe("the shot list follows what the model can hold", () => {
     expect(rule).toMatch(/CEILING, NOT A TARGET/);
     expect(rule).toMatch(/30/);
     expect(rule).not.toMatch(/let a shot RUN/i);
-    expect(pacingRules({ max: 30 })).toMatch(/cut on every change/i);
+    expect(pacingRules({ max: 30 })).toMatch(/FEWEST CAMERA SETUPS/);
   });
 
   it("gives measurable anchors instead of an adjective", async () => {
@@ -140,7 +140,7 @@ describe("the shot list follows what the model can hold", () => {
     const rule = durationRules({ min: 4, max: 10 });
     expect(rule).toMatch(/CEILING, NOT A TARGET/);
     expect(rule).toMatch(/minimum 4 seconds, maximum 10/);
-    expect(pacingRules({ max: 10 })).toMatch(/cut on every change/i);
+    expect(pacingRules({ max: 10 })).toMatch(/FEWEST CAMERA SETUPS/);
     expect(pacingRules({ max: 10 })).not.toMatch(/held up to/i);
   });
 
@@ -173,11 +173,26 @@ describe("beats decide the shot count, not a budget", () => {
     expect(rule).not.toMatch(/must not exceed/i);
   });
 
-  it("tells the model to cut on every change", async () => {
-    // "Precision beats economy" — the rule that replaced the ceiling.
+  it("cuts when the camera must move, not every time something happens", async () => {
+    // "Cut on every change" over-corrected: a man crossing a room to a
+    // chair came back as TEN camera setups. A beat is a unit of action; a
+    // shot is a unit of camera; they are not the same thing.
     const { pacingRules } = await import("@/lib/script-breakdown-passes.mjs");
-    expect(pacingRules({ max: 30 })).toMatch(/cut on every change/i);
-    expect(pacingRules({ max: 30 })).toMatch(/30 seconds when a SINGLE action/i);
+    const rule = pacingRules({ max: 30 });
+    expect(rule).toMatch(/FEWEST CAMERA SETUPS/);
+    expect(rule).toMatch(/A NEW SPEAKER IS NOT A NEW SHOT/);
+    expect(rule).toMatch(/THREE or FOUR shots/);
+    expect(rule).toMatch(/It is not ten/);
+    expect(rule).toMatch(/30 seconds when a SINGLE action/i);
+  });
+
+  it("does not let an off-screen voice move the camera", async () => {
+    // The beat rule used to force a split on "a sound arriving from
+    // off-screen", which is exactly how the woman's two lines became two
+    // extra setups in a scene where nobody turns around.
+    const { pacingRules, BEAT_RULE } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(pacingRules({ max: 30 })).toMatch(/never a reason to move the camera/i);
+    expect(BEAT_RULE).toMatch(/is NOT one of these/);
   });
 
   it("forbids packing several events into one long take", async () => {
