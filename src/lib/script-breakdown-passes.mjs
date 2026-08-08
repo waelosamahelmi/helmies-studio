@@ -24,7 +24,7 @@ Do NOT break it into shots. Read it for what the production needs to EXIST: who 
 
 Rules that matter:
 - A character who appears under different names but is played by the SAME face (a double, a younger self, a reflection, "OTHER <NAME>") is ONE entry, with the alternate names in "aliases" and the differences in "variants". Splitting one face into two characters is the most expensive mistake here.
-- A VARIANT'S "differences" MUST be something a viewer can SEE, and must differ from every other variant of that character: different clothing, glasses or none, hair wet or dry, a coat on or off, clean-shaven or not. When two versions of one person share a frame, this is the only thing that lets an audience tell them apart — the face is deliberately identical, so the wardrobe cannot be. Never write "same as the other" or a difference of mood alone.
+- A VARIANT'S "differences" is a WARDROBE LINE AND NOTHING ELSE. Write only what the person is wearing on their body: garments and their colours, glasses or none, beard or clean-shaven, hair wet or dry. When two versions of one person share a frame this is the only thing that lets an audience tell them apart — the face is deliberately identical, so the wardrobe cannot be. Three things it must never be, because each one has ruined a film already: never "same clothing as the other" or any wording that makes two versions match; never where they are or what they are doing ("lying in bed", "seated", "walking") — this text is pasted into EVERY shot that person appears in, so a posture in it puts them in the wrong position in every frame; never a mood alone ("calm and knowing") — a camera cannot photograph knowing. Good: "grey marl t-shirt, unshaven, no glasses" and "black buttoned shirt, thin wire glasses, clean-shaven".
 - "props" are objects that must look the same every time they appear — a phone, a pillow, a wall clock, a chair somebody sits in twice. An object the script keeps returning to and nobody tracks is an object that changes shape between cuts. Do not list scenery that is part of the room, or something seen only once.
 - Every scene in the script gets an entry, in order. Never merge two, never skip one.
 - "toneReferences" is the visual grade and the films it should feel like.
@@ -265,7 +265,27 @@ export const SCENE_BUDGET_RETRY_HINT =
    wardrobe, or with none, produces a two-shot of the same man twice, which
    is what happened.
 
-   Asking nicely in the prompt was not enough, so it is checked. */
+   Asking nicely in the prompt was not enough, so it is checked. Three
+   separate ways it came back wrong, each caught by name:
+
+   1. "Same clothing and appearance as Wael, but calmer" — agreement with
+      the letter of the request and the exact opposite of its point.
+   2. "Wearing a plain t-shirt and shorts, lying in bed" — a SITUATION, not
+      an appearance. The variant note is pasted into every shot the man
+      appears in, so this put him in bed while he was standing in a void.
+   3. "calm, knowing demeanour" — a mood. There is nothing to look at, and
+      a camera cannot photograph knowing. */
+
+// Something a viewer can actually see. Positive evidence: if none of these
+// appear, the "difference" is not a difference anyone will notice.
+const WARDROBE = /\b(shirt|t-?shirt|sweater|jumper|jacket|coat|blazer|hoodie|vest|waistcoat|suit|tie|trousers|pants|jeans|shorts|skirt|dress|robe|uniform|apron|scarf|hat|cap|glasses|spectacles|shoes|boots|barefoot|gloves|watch|ring|necklace|earring|collar|sleeves|buttoned|unbuttoned|beard|stubble|clean-?shaven|moustache|hair|wet|damp|bloodied|torn|creased|black|white|grey|gray|navy|olive|worn)\b/i;
+
+// Where he is and what he is doing. True of a shot, never of a wardrobe.
+const SITUATION = /\b(lying|laying|lies|sitting|seated|sits|standing|stands|walking|walks|kneeling|asleep|sleeping|awake|in bed|on the bed|in the chair|off-?screen|entering|leaving)\b/i;
+
+// Sameness, in the words it actually used.
+const SAMENESS = /\b(same|identical|unchanged|matching|no different|as the other|as (the )?(first|second)|like the other)\b/i;
+
 export function variantProblems(characters = []) {
   const problems = [];
   for (const c of characters || []) {
@@ -279,20 +299,42 @@ export function variantProblems(characters = []) {
       problems.push(`${c.name} appears as more than one version (${(c.aliases || []).join(", ") || "aliases"}) but has fewer than two variants.`);
       continue;
     }
-    const described = variants.filter((v) => String(v?.differences || "").trim().length > 8);
-    if (described.length < variants.length) {
-      problems.push(`${c.name} has a variant with no visible difference described.`);
-      continue;
-    }
+
+    let flagged = false;
     const seen = new Set();
     for (const v of variants) {
-      const key = String(v.differences).trim().toLowerCase();
+      const text = String(v?.differences || "").trim();
+      const label = `${c.name} / ${v?.name || "a variant"}`;
+
+      if (text.length <= 8) {
+        problems.push(`${label} has no visible difference described.`);
+        flagged = true;
+        break;
+      }
+      if (SAMENESS.test(text)) {
+        problems.push(`${label} is described as looking the same as another version ("${text}"), which is the one thing it must not be.`);
+        flagged = true;
+        break;
+      }
+      if (SITUATION.test(text)) {
+        problems.push(`${label} describes where he is or what he is doing ("${text}") instead of what he is wearing. This text is added to every shot he appears in, so it puts him in the wrong place.`);
+        flagged = true;
+        break;
+      }
+      if (!WARDROBE.test(text)) {
+        problems.push(`${label} names only a mood ("${text}"). A camera cannot photograph a mood — name the garments.`);
+        flagged = true;
+        break;
+      }
+      const key = text.toLowerCase();
       if (seen.has(key)) {
         problems.push(`${c.name} has two variants wearing the same thing.`);
+        flagged = true;
         break;
       }
       seen.add(key);
     }
+    if (flagged) continue;
   }
   return problems;
 }
@@ -300,4 +342,4 @@ export function variantProblems(characters = []) {
 export const variantsAreDistinct = (characters) => variantProblems(characters).length === 0;
 
 export const VARIANT_RETRY_HINT = (problems) =>
-  `${problems.join(" ")} When one actor plays two versions of a person, the FACE is identical on purpose — so the clothing is the only thing an audience can tell them apart by. Return the same JSON again, giving every variant of those characters a distinct, visible wardrobe: different garments, and something unmistakable like glasses on one and not the other. Never a difference of mood or posture alone.`;
+  `${problems.join(" ")} When one actor plays two versions of a person, the FACE is identical on purpose — so the clothing is the only thing an audience can tell them apart by. Return the same JSON again, and make every variant's "differences" a wardrobe line and nothing else: the garments and their colours, plus something unmistakable like glasses on one and not the other. No posture, no location, no mood, and never a wording that makes two versions match. Good: "grey marl t-shirt, unshaven, no glasses" and "black buttoned shirt, thin wire glasses, clean-shaven".`;

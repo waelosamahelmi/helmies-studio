@@ -204,6 +204,44 @@ describe("a man and his double must be dressed differently", () => {
     expect(problems[0]).toMatch(/same thing/i);
   });
 
+  it("catches a variant that says it looks the same as the other one", async () => {
+    // Verbatim from the read: agreement with the letter of the request and
+    // the exact opposite of its point.
+    const { variantProblems } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(variantProblems([character([
+      { name: "Wael", differences: "grey t-shirt, unshaven" },
+      { name: "Other Wael", differences: "Same clothing and appearance as Wael but with a calm, knowing demeanor" },
+    ])])[0]).toMatch(/looking the same as another version/i);
+  });
+
+  it("catches a variant that describes a situation instead of a wardrobe", async () => {
+    // Also verbatim. The note is pasted into EVERY shot the man appears in,
+    // so "lying in bed" put him in bed while he stood in a black void.
+    const { variantProblems } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(variantProblems([character([
+      { name: "Wael (bedroom)", differences: "Wearing a plain t-shirt and shorts, lying in bed" },
+      { name: "Other Wael", differences: "black buttoned shirt, wire glasses" },
+    ])])[0]).toMatch(/where he is or what he is doing/i);
+  });
+
+  it("catches a variant that is only a mood", async () => {
+    const { variantProblems } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(variantProblems([character([
+      { name: "Wael", differences: "grey t-shirt, unshaven" },
+      { name: "Other Wael", differences: "calm, knowing, quietly confident" },
+    ])])[0]).toMatch(/cannot photograph a mood/i);
+  });
+
+  it("names which variant is at fault, not just the character", async () => {
+    // "Wael is wrong" sends the whole structure back. "Wael / Other Wael is
+    // wrong" tells it which line to rewrite.
+    const { variantProblems } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(variantProblems([character([
+      { name: "Wael", differences: "grey t-shirt, unshaven" },
+      { name: "Other Wael", differences: "seated in the chair" },
+    ])])[0]).toContain("Wael / Other Wael");
+  });
+
   it("catches a variant with no visible difference at all", async () => {
     const { variantProblems } = await import("@/lib/script-breakdown-passes.mjs");
     expect(variantProblems([character([

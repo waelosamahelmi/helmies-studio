@@ -261,7 +261,12 @@ async function runBreakdown({ projectId, userId, script, settings, replace, keep
        is reused rather than shadowed by an empty duplicate. */
     const wanted = castFromBreakdown(breakdown, { minAppearances: MIN_APPEARANCES });
     const existing = await prisma.studioEntity.findMany({
-      where: { userId, kind: { in: ["character", "environment"] } },
+      // Products too. Listing only characters and environments here meant a
+      // prop was never matched against one that already existed, so every
+      // read created another — two "Wall Clock" and two "Wooden Chairs" for
+      // the same clock and the same chairs, each tracked separately, which
+      // is the exact drift props exist to prevent.
+      where: { userId, kind: { in: ["character", "environment", "product"] } },
       select: { id: true, kind: true, name: true, projectId: true },
       take: 200,
     });
