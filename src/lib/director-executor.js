@@ -6,6 +6,7 @@ import { ingestFromUrl } from "@/lib/storage/ingest";
 import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
 import { selectEntityReferences, imageReferenceSlot, isStillImageModel } from "@/lib/entity-core.mjs";
+import { applyRequiredDefaults } from "@/lib/provider-payload-core.mjs";
 
 /* The fallback when a pipeline names no image model. It was "flux-dev",
    which the provider answers with a 500 — so a shot that reached this
@@ -52,20 +53,20 @@ async function resolveVideoModel(wanted, hasStill) {
     if (!row) return null;
     const fields = row.inputSchema?.fields || {};
     const frameField = FIRST_FRAME_FIELDS.find((f) => fields[f]);
-    return { id, frameField: frameField || null };
+    return { id, frameField: frameField || null, schema: row.inputSchema };
   };
 
   if (!hasStill) {
     const first = await load(wanted);
-    return { model: first?.id || wanted || DEFAULT_VIDEO_MODEL, frameField: null };
+    return { model: first?.id || wanted || DEFAULT_VIDEO_MODEL, frameField: null, schema: first?.schema || null };
   }
   const first = await load(wanted);
-  if (first?.frameField) return { model: first.id, frameField: first.frameField };
+  if (first?.frameField) return { model: first.id, frameField: first.frameField, schema: first.schema };
   const i2v = await load(DEFAULT_I2V_MODEL);
-  if (i2v?.frameField) return { model: i2v.id, frameField: i2v.frameField };
+  if (i2v?.frameField) return { model: i2v.id, frameField: i2v.frameField, schema: i2v.schema };
   // Nothing can be given the frame. Run text-to-video rather than
   // pretending the still was used.
-  return { model: first?.id || wanted || DEFAULT_VIDEO_MODEL, frameField: null };
+  return { model: first?.id || wanted || DEFAULT_VIDEO_MODEL, frameField: null, schema: first?.schema || null };
 }
 
 /**
@@ -95,17 +96,17 @@ async function resolveImageModel(wanted, hasRefs) {
   if (!hasRefs) {
     // Nothing to show it. A model that REQUIRES an image cannot start from
     // a description, so fall through to one that can.
-    if (first && !requiresImage(first.schema)) return { model: first.id, useRefs: false };
+    if (first && !requiresImage(first.schema)) return { model: first.id, useRefs: false, schema: first.schema };
     const fallback = await load(DEFAULT_IMAGE_MODEL);
-    return { model: fallback?.id || DEFAULT_IMAGE_MODEL, useRefs: false };
+    return { model: fallback?.id || DEFAULT_IMAGE_MODEL, useRefs: false, schema: fallback?.schema || null };
   }
 
-  if (first?.takesRefs) return { model: first.id, useRefs: true };
+  if (first?.takesRefs) return { model: first.id, useRefs: true, schema: first.schema };
   const edit = await load(DEFAULT_EDIT_MODEL);
-  if (edit?.takesRefs) return { model: edit.id, useRefs: true };
+  if (edit?.takesRefs) return { model: edit.id, useRefs: true, schema: edit.schema };
   // Nothing here can take the references. Render without them rather than
   // sending them somewhere they will be ignored.
-  return { model: first?.id || DEFAULT_IMAGE_MODEL, useRefs: false };
+  return { model: first?.id || DEFAULT_IMAGE_MODEL, useRefs: false, schema: first?.schema || null };
 }
 
 const requiresImage = (schema) =>
@@ -372,7 +373,7 @@ async function executeShotImage(shot, pipeline, brief) {
        default whatever the project had been configured with. flux-dev is
        also one of the ids the provider answers with a 500, which is why
        all four shots of scene 1 failed. */
-    const { model: wantModel, useRefs } = await resolveImageModel(
+    const { model: wantModel, useRefs, schema: modelSchema } = await resolveImageModel(
       brief.modelImage || DEFAULT_IMAGE_MODEL,
       refs.length > 0 && Boolean(refs[0]),
     );
@@ -384,6 +385,16 @@ async function executeShotImage(shot, pipeline, brief) {
       model: wantModel,
       _provider: await resolveProvider(wantModel)
     };
+
+    /* FILL WHAT THIS MODEL DEMANDS.
+       "Some required settings are missing for this model" — seedream's
+       edit models require `quality` as well as `aspect_ratio`, and the
+       director never filled them. The async route has done this since the
+       same failure hit it; the fix was applied to one caller instead of
+       to every path that reaches a provider, which is why it had to be
+       found twice. */
+    const filled = applyRequiredDefaults(params, modelSchema, { modelId: wantModel });
+    Object.assign(params, filled.params);
 
     // T2I or I2I — decided by what the chosen model can actually be shown,
     // not by whether references happen to exist.
@@ -461,7 +472,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
   const rowId = shotRowId(pipeline.id, shot.id);
   try {
     const videoPrompt = shot.videoStrategy?.prompt || "";
-    const { model: modelRoute, frameField } = await resolveVideoModel(
+    const { model: modelRoute, frameField, schema: videoSchema } = await resolveVideoModel(
       shot.videoStrategy?.modelRoute || brief.modelVideo || DEFAULT_VIDEO_MODEL,
       Boolean(imageUrl),
     );
@@ -473,6 +484,9 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
       model: modelRoute,
       _provider: await resolveProvider(modelRoute)
     };
+
+    const filledVideo = applyRequiredDefaults(params, videoSchema, { modelId: modelRoute });
+    Object.assign(params, filledVideo.params);
 
     let result;
     if (imageUrl && frameField) {
