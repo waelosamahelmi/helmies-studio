@@ -1045,6 +1045,89 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
   const [available, setAvailable] = useState([]);
   const [picking, setPicking] = useState(null); // a MEMBER_GROUPS entry
   const [busy, setBusy] = useState(false);
+  const [coverage, setCoverage] = useState(null);
+  const [making, setMaking] = useState(null); // entity id currently rendering
+  const { models } = useModelCatalog();
+
+  /* What is still missing, for everything filed here. Breaking a screenplay
+     down creates every place it names as a description with no
+     photographs; finding each one in the Cast studio and filling it in by
+     hand is a chore nobody should be given eleven times. */
+  const loadCoverage = useCallback(async () => {
+    try {
+      const res = await apiFetch(`/api/projects/${projectId}/coverage`, { retries: 0 });
+      setCoverage(await res.json());
+    } catch { /* the rows still render without it */ }
+  }, [projectId]);
+
+  useEffect(() => { loadCoverage(); }, [loadCoverage, contents]);
+
+  const gapFor = useCallback(
+    (entityId) => (coverage?.entities || []).find((e) => e.id === entityId) || null,
+    [coverage],
+  );
+
+  /* Generating the views, from here.
+
+     One view at a time and in order: the anchor has to EXIST before the
+     rest, because they are generated as references to it. Firing them
+     together with nothing on file would produce five unrelated rooms. */
+  const makeViews = useCallback(async (entity) => {
+    const gap = gapFor(entity.id);
+    if (!gap?.missing?.length) return;
+
+    const usable = (models || []).filter((m) => {
+      const fields = m.schema?.fields || {};
+      if (fields.duration || Object.keys(fields).some((k) => /video/i.test(k))) return false;
+      return !Object.entries(fields).some(([name, f]) => f?.required && /image|reference/i.test(name));
+    });
+    const scratchModel = usable.sort((a, b) => (b.credits ?? 0) - (a.credits ?? 0))[0];
+    if (!scratchModel) { setError?.("No model here can draw a view from a description."); return; }
+
+    setMaking(entity.id);
+    setError?.("");
+    try {
+      const anchor = gap.missing[0];
+      const res = await apiFetch("/api/generate/async", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tool: "image",
+          model: scratchModel.id,
+          prompt: [entity.description, anchor.prompt].filter(Boolean).join(". "),
+          expand: false,
+          aspect_ratio: entity.kind === "environment" ? "16:9" : "1:1",
+        }),
+      });
+      const submitted = await res.json();
+
+      const started = Date.now();
+      for (;;) {
+        if (Date.now() - started > 5 * 60 * 1000) {
+          throw new Error("That view is taking unusually long. It is still running — check back shortly.");
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+        const s = await apiFetch(`/api/generations/status?id=${submitted.generationId}`, { retries: 0 });
+        const gen = await s.json();
+        if (gen.status === "completed" && gen.outputUrl) {
+          await apiFetch(`/api/entities/${entity.id}/references`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ url: gen.outputUrl, kind: anchor.kind, label: anchor.label, source: "generated" }),
+          });
+          setNotice?.(`${entity.name}: the ${anchor.label.toLowerCase()} is in. Open it in Cast to generate the rest from it.`);
+          onChanged?.();
+          loadCoverage();
+          return;
+        }
+        if (gen.status === "failed") throw new Error(gen.error || "That view failed.");
+      }
+    } catch (e) {
+      setError?.(e?.message || "That view could not be made.");
+    } finally {
+      setMaking(null);
+    }
+  }, [gapFor, models, onChanged, loadCoverage, setNotice, setError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1140,6 +1223,7 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
                 {filed.map((e) => {
                   const refs = Array.isArray(e.references) ? e.references : [];
                   const thumb = refs.find((r) => r.kind === "face_front")?.url || refs[0]?.url || null;
+                  const gap = gapFor(e.id);
                   return (
                     <li key={e.id} className="st-member">
                       <span className="st-member__frame">
@@ -1151,7 +1235,21 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
                         )}
                       </span>
                       <span className="st-member__name">{e.name}</span>
-                      <span className="st-member__meta hs-mono">{refs.length} ref{refs.length === 1 ? "" : "s"}</span>
+                      <span className="st-member__meta hs-mono">
+                        {gap ? `${gap.total - gap.missing.length}/${gap.total}` : `${refs.length} ref${refs.length === 1 ? "" : "s"}`}
+                      </span>
+                      {gap?.canStartFromScratch && (
+                        <button type="button" className="hs-btn hs-btn--sm hs-btn--primary"
+                          onClick={() => makeViews(e)} disabled={!!making}
+                          title="Draw the first view from the description, then generate the rest from it in Cast">
+                          {making === e.id ? "Drawing…" : "Draw it"}
+                        </button>
+                      )}
+                      {gap?.needsPhotograph && (
+                        <span className="hs-badge hs-badge--caution" title="A face is never invented — add one photograph in Cast and every angle is generated from it">
+                          needs a photo
+                        </span>
+                      )}
                       <button type="button" className="hs-btn hs-btn--sm hs-btn--outline"
                         onClick={() => clone(e)} disabled={busy}
                         title="Same references, separate character — for a double, a twin, or a second version">

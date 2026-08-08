@@ -31,7 +31,7 @@ describe("planFixes", () => {
 
   it("reports a modelType mismatch that resolves to a real category (reference-to-video stuck under image)", () => {
     const rows = [
-      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2v" },
+      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2V" },
     ];
     const { modelTypeFixes, needsAttention } = planFixes(rows);
     // Reference-to-video is an image-INPUT capability (its modelType is i2v,
@@ -109,7 +109,7 @@ describe("planFixes", () => {
   // T2V pool) once the operator runs the script with --apply --yes.
   it("recovers a precise video direction for a row stuck under coarse 'video' whose own id now carries an unambiguous marker", () => {
     const rows = [
-      { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 V2v" },
+      { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 V2V" },
       { modelId: "wan-2.6-flash-i2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 Flash I2v" },
       { modelId: "wan-2.5-t2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.5 T2v" },
     ];
@@ -140,7 +140,7 @@ describe("planFixes", () => {
 
   it("is idempotent: re-planning a row already recovered to a precise video direction reports nothing further", () => {
     const rows = [
-      { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "v2v", capability: "video-to-video", displayName: "Wan 2.6 V2v" },
+      { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "v2v", capability: "video-to-video", displayName: "Wan 2.6 V2V" },
     ];
     const { capabilityFixes, modelTypeFixes } = planFixes(rows);
     expect(capabilityFixes).toEqual([]);
@@ -202,7 +202,7 @@ describe("planFixes", () => {
   it("is idempotent: re-planning against already-fixed rows reports nothing", () => {
     const fixedRows = [
       { modelId: "seedance-1-5-pro", providerName: "KIE", modelType: "video", capability: "video", displayName: "Seedance 1.5 Pro" },
-      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "i2v", capability: "reference-to-video", displayName: "Wan 2.7 R2v" },
+      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "i2v", capability: "reference-to-video", displayName: "Wan 2.7 R2V" },
       { modelId: "mystery-image-1", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Mystery Image 1", inputModalities: ["text"], outputModalities: ["image"] },
       { modelId: "alibaba:qwen3-tts-flash", providerName: "Alibaba", modelType: "audio", capability: "text-to-speech", displayName: "Qwen3 TTS Flash" },
     ];
@@ -221,7 +221,7 @@ describe("run() — dry-run vs apply (mocked DB)", () => {
       // wan/2-7-r2v gained a curated (replace-mode) schema in the M2 pass —
       // the fixture carries the already-correct stored schema so this
       // describe stays about the modelType/capability backfill only.
-      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2v", inputSchema: schemaForModel("wan/2-7-r2v", "reference-to-video") },
+      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2V", inputSchema: schemaForModel("wan/2-7-r2v", "reference-to-video") },
       { modelId: "flux-2", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Flux 2" },
       {
         modelId: "mystery-image-1", providerName: "KIE", modelType: "uncategorized", capability: null,
@@ -459,7 +459,7 @@ describe("run() — coarse-'video' direction backfill (dry-run / apply / idempot
     vi.clearAllMocks();
   });
 
-  const v2vRow = { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 V2v" };
+  const v2vRow = { modelId: "wan-2.6-v2v", providerName: "KIE", modelType: "video", capability: "video", displayName: "Wan 2.6 V2V" };
   // seedance-2 gained a curated (replace-mode) schema in the M2 pass — give
   // the fixture the already-correct stored schema so this describe stays
   // purely about the capability backfill, as originally intended.

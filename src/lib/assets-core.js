@@ -31,6 +31,29 @@ export async function recordGenerationAsset(generation, { source = "generation" 
     if (existing) return existing;
 
     const params = generation.params && typeof generation.params === "object" ? generation.params : {};
+
+    /* Which production this belongs to.
+
+       The column was read from `params.projectId` and NOTHING ever set it,
+       so every frame rendered for a project's cast landed in the library
+       unfiled and the project's Assets tab stayed empty however much had
+       been made for it. The entities in the shot already know their
+       project, so it is resolved here rather than threaded through the
+       client — which also means the agent and the director get it without
+       changing either. Deliberately NOT put into the params sent upstream:
+       providers reject fields they do not know.
+
+       Only when the cast agrees. A shot mixing two projects belongs to
+       neither, and guessing one would file work under the wrong film. */
+    let projectId = params.projectId || null;
+    if (!projectId && Array.isArray(params.entityIds) && params.entityIds.length) {
+      const entities = await prisma.studioEntity.findMany({
+        where: { id: { in: params.entityIds }, userId: generation.userId },
+        select: { projectId: true },
+      });
+      const projects = [...new Set(entities.map((e) => e.projectId).filter(Boolean))];
+      if (projects.length === 1) projectId = projects[0];
+    }
     const inputUrl = params.image_url || params.video_url || params.audio_url || null;
     const parentAssetId = inputUrl
       ? (await prisma.asset.findFirst({ where: { userId: generation.userId, url: inputUrl }, select: { id: true } }))?.id ?? null
@@ -46,7 +69,7 @@ export async function recordGenerationAsset(generation, { source = "generation" 
         model: generation.model || null,
         generationId: generation.id,
         parentAssetId,
-        projectId: params.projectId || null,
+        projectId,
         metadata: {
           tool: generation.tool,
           prompt: generation.prompt || "",

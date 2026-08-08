@@ -249,8 +249,11 @@ export const DISPLAY_NAME_OVERRIDES = {
   // that, and it sorts under G.
   "generate-veo-3-video": "Veo 3",
   "generate-aleph-video": "Runway Aleph",
-  "generate-ai-video": "Runway Gen-3",
-  "generate-or-edit-image": "Nano Banana",
+  // NOT renamed: "generate-ai-video" and "generate-or-edit-image". Both are
+  // ugly, but I do not know which model is behind either route, and a
+  // confident wrong name is worse than an awkward true one. They are on the
+  // list for the model dictionary, where the answer will be looked up
+  // rather than guessed.
   "grok-imagine-video-1-5-preview": "Grok Imagine Video 1.5",
   "ai-clipping": "AI Clipping",
   // ByteDance's V-series carries no brand of its own once the vendor
