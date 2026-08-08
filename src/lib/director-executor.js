@@ -63,9 +63,13 @@ const VALID_TRANSITIONS = {
   [PIPELINE_STATES.GENERATING_AUDIO]: [PIPELINE_STATES.QUALITY_CHECK, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED],
   [PIPELINE_STATES.QUALITY_CHECK]: [PIPELINE_STATES.ASSEMBLING, PIPELINE_STATES.FAILED],
   [PIPELINE_STATES.ASSEMBLING]: [PIPELINE_STATES.COMPLETED, PIPELINE_STATES.FAILED],
-  [PIPELINE_STATES.COMPLETED]: [],
+  /* A finished scene can be shot again. It was terminal, so a re-render —
+     after a bad take, or after changing the cast — was impossible without
+     planning a second scene beside it. QUOTED, not QUEUED: a re-run is
+     re-priced before any money moves. */
+  [PIPELINE_STATES.COMPLETED]: [PIPELINE_STATES.QUOTED, PIPELINE_STATES.DRAFT],
   [PIPELINE_STATES.PAUSED]: [PIPELINE_STATES.QUEUED, PIPELINE_STATES.GENERATING_IMAGES, PIPELINE_STATES.GENERATING_VIDEOS, PIPELINE_STATES.GENERATING_AUDIO, PIPELINE_STATES.CANCELLED],
-  [PIPELINE_STATES.FAILED]: [PIPELINE_STATES.QUEUED],
+  [PIPELINE_STATES.FAILED]: [PIPELINE_STATES.QUEUED, PIPELINE_STATES.QUOTED, PIPELINE_STATES.DRAFT],
   [PIPELINE_STATES.CANCELLED]: []
 };
 
@@ -538,7 +542,13 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
      the breakdown creates starts) failed with "Invalid state transition".
      Walk the step rather than widening the machine: the intermediate state
      is the record that a price existed before any money moved. */
-  if (pipeline.status === PIPELINE_STATES.PLANNING || pipeline.status === PIPELINE_STATES.AWAITING_APPROVAL) {
+  const needsQuote = [
+    PIPELINE_STATES.PLANNING,
+    PIPELINE_STATES.AWAITING_APPROVAL,
+    PIPELINE_STATES.COMPLETED,
+    PIPELINE_STATES.FAILED,
+  ];
+  if (needsQuote.includes(pipeline.status)) {
     await transitionPipeline(pipelineId, PIPELINE_STATES.QUOTED);
   }
 
@@ -646,12 +656,16 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
       });
     }
 
-    // Mark completed
-    await transitionPipeline(pipelineId, PIPELINE_STATES.COMPLETED, {
-      completedShots: completedShots.length,
-      failedShots,
-      creditsUsed
-    });
+    /* A scene where NOTHING rendered is not completed.
+       Marking it "completed" made a run whose every shot failed read as a
+       finished scene — and then refused to run again, because COMPLETED is
+       terminal. The state has to match what happened. */
+    const nothingWorked = failedShots > 0 && completedShots.length === 0;
+    await transitionPipeline(
+      pipelineId,
+      nothingWorked ? PIPELINE_STATES.FAILED : PIPELINE_STATES.COMPLETED,
+      { completedShots: completedShots.length, failedShots, creditsUsed },
+    );
 
     // Store assembly as a generation record
     if (assembledUrl) {
