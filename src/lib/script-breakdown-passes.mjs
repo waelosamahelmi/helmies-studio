@@ -40,6 +40,7 @@ Rules that matter:
 - COVERAGE IS NOT OPTIONAL. Every line of spoken dialogue in this scene appears exactly once, verbatim, across your shots. You are breaking the scene down, not summarising it. A conversation of twenty lines is not one shot.
 - COVER THE ACTION TOO, not only the dialogue. Every thing the script says HAPPENS — a walk, a turn, a door, a voice arriving from off-screen, an object picked up — belongs to some shot. A beat the script wrote and no shot contains is a beat that will not be in the film.
 {{BEAT_RULE}}
+{{ACTING_RULE}}
 {{MONTAGE_RULE}}
 {{BLOCKING_RULE}}
 - WHEN TWO VERSIONS OF ONE CHARACTER SHARE A FRAME, say so explicitly in the description and name what each is wearing: "two men with the same face, one in <X>, the other in <Y>". Their faces are identical on purpose; if the description does not separate them by clothing, the shot renders the same man twice.
@@ -49,7 +50,7 @@ Rules that matter:
 - Every shot with a visible character sets "characterVariant" to one of that character's declared variant names.
 - Every dialogue line names its "speaker" AND its "speakerVariant". For a film where one actor plays two versions of himself, this is the only thing telling us who is talking.
 - "props" lists which of the production's props are visible in this shot, by key.
-- "performance" is the direction you would give an actor for THIS shot: what the face and body are doing, and the state underneath it. A script that says "his expression is blank" is telling you what a camera sees, not what the man is - write the state ("hollowed out, awake for hours, going through the motions"). Required on every shot with a visible character.
+- "performance" is the direction you would give an actor for THIS shot, written DOWN per the acting rule above: the state underneath, and the small physical thing that lets it leak. A script that says "his expression is blank" is telling you what a camera sees, not what the man is - write the state ("hollowed out, awake for hours, going through the motions"). Required on every shot with a visible character.
 - "type" is exactly one of: establishing, wide, medium, closeup, extreme_closeup, insert, over_shoulder, pov - and must match your own description. DIRECT the scene with them: open on a wide or establishing so the audience knows where they are, go CLOSER as the scene tightens, use closeup or extreme_closeup on the line that turns the scene, over_shoulder for an exchange between two people, and insert for an object that matters (a phone, a clock, a hand). A scene shot entirely in medium is not directed, it is recorded.
 - Every shot with a visible character MUST set "characterVariant". Where two versions of the same character share a frame, name the variant of the one the shot is ABOUT, and name each speaker's variant on their dialogue line — that is what tells us who is wearing what.
 - "continuity.follows" is for an unbroken continuous movement where the frame literally carries over. Cutting between angles is a new frame, not a continuation.
@@ -62,6 +63,7 @@ Reply with ONLY one valid JSON object - no fences, no commentary:
 export function sceneShotsPrompt(limits, budget = null) {
   return SCENE_SHOTS_SYSTEM_PROMPT
     .replace("{{BEAT_RULE}}", BEAT_RULE)
+    .replace("{{ACTING_RULE}}", ACTING_RULE)
     .replace("{{MONTAGE_RULE}}", MONTAGE_RULE)
     .replace("{{BLOCKING_RULE}}", BLOCKING_RULE)
     .replace("{{PACING_RULES}}", pacingRules(limits))
@@ -169,6 +171,25 @@ export function durationRules({ min = 4, max = 10 } = {}) {
    opposite of a montage: the flashing IS the beat, and cutting it into
    eight generations both costs eight times as much and removes the only
    thing that made it work. */
+/* People underplay. Reads do not.
+   ────────────────────────────────────────────────────────────────────────
+   Every performance note came back at the top of its range: "eyes wide,
+   mouth slightly open", "a sharp intake of breath, his face hardening",
+   "frustration boils over", "paralyzed by the impossibility of what he
+   sees". A model given "eyes wide" renders eyes wide, so the film plays as
+   a series of reaction shots from a soap opera — and in a script whose
+   whole subject is a man too tired to be sure which life is his, that is
+   the wrong film entirely.
+
+   Real people at their worst moments go still, look away, and carry on
+   talking. The direction has to ask for what is being HELD BACK, because
+   that is what a camera actually finds interesting. */
+export const ACTING_RULE = `- DIRECT THE PERFORMANCE DOWN, NEVER UP. Real people underplay: at the worst moment of their lives they go still, look away, swallow it, and keep talking in an ordinary voice. Write what the person is HOLDING BACK, not what they are showing. The model renders whatever you name, so "eyes wide with shock" gets you a soap opera.
+  · BANNED unless the script itself calls for it: eyes widening, gasping, sharp intakes of breath, trembling, jaw clenching, tears welling, staggering back, hands flying to the mouth, anything "boiling over" or "visceral".
+  · Instead name the small true thing: where the eyes go, what the hands do, what the breath does, what he does INSTEAD of reacting. "He hears it, doesn't turn, and keeps walking a half-second too steadily" is direction. "Shock and disbelief" is not.
+  · Bad: "Wael's eyes widen in shock, his breath catching as horror washes over him."
+  · Good: "He stops. Looks at the floor rather than at the man. When he answers, his voice is completely level, which is the tell."`;
+
 export const MONTAGE_RULE = `- A MONTAGE OR A RUSH OF FLASHES IS ONE SHOT. When the script calls for a rapid series of fragmentary images — a memory flood, a dream, intercut flashes with no dialogue — write ONE shot whose description lists the images in order and says how fast they come ("a rapid series of flashes, each under a second: a hallway, a woman turning, hands almost touching, rain on glass"). The flashing is the beat. Splitting it into one shot per image renders eight calm little scenes instead of a montage, and costs eight generations to do it.`;
 
 /* Where everyone and everything physically IS.

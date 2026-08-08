@@ -382,3 +382,42 @@ describe("a montage is one shot, and a room keeps its furniture", () => {
     expect(prompt).toMatch(/PHYSICAL ARRANGEMENT/);
   });
 });
+
+describe("people underplay, so the direction has to", () => {
+  // Every performance note came back at the top of its range: "eyes wide,
+  // mouth slightly open", "a sharp intake of breath, his face hardening",
+  // "frustration boils over". A model renders whatever you name, so the
+  // film played as a run of soap-opera reaction shots — wrong for a script
+  // about a man too tired to be sure which life is his.
+  it("asks for what is held back, not what is shown", async () => {
+    const { ACTING_RULE } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(ACTING_RULE).toMatch(/DIRECT THE PERFORMANCE DOWN, NEVER UP/);
+    expect(ACTING_RULE).toMatch(/HOLDING BACK/);
+  });
+
+  it("names the stock gestures it will not accept", async () => {
+    // A general plea for subtlety is ignorable. A list is not.
+    const { ACTING_RULE } = await import("@/lib/script-breakdown-passes.mjs");
+    for (const tic of ["eyes widening", "gasping", "trembling", "boiling over", "visceral"]) {
+      expect(ACTING_RULE.toLowerCase()).toContain(tic.toLowerCase());
+    }
+  });
+
+  it("shows the difference rather than describing it", async () => {
+    const { ACTING_RULE } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(ACTING_RULE).toMatch(/Bad:/);
+    expect(ACTING_RULE).toMatch(/Good:/);
+    // The good example is behaviour a camera can photograph.
+    expect(ACTING_RULE).toMatch(/voice is completely level/);
+  });
+
+  it("points the performance field at the same rule", async () => {
+    // Two instructions about acting in one prompt, one asking for the face
+    // and one asking for restraint, is how the melodrama got back in.
+    const { sceneShotsPrompt } = await import("@/lib/script-breakdown-passes.mjs");
+    const prompt = sceneShotsPrompt({ min: 4, max: 30 });
+    expect(prompt).not.toContain("{{ACTING_RULE}}");
+    expect(prompt).toMatch(/written DOWN per the acting rule above/);
+    expect(prompt).not.toMatch(/what the face and body are doing/);
+  });
+});
