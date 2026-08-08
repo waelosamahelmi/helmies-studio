@@ -744,28 +744,27 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
     const hasSomethingToHear = Boolean(shot.dialogue) || Boolean(shot.audioCues);
     if (audioField) params[audioField] = hasSomethingToHear;
 
-    /* REFERENCE AUDIO IS OFF, AND THIS IS NOT A PREFERENCE.
+    /* THE VOICE REFERENCE IS WHAT CLONES THE VOICE, SO IT STAYS.
 
-       Seedance refuses the request outright whenever a voice reference is
-       attached — every single shot carrying dialogue died on submit:
+       Every shot with dialogue was dying on submit with
 
          {"code":422,"msg":"Each reference audio must be between 2 and 30
           seconds"}
 
-       The file it is complaining about is 18.4 seconds long, served over
-       https, and returns 200 with audio/mpeg. So the message does not
-       describe the actual objection, and guessing at the real one costs a
-       failed render per guess. A whole film that will not start is worse
-       than a film whose voices are not anchored to a sample.
+       and I read that as the provider refusing the voice sample, so I
+       turned the sample off. It was the wrong conclusion. Probing the API
+       directly settled it: the SAME 18.4-second file is accepted at
+       duration 6 and at duration 30, trimmed to 10s, trimmed to 4s, and
+       passed as a bare string instead of an array — six submissions, six
+       successes.
 
-       `generate_audio` above stays ON, so clips still carry sound; what is
-       lost is the voice being held to one recording across shots. Restore
-       this the moment the true constraint is known — the selection code is
-       kept below rather than deleted so there is something to switch back
-       on, not something to rewrite. */
-    const SEND_VOICE_REFERENCES = false;
+       What actually failed was the DURATION. Those shots ran 2 and 3
+       seconds, below the four this model accepts, and the provider reported
+       it against the audio field instead of the duration field. A 422 is
+       free, so the hypothesis should have been tested before anything was
+       switched off on the strength of the message alone. */
     const audioRefField = REFERENCE_AUDIO_FIELDS.find((f) => videoSchema?.fields?.[f]);
-    if (SEND_VOICE_REFERENCES && audioRefField && hasSomethingToHear
+    if (audioRefField && hasSomethingToHear
         && Array.isArray(shot.entityIds) && shot.entityIds.length) {
       try {
         const speakers = await prisma.studioEntity.findMany({

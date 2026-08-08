@@ -406,22 +406,23 @@ describe("sound is continuous, not absent", () => {
     expect(params.generate_audio).toBe(true);
   });
 
-  it("does NOT send a voice reference, because the provider refuses the request", async () => {
-    // This used to assert the opposite, and it was right about what we
-    // wanted: without a reference each clip invents its own speaker, which
-    // is what made the sound change shot to shot. But Seedance rejects any
-    // request carrying one —
-    //   {"code":422,"msg":"Each reference audio must be between 2 and 30 seconds"}
-    // — for an 18.4-second file it can fetch over https. Every shot with
-    // dialogue died on submit. A film that will not render is worse than a
-    // film whose voices are not anchored, so the reference is off until the
-    // real constraint is known.
+  it("sends the cast's VOICE, because that is what clones it", async () => {
+    // Without a reference each clip invents its own speaker, which is what
+    // made the sound change shot to shot.
+    //
+    // This briefly asserted the opposite. Every shot with dialogue was
+    // failing on submit with "Each reference audio must be between 2 and 30
+    // seconds", so the sample was switched off — wrongly. Probing the API
+    // directly showed the same 18.4-second file accepted at duration 6, at
+    // duration 30, trimmed to 10s, trimmed to 4s, and as a bare string:
+    // six submissions, six successes. The real fault was a 2-second
+    // DURATION, reported against the audio field. A 422 is free; the
+    // hypothesis should have been tested before anything was turned off.
     const params = await runAudioShot({
       id: "s1", index: 0, entityIds: ["ch1"], camera: {},
       dialogue: "Wael: Who are you?", videoStrategy: { prompt: "he speaks" },
     });
-    expect(params.reference_audio_urls).toBeUndefined();
-    // Sound itself is still asked for — only the anchoring sample is gone.
+    expect(params.reference_audio_urls).toEqual(["https://cdn/wael.mp3"]);
     expect(params.generate_audio).toBe(true);
   });
 
