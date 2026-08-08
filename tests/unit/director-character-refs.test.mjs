@@ -406,14 +406,23 @@ describe("sound is continuous, not absent", () => {
     expect(params.generate_audio).toBe(true);
   });
 
-  it("sends the cast's VOICE so the same person speaks in every shot", async () => {
-    // Without a reference each clip invents its own speaker, which is what
-    // made the sound change shot to shot.
+  it("does NOT send a voice reference, because the provider refuses the request", async () => {
+    // This used to assert the opposite, and it was right about what we
+    // wanted: without a reference each clip invents its own speaker, which
+    // is what made the sound change shot to shot. But Seedance rejects any
+    // request carrying one —
+    //   {"code":422,"msg":"Each reference audio must be between 2 and 30 seconds"}
+    // — for an 18.4-second file it can fetch over https. Every shot with
+    // dialogue died on submit. A film that will not render is worse than a
+    // film whose voices are not anchored, so the reference is off until the
+    // real constraint is known.
     const params = await runAudioShot({
       id: "s1", index: 0, entityIds: ["ch1"], camera: {},
       dialogue: "Wael: Who are you?", videoStrategy: { prompt: "he speaks" },
     });
-    expect(params.reference_audio_urls).toEqual(["https://cdn/wael.mp3"]);
+    expect(params.reference_audio_urls).toBeUndefined();
+    // Sound itself is still asked for — only the anchoring sample is gone.
+    expect(params.generate_audio).toBe(true);
   });
 
   it("names what is heard and forbids invented music", async () => {
