@@ -534,3 +534,33 @@ describe("failed work is never charged", () => {
     expect(res.creditsUsed).toBeLessThan(40);
   });
 });
+
+describe("a scene stuck mid-run", () => {
+  // A deploy, a restart, or a request the proxy cut leaves the row in a
+  // working state for ever. Every later attempt died with "Invalid state
+  // transition: generating_images → queued" — unrunnable, with no way to
+  // say so.
+  beforeEach(() => {
+    getWallet.mockResolvedValue({ available: 10_000 });
+    resolveProvider.mockReturnValue({ name: "KIE" });
+  });
+
+  it("refuses a scene that is genuinely rendering, and says why", async () => {
+    pipelineState = makePipeline({ status: "generating_images", updatedAt: new Date() });
+    prisma.directorPipeline.findFirst.mockImplementation(async () => ({ ...pipelineState }));
+    await expect(executeProductionPipeline("p1", "u1", {})).rejects.toThrow(/already rendering/i);
+    expect(debitWallet).not.toHaveBeenCalled();
+  });
+
+  it("recovers one nothing has touched in half an hour", async () => {
+    pipelineState = makePipeline({
+      status: "generating_images",
+      updatedAt: new Date(Date.now() - 35 * 60 * 1000),
+      plan: { shots: [] },
+      costEstimate: { totalCredits: 0, shotCosts: [] },
+    });
+    prisma.directorPipeline.findFirst.mockImplementation(async () => ({ ...pipelineState }));
+    const res = await executeProductionPipeline("p1", "u1", { autoAssemble: false });
+    expect(res.success).toBe(true);
+  });
+});

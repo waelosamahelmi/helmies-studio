@@ -19,6 +19,11 @@ const DEFAULT_IMAGE_MODEL = "seedream/5-pro-text-to-image";
    references succeeded. */
 const DEFAULT_EDIT_MODEL = "seedream/5-pro-image-to-image";
 
+/* How long a pipeline may sit in a working state with nothing touching it
+   before we conclude nothing is. Comfortably longer than the slowest shot,
+   short enough that a deploy mid-render does not strand a scene for a day. */
+const STALE_RUN_MS = 20 * 60 * 1000;
+
 /**
  * Which model this shot should actually run on, and whether its references
  * can be used at all.
@@ -119,7 +124,7 @@ const VALID_TRANSITIONS = {
   [PIPELINE_STATES.COMPLETED]: [PIPELINE_STATES.QUOTED, PIPELINE_STATES.DRAFT],
   [PIPELINE_STATES.PAUSED]: [PIPELINE_STATES.QUEUED, PIPELINE_STATES.GENERATING_IMAGES, PIPELINE_STATES.GENERATING_VIDEOS, PIPELINE_STATES.GENERATING_AUDIO, PIPELINE_STATES.CANCELLED],
   [PIPELINE_STATES.FAILED]: [PIPELINE_STATES.QUEUED, PIPELINE_STATES.QUOTED, PIPELINE_STATES.DRAFT],
-  [PIPELINE_STATES.CANCELLED]: []
+  [PIPELINE_STATES.CANCELLED]: [PIPELINE_STATES.QUOTED, PIPELINE_STATES.DRAFT]
 };
 
 function canTransition(from, to) {
@@ -595,11 +600,47 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
      the breakdown creates starts) failed with "Invalid state transition".
      Walk the step rather than widening the machine: the intermediate state
      is the record that a price existed before any money moved. */
+  /* A SCENE STUCK MID-RUN HAD NO WAY BACK.
+     If the process that was executing a pipeline goes away — a deploy, a
+     restart, a request the proxy cut — the row stays in a working state
+     for ever, and every later attempt died with "Invalid state
+     transition: generating_images → queued". The scene was unrunnable
+     with no way to say so.
+
+     A run that is genuinely in flight is refused with an explanation. One
+     that has not been touched in STALE_RUN_MS is treated as abandoned and
+     re-quoted, which is the only honest reading of a row nothing is
+     working on. */
+  const IN_FLIGHT = [
+    PIPELINE_STATES.QUEUED,
+    PIPELINE_STATES.GENERATING_IMAGES,
+    PIPELINE_STATES.GENERATING_VIDEOS,
+    PIPELINE_STATES.GENERATING_AUDIO,
+    PIPELINE_STATES.QUALITY_CHECK,
+    PIPELINE_STATES.ASSEMBLING,
+  ];
+  if (IN_FLIGHT.includes(pipeline.status)) {
+    const idleMs = Date.now() - new Date(pipeline.updatedAt || 0).getTime();
+    if (idleMs < STALE_RUN_MS) {
+      const err = new Error("This scene is already rendering. Wait for it to finish, or stop it first.");
+      err.code = "already_running";
+      throw err;
+    }
+    console.warn(`[Director] ${pipelineId} abandoned in ${pipeline.status} for ${Math.round(idleMs / 60000)}m — recovering`);
+    await prisma.directorPipeline.update({
+      where: { id: pipelineId },
+      data: { status: PIPELINE_STATES.FAILED, stateMetadata: { ...(pipeline.stateMetadata || {}), recoveredFrom: pipeline.status } },
+    });
+    pipeline.status = PIPELINE_STATES.FAILED;
+  }
+
   const needsQuote = [
     PIPELINE_STATES.PLANNING,
     PIPELINE_STATES.AWAITING_APPROVAL,
     PIPELINE_STATES.COMPLETED,
     PIPELINE_STATES.FAILED,
+    PIPELINE_STATES.PAUSED,
+    PIPELINE_STATES.CANCELLED,
   ];
   if (needsQuote.includes(pipeline.status)) {
     await transitionPipeline(pipelineId, PIPELINE_STATES.QUOTED);

@@ -27,6 +27,11 @@ export async function POST(req) {
     if (/Insufficient credits/.test(e.message)) {
       return apiError({ code: "insufficient_credits", message: e.message });
     }
+    // Already rendering is a state, not a fault — say so plainly rather
+    // than returning the generic "something went wrong".
+    if (e?.code === "already_running") {
+      return apiError({ code: "invalid_params", message: e.message });
+    }
     return authzResponse(e);
   }
 }
