@@ -506,6 +506,16 @@ export function keepOffscreenOffscreen(shots = [], sceneText = "") {
    better evidence than any number the read attached to it. */
 const HOLDS_THE_FRAME = /\b(hold|holds|holding|held|linger|lingers|slow|slowly|stretch|stretches|silence|silent|motionless|unbroken|beat of|a long|stares|staring|waits|waiting|gradually)\b/i;
 
+/* A montage is the one shot that must NOT be trimmed to the floor.
+   The montage rule folds a memory flood into a single clip, and this then
+   cut it to two seconds — six images, a distant voice and an acceleration,
+   in the time it takes to say "Not tonight." A series is long BECAUSE it
+   is a series, and the read's own number is the only estimate of how many
+   fragments it packed in, so it is trusted here exactly as a held frame
+   is. Deliberately narrow: this is an exemption for a stated series, not
+   for every shot that happens to have no dialogue. */
+const IS_A_MONTAGE = /\b(montage|series of flashes|rapid series|flashes|intercut|one after another|in quick succession)\b/i;
+
 const WORDS_PER_SECOND = 2;
 const SPEECH_PAD_SECONDS = 1;
 
@@ -522,8 +532,9 @@ export function neededSeconds(shot, { min = 4, max = 30 } = {}) {
   if (words > 0) return clamp(Math.ceil(words / WORDS_PER_SECOND) + SPEECH_PAD_SECONDS);
 
   const text = `${shot?.description || ""} ${shot?.performance || ""}`;
-  // The script says this one is held. Take the read's number for it.
-  if (HOLDS_THE_FRAME.test(text)) return clamp(shot?.durationSec || min);
+  // A stated series of images, or a frame the script says is held. Either
+  // way the read's own number is the better estimate, and it is kept.
+  if (IS_A_MONTAGE.test(text) || HOLDS_THE_FRAME.test(text)) return clamp(shot?.durationSec || min);
   return min;
 }
 

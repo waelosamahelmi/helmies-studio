@@ -568,3 +568,30 @@ Sit.`;
     expect(shot.dialogue[0].speaker).toBe("WAEL");
   });
 });
+
+describe("a montage is the one shot that must not be trimmed", () => {
+  // The montage rule folds a memory flood into a single clip; the duration
+  // clamp then cut it to two seconds — six images, a voice and an
+  // acceleration, in the time it takes to say "Not tonight."
+  const limits = { min: 2, max: 30 };
+  const montage = {
+    durationSec: 10,
+    description: "A rapid series of flashes, each under a second: a hallway, a woman turning, hands almost touching, rain on glass, a mirror.",
+  };
+
+  it("keeps the length the read gave a series of flashes", async () => {
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(neededSeconds(montage, limits)).toBe(10);
+  });
+
+  it("still floors an ordinary silent action shot", async () => {
+    // The exemption is for a series, not for every shot without dialogue.
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(neededSeconds({ durationSec: 8, description: "He walks to the chair." }, limits)).toBe(2);
+  });
+
+  it("does not let a montage run past what the model can hold", async () => {
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(neededSeconds({ ...montage, durationSec: 90 }, limits)).toBe(30);
+  });
+});
