@@ -24,6 +24,50 @@ const DEFAULT_EDIT_MODEL = "seedream/5-pro-image-to-image";
    short enough that a deploy mid-render does not strand a scene for a day. */
 const STALE_RUN_MS = 20 * 60 * 1000;
 
+/* The video fallback was "wan-2.6", which is not a model id the catalog
+   has ever held — the same shape of mistake as "flux-dev" one stage up.
+   Both of these are real, active rows. */
+const DEFAULT_VIDEO_MODEL = "bytedance/seedance-2";
+const DEFAULT_I2V_MODEL = "wan/2-6-image-to-video";
+
+/* Which fields a video model uses for the frame it starts from. Named
+   differently by every family, and sending the wrong one means the still
+   is ignored and the clip invents its own opening frame — which is the
+   whole reason the still was approved first. */
+const FIRST_FRAME_FIELDS = ["first_frame_url", "image_url", "image_urls", "start_image", "input_image", "image"];
+
+/**
+ * The model this clip should run on, and whether the approved still can
+ * actually be used as its first frame. Decided from the schema, like the
+ * image stage — `bytedance/seedance-2` is a real, active model that takes
+ * NO first frame, so handing it one silently loses the frame.
+ */
+async function resolveVideoModel(wanted, hasStill) {
+  const load = async (id) => {
+    if (!id) return null;
+    let row = null;
+    try {
+      row = await prisma.modelPricing?.findUnique({ where: { modelId: id } });
+    } catch { row = null; }
+    if (!row) return null;
+    const fields = row.inputSchema?.fields || {};
+    const frameField = FIRST_FRAME_FIELDS.find((f) => fields[f]);
+    return { id, frameField: frameField || null };
+  };
+
+  if (!hasStill) {
+    const first = await load(wanted);
+    return { model: first?.id || wanted || DEFAULT_VIDEO_MODEL, frameField: null };
+  }
+  const first = await load(wanted);
+  if (first?.frameField) return { model: first.id, frameField: first.frameField };
+  const i2v = await load(DEFAULT_I2V_MODEL);
+  if (i2v?.frameField) return { model: i2v.id, frameField: i2v.frameField };
+  // Nothing can be given the frame. Run text-to-video rather than
+  // pretending the still was used.
+  return { model: first?.id || wanted || DEFAULT_VIDEO_MODEL, frameField: null };
+}
+
 /**
  * Which model this shot should actually run on, and whether its references
  * can be used at all.
@@ -417,19 +461,25 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
   const rowId = shotRowId(pipeline.id, shot.id);
   try {
     const videoPrompt = shot.videoStrategy?.prompt || "";
-    const modelRoute = shot.videoStrategy?.modelRoute || brief.modelVideo || "wan-2.6";
+    const { model: modelRoute, frameField } = await resolveVideoModel(
+      shot.videoStrategy?.modelRoute || brief.modelVideo || DEFAULT_VIDEO_MODEL,
+      Boolean(imageUrl),
+    );
 
     const params = {
       prompt: videoPrompt,
       aspect_ratio: brief.aspectRatio || "9:16",
       duration: shot.durationSec || 5,
+      model: modelRoute,
       _provider: await resolveProvider(modelRoute)
     };
 
     let result;
-    if (imageUrl) {
-      // I2V — animate the generated image
-      params.image_url = imageUrl;
+    if (imageUrl && frameField) {
+      // I2V — animate the approved still, using whichever field THIS model
+      // names its first frame. Guessing the field is how a still gets
+      // silently dropped and the clip opens on something else.
+      params[frameField] = frameField.endsWith("s") ? [imageUrl] : imageUrl;
       result = await generateI2V(params);
     } else {
       result = await generateVideo(params);

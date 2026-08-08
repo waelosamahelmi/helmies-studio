@@ -38,7 +38,15 @@ vi.mock("@/lib/prisma", () => {
     directorPipeline: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     directorShot: { upsert: vi.fn(), update: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     generation: { create: vi.fn() },
-    modelPricing: { findUnique: vi.fn(async () => null) },
+    /* The executor now asks what the model can be shown before routing a
+       shot to I2V. This case is about animating an existing still, so the
+       row declares a first-frame field. */
+    modelPricing: {
+      findUnique: vi.fn(async () => ({
+        modelId: "test-video-model",
+        inputSchema: { fields: { prompt: {}, image_url: {}, duration: {}, aspect_ratio: {} } },
+      })),
+    },
   };
   const prisma = { ...models, $transaction: vi.fn(async (fn) => fn(prisma)) };
   return { default: prisma };

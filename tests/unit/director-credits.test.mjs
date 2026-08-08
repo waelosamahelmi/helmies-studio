@@ -39,7 +39,17 @@ vi.mock("@/lib/prisma", () => {
       count: vi.fn(),
     },
     generation: { create: vi.fn() },
-    modelPricing: { findUnique: vi.fn(async () => null) },
+    /* The executor asks the catalog what the chosen model can be SHOWN
+       before routing a shot: an image model with no reference slot must
+       not be handed a face, and a video model with no first-frame field
+       must not be handed a still. These cases exercise the full
+       image → video path, so the row here declares both. */
+    modelPricing: {
+      findUnique: vi.fn(async () => ({
+        modelId: "test-model",
+        inputSchema: { fields: { prompt: {}, image_urls: {}, first_frame_url: {}, aspect_ratio: {} } },
+      })),
+    },
     user: { findUnique: vi.fn(), update: vi.fn() },
   };
   const prisma = { ...models, $transaction: vi.fn(async (fn) => fn(prisma)) };
