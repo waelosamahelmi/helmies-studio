@@ -27,8 +27,45 @@ const cameraFor = (type) => CAMERA_BY_SHOT_TYPE[type] || CAMERA_BY_SHOT_TYPE.med
    film coherent between shots: where it is, how it is lit, and the tone the
    whole piece is graded to. The description alone drifts — the same room
    comes back a different room three shots later. */
-export function shotPrompt(shot, { environment = null, toneReferences = "" } = {}) {
+/* WHAT MAKES ONE VERSION OF A PERSON LOOK DIFFERENT FROM ANOTHER.
+
+   The breakdown declares variants and their differences — "the double
+   wears a darker coat and glasses" — and nothing ever put those words in
+   a prompt. So a two-shot of a man and his double rendered two identical
+   men in identical clothes, which is the one thing that scene cannot
+   afford: the audience must be able to tell them apart, while the FACE
+   stays the same.
+
+   The face comes from the shared reference photographs. The difference
+   comes from here. */
+export function variantDescription(shot, charactersByKey = new Map()) {
+  const notes = [];
+  const seen = new Set();
+
+  const add = (key, variantName) => {
+    if (!key || !variantName) return;
+    const token = `${key}::${variantName}`;
+    if (seen.has(token)) return;
+    seen.add(token);
+    const character = charactersByKey.get(key);
+    const variant = (character?.variants || []).find(
+      (v) => String(v.name).toLowerCase() === String(variantName).toLowerCase(),
+    );
+    if (!variant?.differences) return;
+    notes.push(`${variantName}: ${variant.differences}`);
+  };
+
+  for (const key of shot.characters || []) add(key, shot.characterVariant);
+  for (const line of shot.dialogue || []) add(line.speaker, line.speakerVariant);
+
+  return notes.join(". ");
+}
+
+export function shotPrompt(shot, { environment = null, toneReferences = "", charactersByKey = new Map() } = {}) {
   const parts = [shot.description];
+  // Third, right after the performance: who is wearing what. In a scene
+  // where one actor plays two people, this is what separates them.
+  const variants = variantDescription(shot, charactersByKey);
   /* The performance, second — right after what the camera sees and before
      the room and the grade. A screenplay describes behaviour ("his
      expression is blank"); it does not describe the state underneath it,
@@ -36,6 +73,7 @@ export function shotPrompt(shot, { environment = null, toneReferences = "" } = {
      with him. This is where the film's emotional weight actually reaches
      the frame. */
   if (shot.performance) parts.push(shot.performance);
+  if (variants) parts.push(variants);
   if (environment?.description) parts.push(environment.description);
   if (environment?.lighting) parts.push(environment.lighting);
   if (toneReferences) parts.push(toneReferences);
@@ -111,7 +149,7 @@ export function sceneToDirectorPlan(scene, breakdown, {
       if (propId) entityIds.push(propId);
     }
 
-    const prompt = shotPrompt(shot, { environment, toneReferences: tone });
+    const prompt = shotPrompt(shot, { environment, toneReferences: tone, charactersByKey });
 
     return {
       id: shot.id || `s${scene.id}_${i + 1}`,

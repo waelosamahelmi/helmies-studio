@@ -24,6 +24,7 @@ Do NOT break it into shots. Read it for what the production needs to EXIST: who 
 
 Rules that matter:
 - A character who appears under different names but is played by the SAME face (a double, a younger self, a reflection, "OTHER <NAME>") is ONE entry, with the alternate names in "aliases" and the differences in "variants". Splitting one face into two characters is the most expensive mistake here.
+- A VARIANT'S "differences" MUST be something a viewer can SEE, and must differ from every other variant of that character: different clothing, glasses or none, hair wet or dry, a coat on or off, clean-shaven or not. When two versions of one person share a frame, this is the only thing that lets an audience tell them apart — the face is deliberately identical, so the wardrobe cannot be. Never write "same as the other" or a difference of mood alone.
 - "props" are objects that must look the same every time they appear — a phone, a pillow, a wall clock, a chair somebody sits in twice. An object the script keeps returning to and nobody tracks is an object that changes shape between cuts. Do not list scenery that is part of the room, or something seen only once.
 - Every scene in the script gets an entry, in order. Never merge two, never skip one.
 - "toneReferences" is the visual grade and the films it should feel like.
@@ -44,7 +45,8 @@ Rules that matter:
 - Every dialogue line names its "speaker" AND its "speakerVariant". For a film where one actor plays two versions of himself, this is the only thing telling us who is talking.
 - "props" lists which of the production's props are visible in this shot, by key.
 - "performance" is the direction you would give an actor for THIS shot: what the face and body are doing, and the state underneath it. A script that says "his expression is blank" is telling you what a camera sees, not what the man is - write the state ("hollowed out, awake for hours, going through the motions"). Required on every shot with a visible character.
-- "type" is exactly one of: establishing, wide, medium, closeup, extreme_closeup, insert, over_shoulder, pov - and must match your own description.
+- "type" is exactly one of: establishing, wide, medium, closeup, extreme_closeup, insert, over_shoulder, pov - and must match your own description. DIRECT the scene with them: open on a wide or establishing so the audience knows where they are, go CLOSER as the scene tightens, use closeup or extreme_closeup on the line that turns the scene, over_shoulder for an exchange between two people, and insert for an object that matters (a phone, a clock, a hand). A scene shot entirely in medium is not directed, it is recorded.
+- Every shot with a visible character MUST set "characterVariant". Where two versions of the same character share a frame, name the variant of the one the shot is ABOUT, and name each speaker's variant on their dialogue line — that is what tells us who is wearing what.
 - "continuity.follows" is for an unbroken continuous movement where the frame literally carries over. Cutting between angles is a new frame, not a continuation.
 - Be concrete and visual in "description": it becomes the prompt verbatim. Name the framing, the light, and what moves.
 

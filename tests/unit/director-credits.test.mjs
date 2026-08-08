@@ -474,18 +474,23 @@ describe("rerunShot — charges before regenerating", () => {
       );
     });
 
-    it("full rerun: refunds and rethrows when only the audio leg fails, and never marks the pipeline completed", async () => {
-      await expect(rerunShot("p1", "u1", "s1", "full")).rejects.toThrow(/audio provider exploded/);
+    it("full rerun: KEEPS the image and the clip when only the audio leg fails", async () => {
+      /* RULE CHANGED, deliberately. This used to reject and refund all 15
+         — which threw away a new image and a new clip that two providers
+         had already been paid for, and told the user nothing happened.
 
-      expect(refundCredits).toHaveBeenCalledTimes(1);
-      const [userId, amount, referenceId] = refundCredits.mock.calls[0];
-      expect(userId).toBe("u1");
-      expect(amount).toBe(15); // 2 + 10 + 3 summed cost for a full rerun
-      expect(referenceId).toBe("director:p1:rerun");
+         Found live: a 4-second test shot rendered a perfect clip, the
+         separate audio leg failed, and the shot was marked failed with a
+         full refund. The customer got a video for nothing and the
+         business paid for it.
 
-      expect(prisma.directorPipeline.update).not.toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ status: "completed" }) })
-      );
+         A failed score does not undo a good clip. The shot succeeds, and
+         the audio it did not get is not charged for. */
+      const out = await rerunShot("p1", "u1", "s1", "full");
+      expect(out.success).toBe(true);
+      expect(out.result.videoUrl).toBe("https://cdn.example/new.mp4");
+      expect(out.result.audioUrl).toBeNull();
+      expect(out.result.audioError).toMatch(/audio provider exploded/);
     });
   });
 });

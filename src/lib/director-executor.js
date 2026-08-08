@@ -811,7 +811,9 @@ ${heard}`;
       }
     });
 
-    return { success: true, videoUrl: storedUrl };
+    // `hasAudio` tells the caller the clip already speaks for itself, so
+    // no second, redundant audio generation is run over the top of it.
+    return { success: true, videoUrl: storedUrl, hasAudio: Boolean(audioField && params[audioField]) };
   } catch (err) {
     console.error(`[Director] Shot ${shot.id} video failed:`, err.message);
     await prisma.directorShot.update({
@@ -915,9 +917,24 @@ async function executeFullShot(shot, pipeline, brief) {
   if (direct) {
     const videoOnly = await executeShotVideo(shot, pipeline, brief, null, { referenceField: direct.field });
     if (!videoOnly.success) return { success: false, error: videoOnly.error, stage: "video" };
+
+    /* THE CLIP ALREADY HAS ITS SOUND.
+       A shot with dialogue used to trigger a SEPARATE audio generation
+       through suno-v4 — a music model — handed the spoken lines as its
+       prompt. Now that the video model speaks the dialogue itself, that
+       second call is redundant, wrong-tool, and was failing: it marked a
+       shot failed whose video was perfectly fine. */
+    if (videoOnly.hasAudio) {
+      return { success: true, imageUrl: null, videoUrl: videoOnly.videoUrl, audioUrl: null };
+    }
+
     const audioOnly = await executeShotAudio(shot, pipeline, brief);
     if (!audioOnly.success) {
-      return { success: false, error: audioOnly.error || "Audio generation failed", stage: "audio", videoUrl: videoOnly.videoUrl };
+      /* The video is real and the provider billed for it. A failed score
+         must not throw away a good clip — the shot succeeded, it simply
+         has no separate audio track. */
+      console.error(`[Director] audio failed for ${shot.id}, keeping the clip:`, audioOnly.error);
+      return { success: true, imageUrl: null, videoUrl: videoOnly.videoUrl, audioUrl: null, audioError: audioOnly.error };
     }
     return { success: true, imageUrl: null, videoUrl: videoOnly.videoUrl, audioUrl: audioOnly.audioUrl };
   }
@@ -935,9 +952,17 @@ async function executeFullShot(shot, pipeline, brief) {
   // returns { success: false } when audio was actually attempted (shot.audio
   // set, or brief.type === "music_video") and generation failed — so this
   // check can never misfire on a shot that legitimately has no audio.
-  const audioResult = await executeShotAudio(shot, pipeline, brief);
+  const audioResult = videoResult.hasAudio
+    ? { success: true, audioUrl: null }
+    : await executeShotAudio(shot, pipeline, brief);
   if (!audioResult.success) {
-    return { success: false, error: audioResult.error || "Audio generation failed", stage: "audio", imageUrl: imageResult.imageUrl, videoUrl: videoResult.videoUrl };
+    // The image and the clip are real and were billed. A failed score does
+    // not undo them.
+    console.error(`[Director] audio failed for ${shot.id}, keeping the clip:`, audioResult.error);
+    return {
+      success: true, imageUrl: imageResult.imageUrl, videoUrl: videoResult.videoUrl,
+      audioUrl: null, audioError: audioResult.error,
+    };
   }
 
   return {

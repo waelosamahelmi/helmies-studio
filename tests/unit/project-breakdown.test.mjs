@@ -281,3 +281,59 @@ describe("objects that must not change between shots", () => {
     expect(plan.shots[1].entityIds).toContain("e_phone");
   });
 });
+
+describe("telling a man from his double", () => {
+  // Both Waels rendered in identical clothes: the breakdown declares
+  // variants and their differences, and nothing ever put those words in a
+  // prompt. The face is deliberately identical — so the wardrobe is the
+  // only thing an audience can use.
+  const bd = {
+    characters: [{
+      key: "wael", name: "Wael", aliases: ["Other Wael"], description: "A man in his thirties",
+      variants: [
+        { name: "Wael", differences: "grey t-shirt, no glasses, unshaven" },
+        { name: "Other Wael", differences: "black shirt buttoned to the collar, thin wire glasses" },
+      ],
+    }],
+    environments: [{ key: "void", name: "The Void", description: "black space", lighting: "one beam" }],
+    scenes: [{
+      id: 4, heading: "INT. THE VOID", summary: "", environmentKey: "void",
+      shots: [{
+        id: "s4_1", description: "Two-shot of the two men", type: "medium", durationSec: 8,
+        characters: ["wael"], characterVariant: "Other Wael", offscreenVoices: [],
+        dialogue: [
+          { speaker: "wael", speakerVariant: "Wael", line: "Who are you?" },
+          { speaker: "wael", speakerVariant: "Other Wael", line: "Better?" },
+        ],
+        continuity: { follows: null }, sfx: [],
+      }],
+    }],
+  };
+
+  it("puts BOTH versions' wardrobe into the prompt", () => {
+    const plan = sceneToDirectorPlan(bd.scenes[0], bd, {});
+    const prompt = plan.shots[0].imageStrategy.prompt;
+    expect(prompt).toContain("wire glasses");
+    expect(prompt).toContain("grey t-shirt");
+  });
+
+  it("names each version so the wardrobe attaches to the right man", () => {
+    const plan = sceneToDirectorPlan(bd.scenes[0], bd, {});
+    expect(plan.shots[0].imageStrategy.prompt).toMatch(/Other Wael: black shirt/);
+  });
+
+  it("says nothing when a character has no declared differences", () => {
+    const plain = {
+      ...bd,
+      characters: [{ key: "wael", name: "Wael", aliases: [], description: "", variants: [] }],
+    };
+    const plan = sceneToDirectorPlan(plain.scenes[0], plain, {});
+    expect(plan.shots[0].imageStrategy.prompt).not.toMatch(/undefined|: $/);
+  });
+
+  it("does not repeat a variant mentioned twice in one shot", () => {
+    const plan = sceneToDirectorPlan(bd.scenes[0], bd, {});
+    const prompt = plan.shots[0].imageStrategy.prompt;
+    expect(prompt.match(/wire glasses/g)).toHaveLength(1);
+  });
+});
