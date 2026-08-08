@@ -257,3 +257,47 @@ export const sceneIsWithinBudget = (shots, budget) => (shots?.length || 0) <= bu
 
 export const SCENE_BUDGET_RETRY_HINT =
   "That is more shots than this scene needs. Return the SAME scene again with fewer, longer takes — hold a whole exchange in one shot instead of cutting on every line. Keep every line of dialogue; only the shot boundaries change.";
+
+/* ── Two versions of one person must be told apart ────────────────────────
+   The face is identical on purpose — that is what makes a double work, and
+   the Scene 4 reveal depends on it. So the clothes are the ONLY thing an
+   audience has. A structure pass that returns two variants with the same
+   wardrobe, or with none, produces a two-shot of the same man twice, which
+   is what happened.
+
+   Asking nicely in the prompt was not enough, so it is checked. */
+export function variantProblems(characters = []) {
+  const problems = [];
+  for (const c of characters || []) {
+    const variants = Array.isArray(c.variants) ? c.variants : [];
+    // Only a character who appears as more than one version needs telling
+    // apart. One version has nothing to be confused with.
+    const needsDistinction = variants.length > 1 || (c.aliases || []).length > 0;
+    if (!needsDistinction) continue;
+
+    if (variants.length < 2) {
+      problems.push(`${c.name} appears as more than one version (${(c.aliases || []).join(", ") || "aliases"}) but has fewer than two variants.`);
+      continue;
+    }
+    const described = variants.filter((v) => String(v?.differences || "").trim().length > 8);
+    if (described.length < variants.length) {
+      problems.push(`${c.name} has a variant with no visible difference described.`);
+      continue;
+    }
+    const seen = new Set();
+    for (const v of variants) {
+      const key = String(v.differences).trim().toLowerCase();
+      if (seen.has(key)) {
+        problems.push(`${c.name} has two variants wearing the same thing.`);
+        break;
+      }
+      seen.add(key);
+    }
+  }
+  return problems;
+}
+
+export const variantsAreDistinct = (characters) => variantProblems(characters).length === 0;
+
+export const VARIANT_RETRY_HINT = (problems) =>
+  `${problems.join(" ")} When one actor plays two versions of a person, the FACE is identical on purpose — so the clothing is the only thing an audience can tell them apart by. Return the same JSON again, giving every variant of those characters a distinct, visible wardrobe: different garments, and something unmistakable like glasses on one and not the other. Never a difference of mood or posture alone.`;

@@ -23,6 +23,8 @@ import {
   splitScenes,
   parseStructureReply,
   parseSceneShotsReply,
+  variantProblems,
+  VARIANT_RETRY_HINT,
   sceneIsCovered,
 } from "@/lib/script-breakdown-passes.mjs";
 import { shotDurationLimits } from "@/lib/project-models.mjs";
@@ -79,15 +81,30 @@ async function readScreenplay(script, onProgress, { limits = null, keepIndexes =
       { role: "system", content: STRUCTURE_SYSTEM_PROMPT },
       { role: "user", content: script },
     ];
-    for (let attempt = 0; attempt < 2 && !structure; attempt++) {
+    for (let attempt = 0; attempt < 3 && !structure; attempt++) {
       const reply = await llmComplete(messages, {
         maxTokens: 8000, temperature: 0.2, timeout: 300000, withMeta: true,
       });
-      structure = parseStructureReply(reply?.content || "");
-      if (!structure) {
+      const parsed = parseStructureReply(reply?.content || "");
+      if (!parsed) {
         if (reply?.truncated) return { breakdown: null, truncated: true };
         messages.push({ role: "user", content: SCRIPT_BREAKDOWN_RETRY_HINT });
+        continue;
       }
+
+      /* Two versions of one person must be dressed differently. The face is
+         identical on purpose, so the clothes are the only thing an audience
+         has — and a structure that returns two variants wearing the same
+         thing renders a two-shot of the same man twice. Asking in the
+         prompt was not enough; it is checked, and asked again once. */
+      const problems = variantProblems(parsed.characters);
+      if (problems.length && attempt < 2) {
+        log.info("project_breakdown_variant_retry", { projectId, problems });
+        messages.push({ role: "user", content: VARIANT_RETRY_HINT(problems) });
+        structure = parsed; // keep it in case the retry comes back worse
+        continue;
+      }
+      structure = parsed;
     }
   }
   if (!structure) return { breakdown: null, truncated: false };

@@ -179,3 +179,56 @@ describe("beats decide the shot count, not a budget", () => {
     expect(shotBudget(conversation, { max: 30 }).seconds).toBeGreaterThan(30);
   });
 });
+
+describe("a man and his double must be dressed differently", () => {
+  // The face is identical ON PURPOSE — that is what makes the reveal work.
+  // So the clothes are the only thing an audience has, and a structure
+  // that returns two variants wearing the same thing renders a two-shot of
+  // the same man twice. Which is exactly what came back.
+  const character = (variants, aliases = ["Other Wael"]) => ({ name: "Wael", aliases, variants });
+
+  it("accepts two versions that look different", async () => {
+    const { variantsAreDistinct } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(variantsAreDistinct([character([
+      { name: "Wael", differences: "grey t-shirt, unshaven, no glasses" },
+      { name: "Other Wael", differences: "black buttoned shirt, thin wire glasses" },
+    ])])).toBe(true);
+  });
+
+  it("catches two versions wearing the same thing", async () => {
+    const { variantProblems } = await import("@/lib/script-breakdown-passes.mjs");
+    const problems = variantProblems([character([
+      { name: "Wael", differences: "black shirt and trousers" },
+      { name: "Other Wael", differences: "Black shirt and trousers" },
+    ])]);
+    expect(problems[0]).toMatch(/same thing/i);
+  });
+
+  it("catches a variant with no visible difference at all", async () => {
+    const { variantProblems } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(variantProblems([character([
+      { name: "Wael", differences: "grey t-shirt, unshaven" },
+      { name: "Other Wael", differences: "" },
+    ])])[0]).toMatch(/no visible difference/i);
+  });
+
+  it("catches a double declared with only one variant", async () => {
+    const { variantProblems } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(variantProblems([character([{ name: "Wael", differences: "grey t-shirt" }])])[0])
+      .toMatch(/fewer than two variants/i);
+  });
+
+  it("says nothing about a character who is only ever himself", async () => {
+    // One version has nothing to be confused with, and demanding a
+    // wardrobe contrast would fail every ordinary character.
+    const { variantsAreDistinct } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(variantsAreDistinct([{ name: "Woman", aliases: [], variants: [] }])).toBe(true);
+  });
+
+  it("names the problem in the retry so it can be fixed, not guessed at", async () => {
+    const { VARIANT_RETRY_HINT } = await import("@/lib/script-breakdown-passes.mjs");
+    const hint = VARIANT_RETRY_HINT(["Wael has two variants wearing the same thing."]);
+    expect(hint).toContain("Wael has two variants wearing the same thing.");
+    expect(hint).toMatch(/glasses on one and not the other/i);
+  });
+});
