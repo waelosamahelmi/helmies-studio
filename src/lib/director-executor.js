@@ -5,13 +5,62 @@ import { estimateCredits } from "@/lib/pricing-engine";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
-import { selectEntityReferences } from "@/lib/entity-core.mjs";
+import { selectEntityReferences, imageReferenceSlot, isStillImageModel } from "@/lib/entity-core.mjs";
 
 /* The fallback when a pipeline names no image model. It was "flux-dev",
    which the provider answers with a 500 — so a shot that reached this
    line could never succeed. Kept as a named constant so the next person
    changing it can see it is a real, callable model and not a guess. */
 const DEFAULT_IMAGE_MODEL = "seedream/5-pro-text-to-image";
+
+/* When a shot HAS references — a face, a room — it needs a model that can
+   be shown them. A text-to-image model handed an image is the provider 500
+   that failed three of scene 1's four shots while the one shot with no
+   references succeeded. */
+const DEFAULT_EDIT_MODEL = "seedream/5-pro-image-to-image";
+
+/**
+ * Which model this shot should actually run on, and whether its references
+ * can be used at all.
+ *
+ * Decided from the model's own schema rather than its name: the catalog
+ * has been wrong about both. A model that cannot be shown a reference is
+ * not given one — the alternative is sending a face to something that
+ * ignores it, which renders a stranger and bills for it.
+ */
+async function resolveImageModel(wanted, hasRefs) {
+  const load = async (id) => {
+    if (!id) return null;
+    let row = null;
+    // Wrapped rather than .catch()ed: a catalog read failing must never
+    // take a render down, and the shape of `prisma` here differs between
+    // the app and the tests.
+    try {
+      row = await prisma.modelPricing?.findUnique({ where: { modelId: id } });
+    } catch { row = null; }
+    if (!row || !isStillImageModel(row.inputSchema)) return null;
+    return { id, schema: row.inputSchema, takesRefs: !!imageReferenceSlot(row.inputSchema) };
+  };
+
+  const first = await load(wanted);
+  if (!hasRefs) {
+    // Nothing to show it. A model that REQUIRES an image cannot start from
+    // a description, so fall through to one that can.
+    if (first && !requiresImage(first.schema)) return { model: first.id, useRefs: false };
+    const fallback = await load(DEFAULT_IMAGE_MODEL);
+    return { model: fallback?.id || DEFAULT_IMAGE_MODEL, useRefs: false };
+  }
+
+  if (first?.takesRefs) return { model: first.id, useRefs: true };
+  const edit = await load(DEFAULT_EDIT_MODEL);
+  if (edit?.takesRefs) return { model: edit.id, useRefs: true };
+  // Nothing here can take the references. Render without them rather than
+  // sending them somewhere they will be ignored.
+  return { model: first?.id || DEFAULT_IMAGE_MODEL, useRefs: false };
+}
+
+const requiresImage = (schema) =>
+  Object.entries(schema?.fields || {}).some(([name, f]) => f?.required && /image|reference/i.test(name));
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 
 // ──────────────────────────────────────────────
@@ -274,20 +323,24 @@ async function executeShotImage(shot, pipeline, brief) {
        default whatever the project had been configured with. flux-dev is
        also one of the ids the provider answers with a 500, which is why
        all four shots of scene 1 failed. */
-    const wantModel = brief.modelImage || DEFAULT_IMAGE_MODEL;
+    const { model: wantModel, useRefs } = await resolveImageModel(
+      brief.modelImage || DEFAULT_IMAGE_MODEL,
+      refs.length > 0 && Boolean(refs[0]),
+    );
 
     // Build generation params
     const params = {
       prompt: imagePrompt,
       aspect_ratio: brief.aspectRatio || "9:16",
-      images_list: refs.slice(0, 3), // limit refs per model capabilities
       model: wantModel,
       _provider: await resolveProvider(wantModel)
     };
 
-    // Choose between T2I and I2I based on references
+    // T2I or I2I — decided by what the chosen model can actually be shown,
+    // not by whether references happen to exist.
     let result;
-    if (refs.length > 0 && refs[0]) {
+    if (useRefs) {
+      params.images_list = refs.slice(0, 3);
       params.image_url = refs[0];
       params.image_urls = refs.slice(0, 3);
       params.strength = 0.6;
@@ -312,7 +365,7 @@ async function executeShotImage(shot, pipeline, brief) {
       data: {
         userId: pipeline.userId,
         tool: "image",
-        model: brief.modelImage || DEFAULT_IMAGE_MODEL,
+        model: wantModel,
         prompt: imagePrompt,
         params: persistableParams(params),
         outputUrl: storedUrl,

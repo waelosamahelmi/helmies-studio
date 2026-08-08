@@ -38,6 +38,7 @@ vi.mock("@/lib/prisma", () => {
     directorPipeline: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     directorShot: { upsert: vi.fn(), update: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     generation: { create: vi.fn() },
+    modelPricing: { findUnique: vi.fn(async () => null) },
   };
   const prisma = { ...models, $transaction: vi.fn(async (fn) => fn(prisma)) };
   return { default: prisma };

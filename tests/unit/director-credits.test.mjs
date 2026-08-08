@@ -39,6 +39,7 @@ vi.mock("@/lib/prisma", () => {
       count: vi.fn(),
     },
     generation: { create: vi.fn() },
+    modelPricing: { findUnique: vi.fn(async () => null) },
     user: { findUnique: vi.fn(), update: vi.fn() },
   };
   const prisma = { ...models, $transaction: vi.fn(async (fn) => fn(prisma)) };

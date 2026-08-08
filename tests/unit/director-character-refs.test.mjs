@@ -43,6 +43,17 @@ vi.mock("@/lib/prisma", () => {
     directorPipeline: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     directorShot: { upsert: vi.fn(), update: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     generation: { create: vi.fn() },
+    /* The executor now asks the catalog whether the chosen model can be
+       SHOWN a reference before it routes a shot through I2I — a
+       text-to-image model handed an image is a provider 500. These cases
+       are about reference routing, so the model here declares a reference
+       slot. */
+    modelPricing: {
+      findUnique: vi.fn(async () => ({
+        modelId: "seedream/5-pro-image-to-image",
+        inputSchema: { fields: { prompt: {}, image_urls: {}, aspect_ratio: {} } },
+      })),
+    },
   };
   const prisma = { ...models, $transaction: vi.fn(async (fn) => fn(prisma)) };
   return { default: prisma };
@@ -217,5 +228,29 @@ describe("executeShotImage (via generateShotAsset) — token resolution end to e
       .map(([args]) => args.data?.stateMetadata?.characterRefs)
       .filter(Boolean);
     expect(metaWrites).toEqual([]);
+  });
+});
+
+describe("a reference is never sent to a model that cannot be shown one", () => {
+  // Three of scene 1's four shots failed with a provider 500 while the one
+  // shot WITHOUT references succeeded: the shot had a face to show and the
+  // chosen model was text-to-image. Sending it anyway renders a stranger
+  // and bills for it.
+  it("renders without the references rather than handing them to a text-to-image model", async () => {
+    prisma.modelPricing.findUnique.mockResolvedValue({
+      modelId: "seedream/5-pro-text-to-image",
+      inputSchema: { fields: { prompt: {}, aspect_ratio: {} } }, // no reference slot
+    });
+    pipelineState = makePipeline({
+      plan: { shots: [{ id: "s1", index: 0, imageStrategy: { mode: "generate", prompt: "a room", references: ["https://cdn.example/face.png"] } }] },
+    });
+    prisma.directorPipeline.findFirst.mockImplementation(async () => ({ ...pipelineState }));
+    generateImage.mockResolvedValue({ url: "https://cdn.example/out.png" });
+    ingestFromUrl.mockResolvedValue({ url: "https://cdn.example/local.png" });
+
+    await generateShotAsset("p1", "u1", "s1", "image");
+
+    expect(generateI2I).not.toHaveBeenCalled();
+    expect(generateImage).toHaveBeenCalledTimes(1);
   });
 });
