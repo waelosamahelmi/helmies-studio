@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   imageModelsFor, videoModelsFor, voiceModelsFor,
   supportsAspect, isVideoModel, takesFirstFrame, estimateProjectCost,
-  textToImageModelsFor, pickTextToImageModel,
+  textToImageModelsFor, pickTextToImageModel, saysItIsNotAStill,
 } from "@/lib/project-models.mjs";
 
 const model = (id, fields, extra = {}) => ({ id, credits: 10, schema: { fields }, ...extra });
@@ -150,5 +150,38 @@ describe("what may draw a room from a description", () => {
   it("returns null rather than something wrong when nothing fits", () => {
     expect(pickTextToImageModel([{ id: "v", schema: { fields: { duration: {} } } }], {})).toBeNull();
     expect(pickTextToImageModel([], {})).toBeNull();
+  });
+});
+
+describe("when the catalog's own schema is wrong", () => {
+  // Both of these were in the usable pool IN PRODUCTION after the first
+  // fix, because their stored schema declares no duration field. The
+  // schema is a claim, not a fact.
+  const LIARS = [
+    { id: "hailuo/02-text-to-video-pro", modelType: "video", credits: 400, schema: { fields: { prompt: {} } } },
+    { id: "wan/2-2-a14b-text-to-video-turbo", credits: 300, schema: { fields: { prompt: {} } } },
+    { id: "topaz/image-upscale", modelType: "i2i", credits: 3, schema: { fields: { prompt: {} } } },
+    { id: "good/text-to-image", modelType: "image", credits: 8, schema: { fields: { prompt: {} } } },
+  ];
+
+  it("refuses a model that says video in its own name, whatever its schema claims", () => {
+    const ids = textToImageModelsFor(LIARS, {}).map((m) => m.id);
+    expect(ids).not.toContain("hailuo/02-text-to-video-pro");
+    expect(ids).not.toContain("wan/2-2-a14b-text-to-video-turbo");
+  });
+
+  it("refuses an upscaler, which needs the image it is meant to produce", () => {
+    expect(textToImageModelsFor(LIARS, {}).map((m) => m.id)).not.toContain("topaz/image-upscale");
+  });
+
+  it("still keeps the models that genuinely draw", () => {
+    expect(textToImageModelsFor(LIARS, {}).map((m) => m.id)).toEqual(["good/text-to-image"]);
+  });
+
+  it("does not treat a missing modelType as a claim about what it is", () => {
+    // An absent type is silence, not a denial — judging it would empty the
+    // pool for every row the catalog has not categorised.
+    expect(saysItIsNotAStill({ id: "plain-drawer" })).toBe(false);
+    expect(saysItIsNotAStill({ id: "plain-drawer", modelType: "video" })).toBe(true);
   });
 });

@@ -87,11 +87,33 @@ export function textToImageModelsFor(models = [], { aspectRatio = null } = {}) {
   return models.filter((m) => {
     const schema = m?.schema || m?.inputSchema;
     if (!isStillImageModel(schema)) return false;
+    // The schema is not always right. hailuo/02-text-to-video-pro and
+    // wan/2-2-a14b-text-to-video-turbo both passed the schema test in
+    // production because their stored fields declare no duration — so a
+    // model that says "video" in its own name or category is refused
+    // whatever its schema claims. Positive evidence AND negative evidence,
+    // because either source can be wrong and only one has to be right to
+    // spend somebody's money on the wrong thing.
+    if (saysItIsNotAStill(m)) return false;
     const fields = schema?.fields || {};
     // Nothing that DEMANDS an image we do not have.
     if (Object.entries(fields).some(([name, f]) => f?.required && /image|reference/i.test(name))) return false;
     return supportsAspect(m, aspectRatio);
   });
+}
+
+const NOT_A_STILL = /(video|speech|music|audio|voice|lipsync|lip-sync|tts|upscale|animate)/i;
+const STILL_TYPES = new Set(["image", "i2i"]);
+
+/** Does anything about this model say it does not make a still frame? */
+export function saysItIsNotAStill(model) {
+  if (NOT_A_STILL.test(String(model?.id || model?.modelId || ""))) return true;
+  if (NOT_A_STILL.test(String(model?.capability || ""))) return true;
+  const type = String(model?.modelType || "").toLowerCase();
+  // Only judge on modelType when there IS one — an absent type is not a
+  // claim, and treating it as one would empty the pool.
+  if (type && !STILL_TYPES.has(type)) return true;
+  return false;
 }
 
 /**
