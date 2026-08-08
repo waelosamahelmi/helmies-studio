@@ -22,6 +22,7 @@ import {
   getOwnedProject, normalizeSettings, listScenes,
   breakdownState, setBreakdownState,
 } from "@/lib/projects";
+import { estimateDirectorCost } from "@/lib/director-planner";
 import { log } from "@/lib/log";
 
 /* P1.5 — cut the scenario into scenes and shots.
@@ -151,6 +152,19 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
         .filter(Boolean)
         .map((c) => ({ name: c.name, description: c.description || "" }));
 
+      /* Price it now, not at render time. A scene with no cost estimate
+         debits zero and runs the whole thing for free, and the number is
+         also what the project header adds up to say what finishing
+         costs — an unpriced scene makes that total a lie. */
+      const briefForScene = {
+        title: board.title,
+        concept: board.scene.summary || "",
+        type: "short_film",
+        aspectRatio,
+        characters,
+      };
+      const costEstimate = await estimateDirectorCost(board.plan, briefForScene).catch(() => null);
+
       const pipeline = await prisma.directorPipeline.create({
         data: {
           userId,
@@ -159,6 +173,7 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
           type: "short_film",
           status: "planning",
           plan: board.plan,
+          costEstimate,
           brief: {
             title: board.title,
             concept: board.scene.summary || "",

@@ -4,7 +4,7 @@ import { resolveProvider, resolveProviderWithFallback, brandError, logProviderEr
 import { estimateCredits } from "@/lib/pricing-engine";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { assembleVideos } from "@/lib/video-assembly";
-import { validatePrompt } from "@/lib/director-planner";
+import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 
 // ──────────────────────────────────────────────
@@ -475,13 +475,34 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
 
   const plan = pipeline.plan;
   const brief = pipeline.brief || {};
-  const costEstimate = pipeline.costEstimate || {};
+  let costEstimate = pipeline.costEstimate || {};
+
+  /* NEVER RUN A PLAN NOBODY PRICED.
+     The executor debits `costEstimate.totalCredits`, so a plan that was
+     never quoted debits ZERO and renders the whole scene for free — which
+     is what a scene built by the screenplay breakdown would have done,
+     because that path creates the shots without pricing them. An unpriced
+     plan is priced here rather than run at zero. */
+  if (!(costEstimate.totalCredits > 0)) {
+    costEstimate = await estimateDirectorCost(plan, brief);
+    await prisma.directorPipeline.update({ where: { id: pipelineId }, data: { costEstimate } });
+  }
 
   // Verify credits via the wallet — User.credits is a denormalized mirror
   // that session.js's syncUserCreditsFromWallet can silently overwrite.
   const wallet = await getWallet(userId);
   if (wallet.available < (costEstimate.totalCredits || 0)) {
     throw new Error(`Insufficient credits: need ${costEstimate.totalCredits}, have ${wallet.available}`);
+  }
+
+  /* QUOTED is the state that says "this has a price". The machine only
+     allows planning → quoted → queued, and the executor jumped straight to
+     queued — so a scene sitting in `planning` (which is how every scene
+     the breakdown creates starts) failed with "Invalid state transition".
+     Walk the step rather than widening the machine: the intermediate state
+     is the record that a price existed before any money moved. */
+  if (pipeline.status === PIPELINE_STATES.PLANNING || pipeline.status === PIPELINE_STATES.AWAITING_APPROVAL) {
+    await transitionPipeline(pipelineId, PIPELINE_STATES.QUOTED);
   }
 
   // Transition to queued
