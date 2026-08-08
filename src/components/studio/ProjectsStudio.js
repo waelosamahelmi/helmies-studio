@@ -488,7 +488,7 @@ function ProjectDetail({ id, kinds, onBack, onChanged, onDeleted }) {
           )}
 
           {tab === "scenes" && (
-            <ScenesTab project={project} contents={contents} unit={unit} />
+            <ScenesTab project={project} contents={contents} unit={unit} onChanged={reload} />
           )}
           {tab === "cast" && (
             <MembersTab contents={contents} projectId={id} onChanged={reload} setNotice={setNotice} setError={setError} />
@@ -513,10 +513,34 @@ function ProjectDetail({ id, kinds, onBack, onChanged, onDeleted }) {
 }
 
 /* ── Scenes ─────────────────────────────────────────────────────────────── */
-function ScenesTab({ project, contents, unit }) {
+function ScenesTab({ project, contents, unit, onChanged }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
+  const [rendering, setRendering] = useState(null);
+  const [error, setError] = useState("");
   const scenes = contents.scenes || [];
+
+  /* Render a scene without leaving the project. This is the same call
+     Director's own button makes — the board is where you go to inspect or
+     redo a single shot, not where you have to go to start. */
+  const render = useCallback(async (scene) => {
+    setRendering(scene.id);
+    setError("");
+    try {
+      await apiFetch("/api/director/execute", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ planId: scene.id }),
+        timeout: 900000,
+        retries: 0,
+      });
+      onChanged?.();
+    } catch (e) {
+      setError(e?.message || `${scene.title} could not be rendered.`);
+    } finally {
+      setRendering(null);
+    }
+  }, [onChanged]);
 
   /* A scene opens into Director's board — the same surface it always was,
      reached by the pipeline id the scene already is. */
@@ -540,6 +564,10 @@ function ScenesTab({ project, contents, unit }) {
           <IcPlus className="hs-icon-sm" /> Add {unit}
         </button>
       </div>
+
+      {error && (
+        <div className="hs-notice hs-notice--fault" role="alert"><span style={{ flex: 1 }}>{error}</span></div>
+      )}
 
       {!scenes.length ? (
         <div className="hs-empty">
@@ -573,6 +601,12 @@ function ScenesTab({ project, contents, unit }) {
               <span className={`hs-badge${s.status === "completed" ? " hs-badge--signal" : s.status === "failed" ? " hs-badge--fault" : ""}`}>
                 {SCENE_STATUS[s.status] || s.status}
               </span>
+              {s.rendered < s.shots && (
+                <button type="button" className="hs-btn hs-btn--sm hs-btn--primary"
+                  onClick={() => render(s)} disabled={!!rendering}>
+                  {rendering === s.id ? "Rendering…" : s.rendered ? "Finish" : "Render"}
+                </button>
+              )}
               <button type="button" className="hs-btn hs-btn--sm hs-btn--outline" onClick={() => openScene(s.id)}>
                 <IcPlay className="hs-icon-sm" /> Open board
               </button>
@@ -580,6 +614,8 @@ function ScenesTab({ project, contents, unit }) {
           ))}
         </ol>
       )}
+
+      {scenes.length > 0 && <CombineBar project={project} unit={unit} />}
 
       <NewScene
         open={adding}
@@ -591,6 +627,94 @@ function ScenesTab({ project, contents, unit }) {
         onClose={() => setAdding(false)}
         onCreated={(sceneId) => { setAdding(false); openScene(sceneId); }}
       />
+    </section>
+  );
+}
+
+/* Combining the scenes into one piece. Every scene already assembles its own
+   shots; this joins the scenes. It runs ffmpeg over media that is already
+   paid for, so it costs nothing and can be redone as often as you like — the
+   button says so, because "combine" reads like it might charge. */
+function CombineBar({ project, unit }) {
+  const [state, setState] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [transition, setTransition] = useState("cut");
+
+  const load = useCallback(async () => {
+    try {
+      const res = await apiFetch(`/api/projects/${project.id}/movie`);
+      setState(await res.json());
+    } catch { /* the bar simply stays quiet */ }
+  }, [project.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const combine = useCallback(async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await apiFetch(`/api/projects/${project.id}/movie`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ transition }),
+        timeout: 600000,
+        retries: 0,
+      });
+      const data = await res.json();
+      setState((prev) => ({ ...(prev || {}), movieUrl: data.url, builtAt: new Date().toISOString() }));
+    } catch (e) {
+      setError(e?.message || "The scenes could not be joined.");
+    } finally {
+      setBusy(false);
+    }
+  }, [project.id, transition]);
+
+  if (!state) return null;
+
+  return (
+    <section className="st-combine">
+      <div className="hs-row hs-row--between" style={{ alignItems: "flex-start", flexWrap: "wrap", gap: "var(--s-3)" }}>
+        <div>
+          <h3 style={{ fontSize: "var(--t-sm)", fontWeight: 600 }}>Combine into one piece</h3>
+          <p className="hs-hint" style={{ marginTop: 2 }}>
+            {state.missing?.length
+              ? `Nothing is rendered yet for ${state.missing.join(", ")}.`
+              : `${state.clips} clip${state.clips === 1 ? "" : "s"} from ${state.scenes} ${unit}${state.scenes === 1 ? "" : "s"}, joined in order. Costs nothing — it is a cut, not a render.`}
+          </p>
+        </div>
+        <div className="hs-row" style={{ gap: "var(--s-2)" }}>
+          <Segmented label="Transition" value={transition} onChange={setTransition}
+            options={[
+              { value: "cut", label: "Cut" },
+              { value: "fade", label: "Fade" },
+              { value: "dissolve", label: "Dissolve" },
+            ]} />
+          <button type="button" className="hs-btn hs-btn--primary hs-btn--sm"
+            onClick={combine} disabled={busy || !state.ready}>
+            {busy ? "Joining…" : state.movieUrl ? "Rebuild" : "Combine"}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="hs-notice hs-notice--fault" role="alert" style={{ marginTop: "var(--s-3)" }}>
+          <span style={{ flex: 1 }}>{error}</span>
+        </div>
+      )}
+
+      {state.movieUrl && (
+        <div style={{ marginTop: "var(--s-3)" }}>
+          <video src={state.movieUrl} controls playsInline
+            style={{ width: "100%", maxHeight: 420, borderRadius: "var(--r-md)", background: "#000" }} />
+          <div className="hs-row" style={{ marginTop: "var(--s-2)", gap: "var(--s-2)" }}>
+            <a className="hs-btn hs-btn--outline hs-btn--sm" href={state.movieUrl} download>
+              Download
+            </a>
+            <span className="hs-hint">Built {dateLabel(state.builtAt) || "just now"}</span>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -730,6 +854,37 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
     return () => { cancelled = true; };
   }, [contents]);
 
+  /* Cloning copies the references, not just the description — that is the
+     whole point. Two characters built from the SAME photographs read as the
+     same person, which is what a double has to be; two characters built from
+     the same words read as two strangers who happen to be described alike. */
+  const clone = useCallback(async (entity) => {
+    setBusy(true);
+    try {
+      const res = await apiFetch("/api/entities", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: entity.kind,
+          name: `${entity.name} (double)`,
+          description: entity.description || null,
+          attributes: entity.attributes || {},
+          references: entity.references || [],
+          voiceId: entity.voiceId || null,
+          voiceName: entity.voiceName || null,
+          projectId,
+        }),
+      });
+      const data = await res.json();
+      setNotice?.(`${data.entity.name} was created from ${entity.name}'s references — same face, separate character.`);
+      onChanged?.();
+    } catch (e) {
+      setError?.(e?.message || "That could not be cloned.");
+    } finally {
+      setBusy(false);
+    }
+  }, [projectId, onChanged, setNotice, setError]);
+
   const file = useCallback(async (entity, value) => {
     setBusy(true);
     try {
@@ -793,6 +948,11 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
                       </span>
                       <span className="st-member__name">{e.name}</span>
                       <span className="st-member__meta hs-mono">{refs.length} ref{refs.length === 1 ? "" : "s"}</span>
+                      <button type="button" className="hs-btn hs-btn--sm hs-btn--outline"
+                        onClick={() => clone(e)} disabled={busy}
+                        title="Same references, separate character — for a double, a twin, or a second version">
+                        Clone
+                      </button>
                       <button type="button" className="hs-btn hs-btn--sm hs-btn--ghost"
                         onClick={() => file(e, null)} disabled={busy}>
                         Remove

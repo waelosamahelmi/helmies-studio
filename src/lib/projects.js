@@ -56,6 +56,11 @@ export function normalizeSettings(input = {}, previous = {}) {
     imageModel: out.imageModel ?? null,
     videoModel: out.videoModel ?? null,
     voiceModel: out.voiceModel ?? null,
+    // Carried, never taken from input: the assembled piece is written by
+    // the movie route, and changing the aspect ratio must not erase it.
+    ...(previous.movieUrl ? { movieUrl: previous.movieUrl } : {}),
+    ...(previous.movieBuiltAt ? { movieBuiltAt: previous.movieBuiltAt } : {}),
+    ...(previous.movieMeta ? { movieMeta: previous.movieMeta } : {}),
   };
 }
 
@@ -193,20 +198,25 @@ export async function getProjectContents(userId, id, { take = 24 } = {}) {
    The list is deliberately thin. A pipeline's `plan` holds every shot with
    its prompts and its results, and pulling that for a dozen scenes to draw
    a list of titles would move megabytes to render kilobytes.           */
-export function sceneSummary(pipeline) {
-  const shots = Array.isArray(pipeline?.plan?.shots) ? pipeline.plan.shots : [];
-  const done = shots.filter((s) => s?.videoResult?.url || s?.imageResult?.url).length;
+// A shot's RESULT lives on its DirectorShot row, not on plan.shots — the
+// plan is what was asked for, the row is what came back. Reading progress
+// off the plan would report every scene as 0 rendered forever.
+export function sceneSummary(pipeline, shotRows = []) {
+  const planned = Array.isArray(pipeline?.plan?.shots) ? pipeline.plan.shots.length : 0;
+  const rendered = shotRows.filter((s) => shotVideoUrl(s)).length;
   return {
     id: pipeline.id,
     title: pipeline.title,
     type: pipeline.type,
     status: pipeline.status,
-    shots: shots.length,
-    rendered: done,
+    shots: planned || shotRows.length,
+    rendered,
     assembledUrl: pipeline.assembledUrl || null,
     updatedAt: pipeline.updatedAt,
   };
 }
+
+export const shotVideoUrl = (row) => row?.videoResult?.url || row?.videoResult?.rawUrl || null;
 
 export async function listScenes(userId, projectId) {
   if (!projectId) return [];
@@ -215,7 +225,72 @@ export async function listScenes(userId, projectId) {
     orderBy: { createdAt: "asc" },
     take: 100,
   });
-  return rows.map(sceneSummary);
+  if (!rows.length) return [];
+
+  // One query for every scene's shots rather than one per scene.
+  const shots = await prisma.directorShot.findMany({
+    where: { pipelineId: { in: rows.map((r) => r.id) } },
+    orderBy: { index: "asc" },
+    select: { pipelineId: true, index: true, status: true, videoResult: true },
+  });
+  const byPipeline = new Map();
+  for (const s of shots) {
+    if (!byPipeline.has(s.pipelineId)) byPipeline.set(s.pipelineId, []);
+    byPipeline.get(s.pipelineId).push(s);
+  }
+  return rows.map((r) => sceneSummary(r, byPipeline.get(r.id) || []));
+}
+
+/* ── Combining scenes into one piece ─────────────────────────────────────
+   Every scene already assembles its own shots. A project assembles its
+   scenes, in the order they were added.
+
+   A scene contributes its assembled cut when it has one; when it does not
+   — because it was rendered shot by shot and never assembled — its shots
+   stand in, in index order. Anything with no video at all is reported
+   rather than silently skipped: a movie quietly missing scene 4 is worse
+   than one that refuses to build and says which scene is empty.        */
+export function movieClips(scenes, shotsByPipeline) {
+  const clips = [];
+  const missing = [];
+  for (const scene of scenes) {
+    if (scene.assembledUrl) { clips.push(scene.assembledUrl); continue; }
+    const urls = (shotsByPipeline.get(scene.id) || []).map(shotVideoUrl).filter(Boolean);
+    if (!urls.length) missing.push(scene.title || scene.id);
+    else clips.push(...urls);
+  }
+  return { clips, missing };
+}
+
+export async function collectMovieClips(userId, projectId) {
+  const scenes = await listScenes(userId, projectId);
+  if (!scenes.length) return { clips: [], missing: [], scenes: [] };
+  const shots = await prisma.directorShot.findMany({
+    where: { pipelineId: { in: scenes.map((s) => s.id) } },
+    orderBy: { index: "asc" },
+    select: { pipelineId: true, index: true, videoResult: true },
+  });
+  const byPipeline = new Map();
+  for (const s of shots) {
+    if (!byPipeline.has(s.pipelineId)) byPipeline.set(s.pipelineId, []);
+    byPipeline.get(s.pipelineId).push(s);
+  }
+  return { ...movieClips(scenes, byPipeline), scenes };
+}
+
+// The finished piece is recorded on the project itself so it survives a
+// reload and can be handed to anyone. Written straight rather than through
+// updateProject, whose payload validation has no business knowing about it.
+export async function setProjectMovie(userId, projectId, url, meta = {}) {
+  const project = await getOwnedProject(userId, projectId);
+  if (!project) return null;
+  const data = {
+    ...normalizeSettings(project.data || {}),
+    movieUrl: url,
+    movieBuiltAt: new Date().toISOString(),
+    movieMeta: meta,
+  };
+  return prisma.project.update({ where: { id: project.id }, data: { data } });
 }
 
 // The planner owns pipeline creation (it validates shots and prices the

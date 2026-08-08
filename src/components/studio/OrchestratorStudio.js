@@ -421,11 +421,17 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   const [confirmSwitch, setConfirmSwitch] = useState(null); // { id: string|null } while busy
   /* E7.3: the side pane is hidden below 1024px, so it needs a way back. */
   const [sideOpen, setSideOpen] = useState(false);
+  /* P1.4: the production this conversation is about. Naming one hands the
+     planner the scenario, the cast ids and the scenes that already exist,
+     and pins every shot to the project's format. */
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState(null);
 
   const feedRef = useRef(null);
   const abortRef = useRef(null);
   const pollRef = useRef(null); // background-run status poll (3s tick)
   const sessionRef = useRef(null);
+  const projectRef = useRef(null);
   const needsTitleRef = useRef(false); // auto-title once, from the first user message
   const idRef = useRef(0);
   const nextId = () => (idRef.current += 1);
@@ -559,6 +565,20 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     } catch { /* chat still works without persistence */ }
     return null;
   }, [loadSessions]);
+
+  /* The productions this conversation could be about. Kept in a ref as well
+     as state because the send handlers read it inside callbacks that were
+     created before the choice was made. */
+  useEffect(() => { projectRef.current = projectId; }, [projectId]);
+
+  useEffect(() => {
+    let dead = false;
+    apiFetch("/api/projects?limit=50")
+      .then((r) => r.json())
+      .then((d) => { if (!dead) setProjects(Array.isArray(d.projects) ? d.projects : []); })
+      .catch(() => { /* the agent works fine with no project chosen */ });
+    return () => { dead = true; };
+  }, []);
 
   /* Auto-title the session ONCE from the first user message (60 chars). */
   const autoTitle = useCallback(async (text) => {
@@ -765,7 +785,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       const res = await apiFetch("/api/agent/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, messages: history, stream: false, sessionId: sid }),
+        body: JSON.stringify({ message: text, messages: history, stream: false, sessionId: sid, projectId: projectRef.current }),
         timeout: 120000,
         retries: 0,
       });
@@ -1005,6 +1025,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: sessionRef.current,
+          projectId: projectRef.current,
           plan,
           stepIndex: index,
           previousOutputs: ctx.rawOutputs.slice(0, index).map((o) => o ?? null),
@@ -1064,6 +1085,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: sessionRef.current,
+          projectId: projectRef.current,
           plan: ctx.plan,
           stepIndex: index,
           regenerate: true,
@@ -1181,7 +1203,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     try {
       const { res, json } = await openStream(
         "/api/agent/run",
-        { message: plan.summary || "", plan: remainingPlan, sessionId: sessionRef.current },
+        { message: plan.summary || "", plan: remainingPlan, sessionId: sessionRef.current, projectId: projectRef.current },
         ctrl.signal,
       );
 
@@ -1276,6 +1298,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
           message: message.request || plan.summary || "",
           plan,
           sessionId: sessionRef.current,
+          projectId: projectRef.current,
           background: true,
           stream: false,
         }),
@@ -1320,7 +1343,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     try {
       const { res, json } = await openStream(
         "/api/agent/run",
-        { message: message.request || plan.summary || "", plan, sessionId: sessionRef.current },
+        { message: message.request || plan.summary || "", plan, sessionId: sessionRef.current, projectId: projectRef.current },
         ctrl.signal,
       );
 
@@ -1441,6 +1464,27 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
         onSelect={handleSelectSession}
         onNew={handleNewSession}
       />
+
+      {projects.length > 0 && (
+        <Group label="Working on">
+          <select
+            className="hs-input"
+            value={projectId || ""}
+            onChange={(e) => setProjectId(e.target.value || null)}
+            aria-label="The project this conversation is about"
+          >
+            <option value="">Nothing in particular</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <p className="hs-hint" style={{ marginTop: "var(--s-2)" }}>
+            {projectId
+              ? "The agent has the scenario, the cast and the scenes that already exist, and every shot uses this project's format."
+              : "Pick a project and the agent stops guessing the format, the cast and the story."}
+          </p>
+        </Group>
+      )}
 
       <Group
         label="Credits"

@@ -366,9 +366,84 @@ async function castHint(context = {}) {
   }
 }
 
+/* P1.4 — the project the agent is working inside.
+   ────────────────────────────────────────────────────────────────────────
+   The planner used to be told nothing about the production a request
+   belongs to, so every message was planned from scratch: it re-invented
+   the format, re-described the cast, and had no idea a scene it was about
+   to plan already existed. Handing it the project turns "make scene 5"
+   into an instruction it can actually follow.
+
+   The scenario is sent in full up to a cap. It is the single most useful
+   thing the planner can have, and truncating it mid-sentence is worse than
+   truncating it at a boundary the reader can see. */
+async function projectHint(context = {}) {
+  const { userId, projectId } = context || {};
+  if (!userId || !projectId) return "";
+  try {
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, userId },
+      select: { name: true, brief: true, data: true },
+    });
+    if (!project) return "";
+
+    const s = project.data || {};
+    const [entities, scenes] = await Promise.all([
+      prisma.studioEntity.findMany({
+        where: { projectId, userId },
+        select: { id: true, kind: true, name: true },
+        take: 24,
+      }),
+      prisma.directorPipeline.findMany({
+        where: { projectId, userId },
+        select: { title: true, status: true },
+        orderBy: { createdAt: "asc" },
+        take: 40,
+      }),
+    ]);
+
+    const lines = [
+      "",
+      "",
+      `THE PROJECT — everything below is already decided. Do not re-ask for it, and do not contradict it.`,
+      `Name: ${project.name}`,
+      s.kind ? `Type: ${s.kind}` : null,
+      s.aspectRatio ? `Aspect ratio: ${s.aspectRatio} — every shot is this, no exceptions.` : null,
+      s.resolution ? `Resolution: ${s.resolution}` : null,
+      s.imageModel ? `Image model: ${s.imageModel}` : null,
+      s.videoModel ? `Video model: ${s.videoModel}` : null,
+    ].filter(Boolean);
+
+    if (entities.length) {
+      lines.push(
+        "",
+        "Filed under this project (use these ids in params.entityIds — their real reference photographs are on file):",
+        entities.map((e) => `- ${e.id} · ${e.kind} · ${e.name}`).join("\n"),
+      );
+    }
+    if (scenes.length) {
+      lines.push(
+        "",
+        `Scenes that already exist (${scenes.length}) — do NOT re-plan these unless asked:`,
+        scenes.map((p, i) => `${i + 1}. ${p.title} — ${p.status}`).join("\n"),
+      );
+    }
+    if (project.brief) {
+      const brief = project.brief.length > 16000
+        ? `${project.brief.slice(0, 16000)}\n[…scenario truncated…]`
+        : project.brief;
+      lines.push("", "The scenario this production is made from:", brief);
+    }
+    return lines.join("\n");
+  } catch {
+    return "";
+  }
+}
+
 async function requestLlmPlan(userMessage, context = {}) {
   const system = AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context)
-    + (await runnableModelHint(context)) + (await castHint(context));
+    + (await runnableModelHint(context)) + (await castHint(context))
+    + (await projectHint(context));
   const user = buildPlanUserContent(userMessage, context);
   try {
     return await llmPlanOnce([
@@ -412,7 +487,11 @@ export async function planTaskStream(userMessage, context = {}) {
   }
 
   const messages = [
-    { role: "system", content: AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context) + (await runnableModelHint(context)) },
+    // The streaming planner gets the same context the non-streaming one
+    // does. It diverged once already, and a plan that knows the cast in one
+    // path and not the other is the hardest kind of bug to see.
+    { role: "system", content: AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context)
+        + (await runnableModelHint(context)) + (await castHint(context)) + (await projectHint(context)) },
     { role: "user", content: buildPlanUserContent(userMessage, context) },
   ];
 

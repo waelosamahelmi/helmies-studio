@@ -3449,3 +3449,10 @@ select.st-layer__role option {
   text-overflow: ellipsis;
 }
 .st-member__meta { font-size: 10px; color: var(--tx-mute); flex: 0 0 auto; }
+
+.st-combine {
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-200);
+}

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PROJECT_KINDS, PROJECT_KIND_VALUES, kindOf,
-  normalizeSettings, validateProjectPayload, sceneSummary,
+  normalizeSettings, validateProjectPayload, sceneSummary, movieClips,
 } from "@/lib/projects";
 
 describe("project kinds", () => {
@@ -91,30 +91,77 @@ describe("scenes", () => {
     }
   });
 
-  it("counts a scene's shots and how many have actually been rendered", () => {
-    const summary = sceneSummary({
-      id: "p1",
-      title: "Scene 1",
-      type: "short_film",
-      status: "executing",
-      updatedAt: new Date("2026-08-08"),
-      plan: {
-        shots: [
-          { imageResult: { url: "https://x/1.png" } },
-          { videoResult: { url: "https://x/2.mp4" } },
-          {},
-        ],
+  it("counts rendered shots from the shot ROWS, not from the plan", () => {
+    // The plan is what was asked for; the DirectorShot row is what came
+    // back. Reading results off plan.shots reported every scene as 0
+    // rendered forever, because the executor never writes there.
+    const summary = sceneSummary(
+      {
+        id: "p1",
+        title: "Scene 1",
+        type: "short_film",
+        status: "executing",
+        updatedAt: new Date("2026-08-08"),
+        plan: { shots: [{}, {}, {}] },
       },
-    });
+      [
+        { index: 0, videoResult: { url: "https://x/1.mp4" } },
+        { index: 1, videoResult: { rawUrl: "https://x/2.mp4" } },
+        { index: 2, videoResult: null },
+      ],
+    );
     expect(summary.shots).toBe(3);
     expect(summary.rendered).toBe(2);
     expect(summary.assembledUrl).toBeNull();
   });
 
+  it("builds a movie from each scene's assembled cut, falling back to its shots", () => {
+    const scenes = [
+      { id: "a", title: "One", assembledUrl: "https://x/one.mp4" },
+      { id: "b", title: "Two", assembledUrl: null },
+    ];
+    const shots = new Map([
+      ["b", [{ videoResult: { url: "https://x/b1.mp4" } }, { videoResult: { url: "https://x/b2.mp4" } }]],
+    ]);
+    const { clips, missing } = movieClips(scenes, shots);
+    expect(clips).toEqual(["https://x/one.mp4", "https://x/b1.mp4", "https://x/b2.mp4"]);
+    expect(missing).toEqual([]);
+  });
+
+  it("names an empty scene rather than quietly leaving it out of the movie", () => {
+    // A cut silently missing scene 4 looks finished. That is the expensive
+    // kind of wrong, so the caller refuses instead.
+    const { clips, missing } = movieClips(
+      [{ id: "a", title: "One", assembledUrl: "https://x/one.mp4" }, { id: "b", title: "Two", assembledUrl: null }],
+      new Map(),
+    );
+    expect(clips).toEqual(["https://x/one.mp4"]);
+    expect(missing).toEqual(["Two"]);
+  });
+
   it("survives a pipeline with no plan yet", () => {
     // Planning can fail or still be running; the scene list must still draw.
-    const summary = sceneSummary({ id: "p2", title: "Scene 2", status: "planning" });
+    const summary = sceneSummary({ id: "p2", title: "Scene 2", status: "planning" }, []);
     expect(summary.shots).toBe(0);
     expect(summary.rendered).toBe(0);
+  });
+});
+
+describe("the assembled piece survives a settings edit", () => {
+  it("carries movieUrl through normalizeSettings instead of erasing it", () => {
+    // updateProject rewrites `data` wholesale from normalizeSettings, so a
+    // key it does not carry is destroyed by an unrelated format change.
+    const previous = { kind: "movie", aspectRatio: "9:16", movieUrl: "https://x/film.mp4", movieBuiltAt: "2026-08-08T00:00:00.000Z" };
+    const out = normalizeSettings({ aspectRatio: "16:9" }, previous);
+    expect(out.aspectRatio).toBe("16:9");
+    expect(out.movieUrl).toBe("https://x/film.mp4");
+    expect(out.movieBuiltAt).toBe("2026-08-08T00:00:00.000Z");
+  });
+
+  it("never takes a movie url from caller input", () => {
+    // It is written by the assembly route alone; accepting it from a PATCH
+    // body would let anyone point a project at any URL.
+    const out = normalizeSettings({ movieUrl: "https://evil/x.mp4" }, {});
+    expect(out.movieUrl).toBeUndefined();
   });
 });

@@ -149,6 +149,32 @@ export async function POST(req) {
 
     const session = await resolveOwnedSession(user.id, body.sessionId);
 
+    /* P1.4 — the agent works INSIDE a project when one is named. Binding it
+       to the session is what makes the format stick: agent-runner reads the
+       project off the session and applies its aspect ratio to every step,
+       and the planner is handed the scenario, the cast ids and the scenes
+       that already exist. Ownership is checked here; an id belonging to
+       somebody else is simply ignored rather than reported, so it cannot be
+       used to probe for projects. */
+    let projectId = null;
+    if (typeof body.projectId === "string" && body.projectId) {
+      const owned = await prisma.project.findFirst({
+        where: { id: body.projectId, userId: user.id },
+        select: { id: true },
+      });
+      if (owned) {
+        projectId = owned.id;
+        if (session?.id && session.projectId !== projectId) {
+          await prisma.agentSession
+            .update({ where: { id: session.id }, data: { projectId } })
+            .catch(() => {});
+        }
+      }
+    } else if (session?.projectId) {
+      projectId = session.projectId;
+    }
+    if (projectId) context.projectId = projectId;
+
     const plan = body.plan
       ? { ...body.plan, approvedTotal: body.plan?.estimate?.total }
       : await buildPlanIfNeeded(user.id, message, context, session?.id || null);

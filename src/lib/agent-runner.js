@@ -73,6 +73,52 @@ import { log } from "./log.js";
 import { injectEntities, purposeForStep } from "./entity-inject.js";
 import { imageReferenceSlot, voiceReferenceSlot } from "./entity-core.mjs";
 import { applyRequiredDefaults } from "./provider-payload-core.mjs";
+import { normalizeSettings } from "./projects.js";
+
+/* ── The project's format, applied to every step ──────────────────────────
+   A run started inside a project inherits that project's aspect ratio. This
+   is the whole reason format lives on the project: the planner guesses a
+   ratio per step from the wording of the task, and a vertical film planned
+   shot by shot came out with landscape shots in it. A project setting is a
+   decision the user actually made, so it wins over the guess.
+
+   Only applied where the model has the field — asking a model for an aspect
+   ratio it does not take is a provider rejection, not a preference. */
+async function projectFormatFor(run) {
+  if (!run?.sessionId) return null;
+  try {
+    const session = await prisma.agentSession.findUnique({
+      where: { id: run.sessionId },
+      select: { project: { select: { data: true } } },
+    });
+    if (!session?.project) return null;
+    return normalizeSettings(session.project.data || {});
+  } catch {
+    return null;
+  }
+}
+
+function applyProjectFormat(params, schema, format) {
+  if (!format) return null;
+  const fields = schema?.fields;
+  if (!fields || typeof fields !== "object") return null;
+  const applied = {};
+  if (fields.aspect_ratio && format.aspectRatio) {
+    const allowed = fields.aspect_ratio.enum;
+    if (!Array.isArray(allowed) || allowed.includes(format.aspectRatio)) {
+      if (params.aspect_ratio !== format.aspectRatio) applied.aspect_ratio = format.aspectRatio;
+      params.aspect_ratio = format.aspectRatio;
+    }
+  }
+  if (fields.resolution && format.resolution) {
+    const allowed = fields.resolution.enum;
+    if (!Array.isArray(allowed) || allowed.includes(format.resolution)) {
+      if (params.resolution !== format.resolution) applied.resolution = format.resolution;
+      params.resolution = format.resolution;
+    }
+  }
+  return Object.keys(applied).length ? applied : null;
+}
 
 // How many MEDIA jobs a single run may have in flight at once. Internal
 // (LLM/storyboard/export) steps are cheap and uncapped; assembly is rare.
@@ -344,6 +390,16 @@ ${finalPrompt}`;
     }
 
     const { modelId, row, substitution } = await resolveStepModel(step, params);
+
+    // The project's format, before the required-defaults pass — otherwise a
+    // default aspect ratio gets filled in first and the project's choice
+    // never lands.
+    const projectFormat = await projectFormatFor(run);
+    const formatApplied = applyProjectFormat(params, row?.inputSchema || null, projectFormat);
+    if (formatApplied) {
+      log.info("agent_step_project_format", { runId: run.id, stepId: step.stepId, ...formatApplied });
+    }
+
     const endpoint = row?.endpoint || modelId || agentKey;
     const providerModelId = (row && runnableProviderModelId(row)) || modelId || agentKey;
 

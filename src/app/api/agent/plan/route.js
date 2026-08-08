@@ -6,6 +6,7 @@ import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import { apiError } from "@/lib/api-error";
 import { appendMessage, resolveOwnedSession } from "@/lib/agent-sessions";
+import prisma from "@/lib/prisma";
 
 // EDITSv1 E3.2 — planning stays a pure quote (nothing runs, nothing is
 // charged), but when the client attaches a sessionId the brief and the
@@ -65,6 +66,35 @@ export async function POST(req) {
       context.settings = session.settings;
     }
 
+    // The planner's cast and project hints both key off userId. The
+    // STREAMING path never passed it, so the default path planned without
+    // ever seeing the user's characters — the non-streaming path below set
+    // it inline and looked correct in review. Set once, for both.
+    context.userId = user.id;
+
+    // P1.4 — plan inside a project when one is named. An id the caller does
+    // not own is ignored rather than reported, so it cannot probe.
+    const askedProject = typeof body.projectId === "string" && body.projectId ? body.projectId : session?.projectId;
+    if (askedProject) {
+      const owned = await prisma.project.findFirst({
+        where: { id: askedProject, userId: user.id },
+        select: { id: true, data: true },
+      });
+      if (owned) {
+        context.projectId = owned.id;
+        // The project's format outranks a session default: it is the
+        // decision the user made about this production, not a leftover
+        // preference from another one.
+        const s = owned.data || {};
+        context.settings = {
+          ...(context.settings || {}),
+          ...(s.aspectRatio ? { aspect: s.aspectRatio } : {}),
+          ...(s.imageModel ? { imageModel: s.imageModel } : {}),
+          ...(s.videoModel ? { videoModel: s.videoModel } : {}),
+        };
+      }
+    }
+
     const lastUserTurn = [...conversation].reverse().find((m) => m.role === "user")?.content;
     const message = body.message || body.prompt ||
       (conversation.length ? lastUserTurn || "Plan the complete production discussed in the conversation." : null);
@@ -87,8 +117,7 @@ export async function POST(req) {
       return NextResponse.json({ success: true, ...result.plan });
     }
 
-    // userId lets the planner see the caller's cast (castHint).
-    const plan = await planTask(message, { ...context, userId: user.id });
+    const plan = await planTask(message, context);
     await persistPlanTurn(sessionId, message, plan);
     return NextResponse.json({ success: true, ...plan });
   } catch (e) {

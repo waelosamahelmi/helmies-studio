@@ -1127,6 +1127,19 @@
     "notes": "2026-08-08 P1.2: the scenes of a project. A scene IS a DirectorPipeline carrying the project's id, so Director's board is the scene editor and nothing is duplicated. POST plans the shot list from the project's type, aspect ratio, scenario and filed cast — an LLM call that spends no credits; the shots are quoted and paid for when Director renders them. Owner-scoped: planning is refused for a project the caller does not own."
   },
   {
+    "path": "/api/projects/[id]/movie",
+    "file": "src/app/api/projects/[id]/movie/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/projects",
+    "stateChanging": true,
+    "notes": "2026-08-08 P1.3: joins a project's scenes into one piece. ffmpeg over media already paid for — no model runs, no credits, safe to redo. Clip URLs pass the same net-allowlist SSRF guard /api/assemble uses; our own stored media resolves to disk. Refuses rather than silently omitting a scene with nothing rendered, and refuses over MAX_CLIPS. GET reports readiness so the button can say why it is disabled."
+  },
+  {
     "path": "/api/promos/redeem",
     "file": "src/app/api/promos/redeem/route.js",
     "methods": [
