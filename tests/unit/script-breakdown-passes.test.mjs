@@ -112,21 +112,34 @@ describe("parsing each pass", () => {
 });
 
 describe("the shot list follows what the model can hold", () => {
-  it("tells a 30-second model to let a shot run", async () => {
-    // A model that holds thirty seconds does not want a cut every six.
+  it("treats the model's limit as a ceiling, never as a target", async () => {
+    // The old rule said "the model can hold 30s, SO LET A SHOT RUN", which
+    // turned capacity into the target: three steps across a room got eight
+    // seconds and a two-word line got seven. Scenes came out far longer
+    // than they play.
     const { durationRules, pacingRules } = await import("@/lib/script-breakdown-passes.mjs");
-    expect(durationRules({ min: 4, max: 30 })).toMatch(/ONE take/);
-    expect(durationRules({ min: 4, max: 30 })).toMatch(/30/);
-    // Pacing is no longer "cut less" — it is "cut on every change, and
-    // hold a beat as long as that ONE beat runs".
+    const rule = durationRules({ min: 4, max: 30 });
+    expect(rule).toMatch(/CEILING, NOT A TARGET/);
+    expect(rule).toMatch(/30/);
+    expect(rule).not.toMatch(/let a shot RUN/i);
     expect(pacingRules({ max: 30 })).toMatch(/cut on every change/i);
   });
 
-  it("keeps the old short-clip pacing for a 10-second model", async () => {
+  it("gives measurable anchors instead of an adjective", async () => {
+    // "Let it run" is interpretable; "two words a second" is not.
+    const { durationRules } = await import("@/lib/script-breakdown-passes.mjs");
+    const rule = durationRules({ min: 4, max: 30 });
+    expect(rule).toMatch(/TWO WORDS PER SECOND/i);
+    expect(rule).toMatch(/Not tonight/);
+    expect(rule).toMatch(/crossing a room/i);
+  });
+
+  it("says the same thing to a short-clip model", async () => {
+    // Length follows content at every take length — only the numbers move.
     const { durationRules, pacingRules } = await import("@/lib/script-breakdown-passes.mjs");
-    expect(durationRules({ min: 4, max: 10 })).toMatch(/never write a shot shorter/);
-    // The same specificity rule applies at every take length; only the
-    // "hold it longer" clause is dropped for a short-clip model.
+    const rule = durationRules({ min: 4, max: 10 });
+    expect(rule).toMatch(/CEILING, NOT A TARGET/);
+    expect(rule).toMatch(/minimum 4 seconds, maximum 10/);
     expect(pacingRules({ max: 10 })).toMatch(/cut on every change/i);
     expect(pacingRules({ max: 10 })).not.toMatch(/held up to/i);
   });
@@ -327,5 +340,45 @@ Not tonight.`;
     // The tag is read per scene, which is the only place it is true.
     const { offscreenSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
     expect(offscreenSpeakers("WOMAN\nI'm right here.").has("woman")).toBe(false);
+  });
+});
+
+describe("a montage is one shot, and a room keeps its furniture", () => {
+  it("keeps a rush of flashes in a single generation", async () => {
+    // "ONE SHOT IS ONE BEAT" split a memory flood — hallway, woman turning,
+    // hands, rain, mirror — into eight separate four-second clips. Each
+    // rendered as a calm little scene, which is the opposite of a montage,
+    // and it cost eight generations to get there.
+    const { MONTAGE_RULE, sceneShotsPrompt } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(MONTAGE_RULE).toMatch(/MONTAGE OR A RUSH OF FLASHES IS ONE SHOT/);
+    expect(MONTAGE_RULE).toMatch(/flashing is the beat/i);
+    expect(sceneShotsPrompt({ min: 4, max: 30 })).toContain("ONE SHOT");
+  });
+
+  it("keeps the beat rule from contradicting the montage rule", async () => {
+    // Two rules in one prompt, one saying split and one saying don't. The
+    // beat rule has to name the exception or the read picks whichever it
+    // read last.
+    const { BEAT_RULE } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(BEAT_RULE).toMatch(/ONE exception is a montage/i);
+  });
+
+  it("makes every shot restate where the furniture and the people are", async () => {
+    // Two chairs facing each other, one empty: shot to shot they moved,
+    // changed number, and both men ended up in the same one. Each shot is
+    // generated alone and knows only its own description.
+    const { BLOCKING_RULE } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(BLOCKING_RULE).toMatch(/IN EVERY SHOT, IDENTICALLY/);
+    expect(BLOCKING_RULE).toMatch(/who occupies which chair/i);
+  });
+
+  it("puts all three rules in the prompt with no placeholders left", async () => {
+    const { sceneShotsPrompt } = await import("@/lib/script-breakdown-passes.mjs");
+    const prompt = sceneShotsPrompt({ min: 4, max: 30 }, null);
+    for (const token of ["{{BEAT_RULE}}", "{{MONTAGE_RULE}}", "{{BLOCKING_RULE}}", "{{PACING_RULES}}", "{{DURATION_RULES}}"]) {
+      expect(prompt).not.toContain(token);
+    }
+    expect(prompt).toMatch(/RUSH OF FLASHES/);
+    expect(prompt).toMatch(/PHYSICAL ARRANGEMENT/);
   });
 });

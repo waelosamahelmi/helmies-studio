@@ -40,6 +40,8 @@ Rules that matter:
 - COVERAGE IS NOT OPTIONAL. Every line of spoken dialogue in this scene appears exactly once, verbatim, across your shots. You are breaking the scene down, not summarising it. A conversation of twenty lines is not one shot.
 - COVER THE ACTION TOO, not only the dialogue. Every thing the script says HAPPENS — a walk, a turn, a door, a voice arriving from off-screen, an object picked up — belongs to some shot. A beat the script wrote and no shot contains is a beat that will not be in the film.
 {{BEAT_RULE}}
+{{MONTAGE_RULE}}
+{{BLOCKING_RULE}}
 - WHEN TWO VERSIONS OF ONE CHARACTER SHARE A FRAME, say so explicitly in the description and name what each is wearing: "two men with the same face, one in <X>, the other in <Y>". Their faces are identical on purpose; if the description does not separate them by clothing, the shot renders the same man twice.
 {{PACING_RULES}}
 {{DURATION_RULES}}
@@ -60,6 +62,8 @@ Reply with ONLY one valid JSON object - no fences, no commentary:
 export function sceneShotsPrompt(limits, budget = null) {
   return SCENE_SHOTS_SYSTEM_PROMPT
     .replace("{{BEAT_RULE}}", BEAT_RULE)
+    .replace("{{MONTAGE_RULE}}", MONTAGE_RULE)
+    .replace("{{BLOCKING_RULE}}", BLOCKING_RULE)
     .replace("{{PACING_RULES}}", pacingRules(limits))
     .replace(
       "{{DURATION_RULES}}",
@@ -129,12 +133,52 @@ export function pacingRules({ max = 10 } = {}) {
   return `- BE SPECIFIC AND CUT ON EVERY CHANGE. A new camera position, a new speaker, a new action, a reveal, an object that matters — each is its own shot. Precision beats economy: a scene of many exactly-specified shots renders correctly, and one of a few overloaded shots renders as mush.${held}`;
 }
 
+/* How long a shot is, decided by what happens in it.
+   ────────────────────────────────────────────────────────────────────────
+   The old rule said the model can hold 30 seconds, SO LET A SHOT RUN. That
+   turned the model's capacity into the target: a man taking three steps
+   across a room was given eight seconds, a two-word line seven, and scenes
+   came out far longer than they play. Capacity is a CEILING. Nothing about
+   a model that can hold thirty seconds means a three-second action wants
+   thirty, and a held frame with nothing happening in it is not a long
+   take — it is a short take with dead time on the end.
+
+   Worse, it contradicted the pacing rule sitting right beneath it, which
+   says cut on every change. One asked for fewer, longer shots and the
+   other for a cut per beat, so the read did both: many shots, each padded.
+
+   Length now comes from content. Speech is measurable — roughly two words
+   a second at dramatic pace — and actions have anchors. */
 export function durationRules({ min = 4, max = 10 } = {}) {
-  if (max >= 20) {
-    return `- Shot duration: minimum ${min} seconds, maximum ${max}. This production's video model can hold ${max} seconds in ONE take, so let a shot RUN — a whole exchange of dialogue, an entire beat, a complete action — rather than cutting every few seconds. Fewer, longer shots is better here: every cut is another generation and another chance for the room to change. Only cut when the framing genuinely has to change.`;
-  }
-  return `- Shot duration: minimum ${min} seconds, maximum ${max}. Video models bill a fixed clip length, so never write a shot shorter than ${min} seconds; fold a short beat into its neighbour.`;
+  return [
+    `- Shot duration: minimum ${min} seconds, maximum ${max}. The maximum is a CEILING, NOT A TARGET — a model that can hold ${max} seconds does not want ${max} seconds of a three-second action.`,
+    "- LENGTH COMES FROM WHAT HAPPENS, not from what the model can hold. Work it out rather than guessing:",
+    "  · Dialogue: about TWO WORDS PER SECOND at dramatic pace, plus a second either side to breathe. \"Not tonight.\" is two words — that shot is 4 seconds, not 8.",
+    "  · A look, a reaction, a realisation landing: 3-5 seconds.",
+    "  · Someone crossing a room, sitting down, turning around: 4-6 seconds.",
+    "  · A held silence the script explicitly calls for: as long as the script implies, and say in the description that it is held.",
+    `- Only go past 15 seconds when ONE continuous thing genuinely fills it — an unbroken exchange of several lines, or a single long approach. Padding a shot to reach ${max} adds dead frames at the end, which read as the clip freezing.`,
+  ].join("\n");
 }
+
+/* A rush of fragments is ONE shot, not one shot per fragment.
+   ────────────────────────────────────────────────────────────────────────
+   "ONE SHOT IS ONE BEAT" split a montage of memory flashes — hallway,
+   woman turning, hands, rain, mirror — into eight separate four-second
+   clips. Each rendered as a calm little scene of its own, which is the
+   opposite of a montage: the flashing IS the beat, and cutting it into
+   eight generations both costs eight times as much and removes the only
+   thing that made it work. */
+export const MONTAGE_RULE = `- A MONTAGE OR A RUSH OF FLASHES IS ONE SHOT. When the script calls for a rapid series of fragmentary images — a memory flood, a dream, intercut flashes with no dialogue — write ONE shot whose description lists the images in order and says how fast they come ("a rapid series of flashes, each under a second: a hallway, a woman turning, hands almost touching, rain on glass"). The flashing is the beat. Splitting it into one shot per image renders eight calm little scenes instead of a montage, and costs eight generations to do it.`;
+
+/* Where everyone and everything physically IS.
+   ────────────────────────────────────────────────────────────────────────
+   Two chairs facing each other, one occupied, one empty, and a man walking
+   toward them: shot to shot the chairs moved, changed number, and both men
+   ended up in the same one. Every shot is generated independently and knows
+   only its own description, so an arrangement the script fixes has to be
+   restated in each of them or it is re-invented each time. */
+export const BLOCKING_RULE = `- STATE THE PHYSICAL ARRANGEMENT IN EVERY SHOT, IDENTICALLY. When the script fixes how a space is laid out — how many chairs, where they are, which one is empty, who is in which — repeat that arrangement word for word in every shot of the scene, and say where the camera is relative to it. Each shot is generated on its own and knows nothing about the others: "two chairs" in one and "the chairs" in the next produces a different number of chairs. Name who occupies which chair every time, and never let a shot imply someone moved unless the script says they did.`;
 
 export const parseSceneShotsReply = (text) => {
   const parsed = parseJson(text);
@@ -250,7 +294,7 @@ export function budgetRule(budget) {
 
    Length and content are different axes. A thirty-second take is one
    action HELD for thirty seconds, not six actions compressed into it. */
-export const BEAT_RULE = `- ONE SHOT IS ONE BEAT, whatever its length. A shot is a single continuous action seen from one camera position: a man walking toward a chair IS a shot; him arriving, being spoken to, and sitting down is THREE. If your description contains "then", or a second character starting to do something, or a sound arriving from off-screen, you have written more than one shot — split it. A long take means holding ONE action longer, never packing more events into it. A model handed several events at once renders an average of them and none of them properly.`;
+export const BEAT_RULE = `- ONE SHOT IS ONE BEAT, whatever its length. A shot is a single continuous action seen from one camera position: a man walking toward a chair IS a shot; him arriving, being spoken to, and sitting down is THREE. If your description contains "then", or a second character starting to do something, or a sound arriving from off-screen, you have written more than one shot — split it. A long take means holding ONE action longer, never packing more events into it. A model handed several events at once renders an average of them and none of them properly. The ONE exception is a montage of flashes, which is a single beat made of fragments — see the montage rule below.`;
 
 /** Did the scene come back within its budget? */
 export const sceneIsWithinBudget = (shots, budget) => (shots?.length || 0) <= budget.ceiling;
