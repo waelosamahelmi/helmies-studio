@@ -554,6 +554,7 @@ function ScenesTab({ project, contents, unit, onChanged }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [rendering, setRendering] = useState(null);
+  const [notice, setNotice] = useState("");
   const [breaking, setBreaking] = useState(false);
   const [report, setReport] = useState(null);
   const [expanded, setExpanded] = useState(null);
@@ -631,13 +632,18 @@ function ScenesTab({ project, contents, unit, onChanged }) {
     setRendering(scene.id);
     setError("");
     try {
-      await apiFetch("/api/director/execute", {
+      const res = await apiFetch("/api/director/execute", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ planId: scene.id }),
-        timeout: 900000,
+        timeout: 60000,
         retries: 0,
       });
+      const data = await res.json().catch(() => ({}));
+      if (data.started) {
+        setError("");
+        setNotice(`${scene.title} is rendering on the server — you can leave this page.`);
+      }
       onChanged?.();
     } catch (e) {
       setError(e?.message || `${scene.title} could not be rendered.`);
@@ -707,6 +713,9 @@ function ScenesTab({ project, contents, unit, onChanged }) {
 
       {error && (
         <div className="hs-notice hs-notice--fault" role="alert"><span style={{ flex: 1 }}>{error}</span></div>
+      )}
+      {notice && !error && (
+        <div className="hs-notice hs-notice--signal" role="status"><span style={{ flex: 1 }}>{notice}</span></div>
       )}
 
       {!scenes.length ? (
