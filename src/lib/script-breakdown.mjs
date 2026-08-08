@@ -141,7 +141,7 @@ function resolveVariant(claimed, character) {
   return declared[0].name;
 }
 
-function normalizeShot(raw, sceneId, index, charactersByKey) {
+function normalizeShot(raw, sceneId, index, charactersByKey, limits = null) {
   const id = slugify(raw?.id, `s${sceneId}_${index + 1}`);
   const duration = Number.isFinite(raw?.durationSec) ? raw.durationSec : 5;
   const follows = asString(raw?.continuity?.follows, 80) || null;
@@ -160,7 +160,13 @@ function normalizeShot(raw, sceneId, index, charactersByKey) {
     sceneId,
     description: asString(raw?.description),
     type: normalizeShotType(raw?.type),
-    durationSec: Math.min(MAX_SHOT_SECONDS, Math.max(MIN_SHOT_SECONDS, Math.round(duration))),
+    // Clamped to what THIS production's video model can actually hold —
+    // 10 seconds was a constant, not a fact, and capping a 30-second model
+    // at 10 chops a scene into more clips than it needs.
+    durationSec: Math.min(
+      limits?.max ?? MAX_SHOT_SECONDS,
+      Math.max(limits?.min ?? MIN_SHOT_SECONDS, Math.round(duration)),
+    ),
     characters: visible,
     offscreenVoices: offscreen,
     characterVariant: shotVariant,
@@ -200,7 +206,7 @@ function normalizeShot(raw, sceneId, index, charactersByKey) {
 // parseScriptBreakdown(text) -> normalized breakdown | null.
 // Tolerant of fences and commentary (extractJsonObject), strict about shape:
 // a breakdown with no shots is not a breakdown.
-export function parseScriptBreakdown(text) {
+export function parseScriptBreakdown(text, limits = null) {
   const json = typeof text === "string" ? extractJsonObject(text) : null;
   if (!json) return null;
   let parsed;
@@ -238,7 +244,7 @@ export function parseScriptBreakdown(text) {
       heading: asString(raw?.heading, 200) || `SCENE ${sceneId}`,
       summary: asString(raw?.summary),
       environmentKey: slugify(raw?.environmentKey, "") || null,
-      shots: asArray(raw?.shots).map((s, j) => normalizeShot(s, sceneId, j, charactersByKey)),
+      shots: asArray(raw?.shots).map((s, j) => normalizeShot(s, sceneId, j, charactersByKey, limits)),
     };
   });
 

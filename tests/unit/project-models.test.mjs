@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   imageModelsFor, videoModelsFor, voiceModelsFor,
   supportsAspect, isVideoModel, takesFirstFrame, estimateProjectCost,
-  textToImageModelsFor, pickTextToImageModel, saysItIsNotAStill,
+  textToImageModelsFor, pickTextToImageModel, saysItIsNotAStill, shotDurationLimits,
 } from "@/lib/project-models.mjs";
 
 const model = (id, fields, extra = {}) => ({ id, credits: 10, schema: { fields }, ...extra });
@@ -183,5 +183,35 @@ describe("when the catalog's own schema is wrong", () => {
     // pool for every row the catalog has not categorised.
     expect(saysItIsNotAStill({ id: "plain-drawer" })).toBe(false);
     expect(saysItIsNotAStill({ id: "plain-drawer", modelType: "video" })).toBe(true);
+  });
+});
+
+describe("how long a shot may be", () => {
+  // Ten seconds was a constant, not a fact. Seedance 2.5 holds thirty —
+  // capping at the lowest common denominator chops a conversation into
+  // five clips where one would do: five generations, five cuts, five
+  // chances for the room to change.
+  it("reads the ceiling off the model rather than assuming ten", () => {
+    expect(shotDurationLimits({ schema: { fields: { duration: { maximum: 30, minimum: -1 } } } }))
+      .toMatchObject({ max: 30 });
+    expect(shotDurationLimits({ schema: { fields: { duration: { maximum: 15, minimum: 4 } } } }))
+      .toEqual({ min: 4, max: 15 });
+  });
+
+  it("treats minimum:-1 as 'the model decides', not a real floor", () => {
+    // A negative minimum is a sentinel; using it would allow a 0-second
+    // shot, which bills a full clip for nothing.
+    expect(shotDurationLimits({ schema: { fields: { duration: { maximum: 30, minimum: -1 } } } }).min)
+      .toBeGreaterThan(0);
+  });
+
+  it("reads an enum of allowed lengths", () => {
+    expect(shotDurationLimits({ schema: { fields: { duration: { enum: ["5", "10", "15"] } } } }))
+      .toEqual({ min: 5, max: 15 });
+  });
+
+  it("falls back to the safe ten when a model says nothing", () => {
+    expect(shotDurationLimits({ schema: { fields: { prompt: {} } } })).toEqual({ min: 4, max: 10 });
+    expect(shotDurationLimits(null)).toEqual({ min: 4, max: 10 });
   });
 });

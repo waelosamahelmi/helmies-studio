@@ -110,3 +110,27 @@ describe("parsing each pass", () => {
     expect(parseSceneShotsReply('{"shots":[{"id":"s1_1"}]}')).toHaveLength(1);
   });
 });
+
+describe("the shot list follows what the model can hold", () => {
+  it("tells a 30-second model to let a shot run", async () => {
+    // A model that holds thirty seconds does not want a cut every six.
+    const { durationRules, pacingRules } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(durationRules({ min: 4, max: 30 })).toMatch(/ONE take/);
+    expect(durationRules({ min: 4, max: 30 })).toMatch(/30/);
+    expect(pacingRules({ max: 30 })).toMatch(/only when the FRAMING/i);
+  });
+
+  it("keeps the old short-clip pacing for a 10-second model", async () => {
+    const { durationRules, pacingRules } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(durationRules({ min: 4, max: 10 })).toMatch(/never write a shot shorter/);
+    expect(pacingRules({ max: 10 })).toMatch(/6-8 seconds/);
+  });
+
+  it("writes the limits into the scene prompt itself", async () => {
+    const { sceneShotsPrompt } = await import("@/lib/script-breakdown-passes.mjs");
+    const prompt = sceneShotsPrompt({ min: 4, max: 30 });
+    expect(prompt).toContain("30");
+    expect(prompt).not.toContain("{{DURATION_RULES}}");
+    expect(prompt).not.toContain("{{PACING_RULES}}");
+  });
+});

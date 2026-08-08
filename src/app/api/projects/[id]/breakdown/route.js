@@ -15,13 +15,14 @@ import {
 } from "@/lib/script-breakdown.mjs";
 import {
   STRUCTURE_SYSTEM_PROMPT,
-  SCENE_SHOTS_SYSTEM_PROMPT,
   SCENE_COVERAGE_RETRY_HINT,
+  sceneShotsPrompt,
   splitScenes,
   parseStructureReply,
   parseSceneShotsReply,
   sceneIsCovered,
 } from "@/lib/script-breakdown-passes.mjs";
+import { shotDurationLimits } from "@/lib/project-models.mjs";
 import {
   breakdownToScenes,
   castFromBreakdown,
@@ -67,7 +68,7 @@ const MIN_APPEARANCES = 1;
    pass per scene for its shots. Each reply is small, none competes with
    the others for room, and coverage is checked scene by scene instead of
    hoped for. */
-async function readScreenplay(script, onProgress) {
+async function readScreenplay(script, onProgress, { limits = null, keepIndexes = new Set() } = {}) {
   // ── Pass 1: what the production needs to exist ────────────────────────
   let structure = null;
   {
@@ -100,12 +101,21 @@ async function readScreenplay(script, onProgress) {
   const scenes = [];
   for (let i = 0; i < structure.scenes.length; i++) {
     const scene = structure.scenes[i];
+
+    /* A scene already shot is left exactly as it is. Re-reading a script
+       to improve the scenes you have NOT made must not throw away the
+       ones you have — those cost money and are on screen. */
+    if (keepIndexes.has(i)) {
+      scenes.push({ ...scene, shots: [], keep: true });
+      onProgress?.(i + 1, structure.scenes.length);
+      continue;
+    }
     // Match by position first — the structure pass is asked for scenes in
     // order — and fall back to the whole script if the split disagrees.
     const text = sceneTexts[i]?.text || script;
 
     const messages = [
-      { role: "system", content: SCENE_SHOTS_SYSTEM_PROMPT },
+      { role: "system", content: sceneShotsPrompt(limits || undefined) },
       {
         role: "user",
         content: `THE PRODUCTION:
@@ -142,16 +152,47 @@ ${text}`,
   /* Normalised through the SAME path the single-pass read used, so every
      rule about shot ids, durations, variants and speaker resolution
      applies identically however the breakdown was produced. */
-  const breakdown = parseScriptBreakdown(JSON.stringify({ ...structure, scenes }));
+  const breakdown = parseScriptBreakdown(JSON.stringify({ ...structure, scenes }), limits);
+  // The keep flag does not survive normalisation, so it is re-applied by
+  // position — the only thing that ties a structure scene to a kept one.
+  if (breakdown) {
+    breakdown.scenes = breakdown.scenes.map((sc, i) => (keepIndexes.has(i) ? { ...sc, keep: true } : sc));
+  }
   return { breakdown, truncated: false };
 }
 
 /* The work itself. Runs detached from the request that started it, so
    every exit path has to record its own outcome — an unrecorded failure
    leaves the project reading forever. */
-async function runBreakdown({ projectId, userId, script, settings, replace }) {
+async function runBreakdown({ projectId, userId, script, settings, replace, keepSceneIds = [] }) {
   const started = Date.now();
   try {
+    /* How long a shot may be, read off the model this project renders on.
+       Ten seconds was a constant, not a fact: Seedance 2.5 holds thirty.
+       Capping at the lowest common denominator chops a conversation into
+       five clips where one would do — five generations, five cuts, five
+       chances for the room to change. */
+    let limits = null;
+    if (settings.videoModel) {
+      const row = await prisma.modelPricing.findUnique({ where: { modelId: settings.videoModel } }).catch(() => null);
+      if (row) limits = shotDurationLimits({ schema: row.inputSchema });
+    }
+
+    /* Scenes already shot, by POSITION in the screenplay — the only thing
+       that ties an existing pipeline to a scene the structure pass will
+       return. */
+    const existingOrdered = await prisma.directorPipeline.findMany({
+      where: { projectId, userId },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    const keepIndexes = new Set(
+      existingOrdered.map((p, i) => (keepSceneIds.includes(p.id) ? i : -1)).filter((i) => i >= 0),
+    );
+    const keptByIndex = new Map(
+      [...keepIndexes].map((i) => [i, existingOrdered[i].id]),
+    );
+
     const { breakdown, truncated } = await readScreenplay(script, (done, total) => {
       // Reading eleven scenes takes minutes; saying which one is being
       // read turns a blank wait into visible progress.
@@ -161,7 +202,7 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
         scenesRead: done,
         scenesTotal: total,
       }).catch(() => {});
-    });
+    }, { limits, keepIndexes });
     if (!breakdown) {
       await setBreakdownState(projectId, {
         status: "failed",
@@ -218,9 +259,9 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
 
     if (replace) {
       // Detach rather than delete: a scene that was already shot holds
-      // renders somebody paid for.
+      // renders somebody paid for. Scenes explicitly kept stay attached.
       await prisma.directorPipeline.updateMany({
-        where: { projectId, userId },
+        where: { projectId, userId, id: { notIn: keepSceneIds.length ? keepSceneIds : ["__none__"] } },
         data: { projectId: null },
       });
     }
@@ -228,7 +269,15 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
     const boards = breakdownToScenes(breakdown, { aspectRatio, entityIdByKey: matched });
 
     const scenes = [];
-    for (const board of boards) {
+    for (let boardIndex = 0; boardIndex < boards.length; boardIndex++) {
+      const board = boards[boardIndex];
+
+      // A kept scene is already in the project, with its renders. Nothing
+      // to create, and nothing to overwrite.
+      if (keptByIndex.has(boardIndex)) {
+        scenes.push({ id: keptByIndex.get(boardIndex), title: board.title, shots: 0, kept: true });
+        continue;
+      }
       const characters = [...new Set((board.scene.shots || []).flatMap((s) => s.characters || []))]
         .map((key) => (breakdown.characters || []).find((c) => c.key === key))
         .filter(Boolean)
@@ -359,6 +408,10 @@ export async function POST(req, { params }) {
       script,
       settings: normalizeSettings(project.data || {}),
       replace: !!body.replace,
+      // Scenes already shot, left exactly as they are.
+      keepSceneIds: Array.isArray(body.keepSceneIds)
+        ? body.keepSceneIds.filter((v) => typeof v === "string" && v)
+        : [],
     });
 
     return NextResponse.json({ breakdown: { status: "reading", startedAt } }, { status: 202 });

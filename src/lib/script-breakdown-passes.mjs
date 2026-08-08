@@ -37,8 +37,8 @@ You are given the production's cast, places and props, and the text of a single 
 
 Rules that matter:
 - COVERAGE IS NOT OPTIONAL. Every line of spoken dialogue in this scene appears exactly once, verbatim, across your shots. You are breaking the scene down, not summarising it. A conversation of twenty lines is not one shot.
-- Aim for roughly one shot per 6-8 seconds of screen time, and cut on who is speaking and on what changes. Two people talking is a shot every exchange or two, not one wide held for a minute.
-- Shot duration: minimum 4 seconds, maximum 10. Video models bill a fixed clip length, so never write a 2-second shot; fold a short beat into its neighbour.
+{{PACING_RULES}}
+{{DURATION_RULES}}
 - "characters" means WHO IS VISIBLE. Someone only heard (O.S., V.O.) goes in "offscreenVoices".
 - Every shot with a visible character sets "characterVariant" to one of that character's declared variant names.
 - Every dialogue line names its "speaker" AND its "speakerVariant". For a film where one actor plays two versions of himself, this is the only thing telling us who is talking.
@@ -50,6 +50,13 @@ Rules that matter:
 
 Reply with ONLY one valid JSON object - no fences, no commentary:
 {"shots":[{"id":"s<sceneId>_1","description":"<visual description, becomes the prompt>","type":"medium","durationSec":6,"characters":["<visible character keys>"],"offscreenVoices":["<heard-not-seen keys>"],"characterVariant":"<declared variant name>","props":["<prop keys visible here>"],"performance":"<the actor's direction for this shot>","dialogue":[{"speaker":"<character key>","speakerVariant":"<variant>","line":"<spoken words>"}],"continuity":{"follows":"<shot id or null>"},"sfx":["<sound>"],"notes":""}]}`;
+
+/** The scene prompt, written for the model this project renders on. */
+export function sceneShotsPrompt(limits) {
+  return SCENE_SHOTS_SYSTEM_PROMPT
+    .replace("{{PACING_RULES}}", pacingRules(limits))
+    .replace("{{DURATION_RULES}}", durationRules(limits));
+}
 
 export const SCENE_COVERAGE_RETRY_HINT =
   "That scene has more spoken lines than your shots account for. Return the shots for the SAME scene again, this time with every line of dialogue present exactly once and verbatim. Add shots rather than lengthening them.";
@@ -99,6 +106,26 @@ export const parseStructureReply = (text) => {
   if (!parsed || !Array.isArray(parsed.scenes) || !parsed.scenes.length) return null;
   return parsed;
 };
+
+/* The shot-length rules, written from the model the project will actually
+   render on. Handed to the prompt so the reading matches the shooting: a
+   model that holds thirty seconds should be given thirty seconds of the
+   script, and a conversation plays out in one take rather than five. */
+/* How often to cut, which follows from how long a take can be. A model
+   that holds thirty seconds does not want a cut every six. */
+export function pacingRules({ max = 10 } = {}) {
+  if (max >= 20) {
+    return `- Cut only when the FRAMING has to change — a reveal, a reaction that needs to fill the frame, a move to another part of the room. A whole exchange of dialogue in one sustained take is correct here, and better than three short ones.`;
+  }
+  return `- Aim for roughly one shot per 6-8 seconds of screen time, and cut on who is speaking and on what changes. Two people talking is a shot every exchange or two, not one wide held for a minute.`;
+}
+
+export function durationRules({ min = 4, max = 10 } = {}) {
+  if (max >= 20) {
+    return `- Shot duration: minimum ${min} seconds, maximum ${max}. This production's video model can hold ${max} seconds in ONE take, so let a shot RUN — a whole exchange of dialogue, an entire beat, a complete action — rather than cutting every few seconds. Fewer, longer shots is better here: every cut is another generation and another chance for the room to change. Only cut when the framing genuinely has to change.`;
+  }
+  return `- Shot duration: minimum ${min} seconds, maximum ${max}. Video models bill a fixed clip length, so never write a shot shorter than ${min} seconds; fold a short beat into its neighbour.`;
+}
 
 export const parseSceneShotsReply = (text) => {
   const parsed = parseJson(text);

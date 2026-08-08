@@ -174,3 +174,30 @@ export function estimateProjectCost(scenes = [], { imageCredits = 0, videoCredit
     known: perShot > 0,
   };
 }
+
+/* ── How long a shot may be ───────────────────────────────────────────────
+   The breakdown capped every shot at 10 seconds, which was a constant
+   rather than a fact: Seedance 2.5 takes 30, Seedance 2 takes 15, Kling
+   takes 10. Capping at the lowest common denominator chops a scene into
+   more clips than it needs — each one a separate generation, a separate
+   cut, and another chance for the room to change.
+
+   A model that can hold thirty seconds should be given thirty seconds of
+   the script, so a conversation plays out in one take instead of five. */
+export function shotDurationLimits(model) {
+  const field = (model?.schema || model?.inputSchema)?.fields?.duration;
+  const fallback = { min: 4, max: 10 };
+  if (!field) return fallback;
+
+  if (Array.isArray(field.enum) && field.enum.length) {
+    const values = field.enum.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    if (values.length) return { min: Math.min(...values), max: Math.max(...values) };
+  }
+
+  const max = Number(field.maximum);
+  // `minimum: -1` is a sentinel for "the model decides", not a real floor.
+  const rawMin = Number(field.minimum);
+  const min = Number.isFinite(rawMin) && rawMin > 0 ? rawMin : fallback.min;
+  if (!Number.isFinite(max) || max <= 0) return { ...fallback, min };
+  return { min: Math.min(min, max), max };
+}
