@@ -13,9 +13,14 @@ export async function GET(req) {
     const limit = parseInt(searchParams.get("limit")) || 50;
     const offset = parseInt(searchParams.get("offset")) || 0;
 
+    /* `status=all` is what the library's Runs view asks for: everything
+       that happened, including what failed, because a failure you cannot
+       see is one you cannot learn from. Cleared runs stay hidden unless
+       explicitly asked for — they are hidden, never deleted. */
     const where = {
       userId: user.id,
-      status,
+      ...(status && status !== "all" ? { status } : {}),
+      ...(searchParams.get("includeHidden") === "1" ? {} : { hiddenAt: null }),
       ...(tool && tool !== "all" ? { tool } : {}),
     };
 

@@ -135,15 +135,49 @@ function isRetryableError(err) {
 // the adapter with getProvider(job.providerName) after a crash. Any model
 // whose results live on a non-default poll path (KIE's Suno music API) has
 // to survive that, and only the persisted payload can carry it.
+/* Has the user asked for this to stop?
+
+   Checked on the same tick as the heartbeat, because that is the one
+   moment we are already touching this row. A cancel does NOT abort the
+   provider — it cannot; the work is running on somebody else's machine
+   and will be billed whether or not we are still listening. What it does
+   is stop US waiting, which is the honest half we control. */
+export class JobCancelled extends Error {
+  constructor() {
+    super("Cancelled by the user.");
+    this.name = "JobCancelled";
+    this.cancelled = true;
+  }
+}
+
+async function cancelRequested(jobId) {
+  try {
+    const row = await prisma.generationJob.findUnique({
+      where: { id: jobId },
+      select: { cancelRequested: true },
+    });
+    return !!row?.cancelRequested;
+  } catch {
+    return false; // a read failure must never look like a cancel
+  }
+}
+
 async function pollWithHeartbeat(provider, requestId, job, workerId) {
+  let cancelled = false;
   const timer = setInterval(() => {
     heartbeatJob(job.id, workerId).catch((err) => {
       log.error("job_heartbeat_failed", { jobId: job.id, generationId: job.generationId, workerId, err });
     });
+    cancelRequested(job.id).then((yes) => { if (yes) cancelled = true; }).catch(() => {});
   }, HEARTBEAT_INTERVAL_MS);
   const providerModel = job.payload?.model || job.endpoint || null;
   try {
-    return await pollProviderResult(provider, requestId, undefined, undefined, providerModel);
+    const result = await pollProviderResult(provider, requestId, undefined, undefined, providerModel);
+    // Checked AFTER the poll returns as well as during it: a cancel that
+    // arrives in the last second should not be ignored just because the
+    // result beat it by a tick.
+    if (cancelled || (await cancelRequested(job.id))) throw new JobCancelled();
+    return result;
   } finally {
     clearInterval(timer);
   }
@@ -274,6 +308,24 @@ async function tryTransitionGeneration(generationId, data) {
 // if the job just went terminal (`dead`), what it means for the generation
 // and its credits (rules 2 and 4).
 async function handleFailure(job, generation, err) {
+  /* A cancel is not a failure, and above all it is not RETRYABLE — retrying
+     something the user asked to stop is the worst possible reading of it.
+     It is terminal immediately, and the generation reads "cancelled" so the
+     library does not show a red row for a thing the user did on purpose. */
+  if (err?.cancelled) {
+    await failJob(job.id, "Cancelled by the user.", { retryable: false });
+    const won = await tryTransitionGeneration(generation.id, {
+      status: "cancelled",
+      error: "Cancelled while it was running.",
+    });
+    // The provider was already told to do this work and will bill us for
+    // it, so the money follows the SAME path a completed job would — the
+    // owner advance settles it. Releasing here would be refunding a cost
+    // we genuinely incurred.
+    if (won) await advanceOwner(job, generation);
+    return { outcome: "failed" };
+  }
+
   const retryable = isRetryableError(err);
   const message = err?.message || String(err);
   const result = await failJob(job.id, message, { retryable });

@@ -89,6 +89,18 @@ function metaLine(a) {
 const nameOf = (a) => a?.name || `Untitled ${kindOf(a)}`;
 
 export default function AssetLibraryStudio() {
+  /* The gallery used to be its own page outside the studio, showing the
+     same account's work in a second place with none of the studio's
+     controls — and no way to clear a failure or stop a run. It is a mode
+     here now. "Library" is what you KEPT; "Runs" is what HAPPENED,
+     including what failed and what is still going. */
+  const [view, setView] = useState("library");
+
+  if (view === "runs") return <RunsView onBack={() => setView("library")} />;
+  return <LibraryView onRuns={() => setView("runs")} />;
+}
+
+function LibraryView({ onRuns }) {
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -250,6 +262,13 @@ export default function AssetLibraryStudio() {
     <div className="st-lib">
       {/* ── Filter bar ───────────────────────────────────────────────── */}
       <div className="st-lib__bar">
+        <Segmented
+          label="View"
+          value="library"
+          onChange={(v) => { if (v === "runs") onRuns(); }}
+          options={[{ value: "library", label: "Library" }, { value: "runs", label: "Runs" }]}
+        />
+
         <Segmented
           label="Asset type"
           value={type}
@@ -558,6 +577,186 @@ export default function AssetLibraryStudio() {
         }
         confirmLabel="Delete"
       />
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RUNS — what happened, not what was kept
+   ──────────────────────────────────────────────────────────────────────────
+   Every generation, including the failures. This did not exist inside the
+   studio: the gallery page showed a wall of failed rows with no way to
+   clear them, and a run that hung had no off switch at all. A queue you
+   cannot stop is one you cannot trust to start.
+
+   Clearing HIDES rather than deletes. A failed run records what went wrong
+   and what it cost, and that is what a refund argument gets settled with,
+   so "Show cleared" brings them all back.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const RUN_LIVE = ["pending", "processing", "queued", "running"];
+
+const RUN_FILTERS = [
+  { value: "all", label: "Everything" },
+  { value: "live", label: "Running" },
+  { value: "failed", label: "Failed" },
+  { value: "completed", label: "Done" },
+];
+
+function RunsView({ onBack }) {
+  const [runs, setRuns] = useState([]);
+  const [filter, setFilter] = useState("all");
+  const [showCleared, setShowCleared] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [acting, setActing] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const q = new URLSearchParams({ status: "all", limit: "100" });
+      if (showCleared) q.set("includeHidden", "1");
+      const res = await apiFetch(`/api/generations?${q}`, { retries: 0 });
+      const data = await res.json();
+      setRuns(Array.isArray(data.generations) ? data.generations : []);
+    } catch (e) {
+      setError(e?.message || "Your runs could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, [showCleared]);
+
+  useEffect(() => { load(); }, [load]);
+
+  /* Polled only while something is actually moving. Polling a settled list
+     is noise on somebody's data plan. */
+  const anyLive = runs.some((r) => RUN_LIVE.includes(r.status));
+  useEffect(() => {
+    if (!anyLive) return undefined;
+    const t = setInterval(load, 6000);
+    return () => clearInterval(t);
+  }, [anyLive, load]);
+
+  const shown = useMemo(() => {
+    if (filter === "live") return runs.filter((r) => RUN_LIVE.includes(r.status));
+    if (filter === "all") return runs;
+    return runs.filter((r) => r.status === filter);
+  }, [runs, filter]);
+
+  const failedCount = runs.filter((r) => r.status === "failed" || r.status === "cancelled").length;
+
+  const stop = useCallback(async (run) => {
+    setActing(run.id);
+    setError("");
+    try {
+      const res = await apiFetch(`/api/generations/${run.id}/cancel`, { method: "POST", retries: 0 });
+      const data = await res.json();
+      setNotice(data.message);
+      load();
+    } catch (e) {
+      setError(e?.message || "That run could not be stopped.");
+    } finally {
+      setActing(null);
+    }
+  }, [load]);
+
+  const clearFailed = useCallback(async () => {
+    setError("");
+    try {
+      const res = await apiFetch("/api/generations/clear", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+        retries: 0,
+      });
+      const data = await res.json();
+      setNotice(`${data.cleared} cleared. They are hidden, not deleted — Show cleared brings them back.`);
+      load();
+    } catch (e) {
+      setError(e?.message || "Those could not be cleared.");
+    }
+  }, [load]);
+
+  return (
+    <div className="st-lib">
+      <div className="st-lib__bar">
+        <Segmented
+          label="View"
+          value="runs"
+          onChange={(v) => { if (v === "library") onBack(); }}
+          options={[{ value: "library", label: "Library" }, { value: "runs", label: "Runs" }]}
+        />
+        <Segmented label="Show" value={filter} onChange={setFilter} options={RUN_FILTERS} />
+        <button type="button" className={`hs-chip${showCleared ? " is-active" : ""}`}
+          aria-pressed={showCleared} onClick={() => setShowCleared((v) => !v)}>
+          Show cleared
+        </button>
+        <div style={{ flex: 1 }} />
+        {failedCount > 0 && !showCleared && (
+          <button type="button" className="hs-btn hs-btn--outline hs-btn--sm" onClick={clearFailed}>
+            <IcClose className="hs-icon-sm" /> Clear {failedCount} failed
+          </button>
+        )}
+        <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={load}>
+          <IcRefresh className="hs-icon-sm" /> Refresh
+        </button>
+      </div>
+
+      <div className="st-lib__body">
+        {error && (
+          <div className="hs-notice hs-notice--fault" role="alert" style={{ marginBottom: "var(--s-4)" }}>
+            <span style={{ flex: 1 }}>{error}</span>
+          </div>
+        )}
+        {notice && !error && (
+          <div className="hs-notice hs-notice--signal" role="status" style={{ marginBottom: "var(--s-4)" }}>
+            <span style={{ flex: 1 }}>{notice}</span>
+          </div>
+        )}
+
+        {loading ? (
+          <LibrarySkeleton count={6} label="Loading runs" />
+        ) : !shown.length ? (
+          <div className="hs-empty">
+            <span className="hs-empty__mark"><IcLayers /></span>
+            <h3>Nothing here</h3>
+            <p>{filter === "all" ? "No runs yet." : "Nothing matches that filter."}</p>
+          </div>
+        ) : (
+          <ul className="st-members" role="list">
+            {shown.map((r) => {
+              const live = RUN_LIVE.includes(r.status);
+              const tone = r.status === "completed" ? " hs-badge--signal"
+                : r.status === "failed" ? " hs-badge--fault"
+                : live ? " hs-badge--caution" : "";
+              return (
+                <li key={r.id} className="st-member" style={{ flexWrap: "wrap", opacity: r.hiddenAt ? 0.55 : 1 }}>
+                  <span className={`hs-badge${tone}`}>{r.status}</span>
+                  <span className="st-member__name">
+                    {r.prompt?.slice(0, 90) || r.tool}
+                    {r.error && <span className="hs-hint" style={{ display: "block" }}>{r.error}</span>}
+                  </span>
+                  <span className="st-member__meta hs-mono">
+                    {[r.tool, r.model, r.creditsUsed ? `${r.creditsUsed} cr` : null, dateLabel(r.createdAt)]
+                      .filter(Boolean).join(" · ")}
+                  </span>
+                  {live && (
+                    <button type="button" className="hs-btn hs-btn--sm hs-btn--danger"
+                      onClick={() => stop(r)} disabled={acting === r.id}>
+                      {acting === r.id ? "Stopping…" : "Stop"}
+                    </button>
+                  )}
+                  {r.outputUrl && (
+                    <a className="hs-btn hs-btn--sm hs-btn--ghost" href={r.outputUrl} target="_blank" rel="noreferrer">
+                      <IcExternal className="hs-icon-sm" /> Open
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

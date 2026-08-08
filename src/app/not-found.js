@@ -10,7 +10,7 @@ export const metadata = {
 const DOORS = [
   { href: "/studio",    label: "Open the studio" },
   { href: "/models",    label: "Browse the model catalog" },
-  { href: "/gallery",   label: "See the gallery" },
+  { href: "/studio/assets", label: "Your work" },
 ];
 
 export default function NotFound() {

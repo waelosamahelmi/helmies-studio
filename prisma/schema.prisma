@@ -114,11 +114,16 @@ model Generation {
   requestId      String?
   workflowId     String?
   workflowStepId String?
+  // Dismissed from the library WITHOUT being destroyed. A failed run still
+  // holds why it failed and what it cost, and that provenance outlives
+  // somebody's wish for a tidy grid.
+  hiddenAt       DateTime?
   createdAt      DateTime @default(now())
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status])
   @@index([userId, tool, status])
+  @@index([userId, hiddenAt])
   @@schema("public")
 }
 
@@ -145,6 +150,11 @@ model GenerationJob {
   payload           Json
   timeoutAt         DateTime
   lastError         String?   @db.Text
+  // Cooperative cancel. The worker checks this at its next heartbeat: a job
+  // still queued is dropped and its reservation released, one already at a
+  // provider is left to finish, because the provider is going to charge us
+  // whether or not we are still listening.
+  cancelRequested   Boolean   @default(false)
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

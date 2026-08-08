@@ -160,7 +160,7 @@ export default function Shell({
 
         <div className="st-bar__actions">
           {running > 0 && (
-            <Link href="/gallery" className="st-running" title={`${running} generation${running === 1 ? "" : "s"} running`}>
+            <Link href="/studio/assets" className="st-running" title={`${running} generation${running === 1 ? "" : "s"} running`}>
               <span className="hs-dot hs-dot--live" />
               {running}
             </Link>

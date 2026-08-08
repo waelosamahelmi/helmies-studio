@@ -11,7 +11,7 @@ const LINKS = [
   { href: "/studio",    label: "Studio" },
   { href: "/models",    label: "Models" },
   { href: "/templates", label: "Templates" },
-  { href: "/gallery",   label: "Gallery" },
+  { href: "/studio/assets", label: "Your work" },
   { href: "/pricing",   label: "Pricing" },
 ];
 

@@ -1010,7 +1010,32 @@
     "originCheck": false,
     "rateLimit": "none",
     "stateChanging": false,
-    "notes": ""
+    "notes": "2026-08-08: `status=all` serves the studio's Runs view (failures included — a failure you cannot see is one you cannot learn from); cleared runs stay hidden unless includeHidden=1."
+  },
+  {
+    "path": "/api/generations/[id]/cancel",
+    "file": "src/app/api/generations/[id]/cancel/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "2026-08-08: stop a run. THREE honest outcomes, not one — cancelled outright with the reservation RELEASED (it never reached a provider, so nothing is owed), stopped-waiting-but-still-billed (it did reach one, and the provider charges us whether or not we listen), or too late. Reporting \"cancelled\" for the middle case would be a lie the user only discovers on their statement. Owner-scoped; a miss reads as not-found."
+  },
+  {
+    "path": "/api/generations/clear",
+    "file": "src/app/api/generations/clear/route.js",
+    "methods": [
+      "POST",
+      "DELETE"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "2026-08-08: dismiss failed and cancelled runs from the library. They are HIDDEN (hiddenAt), never deleted — a failed run records what went wrong and what it cost, and that is what a refund argument gets settled with. Live runs are never touched: hiding one would leave it running with nothing on screen. DELETE restores everything, because nothing was destroyed."
   },
   {
     "path": "/api/generations/status",
