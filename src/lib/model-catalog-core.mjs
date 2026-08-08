@@ -244,6 +244,22 @@ const VENDOR_FOLDER_NAMES = new Set(["bytedance"]);
 // folder prefixes the real id). Add to this as more bad names turn up.
 export const DISPLAY_NAME_OVERRIDES = {
   "generate-4-o-image": "GPT-4o Image",
+  // Internal route names that leaked into the picker as if they were the
+  // model's name. "Generate Veo 3 Video" is a verb phrase; nobody calls it
+  // that, and it sorts under G.
+  "generate-veo-3-video": "Veo 3",
+  "generate-aleph-video": "Runway Aleph",
+  "generate-ai-video": "Runway Gen-3",
+  "generate-or-edit-image": "Nano Banana",
+  "grok-imagine-video-1-5-preview": "Grok Imagine Video 1.5",
+  "ai-clipping": "AI Clipping",
+  // ByteDance's V-series carries no brand of its own once the vendor
+  // folder is dropped, so "V1 Pro" reads as nobody's model.
+  "bytedance/v1-pro-text-to-video": "Seedance V1 Pro",
+  "bytedance/v1-pro-image-to-video": "Seedance V1 Pro",
+  "bytedance/v1-pro-fast-image-to-video": "Seedance V1 Pro Fast",
+  "bytedance/v1-lite-text-to-video": "Seedance V1 Lite",
+  "bytedance/v1-lite-image-to-video": "Seedance V1 Lite",
 };
 
 const CAPABILITY_SUFFIX_WORDS = {
@@ -266,9 +282,34 @@ const CAPABILITY_SUFFIX_WORDS = {
 // extend as more turn up in the live catalog.
 const ACRONYM_TOKENS = { ai: "AI", hd: "HD", "4k": "4K", "3d": "3D", tts: "TTS", sfx: "SFX" };
 
+/* Brands, spelled the way their makers spell them. Naive title-casing
+   produced "Gpt Image 2", "Minimax H3", "Happyhorse" and "Pixverse" — a
+   catalog that misspells its own suppliers reads as one nobody maintains.
+   Keyed lowercase; extend as more turn up. */
+const BRAND_TOKENS = {
+  gpt: "GPT",
+  minimax: "MiniMax",
+  happyhorse: "HappyHorse",
+  pixverse: "PixVerse",
+  openai: "OpenAI",
+  bytedance: "ByteDance",
+  a14b: "A14B",
+  r2v: "R2V",
+  i2v: "I2V",
+  t2v: "T2V",
+  v2v: "V2V",
+  veo: "Veo",
+  sdxl: "SDXL",
+  lora: "LoRA",
+  vae: "VAE",
+  ui: "UI",
+  api: "API",
+};
+
 function titleCaseToken(token) {
   if (/^[\d.]+$/.test(token)) return token; // pure number / version ("1.5") — leave as-is
-  const acronym = ACRONYM_TOKENS[token.toLowerCase()];
+  const lower = token.toLowerCase();
+  const acronym = ACRONYM_TOKENS[lower] || BRAND_TOKENS[lower];
   if (acronym) return acronym;
   return token.charAt(0).toUpperCase() + token.slice(1).toLowerCase();
 }
@@ -2148,3 +2189,86 @@ for (const [aliasKey, canonicalKey] of Object.entries(M2_SCHEMA_ALIASES)) {
 }
 
 Object.assign(CURATED_SCHEMAS, M2_FAMILY_SCHEMAS);
+
+/* ══════════════════════════════════════════════════════════════════════════
+   NAMES THAT ARE UNIQUE INSIDE THEIR PICKER
+   ──────────────────────────────────────────────────────────────────────────
+   slugToTitle names one model at a time, and correctly strips the trailing
+   phrase that just repeats its capability. Two models whose only difference
+   IS that phrase therefore come out identical: "happyhorse/text-to-video"
+   and "happyhorse/reference-to-video" both render as "HappyHorse", and the
+   video picker showed the same name twice with no way to tell them apart.
+   The same happened to MiniMax H3, PixVerse V6 and Topaz.
+
+   A display name is only correct relative to the other names beside it, so
+   it cannot be decided per model. This resolves them together: unique names
+   are left exactly as they are, and only the ones that actually clash gain
+   the tag that distinguishes them.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+// What the tail of an id means, in the words a person would use. Only
+// reached when a name would otherwise be a duplicate.
+const VARIANT_TAGS = [
+  [/reference-to-video$/, "from references"],
+  [/image-to-video$/, "from a still"],
+  [/text-to-video$/, "from text"],
+  [/video-to-video$/, "restyle"],
+  [/speech-to-video$/, "from speech"],
+  [/image-to-image$/, "edit"],
+  [/text-to-image$/, "from text"],
+  [/image-upscale$/, "image upscale"],
+  [/video-upscale$/, "video upscale"],
+  [/motion-control$/, "motion control"],
+  [/transition$/, "transition"],
+  [/extend$/, "extend"],
+  [/upscale$/, "upscale"],
+  [/edit$/, "edit"],
+];
+
+export function variantTag(modelId) {
+  const id = String(modelId || "").toLowerCase();
+  for (const [re, tag] of VARIANT_TAGS) if (re.test(id)) return tag;
+  return null;
+}
+
+/**
+ * Give every model a name that is unique among the models it is shown with.
+ *
+ * @param models  [{ modelId, modelType, capability, displayName? }]
+ * @returns Map modelId -> displayName
+ */
+export function resolveDisplayNames(models = []) {
+  const base = new Map();
+  for (const m of models) {
+    base.set(m.modelId, m.displayName || slugToTitle(m.modelId, { capability: m.capability }));
+  }
+
+  // Group by what a user actually sees together: one picker per modelType.
+  const groups = new Map();
+  for (const m of models) {
+    const key = `${m.modelType || "?"}::${base.get(m.modelId)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(m);
+  }
+
+  const out = new Map(base);
+  for (const [, clashing] of groups) {
+    if (clashing.length < 2) continue;
+    for (const m of clashing) {
+      const tag = variantTag(m.modelId);
+      // No tag to add is better than an invented one; a name repeated is a
+      // smaller lie than a name that says something untrue about the model.
+      if (tag) out.set(m.modelId, `${base.get(m.modelId)} (${tag})`);
+    }
+    // If the tags did not separate them (or there were none), fall back to
+    // the distinguishing tail of the id so the list is at least navigable.
+    const seen = new Set();
+    for (const m of clashing) {
+      const name = out.get(m.modelId);
+      if (!seen.has(name)) { seen.add(name); continue; }
+      const tail = String(m.modelId).split("/").pop();
+      out.set(m.modelId, `${base.get(m.modelId)} (${tail})`);
+    }
+  }
+  return out;
+}
