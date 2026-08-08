@@ -89,7 +89,7 @@ vi.mock("@/lib/director-planner", () => ({ validatePrompt: vi.fn() }));
 
 import prisma from "@/lib/prisma";
 import { debitWallet, refundCredits } from "@/lib/wallet";
-import { generateImage, generateI2I } from "@/lib/generation";
+import { generateImage, generateI2I, generateI2V, generateVideo } from "@/lib/generation";
 import { resolveProvider } from "@/lib/providers";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { generateShotAsset, resolveCharacterReferences, characterSlug } from "@/lib/director-executor";
@@ -310,5 +310,61 @@ describe("what a shot is decides which references it gets", () => {
     });
     expect(params.image_url).toContain("face");
     expect(params.image_urls.some((u) => u.includes("room"))).toBe(true);
+  });
+});
+
+describe("carrying the last frame across a cut", () => {
+  // "The next shot should also have the last frame of the last shot as a
+  // reference." Two cases, and the difference is a cut versus a
+  // continuation.
+  const runVideoShot = async (shot, allShots, previousRow) => {
+    prisma.studioEntity.findMany.mockResolvedValue([]);
+    prisma.modelPricing.findUnique.mockResolvedValue({
+      modelId: "seedance",
+      inputSchema: { fields: { prompt: {}, duration: {}, first_frame_url: {}, reference_image_urls: {}, return_last_frame: {} } },
+    });
+    prisma.directorShot.findUnique.mockImplementation(async ({ where }) =>
+      where.id.endsWith(previousRow?.id || "__none__") ? previousRow?.row ?? null : null);
+    pipelineState = makePipeline({ plan: { shots: allShots } });
+    prisma.directorPipeline.findFirst.mockImplementation(async () => ({ ...pipelineState }));
+    generateI2V.mockResolvedValue({ url: "https://cdn/out.mp4" });
+    generateVideo.mockResolvedValue({ url: "https://cdn/out.mp4" });
+    ingestFromUrl.mockResolvedValue({ url: "https://cdn/local.mp4" });
+    await generateShotAsset("p1", "u1", shot.id, "video");
+    return (generateI2V.mock.calls[0] || generateVideo.mock.calls[0])?.[0];
+  };
+
+  const shots = [
+    { id: "s1", index: 0, videoStrategy: { prompt: "one" }, camera: {} },
+    { id: "s2", index: 1, videoStrategy: { prompt: "two" }, camera: {}, continuity: [] },
+    { id: "s3", index: 2, videoStrategy: { prompt: "three" }, camera: {}, continuity: ["s2"] },
+  ];
+  const endedOn = (id) => ({ id, row: { videoResult: { lastFrameUrl: "https://cdn/last.png" } } });
+
+  it("asks the model to hand back the frame it ended on", async () => {
+    // Without this there is nothing to carry forward at all.
+    const params = await runVideoShot(shots[0], shots, null);
+    expect(params.return_last_frame).toBe(true);
+  });
+
+  it("STARTS on the last frame when the shot continues the motion", async () => {
+    // s3 declares continuity from s2.
+    const params = await runVideoShot(shots[2], shots, endedOn("s2"));
+    expect(params.first_frame_url).toBe("https://cdn/last.png");
+  });
+
+  it("REFERENCES it on a plain cut, rather than starting on it", async () => {
+    // A new angle must not literally begin on the old frame — but it is
+    // the same room, and the frame just rendered carries it better than
+    // words do.
+    // s2 declares no continuity; its neighbour is s1.
+    const params = await runVideoShot(shots[1], shots, endedOn("s1"));
+    expect(params.first_frame_url).toBeUndefined();
+    expect(params.reference_image_urls[0]).toBe("https://cdn/last.png");
+  });
+
+  it("carries nothing into the first shot of a scene", async () => {
+    const params = await runVideoShot(shots[0], shots, null);
+    expect(params.first_frame_url).toBeUndefined();
   });
 });

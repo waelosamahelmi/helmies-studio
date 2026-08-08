@@ -50,16 +50,42 @@ const LAST_FRAME_FIELDS = ["return_last_frame", "return_last_image"];
    SCENE, composed once over the cut, not to each six-second fragment. */
 const GENERATE_AUDIO_FIELDS = ["generate_audio", "generate_audio_switch", "with_audio"];
 
-/** The frame a previous shot ended on, if this shot continues from it. */
-async function previousLastFrame(pipelineId, shot) {
-  const follows = Array.isArray(shot.continuity) ? shot.continuity[0] : null;
-  if (!follows) return null;
+/* THE FRAME THE LAST SHOT ENDED ON.
+
+   Two different uses, and the difference is the difference between a cut
+   and a continuation:
+
+   · A shot the breakdown marked as CONTINUING (continuity.follows) starts
+     ON that frame. The motion carries over — a walk that keeps going, a
+     head turn completing — so the first frame IS the previous last frame.
+
+   · Every OTHER shot in the same scene gets it as a REFERENCE. It is a
+     new angle, so it must not literally start on the old frame; but it is
+     the same room, the same light, the same objects, and handing the model
+     the last thing it actually rendered is far stronger than describing
+     that room again in words. This is what stops the phone, the duvet and
+     the window changing between cuts.
+
+   Returns { url, asFirstFrame }. */
+async function previousShotFrame(pipelineId, shot, allShots = []) {
+  const explicit = Array.isArray(shot.continuity) ? shot.continuity[0] : null;
+
+  // The shot immediately before this one in the same scene, when nothing
+  // explicit is declared. A scene is one place; its shots follow on.
+  const index = allShots.findIndex((s) => s.id === shot.id);
+  const neighbour = index > 0 ? allShots[index - 1]?.id : null;
+
+  const fromId = explicit || neighbour;
+  if (!fromId) return null;
+
   try {
     const row = await prisma.directorShot.findUnique({
-      where: { id: shotRowId(pipelineId, follows) },
-      select: { videoResult: true },
+      where: { id: shotRowId(pipelineId, fromId) },
+      select: { videoResult: true, imageResult: true },
     });
-    return row?.videoResult?.lastFrameUrl || null;
+    const url = row?.videoResult?.lastFrameUrl || row?.imageResult?.url || null;
+    if (!url) return null;
+    return { url, asFirstFrame: Boolean(explicit) };
   } catch {
     return null;
   }
@@ -616,9 +642,16 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
         console.error("[Director] video references failed:", err?.message);
       }
     }
+    /* Resolved BEFORE the model, because a carried frame IS a still: a
+       shot continuing from the last one needs a model that can be given a
+       first frame, and asking for that after choosing the model meant the
+       frame was computed and then had nowhere to go. */
+    const carried = await previousShotFrame(pipeline.id, shot, pipeline.plan?.shots || []);
+    const startFrame = imageUrl || (carried?.asFirstFrame ? carried.url : null);
+
     const { model: modelRoute, frameField, schema: videoSchema } = await resolveVideoModel(
       shot.videoStrategy?.modelRoute || brief.modelVideo || DEFAULT_VIDEO_MODEL,
-      Boolean(imageUrl),
+      Boolean(startFrame),
     );
 
     const params = {
@@ -648,14 +681,21 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
     const lastFrameField = LAST_FRAME_FIELDS.find((f) => videoSchema?.fields?.[f]);
     if (lastFrameField) params[lastFrameField] = true;
 
-    const carriedFrame = await previousLastFrame(pipeline.id, shot);
-    if (carriedFrame && frameField) {
-      params[frameField] = frameField.endsWith("s") ? [carriedFrame] : carriedFrame;
-    } else if (carriedFrame && opts.referenceField) {
-      // No first-frame slot, but it takes references — lead with the frame
-      // we are continuing from so the model sees where it left off.
-      const existing = Array.isArray(params[opts.referenceField]) ? params[opts.referenceField] : [];
-      params[opts.referenceField] = [carriedFrame, ...existing.filter((u) => u !== carriedFrame)].slice(0, 4);
+    /* Where the last shot ended.
+       Continuing the motion → this shot BEGINS on that frame.
+       A plain cut → the frame is a REFERENCE: a new angle on the same
+       room, carried by the last thing actually rendered rather than by
+       describing that room again. */
+    if (carried) {
+      const refField = opts.referenceField
+        || REFERENCE_VIDEO_FIELDS.find((f) => videoSchema?.fields?.[f])
+        || null;
+      if (carried.asFirstFrame && frameField) {
+        params[frameField] = frameField.endsWith("s") ? [carried.url] : carried.url;
+      } else if (refField) {
+        const existing = Array.isArray(params[refField]) ? params[refField] : [];
+        params[refField] = [carried.url, ...existing.filter((u) => u !== carried.url)].slice(0, 4);
+      }
     }
 
     const filledVideo = applyRequiredDefaults(params, videoSchema, { modelId: modelRoute });
@@ -666,11 +706,11 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
     }
 
     let result;
-    if (imageUrl && frameField) {
+    if (startFrame && frameField) {
       // I2V — animate the approved still, using whichever field THIS model
       // names its first frame. Guessing the field is how a still gets
       // silently dropped and the clip opens on something else.
-      params[frameField] = frameField.endsWith("s") ? [imageUrl] : imageUrl;
+      params[frameField] = frameField.endsWith("s") ? [startFrame] : startFrame;
       result = await generateI2V(params);
     } else {
       result = await generateVideo(params);

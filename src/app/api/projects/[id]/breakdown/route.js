@@ -14,6 +14,15 @@ import {
   coverageWarnings,
 } from "@/lib/script-breakdown.mjs";
 import {
+  STRUCTURE_SYSTEM_PROMPT,
+  SCENE_SHOTS_SYSTEM_PROMPT,
+  SCENE_COVERAGE_RETRY_HINT,
+  splitScenes,
+  parseStructureReply,
+  parseSceneShotsReply,
+  sceneIsCovered,
+} from "@/lib/script-breakdown-passes.mjs";
+import {
   breakdownToScenes,
   castFromBreakdown,
   matchExistingEntities,
@@ -46,27 +55,95 @@ import { log } from "@/lib/log";
 // a face still. A person seen once still has to look like themselves.
 const MIN_APPEARANCES = 1;
 
-async function readScreenplay(script) {
-  const messages = [
-    { role: "system", content: SCRIPT_BREAKDOWN_SYSTEM_PROMPT },
-    { role: "user", content: script },
-  ];
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const reply = await llmComplete(messages, {
-      maxTokens: 32000,
-      temperature: 0.3,
-      timeout: 900000,
-      withMeta: true,
-    });
-    const text = reply?.content || "";
-    const breakdown = parseScriptBreakdown(text);
-    if (breakdown) return { breakdown, truncated: false };
-    // A truncated reply fails again at the same place — retrying spends
-    // time and money to reproduce the same ceiling.
-    if (reply?.truncated) return { breakdown: null, truncated: true };
-    messages.push({ role: "user", content: SCRIPT_BREAKDOWN_RETRY_HINT });
+/* TWO PASSES.
+
+   One reply for the whole screenplay is unstable in exactly the way that
+   matters: the SAME script came back with 37 shots on one run and 17 on
+   the next, five conversation scenes collapsed to a single shot each. The
+   model was running out of room and compressing, and each field added to
+   the shot shape made it compress harder.
+
+   Structure first — who, where, which objects, which scenes — then one
+   pass per scene for its shots. Each reply is small, none competes with
+   the others for room, and coverage is checked scene by scene instead of
+   hoped for. */
+async function readScreenplay(script, onProgress) {
+  // ── Pass 1: what the production needs to exist ────────────────────────
+  let structure = null;
+  {
+    const messages = [
+      { role: "system", content: STRUCTURE_SYSTEM_PROMPT },
+      { role: "user", content: script },
+    ];
+    for (let attempt = 0; attempt < 2 && !structure; attempt++) {
+      const reply = await llmComplete(messages, {
+        maxTokens: 8000, temperature: 0.2, timeout: 300000, withMeta: true,
+      });
+      structure = parseStructureReply(reply?.content || "");
+      if (!structure) {
+        if (reply?.truncated) return { breakdown: null, truncated: true };
+        messages.push({ role: "user", content: SCRIPT_BREAKDOWN_RETRY_HINT });
+      }
+    }
   }
-  return { breakdown: null, truncated: false };
+  if (!structure) return { breakdown: null, truncated: false };
+
+  // ── Pass 2: each scene's shots, on its own ────────────────────────────
+  const sceneTexts = splitScenes(script);
+  const context = JSON.stringify({
+    characters: structure.characters,
+    environments: structure.environments,
+    props: structure.props,
+    toneReferences: structure.toneReferences,
+  });
+
+  const scenes = [];
+  for (let i = 0; i < structure.scenes.length; i++) {
+    const scene = structure.scenes[i];
+    // Match by position first — the structure pass is asked for scenes in
+    // order — and fall back to the whole script if the split disagrees.
+    const text = sceneTexts[i]?.text || script;
+
+    const messages = [
+      { role: "system", content: SCENE_SHOTS_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: `THE PRODUCTION:
+${context}
+
+SCENE ${scene.id} — ${scene.heading}
+Environment key: ${scene.environmentKey || "unknown"}
+
+${text}`,
+      },
+    ];
+
+    let shots = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const reply = await llmComplete(messages, {
+        maxTokens: 8000, temperature: 0.3, timeout: 300000, withMeta: true,
+      });
+      const parsed = parseSceneShotsReply(reply?.content || "");
+      if (parsed) {
+        shots = parsed;
+        // A scene that came back with a fraction of its dialogue is a
+        // summary, not a breakdown. Ask once more before accepting it.
+        if (sceneIsCovered(text, parsed)) break;
+        messages.push({ role: "user", content: SCENE_COVERAGE_RETRY_HINT });
+      } else {
+        messages.push({ role: "user", content: SCRIPT_BREAKDOWN_RETRY_HINT });
+      }
+    }
+
+    scenes.push({ ...scene, shots: shots || [] });
+    onProgress?.(i + 1, structure.scenes.length);
+  }
+
+  /* Normalised through the SAME path the single-pass read used, so every
+     rule about shot ids, durations, variants and speaker resolution
+     applies identically however the breakdown was produced. */
+  const breakdown = parseScriptBreakdown(JSON.stringify({ ...structure, scenes }));
+  return { breakdown, truncated: false };
 }
 
 /* The work itself. Runs detached from the request that started it, so
@@ -75,7 +152,16 @@ async function readScreenplay(script) {
 async function runBreakdown({ projectId, userId, script, settings, replace }) {
   const started = Date.now();
   try {
-    const { breakdown, truncated } = await readScreenplay(script);
+    const { breakdown, truncated } = await readScreenplay(script, (done, total) => {
+      // Reading eleven scenes takes minutes; saying which one is being
+      // read turns a blank wait into visible progress.
+      setBreakdownState(projectId, {
+        status: "reading",
+        startedAt: new Date(started).toISOString(),
+        scenesRead: done,
+        scenesTotal: total,
+      }).catch(() => {});
+    });
     if (!breakdown) {
       await setBreakdownState(projectId, {
         status: "failed",
