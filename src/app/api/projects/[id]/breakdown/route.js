@@ -126,17 +126,31 @@ async function readScreenplay(script, onProgress, { limits = null, keepIndexes =
     toneReferences: structure.toneReferences,
   });
 
-  const scenes = [];
-  for (let i = 0; i < structure.scenes.length; i++) {
+  /* THE SCENES ARE READ AT THE SAME TIME, NOT ONE AFTER ANOTHER.
+
+     Each scene pass needs the structure and its own scene text, and
+     nothing else — scene 7 does not depend on scene 6. Running them in a
+     plain for-loop made a twelve-scene screenplay take TWENTY-THREE
+     MINUTES of mostly waiting, which is long enough that an ordinary
+     server restart lands in the middle of one and throws the whole read
+     away. Several did.
+
+     A small pool rather than all at once: twelve simultaneous calls invite
+     a provider rate-limit, and one 429 costs more than the wait it saved.
+     Four at a time turns twenty-three minutes into about six. */
+  const CONCURRENT_SCENES = 4;
+  const scenes = new Array(structure.scenes.length);
+  let finished = 0;
+  const readOneScene = async (i) => {
     const scene = structure.scenes[i];
 
     /* A scene already shot is left exactly as it is. Re-reading a script
        to improve the scenes you have NOT made must not throw away the
        ones you have — those cost money and are on screen. */
     if (keepIndexes.has(i)) {
-      scenes.push({ ...scene, shots: [], keep: true });
-      onProgress?.(i + 1, structure.scenes.length);
-      continue;
+      scenes[i] = { ...scene, shots: [], keep: true };
+      onProgress?.(++finished, structure.scenes.length);
+      return;
     }
     // Match by position first — the structure pass is asked for scenes in
     // order — and fall back to the whole script if the split disagrees.
@@ -202,15 +216,35 @@ ${text}`,
        for a two-word line — so it is computed here instead. Only ever
        shortens, and a shot whose own description says it is held keeps the
        length the read gave it. */
-    scenes.push({
+    scenes[i] = {
       ...scene,
       shots: tightenDurations(
         attributeSpeakers(keepOffscreenOffscreen(shots || [], text), text),
         limits || undefined,
       ),
-    });
-    onProgress?.(i + 1, structure.scenes.length);
-  }
+    };
+    onProgress?.(++finished, structure.scenes.length);
+  };
+
+  /* A worker pool over the indexes. A scene that throws is recorded as
+     empty rather than killing the other eleven — one unreadable scene is a
+     scene to re-read, not a lost screenplay. */
+  const queue = structure.scenes.map((_, i) => i);
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENT_SCENES, queue.length) }, async () => {
+      for (;;) {
+        const i = queue.shift();
+        if (i === undefined) return;
+        try {
+          await readOneScene(i);
+        } catch (err) {
+          log.error("project_breakdown_scene_failed", { scene: i + 1, error: err?.message });
+          scenes[i] = { ...structure.scenes[i], shots: [] };
+          onProgress?.(++finished, structure.scenes.length);
+        }
+      }
+    }),
+  );
 
   /* Normalised through the SAME path the single-pass read used, so every
      rule about shot ids, durations, variants and speaker resolution
