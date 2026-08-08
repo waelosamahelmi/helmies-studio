@@ -517,8 +517,34 @@ function ScenesTab({ project, contents, unit, onChanged }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [rendering, setRendering] = useState(null);
+  const [breaking, setBreaking] = useState(false);
+  const [report, setReport] = useState(null);
   const [error, setError] = useState("");
   const scenes = contents.scenes || [];
+
+  /* One read of the screenplay produces the whole structure. Planning scene
+     by scene re-reads the script each time and lets the same character come
+     back described differently — which is exactly how a face drifts. */
+  const breakDown = useCallback(async () => {
+    setBreaking(true);
+    setError("");
+    setReport(null);
+    try {
+      const res = await apiFetch(`/api/projects/${project.id}/breakdown`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ replace: scenes.length > 0 }),
+        timeout: 900000,
+        retries: 0,
+      });
+      setReport(await res.json());
+      onChanged?.();
+    } catch (e) {
+      setError(e?.message || "The scenario could not be broken down.");
+    } finally {
+      setBreaking(false);
+    }
+  }, [project.id, scenes.length, onChanged]);
 
   /* Render a scene without leaving the project. This is the same call
      Director's own button makes — the board is where you go to inspect or
@@ -560,10 +586,40 @@ function ScenesTab({ project, contents, unit, onChanged }) {
             Each one is a shot board. Describe what happens — the format, the type and the cast come from the project.
           </p>
         </div>
-        <button type="button" className="hs-btn hs-btn--primary hs-btn--sm" onClick={() => setAdding(true)}>
-          <IcPlus className="hs-icon-sm" /> Add {unit}
-        </button>
+        <div className="hs-row" style={{ gap: "var(--s-2)" }}>
+          {project.brief && (
+            <button type="button" className={`hs-btn hs-btn--sm ${scenes.length ? "hs-btn--outline" : "hs-btn--primary"}`}
+              onClick={breakDown} disabled={!!breaking}>
+              <IcSpark className="hs-icon-sm" />
+              {breaking ? "Reading the script…" : scenes.length ? "Break down again" : "Break the scenario into scenes"}
+            </button>
+          )}
+          <button type="button" className={`hs-btn hs-btn--sm ${scenes.length || !project.brief ? "hs-btn--primary" : "hs-btn--outline"}`}
+            onClick={() => setAdding(true)}>
+            <IcPlus className="hs-icon-sm" /> Add {unit}
+          </button>
+        </div>
       </div>
+
+      {breaking && (
+        <div className="hs-notice" role="status">
+          <span style={{ flex: 1 }}>
+            Reading the whole screenplay in one pass — characters, places, and every shot of every {unit}.
+            This takes a minute or two on a feature-length script, and spends nothing.
+          </span>
+        </div>
+      )}
+      {report && (
+        <div className="hs-notice hs-notice--signal" role="status">
+          <IcCheck className="hs-icon-sm" style={{ marginTop: 2 }} />
+          <span style={{ flex: 1 }}>
+            {report.scenes.length} {unit}{report.scenes.length === 1 ? "" : "s"}, {report.summary?.shotCount ?? 0} shots
+            {report.cast.created.length ? `, ${report.cast.created.length} new in the cast` : ""}
+            {report.cast.reused ? `, ${report.cast.reused} reused` : ""}.
+            {report.warnings?.length ? ` Worth checking: ${report.warnings.join(" ")}` : ""}
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="hs-notice hs-notice--fault" role="alert"><span style={{ flex: 1 }}>{error}</span></div>
@@ -575,12 +631,23 @@ function ScenesTab({ project, contents, unit, onChanged }) {
           <h3>No {unit}s yet</h3>
           <p>
             {project.brief
-              ? `The scenario is saved, so a ${unit} only needs the part of it that happens here.`
+              ? `The scenario is saved. Break it down and every ${unit} in it becomes a shot board — or add one by hand.`
               : `Add the scenario under “Scenario & format” first — every ${unit} is written against it.`}
           </p>
-          <button type="button" className="hs-btn hs-btn--primary" onClick={() => setAdding(true)}>
-            <IcPlus className="hs-icon-sm" /> Add the first {unit}
-          </button>
+          {project.brief ? (
+            <div className="hs-row" style={{ gap: "var(--s-2)", justifyContent: "center" }}>
+              <button type="button" className="hs-btn hs-btn--primary" onClick={breakDown} disabled={breaking}>
+                <IcSpark className="hs-icon-sm" /> {breaking ? "Reading the script…" : "Break the scenario into scenes"}
+              </button>
+              <button type="button" className="hs-btn hs-btn--outline" onClick={() => setAdding(true)}>
+                <IcPlus className="hs-icon-sm" /> Add one by hand
+              </button>
+            </div>
+          ) : (
+            <button type="button" className="hs-btn hs-btn--primary" onClick={() => setAdding(true)}>
+              <IcPlus className="hs-icon-sm" /> Add the first {unit}
+            </button>
+          )}
         </div>
       ) : (
         <ol className="st-scenes">

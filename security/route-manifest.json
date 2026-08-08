@@ -1127,6 +1127,18 @@
     "notes": "2026-08-08 P1.2: the scenes of a project. A scene IS a DirectorPipeline carrying the project's id, so Director's board is the scene editor and nothing is duplicated. POST plans the shot list from the project's type, aspect ratio, scenario and filed cast — an LLM call that spends no credits; the shots are quoted and paid for when Director renders them. Owner-scoped: planning is refused for a project the caller does not own."
   },
   {
+    "path": "/api/projects/[id]/breakdown",
+    "file": "src/app/api/projects/[id]/breakdown/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/projects",
+    "stateChanging": true,
+    "notes": "2026-08-08 P1.5: reads the project's scenario ONCE and creates a scene (DirectorPipeline) per screenplay scene, with every shot planned. One read rather than one per scene, because re-reading lets the same character come back described differently — which is how a face drifts between scenes. Matches the cast against entities the user already built so a character with real photographs is reused, never shadowed by an empty duplicate. Spends no credits (an LLM read); the shots are quoted when Director renders them. Refuses to run twice without an explicit replace flag, and replace DETACHES old scenes rather than deleting renders somebody paid for."
+  },
+  {
     "path": "/api/projects/[id]/movie",
     "file": "src/app/api/projects/[id]/movie/route.js",
     "methods": [
