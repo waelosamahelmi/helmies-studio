@@ -209,3 +209,46 @@ describe("how a shot is made", () => {
     expect(normalizeSettings({ videoMode: "magic" }).videoMode).toBe("auto");
   });
 });
+
+describe("scenes play in screenplay order, not creation order", () => {
+  // Creation time is a faithful stand-in for screenplay order right up
+  // until you re-read a scene. Recreating scene 2 wrote its row last, so
+  // the project listed it eleventh and the assembled cut PLAYED it
+  // eleventh — a silent re-edit of the film from an operation meant to
+  // change only that scene's shots.
+  const scene = (n, extra = {}) => ({ id: `p${n}`, plan: { sceneNumber: n }, ...extra });
+  const ids = (rows) => rows.map((r) => r.id);
+
+  it("puts a re-read scene back where the screenplay has it", async () => {
+    const { orderByScreenplay } = await import("@/lib/projects");
+    // Row order as the database returns it: scene 2 was rewritten last.
+    expect(ids(orderByScreenplay([scene(1), scene(3), scene(4), scene(2)])))
+      .toEqual(["p1", "p2", "p3", "p4"]);
+  });
+
+  it("reads the number off the shot ids when the plan predates the field", async () => {
+    // "s7_1" is scene 7. Scenes planned before sceneNumber existed sort
+    // correctly without having to be rewritten.
+    const { screenplayNumber, orderByScreenplay } = await import("@/lib/projects");
+    expect(screenplayNumber({ plan: { shots: [{ id: "s7_1" }] } })).toBe(7);
+    const old = { id: "old", plan: { shots: [{ id: "s2_1" }] } };
+    expect(ids(orderByScreenplay([scene(3), old]))).toEqual(["old", "p3"]);
+  });
+
+  it("leaves a scene with no number where it was rather than jumping it to the front", async () => {
+    // A hand-added scene has no screenplay position. Guessing one would
+    // reorder the film around a scene nobody numbered.
+    const { orderByScreenplay } = await import("@/lib/projects");
+    const loose = { id: "loose", plan: {} };
+    expect(ids(orderByScreenplay([scene(2), loose, scene(1)])))
+      .toEqual(["p1", "p2", "loose"]);
+  });
+
+  it("does not shuffle two scenes that claim the same number", async () => {
+    const { orderByScreenplay } = await import("@/lib/projects");
+    const a = { id: "a", plan: { sceneNumber: 2 } };
+    const b = { id: "b", plan: { sceneNumber: 2 } };
+    expect(ids(orderByScreenplay([a, b]))).toEqual(["a", "b"]);
+    expect(ids(orderByScreenplay(orderByScreenplay([a, b])))).toEqual(["a", "b"]);
+  });
+});

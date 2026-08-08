@@ -270,3 +270,62 @@ describe("a man and his double must be dressed differently", () => {
     expect(hint).toMatch(/glasses on one and not the other/i);
   });
 });
+
+describe("a voice the script keeps off-screen never gets a face", () => {
+  // SCENE 3 writes WOMAN (O.S.) — she calls from behind Wael and the beat
+  // is that he does not turn around. The read listed her among the shot's
+  // visible characters, which puts her in frame; with no photograph of her
+  // on file that is a different woman every time she appears.
+  const SCENE = `SCENE 3 — THE ROOM
+
+Wael stands in the darkness.
+
+WOMAN (O.S.)
+Wael?
+
+He stops. Doesn't turn.
+
+WAEL
+Not tonight.`;
+
+  it("reads the off-screen tags out of the script", async () => {
+    const { offscreenSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
+    const names = offscreenSpeakers(SCENE);
+    expect(names.has("woman")).toBe(true);
+    expect(names.has("wael")).toBe(false);
+  });
+
+  it("takes her out of frame and leaves her voice in", async () => {
+    const { keepOffscreenOffscreen } = await import("@/lib/script-breakdown-passes.mjs");
+    const [shot] = keepOffscreenOffscreen(
+      [{ characters: ["wael", "woman"], dialogue: [{ speaker: "woman", line: "Wael?" }] }],
+      SCENE,
+    );
+    expect(shot.characters).toEqual(["wael"]);
+    expect(shot.offscreenVoices).toContain("woman");
+    // The line is never removed. She still speaks; the camera stays on him.
+    expect(shot.dialogue).toHaveLength(1);
+  });
+
+  it("matches a slug key against the script's spelling", async () => {
+    const { keepOffscreenOffscreen } = await import("@/lib/script-breakdown-passes.mjs");
+    const [shot] = keepOffscreenOffscreen(
+      [{ characters: ["young_woman"] }],
+      "YOUNG WOMAN (V.O.)\nWael?",
+    );
+    expect(shot.characters).toEqual([]);
+  });
+
+  it("leaves a scene with no off-screen voices completely alone", async () => {
+    const { keepOffscreenOffscreen } = await import("@/lib/script-breakdown-passes.mjs");
+    const shots = [{ characters: ["wael", "woman"] }];
+    // Same array back, not a rebuilt copy — nothing to do means nothing done.
+    expect(keepOffscreenOffscreen(shots, "WAEL\nHello.")).toBe(shots);
+  });
+
+  it("does not strip someone who is on screen in this scene and off in another", async () => {
+    // The tag is read per scene, which is the only place it is true.
+    const { offscreenSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(offscreenSpeakers("WOMAN\nI'm right here.").has("woman")).toBe(false);
+  });
+});

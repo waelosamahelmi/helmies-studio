@@ -43,7 +43,7 @@ Rules that matter:
 - WHEN TWO VERSIONS OF ONE CHARACTER SHARE A FRAME, say so explicitly in the description and name what each is wearing: "two men with the same face, one in <X>, the other in <Y>". Their faces are identical on purpose; if the description does not separate them by clothing, the shot renders the same man twice.
 {{PACING_RULES}}
 {{DURATION_RULES}}
-- "characters" means WHO IS VISIBLE. Someone only heard (O.S., V.O.) goes in "offscreenVoices".
+- "characters" means WHO IS VISIBLE. Someone only heard (O.S., V.O.) goes in "offscreenVoices" and NEVER in "characters", however much of the beat is theirs. A voice calling from behind someone who does not turn around is a shot of the person NOT turning around: keep the camera on the listener and let the line arrive from outside the frame. Each such line still gets its own shot — the reaction is the beat.
 - Every shot with a visible character sets "characterVariant" to one of that character's declared variant names.
 - Every dialogue line names its "speaker" AND its "speakerVariant". For a film where one actor plays two versions of himself, this is the only thing telling us who is talking.
 - "props" lists which of the production's props are visible in this shot, by key.
@@ -343,3 +343,57 @@ export const variantsAreDistinct = (characters) => variantProblems(characters).l
 
 export const VARIANT_RETRY_HINT = (problems) =>
   `${problems.join(" ")} When one actor plays two versions of a person, the FACE is identical on purpose — so the clothing is the only thing an audience can tell them apart by. Return the same JSON again, and make every variant's "differences" a wardrobe line and nothing else: the garments and their colours, plus something unmistakable like glasses on one and not the other. No posture, no location, no mood, and never a wording that makes two versions match. Good: "grey marl t-shirt, unshaven, no glasses" and "black buttoned shirt, thin wire glasses, clean-shaven".`;
+
+/* ── Someone the script keeps off-screen is never put in frame ────────────
+   The script writes "WOMAN (O.S.)" — off-screen. She is a voice from behind
+   Wael, and the whole point of the beat is that he does not turn around. A
+   read that lists her under the shot's visible characters puts her face in
+   the frame, and since the production has no photograph of her it invents a
+   different woman every time she appears.
+
+   The (O.S.) and (V.O.) tags are in the screenplay, so this is read from
+   the text rather than asked of the model: whoever the script marks as
+   off-screen is moved out of the visible cast and into the voices, for
+   every shot of that scene. */
+const OFFSCREEN_CUE = /^\s*([A-Z][A-Z0-9 .'\-]{1,40}?)\s*\((?:O\.?S\.?|V\.?O\.?|OFF|OFF-?SCREEN|VOICE ?OVER)\)\s*$/;
+
+export function offscreenSpeakers(sceneText = "") {
+  const names = new Set();
+  for (const line of String(sceneText).split(/\r?\n/)) {
+    const m = OFFSCREEN_CUE.exec(line);
+    if (m) names.add(m[1].trim().toLowerCase());
+  }
+  return names;
+}
+
+/** Does this character key or name refer to one of those speakers? */
+const isOffscreen = (who, names) => {
+  const v = String(who || "").trim().toLowerCase();
+  if (!v) return false;
+  if (names.has(v)) return true;
+  // Keys are slugs of the name: "woman" for WOMAN, "young_woman" for YOUNG WOMAN.
+  const slug = v.replace(/[_-]+/g, " ");
+  return names.has(slug);
+};
+
+/**
+ * Move every off-screen speaker out of each shot's visible cast.
+ *
+ * Returns new shots — the caller's array is untouched — and never removes
+ * the line itself. The words are still spoken; the camera simply stays on
+ * whoever is listening, which is what the script asked for.
+ */
+export function keepOffscreenOffscreen(shots = [], sceneText = "") {
+  const names = offscreenSpeakers(sceneText);
+  if (!names.size) return shots;
+  return shots.map((shot) => {
+    const visible = (shot.characters || []).filter((k) => !isOffscreen(k, names));
+    if (visible.length === (shot.characters || []).length) return shot;
+    const heard = (shot.characters || []).filter((k) => isOffscreen(k, names));
+    return {
+      ...shot,
+      characters: visible,
+      offscreenVoices: [...new Set([...(shot.offscreenVoices || []), ...heard])],
+    };
+  });
+}

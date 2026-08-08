@@ -253,14 +253,50 @@ export function sceneSummary(pipeline, shotRows = []) {
 
 export const shotVideoUrl = (row) => row?.videoResult?.url || row?.videoResult?.rawUrl || null;
 
+/* Scenes play in the order the screenplay puts them in, not the order their
+   rows happened to be written.
+
+   Creation time is a faithful stand-in for screenplay order exactly until
+   you re-read a scene. Recreating scene 2 wrote a new row last, so the
+   project listed it eleventh and the assembled cut PLAYED it eleventh — a
+   silent re-edit of the film, from an operation that was supposed to change
+   only that scene's shots.
+
+   The number comes off the plan, and falls back to the numeric prefix the
+   shot ids already carry ("s2_1" is scene 2), so scenes planned before this
+   existed sort correctly without being rewritten. Anything with no number
+   at all keeps its old position at the end rather than jumping the queue. */
+export function screenplayNumber(pipeline) {
+  const declared = Number(pipeline?.plan?.sceneNumber);
+  if (Number.isFinite(declared) && declared > 0) return declared;
+  const firstShot = pipeline?.plan?.shots?.[0]?.id;
+  const m = /^s(\d+)_/.exec(String(firstShot || ""));
+  return m ? Number(m[1]) : null;
+}
+
+export function orderByScreenplay(pipelines = []) {
+  return [...pipelines]
+    .map((p, i) => ({ p, i, n: screenplayNumber(p) }))
+    .sort((a, b) => {
+      if (a.n === null && b.n === null) return a.i - b.i;
+      if (a.n === null) return 1;
+      if (b.n === null) return -1;
+      // A tie keeps the order they arrived in, so equal-numbered scenes
+      // never shuffle between two reads of the same list.
+      return a.n - b.n || a.i - b.i;
+    })
+    .map((x) => x.p);
+}
+
 export async function listScenes(userId, projectId) {
   if (!projectId) return [];
-  const rows = await prisma.directorPipeline.findMany({
+  const unordered = await prisma.directorPipeline.findMany({
     where: { projectId, userId },
     orderBy: { createdAt: "asc" },
     take: 100,
   });
-  if (!rows.length) return [];
+  if (!unordered.length) return [];
+  const rows = orderByScreenplay(unordered);
 
   // One query for every scene's shots rather than one per scene.
   const shots = await prisma.directorShot.findMany({

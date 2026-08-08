@@ -26,6 +26,7 @@ import {
   variantProblems,
   VARIANT_RETRY_HINT,
   sceneIsCovered,
+  keepOffscreenOffscreen,
 } from "@/lib/script-breakdown-passes.mjs";
 import { shotDurationLimits } from "@/lib/project-models.mjs";
 import {
@@ -99,7 +100,12 @@ async function readScreenplay(script, onProgress, { limits = null, keepIndexes =
          prompt was not enough; it is checked, and asked again once. */
       const problems = variantProblems(parsed.characters);
       if (problems.length && attempt < 2) {
-        log.info("project_breakdown_variant_retry", { projectId, problems });
+        // No projectId here on purpose: this function is handed a script,
+        // not a project. Naming a variable that does not exist in scope
+        // throws a ReferenceError, which would have failed the whole read
+        // the first time two variants came back dressed alike — the exact
+        // case this retry exists to rescue.
+        log.info("project_breakdown_variant_retry", { problems });
         messages.push({ role: "user", content: VARIANT_RETRY_HINT(problems) });
         structure = parsed; // keep it in case the retry comes back worse
         continue;
@@ -184,7 +190,12 @@ ${text}`,
       break;
     }
 
-    scenes.push({ ...scene, shots: shots || [] });
+    /* The script's own (O.S.) and (V.O.) tags win over the read. A voice
+       from behind Wael that he deliberately does not turn to look at is
+       the beat; listing her among the shot's visible characters puts her
+       face in frame, and with no photograph of her on file that is a
+       different woman every time she appears. */
+    scenes.push({ ...scene, shots: keepOffscreenOffscreen(shots || [], text) });
     onProgress?.(i + 1, structure.scenes.length);
   }
 

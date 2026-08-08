@@ -206,6 +206,14 @@ export function sceneToDirectorPlan(scene, breakdown, {
     title: scene.heading || `Scene ${scene.id}`,
     aspectRatio,
     conceptSummary: scene.summary || "",
+    /* Where this scene sits in the SCREENPLAY.
+
+       Without it, scenes were ordered by when their row was created, which
+       is the same thing right up until you re-read one. Recreating scene 2
+       moved it to the end of the film — the list showed it last and the
+       assembled cut played it last. The screenplay's own numbering is the
+       only ordering that survives editing. */
+    sceneNumber: Number(scene.id) || null,
     shots,
   };
 }
