@@ -337,3 +337,56 @@ describe("telling a man from his double", () => {
     expect(prompt.match(/wire glasses/g)).toHaveLength(1);
   });
 });
+
+describe("which mouth moves", () => {
+  // Two recurring failures from the same silence in the prompt: a line
+  // spoken by BOTH men at once, and a line coming out of the wrong one.
+  // The clip gets "Spoken aloud: Wael: Not tonight." and two people in
+  // frame with — by design — the same face.
+  it("names the one person speaking and silences the other", async () => {
+    const { speakingDirection } = await import("@/lib/project-breakdown.mjs");
+    const out = speakingDirection({
+      subjects: ["Wael", "Other Wael"],
+      dialogue: "Other Wael: Sit.",
+    });
+    expect(out).toMatch(/Only Other Wael speaks/);
+    expect(out).toMatch(/Wael does not speak here/);
+    expect(out).toMatch(/mouth stays closed/);
+  });
+
+  it("keeps an off-screen voice out of everyone's mouth", async () => {
+    // The beat is a man deliberately not turning around. Without this he
+    // ends up mouthing the woman's line himself.
+    const { speakingDirection } = await import("@/lib/project-breakdown.mjs");
+    const out = speakingDirection({ subjects: ["Wael"], dialogue: "Woman: Where are you going?" });
+    expect(out).toMatch(/Woman is NOT in this shot/);
+    expect(out).toMatch(/nobody on camera mouths it/);
+    expect(out).toMatch(/Wael does not speak here/);
+  });
+
+  it("makes two speakers take turns rather than chorus", async () => {
+    const { speakingDirection } = await import("@/lib/project-breakdown.mjs");
+    const out = speakingDirection({
+      subjects: ["Wael", "Other Wael"],
+      dialogue: "Wael: Who are you?\nOther Wael: Better?",
+    });
+    expect(out).toMatch(/one at a time, never together/);
+    expect(out).not.toMatch(/does not speak/);
+  });
+
+  it("says nothing at all about a silent shot", async () => {
+    // A sentence about silence only invites the model to animate it.
+    const { speakingDirection } = await import("@/lib/project-breakdown.mjs");
+    expect(speakingDirection({ subjects: ["Wael"], dialogue: null })).toBeNull();
+    expect(speakingDirection({})).toBeNull();
+  });
+
+  it("matches a subject to its speaker label despite the variant suffix", async () => {
+    // subjects carry "Wael (bedroom)" while the line says "Wael".
+    const { speakingDirection, dialogueSpeakers } = await import("@/lib/project-breakdown.mjs");
+    expect(dialogueSpeakers({ dialogue: "Wael (bedroom): No.\nWael (bedroom): Stop." })).toEqual(["Wael (bedroom)"]);
+    const out = speakingDirection({ subjects: ["Wael (bedroom)"], dialogue: "Wael: No." });
+    expect(out).toMatch(/Only Wael speaks/);
+    expect(out).not.toMatch(/NOT in this shot/);
+  });
+});

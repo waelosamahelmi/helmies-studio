@@ -7,6 +7,7 @@ import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
 import { selectEntityReferences, voiceReferences, imageReferenceSlot, isStillImageModel } from "@/lib/entity-core.mjs";
 import { applyRequiredDefaults } from "@/lib/provider-payload-core.mjs";
+import { speakingDirection } from "@/lib/project-breakdown.mjs";
 import { recordGenerationAsset } from "@/lib/assets-core";
 
 /* The fallback when a pipeline names no image model. It was "flux-dev",
@@ -719,6 +720,11 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
     if (hasSomethingToHear) {
       const heard = [
         shot.dialogue ? `Spoken aloud: ${shot.dialogue}` : null,
+        /* WHICH MOUTH MOVES. Two men with deliberately identical faces and
+           a line of dialogue is not enough to go on: the clip came back
+           with both of them saying it at once, and with off-screen lines
+           coming out of whoever happened to be in frame. */
+        speakingDirection(shot),
         shot.audioCues ? `Sound: ${shot.audioCues}` : null,
         "No added music or score.",
       ].filter(Boolean).join(" ");

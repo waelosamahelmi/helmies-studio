@@ -339,3 +339,72 @@ export function matchExistingEntities(wanted, existing) {
 
   return { matched, missing, claimed };
 }
+
+/* ── Which mouth moves ────────────────────────────────────────────────────
+   Two recurring failures, both from the same silence in the prompt: a line
+   spoken by BOTH men at once, and a line coming out of the wrong one.
+
+   The clip is handed "Spoken aloud: Wael: Not tonight." and two people in
+   frame with — by design — the same face. Nothing says which of them is
+   talking, so the model animates both mouths, or picks. Worse for a voice
+   the script keeps off-screen: with nobody named as its source, someone in
+   frame gets given it, and the beat where a man deliberately does not turn
+   around becomes a man mouthing a woman's line.
+
+   So it is stated. Who speaks, who stays silent, and what is not in the
+   room at all. */
+/* Deliberately NOT a substring match.
+   "Other Wael".includes("Wael") is true, so substring matching folds a man
+   into his own double — the precise confusion this whole function exists to
+   prevent. The only thing dropped before comparing is a parenthetical
+   variant suffix, because subjects carry "Wael (bedroom)" while the
+   dialogue line says "Wael" and those really are one person. */
+const sameName = (a, b) => {
+  const n = (s) => String(s || "").replace(/\s*\([^)]*\)/g, " ").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const x = n(a);
+  const y = n(b);
+  return Boolean(x) && x === y;
+};
+
+const listOf = (names) =>
+  names.length <= 1 ? names[0] || "" : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+/** The speaker labels in a plan shot's dialogue block, in order, deduped. */
+export function dialogueSpeakers(shot) {
+  const out = [];
+  for (const line of String(shot?.dialogue || "").split("\n")) {
+    const who = line.includes(":") ? line.slice(0, line.indexOf(":")).trim() : "";
+    if (who && !out.some((p) => sameName(p, who))) out.push(who);
+  }
+  return out;
+}
+
+/**
+ * One sentence telling the video model who is speaking and who is not.
+ *
+ * Returns null when the shot has no dialogue — there is nothing to say, and
+ * a sentence about silence would only invite the model to animate it.
+ */
+export function speakingDirection(shot) {
+  const speakers = dialogueSpeakers(shot);
+  if (!speakers.length) return null;
+
+  const visible = (Array.isArray(shot?.subjects) ? shot.subjects : []).map(String).filter(Boolean);
+  const onScreen = speakers.filter((s) => visible.some((v) => sameName(v, s)));
+  const offScreen = speakers.filter((s) => !onScreen.some((o) => sameName(o, s)));
+  const silent = visible.filter((v) => !speakers.some((s) => sameName(s, v)));
+
+  const parts = [];
+  if (onScreen.length === 1) {
+    parts.push(`Only ${onScreen[0]} speaks — their lips move and nobody else's do.`);
+  } else if (onScreen.length > 1) {
+    parts.push(`${listOf(onScreen)} speak one at a time, never together and never the same words twice.`);
+  }
+  if (offScreen.length) {
+    parts.push(`${listOf(offScreen)} ${offScreen.length === 1 ? "is" : "are"} NOT in this shot: that voice comes from off-screen and nobody on camera mouths it.`);
+  }
+  if (silent.length) {
+    parts.push(`${listOf(silent)} ${silent.length === 1 ? "does" : "do"} not speak here; ${silent.length === 1 ? "their mouth stays closed" : "their mouths stay closed"}.`);
+  }
+  return parts.join(" ") || null;
+}
