@@ -62,10 +62,12 @@ describe("a scene becomes a shot board", () => {
     expect(plan.shots[0].imageStrategy.prompt).toContain("heavy grain");
   });
 
-  it("starts every clip from its still", () => {
-    // The stills exist so a wrong face costs an image instead of a video.
+  it("does not freeze the project's video model into every shot", () => {
+    // Copying the setting here means changing the model later changes
+    // nothing: the scenes keep rendering on whatever was configured the
+    // day they were planned. The executor reads the current choice.
     const plan = sceneToDirectorPlan(BREAKDOWN.scenes[0], BREAKDOWN, {});
-    expect(plan.shots.every((s) => s.videoStrategy.mode === "i2v")).toBe(true);
+    expect(plan.shots.every((s) => s.videoStrategy.modelRoute === null)).toBe(true);
   });
 
   it("keeps dialogue OUT of the image prompt and in its own field", () => {

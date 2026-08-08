@@ -80,7 +80,6 @@ export function shotDialogue(shot, charactersByKey = new Map()) {
  */
 export function sceneToDirectorPlan(scene, breakdown, {
   aspectRatio = "16:9",
-  videoModel = null,
   entityIdByKey = new Map(),
 } = {}) {
   const charactersByKey = new Map((breakdown?.characters || []).map((c) => [c.key, c]));
@@ -124,13 +123,17 @@ export function sceneToDirectorPlan(scene, breakdown, {
       camera: { ...camera, angle: "eye-level", intensity: "subtle" },
       imageStrategy: { mode: "generate", prompt, references: [] },
       videoStrategy: {
-        // Every shot starts from an approved still. That is the whole
-        // reason the stills exist: a face that is right in the frame stays
-        // right in the clip, and a face that is wrong is caught for the
-        // price of an image instead of a video.
         mode: "i2v",
         prompt,
-        modelRoute: videoModel || null,
+        /* DELIBERATELY NOT the project's video model.
+
+           Copying it here freezes the project's setting into every shot at
+           breakdown time, so changing the model later changes nothing —
+           the scenes keep rendering on whatever was configured the day
+           they were planned. The executor reads the project's current
+           choice from the brief. This field stays for a model chosen for
+           THIS shot specifically, which is a different thing. */
+        modelRoute: null,
         keyframes: [],
         windows: [],
       },

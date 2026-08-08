@@ -139,11 +139,7 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
       });
     }
 
-    const boards = breakdownToScenes(breakdown, {
-      aspectRatio,
-      videoModel: settings.videoModel,
-      entityIdByKey: matched,
-    });
+    const boards = breakdownToScenes(breakdown, { aspectRatio, entityIdByKey: matched });
 
     const scenes = [];
     for (const board of boards) {
