@@ -47,10 +47,19 @@ const MEMBER_GROUPS = [
     empty: "Objects that must survive the shoot unchanged." },
 ];
 
+/* A scene in one of these is working, and the row offers Stop rather than
+   Render. Matches the executor's own in-flight set. */
+const SCENE_RUNNING = ["queued", "generating_images", "generating_videos", "generating_audio", "quality_check", "assembling"];
+
 const SCENE_STATUS = {
   planning: "Planned",
   draft: "Draft",
   executing: "Rendering",
+  queued: "Queued",
+  generating_images: "Rendering",
+  generating_videos: "Rendering",
+  generating_audio: "Rendering",
+  assembling: "Assembling",
   completed: "Done",
   failed: "Failed",
   cancelled: "Cancelled",
@@ -628,6 +637,28 @@ function ScenesTab({ project, contents, unit, onChanged }) {
   /* Render a scene without leaving the project. This is the same call
      Director's own button makes — the board is where you go to inspect or
      redo a single shot, not where you have to go to start. */
+  /* Stopping a scene. Honest about what it can do: the shot already at a
+     provider is billed whatever we want, so the message says so. */
+  const stopScene = useCallback(async (scene) => {
+    setRendering(scene.id);
+    setError("");
+    try {
+      const res = await apiFetch("/api/director/cancel", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ planId: scene.id }),
+        retries: 0,
+      });
+      const data = await res.json();
+      setNotice(data.message);
+      onChanged?.();
+    } catch (e) {
+      setError(e?.message || "That scene could not be stopped.");
+    } finally {
+      setRendering(null);
+    }
+  }, [onChanged]);
+
   const render = useCallback(async (scene) => {
     setRendering(scene.id);
     setError("");
@@ -771,12 +802,17 @@ function ScenesTab({ project, contents, unit, onChanged }) {
                     <span className={`hs-badge${s.status === "completed" ? " hs-badge--signal" : s.status === "failed" ? " hs-badge--fault" : ""}`}>
                       {SCENE_STATUS[s.status] || s.status}
                     </span>
-                    {s.rendered < s.shots && (
+                    {SCENE_RUNNING.includes(s.status) ? (
+                      <button type="button" className="hs-btn hs-btn--sm hs-btn--danger"
+                        onClick={() => stopScene(s)} disabled={rendering === s.id}>
+                        {rendering === s.id ? "Stopping…" : "Stop"}
+                      </button>
+                    ) : s.rendered < s.shots ? (
                       <button type="button" className="hs-btn hs-btn--sm hs-btn--primary"
                         onClick={() => render(s)} disabled={!!rendering}>
-                        {rendering === s.id ? "Rendering…" : s.rendered ? "Finish" : "Render"}
+                        {rendering === s.id ? "Starting…" : s.rendered ? "Finish" : "Render"}
                       </button>
-                    )}
+                    ) : null}
                     <button type="button" className="hs-btn hs-btn--sm hs-btn--outline" onClick={() => openScene(s.id)}>
                       <IcPlay className="hs-icon-sm" /> Board
                     </button>

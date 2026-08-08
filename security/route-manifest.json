@@ -684,6 +684,18 @@
     "notes": "2026-08-08 Dev mode: disk, memory, load, uptime, queue depth and the DEPLOYED COMMIT. Read-only. df/free/git are run with argv arrays and take no input from the request at all. The commit matters because 'I deployed that' and 'that is what is running' are different claims."
   },
   {
+    "path": "/api/director/cancel",
+    "file": "src/app/api/director/cancel/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "none",
+    "stateChanging": true,
+    "notes": "2026-08-08: stop a rendering scene. Cooperative and honest about what that means — the shot already at a provider finishes and is billed, because abandoning it would pay for something and then throw it away; every shot that has not started is refunded when the run settles. Sets DirectorPipeline.cancelRequested, which has existed since Phase H and which nothing read, so a scene once started ran to the end whatever the user wanted. Owner-scoped."
+  },
+  {
     "path": "/api/director/execute",
     "file": "src/app/api/director/execute/route.js",
     "methods": [

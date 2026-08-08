@@ -157,7 +157,7 @@ const VALID_TRANSITIONS = {
   // GENERATING_VIDEOS/GENERATING_AUDIO/QUALITY_CHECK states), so ASSEMBLING
   // and COMPLETED are legitimate direct successors here — the table was
   // wrong, not the flow.
-  [PIPELINE_STATES.GENERATING_IMAGES]: [PIPELINE_STATES.GENERATING_VIDEOS, PIPELINE_STATES.ASSEMBLING, PIPELINE_STATES.COMPLETED, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED],
+  [PIPELINE_STATES.GENERATING_IMAGES]: [PIPELINE_STATES.GENERATING_VIDEOS, PIPELINE_STATES.ASSEMBLING, PIPELINE_STATES.COMPLETED, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED, PIPELINE_STATES.CANCELLED],
   [PIPELINE_STATES.GENERATING_VIDEOS]: [PIPELINE_STATES.GENERATING_AUDIO, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED],
   [PIPELINE_STATES.GENERATING_AUDIO]: [PIPELINE_STATES.QUALITY_CHECK, PIPELINE_STATES.FAILED, PIPELINE_STATES.PAUSED],
   [PIPELINE_STATES.QUALITY_CHECK]: [PIPELINE_STATES.ASSEMBLING, PIPELINE_STATES.FAILED],
@@ -852,6 +852,40 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
       if (existing?.status === SHOT_STATES.COMPLETED && !options.rerunAll) {
         results.push({ shotId: shot.id, status: "skipped", alreadyCompleted: true });
         continue;
+      }
+
+      /* STOP BETWEEN SHOTS.
+         `cancelRequested` has been on DirectorPipeline since Phase H and
+         nothing ever read it — so a scene, once started, ran to the end
+         whatever the user wanted. Checked here rather than mid-shot: the
+         provider is already working on the current one and will bill for
+         it either way, so abandoning it would pay for something and then
+         throw it away. Every shot NOT started is refunded by the settle
+         below, because creditsUsed only counts what ran. */
+      const live = await prisma.directorPipeline.findUnique({
+        where: { id: pipelineId },
+        select: { cancelRequested: true },
+      }).catch(() => null);
+      if (live?.cancelRequested) {
+        await prisma.directorPipeline.update({
+          where: { id: pipelineId },
+          data: { cancelRequested: false },
+        }).catch(() => {});
+        await transitionPipeline(pipelineId, PIPELINE_STATES.CANCELLED, { stoppedAt: shot.id });
+        const unspentOnCancel = (costEstimate.totalCredits || 0) - creditsUsed;
+        if (unspentOnCancel > 0) {
+          await refundCredits(userId, unspentOnCancel, `director:${pipelineId}`, "Stopped — unrendered shots refunded")
+            .catch((err) => console.error("[Director] cancel refund failed:", err?.message));
+        }
+        return {
+          success: false,
+          cancelled: true,
+          error: "Stopped. Shots that had not started were refunded.",
+          results,
+          pipelineId,
+          status: PIPELINE_STATES.CANCELLED,
+          creditsUsed,
+        };
       }
 
       const result = await executeFullShot(shot, pipeline, brief);
