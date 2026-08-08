@@ -9,12 +9,13 @@ import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import {
   imageModelsFor, videoModelsFor, voiceModelsFor, estimateProjectCost, pickTextToImageModel,
 } from "@/lib/project-models.mjs";
+import { projectReadiness, readinessSummary } from "@/lib/project-readiness.mjs";
 import {
   Confirm, Modal, Field, Segmented, ModelPicker,
   useGridRoving, LibrarySearch, LibrarySkeleton,
   IcLayers, IcPlus, IcTrash, IcCheck, IcClose, IcChevronLeft,
   IcFilm, IcPersona, IcPalette, IcImage, IcArchive, IcSpark, IcPlay,
-  IcVideo, IcMegaphone,
+  IcVideo, IcMegaphone, IcAlert,
 } from "@/components/studio/kit";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -575,6 +576,7 @@ function ProjectDetail({ id, kinds, onBack, onChanged, onDeleted }) {
 /* ── Scenes ─────────────────────────────────────────────────────────────── */
 function ScenesTab({ project, contents, unit, onChanged }) {
   const router = useRouter();
+  const readiness = useMemo(() => projectReadiness(contents), [contents]);
   const [adding, setAdding] = useState(false);
   const [rendering, setRendering] = useState(null);
   const [notice, setNotice] = useState("");
@@ -772,6 +774,27 @@ function ScenesTab({ project, contents, unit, onChanged }) {
       )}
       {notice && !error && (
         <div className="hs-notice hs-notice--signal" role="status"><span style={{ flex: 1 }}>{notice}</span></div>
+      )}
+
+      {/* What will go wrong, said BEFORE the money moves. Every way this
+          project could come out wrong was knowable in advance and nothing
+          said it — each one cost a render to discover. */}
+      {readiness.findings.length > 0 && (
+        <section className={`hs-notice ${readiness.blocks.length ? "hs-notice--fault" : "hs-notice--caution"}`}
+          role="status" style={{ alignItems: "flex-start" }}>
+          <IcAlert className="hs-icon-sm" style={{ marginTop: 2 }} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
+            <strong style={{ fontSize: "var(--t-sm)" }}>{readinessSummary(readiness)}</strong>
+            <ul style={{ margin: 0, paddingLeft: "1.1em", display: "flex", flexDirection: "column", gap: 4 }}>
+              {readiness.findings.slice(0, 6).map((f, i) => (
+                <li key={i} style={{ fontSize: 12, color: "var(--tx-dim)" }}>
+                  <b>{f.subject}</b> — {f.looksLike}{" "}
+                  <span className="hs-hint" style={{ display: "inline" }}>{f.fix}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
       )}
 
       {!scenes.length ? (
