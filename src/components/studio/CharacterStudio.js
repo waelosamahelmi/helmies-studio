@@ -13,6 +13,7 @@ import {
 import {
   ATTRIBUTE_KEYS, REFERENCE_KINDS,
   IDENTITY_PACK, packFor, missingPackAngles, imageReferenceSlot, canRenderIdentityAngle,
+  isStillImageModel,
   isObservable, voiceReferences, VOICE_REFERENCE_KIND,
   stepsFor, stepState,
 } from "@/lib/entity-core.mjs";
@@ -23,6 +24,16 @@ import { GEMINI_TTS_VOICES } from "@/lib/model-catalog-core.mjs";
    and every choice in it renders the same five angles. Ordered by preference;
    the first that is actually live wins, so a row going inactive degrades
    instead of breaking (which is exactly what happened to nano-banana-pro). */
+/* For the first view of a place or a product, where there is nothing to
+   reference yet. Ordered by how well they render a described space. */
+const TEXT_TO_IMAGE_PREFERENCE = [
+  "seedream/5-pro-text-to-image",
+  "seedream-5-pro-text-to-image",
+  "nano-banana-2",
+  "seedream/4-text-to-image",
+  "flux-dev",
+];
+
 const IDENTITY_MODEL_PREFERENCE = [
   "seedream/5-pro-image-to-image",
   "nano-banana-2",
@@ -812,22 +823,57 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
 
   const busy = Object.values(running).some((s) => s === "queued" || s === "running");
 
+  /* THE ANCHOR. A character must start from a real photograph — inventing
+     somebody's face and then calling it their identity would be a lie. A
+     PLACE or a PRODUCT is different: it is invented anyway, and a room
+     described but never seen had no way forward at all. So the first view
+     of a place can be generated from its description, and every other view
+     is then derived from that one.
+
+     It needs a model that takes no reference, because there is nothing to
+     reference yet — the identity models all require an image input. */
+  const anchorKind = pack[0]?.kind;
+  const fromScratchModel = useMemo(() => {
+    if (entity.kind === "character") return null;
+    const candidates = (models || []).filter((m) => {
+      const schema = m.schema;
+      if (!isStillImageModel(schema)) return false;
+      const fields = schema?.fields || {};
+      // Nothing that DEMANDS an image we do not have.
+      return !Object.entries(fields).some(([name, f]) => f?.required && /image|reference/i.test(name));
+    });
+    const preferred = TEXT_TO_IMAGE_PREFERENCE.find((id) => candidates.some((m) => m.id === id));
+    if (preferred) return candidates.find((m) => m.id === preferred);
+    return [...candidates].sort((a, b) => (b.credits ?? 0) - (a.credits ?? 0))[0] || null;
+  }, [models, entity.kind, pack]);
+
+  const canStartFromScratch = !hasSource && !!fromScratchModel && Boolean((entity.description || "").trim());
+
   const generateAngle = useCallback(async (angle) => {
     setRunning((r) => ({ ...r, [angle.kind]: "queued" }));
     try {
+      /* With no reference on file, the anchor view is generated from the
+         written description alone, by a model that needs no image. Every
+         later view then references this one. */
+      const scratch = !hasSource && angle.kind === anchorKind && fromScratchModel;
+      const useModel = scratch ? fromScratchModel : model;
       const res = await apiFetch("/api/generate/async", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           tool: "image",
-          model: model.id,
-          prompt: angle.prompt,
+          model: useModel.id,
+          prompt: scratch
+            ? [entity.description, angle.prompt].filter(Boolean).join(". ")
+            : angle.prompt,
           // The angle prompts are deliberately clinical; expanding them adds
           // invented look ("editorial", "pale skin tones") to what is meant
           // to be a plain record of this person.
           expand: false,
-          entityIds: [entity.id],
-          entityPurpose: "identity",
+          // Nothing to reference yet on the anchor — sending the entity
+          // would inject a reference list that is empty and, worse, make
+          // the server pick a model that requires one.
+          ...(scratch ? {} : { entityIds: [entity.id], entityPurpose: "identity" }),
           // A room reads wide, a body reads tall, a face reads square.
           // Everything else the model requires is filled from its own schema
           // server-side.
@@ -860,13 +906,28 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
       onError?.(e?.message || `The ${angle.label.toLowerCase()} angle failed.`);
       return false;
     }
-  }, [entity.id, model, onAddReference, onError]);
+  }, [entity.id, entity.description, model, hasSource, anchorKind, fromScratchModel, onAddReference, onError]);
 
   const fillGaps = useCallback(async () => {
-    if (!model || !missing.length) return;
-    const made = (await Promise.all(missing.map(generateAngle))).filter(Boolean).length;
-    if (made) onNotice?.(`${made} angle${made === 1 ? "" : "s"} added.`);
-  }, [model, missing, generateAngle, onNotice]);
+    if (!missing.length) return;
+    /* Order matters when there is nothing on file: the anchor has to exist
+       BEFORE the other views, because they are generated as references to
+       it. Firing them all at once would produce five unrelated rooms. */
+    let queue = missing;
+    if (!hasSource) {
+      const anchor = missing.find((a) => a.kind === anchorKind);
+      if (!anchor || !fromScratchModel) return;
+      if (!(await generateAngle(anchor))) return;
+      queue = missing.filter((a) => a.kind !== anchorKind);
+      if (!queue.length) { onNotice?.("The first view is in. Generate the rest from it."); return; }
+      // The remaining views reference the anchor, which the parent has now
+      // attached — but this component's `entity` prop is a render behind.
+      onNotice?.("First view made. Generating the rest from it…");
+    }
+    if (!model) return;
+    const made = (await Promise.all(queue.map(generateAngle))).filter(Boolean).length;
+    if (made) onNotice?.(`${made} ${(SHEET_COPY[entity.kind]?.one || "angle")}${made === 1 ? "" : "s"} added.`);
+  }, [model, missing, hasSource, anchorKind, fromScratchModel, entity.kind, generateAngle, onNotice]);
 
   const covered = pack.length - missing.length;
 
@@ -888,7 +949,9 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
             /* An empty slot is a control, not a placeholder: one angle can be
                made (or remade) on its own, so a single bad result never means
                paying for the whole pack again. */
-            const canMakeOne = !locked && !ref && !pending && hasSource && !!model;
+            const canMakeOne = !locked && !ref && !pending && !!(
+              hasSource ? model : (angle.kind === anchorKind && fromScratchModel)
+            );
             return (
             <div key={angle.kind} className="st-angle" role="listitem">
               <div className={`st-angle__frame${ref ? " is-filled" : ""}`}>
@@ -974,18 +1037,28 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--s-2)" }}>
                 <span>
                   {hasSource
-                    ? `${missing.length} angle${missing.length === 1 ? "" : "s"} to make. Every one is generated from your photographs, so it stays the same person.`
-                    : "Add one photograph of them first. Every angle is generated from what you give us — nothing here is invented from a description."}
+                    ? `${missing.length} ${SHEET_COPY[entity.kind]?.one || "angle"}${missing.length === 1 ? "" : "s"} to make. Every one is generated from what is already on file, so it stays the same ${entity.kind === "character" ? "person" : entity.kind === "environment" ? "place" : "object"}.`
+                    : canStartFromScratch
+                      /* A place is invented anyway. Refusing to draw the
+                         first view of a room we have only described left
+                         every environment the breakdown created with
+                         nothing at all and no way forward. */
+                      ? `Nothing on file yet. The first view is drawn from the description, and every other view is then generated from that one — so they are all the same ${entity.kind === "environment" ? "place" : "object"}.`
+                      : "Add one photograph of them first. Every angle is generated from what you give us — nothing here is invented from a description."}
                 </span>
 
-                {hasSource && (
+                {(hasSource || canStartFromScratch) && (
                   <>
                     <div style={{ display: "flex", gap: "var(--s-2)", alignItems: "center", flexWrap: "wrap" }}>
                       <button type="button" className="hs-btn hs-btn--primary hs-btn--sm"
-                        onClick={fillGaps} disabled={busy || !model}
-                        title={!model ? "No image model here accepts a reference photograph" : ""}>
+                        onClick={fillGaps} disabled={busy || (hasSource ? !model : !fromScratchModel)}
+                        title={hasSource && !model ? "No image model here accepts a reference photograph" : ""}>
                         {busy ? <span className="hs-spin" /> : <IcSpark className="hs-icon-sm" />}
-                        {busy ? "Generating…" : `Generate ${missing.length === pack.length ? "all " : ""}${missing.length} ${(SHEET_COPY[entity.kind]?.one || "angle")}${missing.length === 1 ? "" : "s"}`}
+                        {busy
+                          ? "Generating…"
+                          : hasSource
+                            ? `Generate ${missing.length === pack.length ? "all " : ""}${missing.length} ${(SHEET_COPY[entity.kind]?.one || "angle")}${missing.length === 1 ? "" : "s"}`
+                            : `Draw the first ${SHEET_COPY[entity.kind]?.one || "view"} from the description`}
                       </button>
                       {model?.credits != null && (
                         <span className="hs-mono hs-mute" style={{ fontSize: 10 }}>
@@ -996,7 +1069,9 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
                     </div>
 
                     <span className="hs-mono hs-mute" style={{ fontSize: 10 }}>
-                      {model ? `Rendered by ${model.displayName || model.id}` : "No reference model available"}
+                      {hasSource
+                        ? (model ? `Rendered by ${model.displayName || model.id}` : "No reference model available")
+                        : (fromScratchModel ? `Rendered by ${fromScratchModel.displayName || fromScratchModel.id}` : "No model available")}
                     </span>
                   </>
                 )}

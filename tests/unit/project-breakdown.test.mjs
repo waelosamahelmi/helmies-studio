@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   sceneToDirectorPlan, breakdownToScenes, castFromBreakdown,
-  matchExistingEntities, shotPrompt, shotDialogue,
+  matchExistingEntities, shotPrompt, shotDialogue, speakerLabel,
 } from "@/lib/project-breakdown.mjs";
 
 const BREAKDOWN = {
@@ -158,5 +158,43 @@ describe("prompt and dialogue helpers", () => {
   it("names the speaker by their real name, not their key", () => {
     const map = new Map([["wael", { name: "Wael" }]]);
     expect(shotDialogue({ dialogue: [{ speaker: "wael", line: "Sit." }] }, map)).toBe("Wael: Sit.");
+  });
+});
+
+describe("a person and their double", () => {
+  // The breakdown is RIGHT to merge them into one character: the reveal
+  // works precisely because both faces come from an identical reference
+  // set. But the shot must still say who is speaking.
+  const DOUBLE = {
+    characters: [{ key: "wael", name: "Wael", aliases: ["Other Wael"], description: "", variants: [] }],
+    environments: [],
+    scenes: [{
+      id: 4, heading: "INT. THE VOID", summary: "", environmentKey: null,
+      shots: [{
+        id: "s4_1", description: "The two of them across the chairs", type: "medium", durationSec: 8,
+        characters: ["wael", "wael"], offscreenVoices: [],
+        dialogue: [
+          { speaker: "wael", line: "Who are you?" },
+          { speaker: "wael", speakerVariant: "Other Wael", line: "That's really what you came here to ask?" },
+        ],
+        continuity: { follows: null }, sfx: [], notes: "",
+      }],
+    }],
+  };
+
+  it("names the variant so a two-hander is not both lines under one name", () => {
+    const plan = sceneToDirectorPlan(DOUBLE.scenes[0], DOUBLE, {});
+    expect(plan.shots[0].dialogue).toBe("Wael: Who are you?\nOther Wael: That's really what you came here to ask?");
+  });
+
+  it("does not repeat the same name in the subjects", () => {
+    // ["Wael", "Wael"] tells the model nothing and reads as a bug.
+    const plan = sceneToDirectorPlan(DOUBLE.scenes[0], DOUBLE, {});
+    expect(plan.shots[0].subjects).toEqual(["Wael"]);
+  });
+
+  it("keeps the base name when a variant is a mood rather than a name", () => {
+    expect(speakerLabel("wael", "weary", new Map([["wael", { name: "Wael" }]]))).toBe("Wael (weary)");
+    expect(speakerLabel("wael", "Other Wael", new Map([["wael", { name: "Wael" }]]))).toBe("Other Wael");
   });
 });

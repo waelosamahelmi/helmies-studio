@@ -37,12 +37,33 @@ export function shotPrompt(shot, { environment = null, toneReferences = "" } = {
 
 /* Dialogue reaches the shot as text, never as part of the image prompt: a
    model handed the words draws them on the frame. */
+/* Who is speaking, as a person would name them.
+
+   A double is ONE character with two variants, and the breakdown is right
+   to merge them — the reveal works precisely because both faces come from
+   an identical reference set. But it means both sides of a two-hander come
+   back under the same name, and a scene that reads
+
+       Wael: Who are you?
+       Wael: That's really what you came here to ask?
+
+   tells nobody who says what. The declared variant is the distinguishing
+   label, so it wins when there is one. */
+export function speakerLabel(key, variant, charactersByKey = new Map()) {
+  const name = charactersByKey.get(key)?.name || key || "";
+  const v = typeof variant === "string" ? variant.trim() : "";
+  if (!v) return name;
+  if (!name) return v;
+  // "Other Wael" already reads as a name; "weary" needs its base.
+  return v.toLowerCase().includes(name.toLowerCase()) ? v : `${name} (${v})`;
+}
+
 export function shotDialogue(shot, charactersByKey = new Map()) {
   const lines = Array.isArray(shot.dialogue) ? shot.dialogue : [];
   if (!lines.length) return null;
   return lines
     .map((d) => {
-      const who = charactersByKey.get(d.speaker)?.name || d.speaker || "";
+      const who = speakerLabel(d.speaker, d.speakerVariant, charactersByKey);
       return who ? `${who}: ${d.line}` : d.line;
     })
     .filter(Boolean)
@@ -87,7 +108,15 @@ export function sceneToDirectorPlan(scene, breakdown, {
       section: i === 0 ? "intro" : "verse",
       narrativeRole: scene.summary || "",
       sceneGoal: scene.summary || "",
-      subjects: visible.map((c) => c.name),
+      // Named once each. The same key listed twice is a two-hander between
+      // one person and their double; repeating the name tells the model
+      // nothing and reads as a mistake, so the variant distinguishes them
+      // when the breakdown declared one.
+      subjects: [...new Set(
+        (shot.characters || [])
+          .map((k) => speakerLabel(k, shot.characterVariant, charactersByKey))
+          .filter(Boolean),
+      )],
       environment: environment?.name || scene.heading || "",
       spatialSetup: "",
       lighting: environment?.lighting || "",
