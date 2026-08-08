@@ -3311,3 +3311,141 @@ select.st-layer__role option {
   .st-step__label { display: none; }  /* marks alone on a phone; the blurb names the step */
   .st-steps__blurb { margin-top: var(--s-1); }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PROJECTS — the spine
+   ──────────────────────────────────────────────────────────────────────────
+   Three shapes: the type chooser (asked once, because it decides what a
+   scene means), the scene list, and the member rows that show which cast
+   and places are filed under a project.
+   ══════════════════════════════════════════════════════════════════════════ */
+.st-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--s-2);
+}
+
+.st-kind {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--s-3);
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-200);
+  color: var(--tx-body);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease), background var(--dur-1) var(--ease);
+}
+.st-kind:hover { border-color: var(--line-strong); }
+.st-kind.is-active {
+  border-color: var(--filament-lit);
+  background: var(--ink-300);
+  color: var(--tx-head);
+}
+.st-kind__label { font-size: var(--t-sm); font-weight: 600; }
+/* The unit is the point of the choice, not a caption: picking "Series"
+   means what you add next is an episode. */
+.st-kind__unit {
+  font-family: var(--ff-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--tx-mute);
+}
+
+/* ── Scenes ───────────────────────────────────────────────────────────── */
+.st-scenes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.st-scene {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-200);
+}
+
+.st-scene__no {
+  font-size: 11px;
+  color: var(--tx-ghost);
+  flex: 0 0 auto;
+}
+
+.st-scene__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.st-scene__title {
+  font-size: var(--t-sm);
+  font-weight: 500;
+  color: var(--tx-head);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-scene__meta { font-size: 11px; color: var(--tx-mute); }
+
+@media (max-width: 640px) {
+  .st-scene { flex-wrap: wrap; }
+  .st-scene__main { flex-basis: 100%; order: -1; }
+}
+
+/* ── Members (cast, places, props filed under a project) ──────────────── */
+.st-members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.st-member {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-200);
+}
+
+.st-member__frame {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--ink-300);
+  display: grid;
+  place-items: center;
+}
+
+.st-member__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--t-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-member__meta { font-size: 10px; color: var(--tx-mute); flex: 0 0 auto; }

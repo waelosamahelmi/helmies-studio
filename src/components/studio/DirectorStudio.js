@@ -122,7 +122,7 @@ function readRun(entry) {
   };
 }
 
-export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
+export default function DirectorStudio({ templateConfig, onCreditsChanged, initialPipelineId = null }) {
   /* Brief — every field below is sent to /api/director/plan */
   const [title, setTitle] = useState("");
   const [concept, setConcept] = useState("");
@@ -252,6 +252,28 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged }) {
     pollRef.current = setInterval(tick, 3000);
     tick();
   }, [refresh, stopPoll, onCreditsChanged, loadBalance]);
+
+  /* ── Opened from a project scene ──────────────────────────────────────────
+     A scene IS a pipeline, so opening one from Projects deep-links straight
+     into its board rather than making the user find it in the picker. The
+     poll starts too: a scene opened mid-render should show it moving. */
+  useEffect(() => {
+    if (!initialPipelineId) return;
+    let dead = false;
+    setPipelineId(initialPipelineId);
+    refresh(initialPipelineId)
+      .then((p) => {
+        // Poll only while there is something to watch. A scene sitting in
+        // "planning" is not moving, and a 3-second poll against a board
+        // nobody is running is pure noise.
+        const s = String(p?.status || "").toLowerCase();
+        if (!dead && !DONE.has(s) && !FAILED.has(s) && s !== "planning" && s !== "draft") {
+          startPoll(initialPipelineId);
+        }
+      })
+      .catch(() => { if (!dead) setError("That scene could not be opened."); });
+    return () => { dead = true; };
+  }, [initialPipelineId, refresh, startPoll]);
 
   /* ── Build the shot plan ──────────────────────────────────────────────── */
   const buildPlan = useCallback(async () => {

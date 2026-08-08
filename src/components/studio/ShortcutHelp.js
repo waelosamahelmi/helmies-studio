@@ -17,6 +17,7 @@ import { getTool } from "@/components/studio/kit/tools";
     of the tool where that is unambiguous; the collisions (m/music vs
     marketing vs memory) are settled by what people reach for most. */
 export const GO_KEYS = {
+  j: "projects",     // Projects — "p" is taken by Perform
   a: "orchestrator", // Agent
   i: "image",
   v: "video",

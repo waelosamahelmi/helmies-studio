@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PROJECT_KINDS, PROJECT_KIND_VALUES, kindOf,
-  normalizeSettings, validateProjectPayload,
+  normalizeSettings, validateProjectPayload, sceneSummary,
 } from "@/lib/projects";
 
 describe("project kinds", () => {
@@ -73,5 +73,48 @@ describe("validateProjectPayload", () => {
   it("trims the name and allows clearing the description", () => {
     expect(validateProjectPayload({ name: "  TWO LIVES  " }).value.name).toBe("TWO LIVES");
     expect(validateProjectPayload({ name: "x", description: "" }).value.description).toBeNull();
+  });
+});
+
+describe("scenes", () => {
+  it("routes every kind to a production preset the planner actually knows", async () => {
+    // A scene is planned as a DirectorPipeline, so a kind whose directorType
+    // is not a real preset would silently fall back to music_video — a film
+    // scene planned with verse/chorus pacing.
+    const { PRODUCTION_TYPE_PRESETS } = await import("@/lib/director-constants");
+    for (const kind of PROJECT_KINDS) {
+      expect(kind.directorType, `${kind.value} has no director type`).toBeTruthy();
+      expect(
+        PRODUCTION_TYPE_PRESETS[kind.directorType],
+        `${kind.value} maps to unknown preset "${kind.directorType}"`,
+      ).toBeTruthy();
+    }
+  });
+
+  it("counts a scene's shots and how many have actually been rendered", () => {
+    const summary = sceneSummary({
+      id: "p1",
+      title: "Scene 1",
+      type: "short_film",
+      status: "executing",
+      updatedAt: new Date("2026-08-08"),
+      plan: {
+        shots: [
+          { imageResult: { url: "https://x/1.png" } },
+          { videoResult: { url: "https://x/2.mp4" } },
+          {},
+        ],
+      },
+    });
+    expect(summary.shots).toBe(3);
+    expect(summary.rendered).toBe(2);
+    expect(summary.assembledUrl).toBeNull();
+  });
+
+  it("survives a pipeline with no plan yet", () => {
+    // Planning can fail or still be running; the scene list must still draw.
+    const summary = sceneSummary({ id: "p2", title: "Scene 2", status: "planning" });
+    expect(summary.shots).toBe(0);
+    expect(summary.rendered).toBe(0);
   });
 });

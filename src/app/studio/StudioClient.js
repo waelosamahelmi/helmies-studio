@@ -23,6 +23,7 @@ import MarketingStudio from "@/components/studio/MarketingStudio";
 import WorkflowStudio from "@/components/studio/WorkflowStudio";
 import BrandKitStudio from "@/components/studio/BrandKitStudio";
 import MemoryStudio from "@/components/studio/MemoryStudio";
+import ProjectsStudio from "@/components/studio/ProjectsStudio";
 import CharacterStudio from "@/components/studio/CharacterStudio";
 import AssetLibraryStudio from "@/components/studio/AssetLibraryStudio";
 
@@ -32,6 +33,7 @@ import AssetLibraryStudio from "@/components/studio/AssetLibraryStudio";
    src/app/studio/[tool]/page.js to their new studio + `?mode=` — the old
    surfaces live on as modes, not rail entries. */
 const TOOL_COMPONENTS = {
+  projects: ProjectsStudio,
   orchestrator: OrchestratorStudio,
   image: ImageStudio,
   video: VideoStudio,
@@ -220,6 +222,7 @@ export default function StudioClient({ initialTool = "orchestrator", initialMode
           <Tool
             tool={active}
             initialModel={initialModel}
+            initialPipelineId={params.get("pipeline")}
             templateConfig={templateConfig}
             onCreditsChanged={loadCredits}
           />

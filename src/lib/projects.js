@@ -13,12 +13,21 @@ import prisma from "./prisma.js";
 // What kind of thing is being made. This is not decoration — it decides what
 // a scene means (an episode in a series, a cut in an ad), which is why it is
 // asked for once at the top rather than inferred per shot.
+// `directorType` is how a scene reaches the planner: a scene IS a
+// DirectorPipeline filed under the project, so the production presets
+// (shots per section, pacing, whether audio is required) come from the
+// project's kind instead of being asked again per scene.
 export const PROJECT_KINDS = [
-  { value: "movie", label: "Film", unit: "scene", blurb: "A single story told in scenes." },
-  { value: "series", label: "Series", unit: "episode", blurb: "Episodes that share a cast and a world." },
-  { value: "social", label: "Social video", unit: "cut", blurb: "Short vertical pieces for feeds." },
-  { value: "ad", label: "Ad", unit: "cut", blurb: "A campaign deliverable with a product at its centre." },
-  { value: "branding", label: "Branding", unit: "piece", blurb: "Identity work — a look, not a story." },
+  { value: "movie", label: "Film", unit: "scene", directorType: "short_film",
+    blurb: "A single story told in scenes." },
+  { value: "series", label: "Series", unit: "episode", directorType: "short_film",
+    blurb: "Episodes that share a cast and a world." },
+  { value: "social", label: "Social video", unit: "cut", directorType: "social_campaign",
+    blurb: "Short vertical pieces for feeds." },
+  { value: "ad", label: "Ad", unit: "cut", directorType: "ad_product",
+    blurb: "A campaign deliverable with a product at its centre." },
+  { value: "branding", label: "Branding", unit: "piece", directorType: "social_campaign",
+    blurb: "Identity work — a look, not a story." },
 ];
 
 export const PROJECT_KIND_VALUES = PROJECT_KINDS.map((k) => k.value);
@@ -153,11 +162,12 @@ export async function getProjectContents(userId, id, { take = 24 } = {}) {
   const project = await getOwnedProject(userId, id);
   if (!project) return null;
 
-  const [entities, assets, sessions, workflows] = await Promise.all([
+  const [entities, assets, sessions, workflows, scenes] = await Promise.all([
     prisma.studioEntity.findMany({ where: { projectId: id, userId }, orderBy: { updatedAt: "desc" }, take }),
     prisma.asset.findMany({ where: { projectId: id, userId, isDeleted: false }, orderBy: { createdAt: "desc" }, take }),
     prisma.agentSession.findMany({ where: { projectId: id, userId }, orderBy: { updatedAt: "desc" }, take: 10 }),
     prisma.workflow.findMany({ where: { projectId: id, userId }, orderBy: { updatedAt: "desc" }, take: 10 }),
+    listScenes(userId, id),
   ]);
 
   return {
@@ -169,5 +179,54 @@ export async function getProjectContents(userId, id, { take = 24 } = {}) {
     assets,
     sessions,
     workflows,
+    scenes,
   };
+}
+
+/* ── Scenes ──────────────────────────────────────────────────────────────
+   A scene is a DirectorPipeline that carries this project's id. Director
+   is not a separate place any more: it is the editor a scene opens into,
+   and the pipeline row it already used is the scene record. Nothing is
+   duplicated, and every pipeline built before projects existed keeps
+   working — it simply has no project.
+
+   The list is deliberately thin. A pipeline's `plan` holds every shot with
+   its prompts and its results, and pulling that for a dozen scenes to draw
+   a list of titles would move megabytes to render kilobytes.           */
+export function sceneSummary(pipeline) {
+  const shots = Array.isArray(pipeline?.plan?.shots) ? pipeline.plan.shots : [];
+  const done = shots.filter((s) => s?.videoResult?.url || s?.imageResult?.url).length;
+  return {
+    id: pipeline.id,
+    title: pipeline.title,
+    type: pipeline.type,
+    status: pipeline.status,
+    shots: shots.length,
+    rendered: done,
+    assembledUrl: pipeline.assembledUrl || null,
+    updatedAt: pipeline.updatedAt,
+  };
+}
+
+export async function listScenes(userId, projectId) {
+  if (!projectId) return [];
+  const rows = await prisma.directorPipeline.findMany({
+    where: { projectId, userId },
+    orderBy: { createdAt: "asc" },
+    take: 100,
+  });
+  return rows.map(sceneSummary);
+}
+
+// The planner owns pipeline creation (it validates shots and prices the
+// plan). Filing it under the project is a second step, done here so the
+// planner keeps knowing nothing about projects.
+export async function attachScene(userId, projectId, pipelineId) {
+  const project = await getOwnedProject(userId, projectId);
+  if (!project) return null;
+  const { count } = await prisma.directorPipeline.updateMany({
+    where: { id: pipelineId, userId },
+    data: { projectId },
+  });
+  return count > 0;
 }

@@ -1,6 +1,6 @@
 import {
   IcSpark, IcImage, IcVideo, IcFilm, IcMusic, IcMegaphone,
-  IcPersona, IcFlow, IcPalette, IcArchive, IcBrain,
+  IcPersona, IcFlow, IcPalette, IcArchive, IcBrain, IcLayers,
 } from "./Icons";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -22,12 +22,16 @@ import {
 
 export const TOOLS = [
   // ── Direct ──────────────────────────────────────────────────────────────
+  // Projects leads the rail: it is where a production is defined, and every
+  // other surface is something you do inside one. Director is no longer a
+  // rail entry — a scene IS a director pipeline, so its board is reached by
+  // opening a scene. /studio/director still works for anyone who kept it.
+  { id: "projects",     label: "Projects",   icon: IcLayers,    group: "direct", dock: true,
+    title: "Projects",
+    blurb: "The scenario, the format, the cast, and every scene made from them." },
   { id: "orchestrator", label: "Agent",      icon: IcSpark,     group: "direct", dock: true,
     title: "Creative Agent",
     blurb: "Describe the outcome and let the agent plan the production." },
-  { id: "director",     label: "Director",   icon: IcFilm,      group: "direct",
-    title: "Director",
-    blurb: "Plan and shoot a multi-shot piece with continuity between takes." },
   { id: "workflows",    label: "Workflows",  icon: IcFlow,      group: "direct",
     title: "Workflows",
     blurb: "Chain steps into a pipeline you can run again on new inputs." },
@@ -55,7 +59,7 @@ export const TOOLS = [
     blurb: "Produce campaign deliverables from a single brief." },
 
   // ── Library ─────────────────────────────────────────────────────────────
-  { id: "assets",       label: "Assets",     icon: IcArchive,   group: "library", dock: true,
+  { id: "assets",       label: "Assets",     icon: IcArchive,   group: "library",
     title: "Assets",
     blurb: "Everything you have made, with its lineage." },
   { id: "brands",       label: "Brands",     icon: IcPalette,   group: "library",
@@ -64,9 +68,17 @@ export const TOOLS = [
   { id: "cast",         label: "Cast",       icon: IcPersona,   group: "library",
     title: "Cast",
     blurb: "Characters, products and places that must look the same in every shot." },
-  { id: "memory",       label: "Projects",   icon: IcBrain,     group: "library",
-    title: "Projects",
-    blurb: "Characters, styles, and context the models can reuse." },
+  { id: "memory",       label: "Memory",     icon: IcBrain,     group: "library",
+    title: "Creative memory",
+    blurb: "Styles and context the models can reuse across productions." },
+
+  // ── Reachable, not listed ───────────────────────────────────────────────
+  // `hidden` is not a group in GROUPS, so byGroup() drops these from the
+  // rail while TOOL_IDS keeps them routable. Director's board is where a
+  // scene opens; it is not a destination you pick from a menu any more.
+  { id: "director",     label: "Shot board", icon: IcFilm,      group: "hidden",
+    title: "Shot board",
+    blurb: "The shots of one scene, with continuity between takes." },
 ];
 
 export const GROUPS = [

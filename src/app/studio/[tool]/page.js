@@ -37,6 +37,11 @@ function legacyTarget(tool, sp = {}) {
 }
 
 const TOOLS = {
+  projects: {
+    title: "Projects — Films, Series, Ads & Campaigns",
+    description: "Hold the scenario, the format, the cast and every scene of a production in one place, and shoot them with continuity.",
+    keywords: ["AI film project", "AI production planning", "scene breakdown", "character consistency", "AI series"],
+  },
   orchestrator: {
     title: "Helmies Creative Agent",
     description: "Plan and execute connected creative productions with specialized AI models, project context, and inspectable budgets.",
