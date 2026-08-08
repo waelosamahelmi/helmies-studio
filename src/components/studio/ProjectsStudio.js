@@ -1521,6 +1521,23 @@ function SetupTab({ project, settings, kinds, onSave }) {
         />
       </Field>
 
+      <Field
+        label="How a shot is made"
+        hint={videoMode === "auto"
+          ? "Straight to video when the video model can be shown the cast itself — no still to wait for or pay for. Falls back to a still first when it cannot."
+          : "Always render the still first and approve it. Slower and dearer, but a wrong face costs an image instead of a clip."}
+      >
+        <Segmented
+          label="Shot method"
+          value={videoMode}
+          onChange={setVideoMode}
+          options={[
+            { value: "auto", label: "Straight to video" },
+            { value: "storyboard", label: "Still first" },
+          ]}
+        />
+      </Field>
+
       {voiceChoices.length > 0 && (
         <Field label="Voice" hint="Used when a shot has dialogue.">
           <ModelPicker

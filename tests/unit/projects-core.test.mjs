@@ -192,3 +192,20 @@ describe("reading the scenario is durable", () => {
     expect(out.breakdown).toEqual({ status: "done", scenes: 11 });
   });
 });
+
+describe("how a shot is made", () => {
+  it("goes straight to video by default", () => {
+    // Rendering a still and then animating it spends an extra generation
+    // and an extra wait to arrive somewhere slightly worse, whenever the
+    // video model can be shown the cast itself.
+    expect(normalizeSettings({}).videoMode).toBe("auto");
+  });
+
+  it("keeps the still-first path for anyone who wants to approve frames", () => {
+    expect(normalizeSettings({ videoMode: "storyboard" }).videoMode).toBe("storyboard");
+  });
+
+  it("refuses a mode nobody implemented rather than passing it through", () => {
+    expect(normalizeSettings({ videoMode: "magic" }).videoMode).toBe("auto");
+  });
+});

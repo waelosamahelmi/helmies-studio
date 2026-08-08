@@ -166,6 +166,7 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
         // shot on a model nobody picked.
         modelImage: settings.imageModel || undefined,
         modelVideo: settings.videoModel || undefined,
+        videoMode: settings.videoMode || "auto",
         characters,
       };
       const costEstimate = await estimateDirectorCost(board.plan, briefForScene).catch(() => null);

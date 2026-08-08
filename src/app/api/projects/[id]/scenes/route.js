@@ -89,6 +89,7 @@ export async function POST(req, { params }) {
         aspectRatio: settings.aspectRatio,
         modelImage: settings.imageModel || undefined,
         modelVideo: settings.videoModel || undefined,
+        videoMode: settings.videoMode || "auto",
         characters,
         references: characters.map((c) => c.referenceUrl).filter(Boolean),
       },

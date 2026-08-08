@@ -48,6 +48,8 @@ vi.mock("@/lib/prisma", () => {
        text-to-image model handed an image is a provider 500. These cases
        are about reference routing, so the model here declares a reference
        slot. */
+    // The executor loads a shot's cast to pull their references.
+    studioEntity: { findMany: vi.fn(async () => []) },
     modelPricing: {
       findUnique: vi.fn(async () => ({
         modelId: "seedream/5-pro-image-to-image",
@@ -252,5 +254,61 @@ describe("a reference is never sent to a model that cannot be shown one", () => 
 
     expect(generateI2I).not.toHaveBeenCalled();
     expect(generateImage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("what a shot is decides which references it gets", () => {
+  // "It didn't keep the room." Every shot was asking for "default" and
+  // taking two references per entity, so a WIDE establishing shot of a
+  // bedroom got two photographs of a face and one of the room — and the
+  // room came back different every time.
+  const room = {
+    id: "env1", kind: "environment", userId: "u1",
+    references: [
+      { kind: "wide", url: "https://cdn/room-wide.png" },
+      { kind: "viewpoint", url: "https://cdn/room-reverse.png" },
+      { kind: "detail", url: "https://cdn/room-corner.png" },
+    ],
+  };
+  const person = {
+    id: "ch1", kind: "character", userId: "u1",
+    references: [
+      { kind: "face_front", url: "https://cdn/face.png" },
+      { kind: "full_body", url: "https://cdn/body.png" },
+    ],
+  };
+
+  const runShot = async (shot) => {
+    prisma.studioEntity.findMany.mockResolvedValue([person, room]);
+    prisma.modelPricing.findUnique.mockResolvedValue({
+      modelId: "edit", inputSchema: { fields: { prompt: {}, image_urls: {} } },
+    });
+    pipelineState = makePipeline({ plan: { shots: [shot] } });
+    prisma.directorPipeline.findFirst.mockImplementation(async () => ({ ...pipelineState }));
+    generateI2I.mockResolvedValue({ url: "https://cdn/out.png" });
+    ingestFromUrl.mockResolvedValue({ url: "https://cdn/local.png" });
+    await generateShotAsset("p1", "u1", shot.id, "image");
+    return generateI2I.mock.calls[0][0];
+  };
+
+  it("leads a wide shot with the room, so the same room comes back", async () => {
+    const params = await runShot({
+      id: "s1", index: 0, entityIds: ["ch1", "env1"],
+      camera: { framing: "wide shot" },
+      imageStrategy: { mode: "generate", prompt: "the bedroom at night", references: [] },
+    });
+    expect(params.image_url).toBe("https://cdn/room-wide.png");
+    expect(params.image_urls.filter((u) => u.includes("room")).length).toBe(2);
+  });
+
+  it("leads a close-up with the face, but never drops the room entirely", async () => {
+    // Losing the place completely is the other way continuity breaks.
+    const params = await runShot({
+      id: "s1", index: 0, entityIds: ["ch1", "env1"],
+      camera: { framing: "close-up" },
+      imageStrategy: { mode: "generate", prompt: "close-up of his eyes", references: [] },
+    });
+    expect(params.image_url).toContain("face");
+    expect(params.image_urls.some((u) => u.includes("room"))).toBe(true);
   });
 });

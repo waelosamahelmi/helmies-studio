@@ -49,6 +49,17 @@ export function normalizeSettings(input = {}, previous = {}) {
   if (input.imageModel !== undefined) out.imageModel = String(input.imageModel || "").slice(0, 120) || null;
   if (input.videoModel !== undefined) out.videoModel = String(input.videoModel || "").slice(0, 120) || null;
   if (input.voiceModel !== undefined) out.voiceModel = String(input.voiceModel || "").slice(0, 120) || null;
+  /* How a shot is made.
+     "auto"       — straight to video when the video model can be shown the
+                    cast itself (seedance 2.5 and friends take
+                    reference_image_urls), still-first when it can only be
+                    given a frame.
+     "storyboard" — always render the still and approve it before paying
+                    for a clip. Slower and dearer, but a wrong face costs
+                    an image instead of a video. */
+  if (input.videoMode !== undefined) {
+    out.videoMode = ["auto", "storyboard"].includes(input.videoMode) ? input.videoMode : "auto";
+  }
   return {
     kind: out.kind || "movie",
     aspectRatio: out.aspectRatio || "16:9",
@@ -56,6 +67,7 @@ export function normalizeSettings(input = {}, previous = {}) {
     imageModel: out.imageModel ?? null,
     videoModel: out.videoModel ?? null,
     voiceModel: out.voiceModel ?? null,
+    videoMode: out.videoMode || "auto",
     // Carried, never taken from input: the assembled piece is written by
     // the movie route, and changing the aspect ratio must not erase it.
     ...(previous.movieUrl ? { movieUrl: previous.movieUrl } : {}),

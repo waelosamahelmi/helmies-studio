@@ -361,9 +361,45 @@ async function executeShotImage(shot, pipeline, brief) {
         const entities = await prisma.studioEntity.findMany({
           where: { id: { in: shot.entityIds.slice(0, 6) }, userId: pipeline.userId },
         });
-        const fromCast = entities.flatMap((e) =>
-          selectEntityReferences(e, { purpose: "default", max: 2 }).map((r) => r.url));
-        refs = [...new Set([...refs.filter(Boolean), ...fromCast])];
+
+        /* WHICH references, and HOW MANY of each.
+
+           Every shot was asking for "default" and taking two per entity,
+           so a wide establishing shot of a bedroom got two photographs of
+           a face and one of the room — and the room came back different
+           every time. What a shot needs depends on what the shot IS.
+
+           The framing decides the purpose (the same vocabulary
+           selectEntityReferences already ranks by), and the budget follows
+           it: in a wide, the PLACE leads; in a close-up, the face does.
+           The place always gets at least one slot regardless — a room with
+           no reference in the frame is a room the model re-invents, which
+           is exactly what "it didn't keep the room" looks like. */
+        const framing = `${shot.camera?.framing || ""} ${shot.title || ""} ${imagePrompt}`.toLowerCase();
+        const isClose = /close-?up|face|portrait|eyes|insert|detail/.test(framing);
+        const isWide = /wide|establishing|master|full body|room|landscape/.test(framing);
+
+        const places = entities.filter((e) => e.kind === "environment");
+        const people = entities.filter((e) => e.kind !== "environment");
+
+        const placePurpose = isClose ? "detail" : "wide";
+        const personPurpose = isClose ? "closeup" : isWide ? "wide" : "default";
+        // Three slots is what the models here accept. A wide spends two on
+        // the room; a close-up spends two on the person; either way the
+        // other side keeps one, because losing it entirely is how
+        // continuity breaks.
+        const placeBudget = places.length ? (isClose ? 1 : 2) : 0;
+        const personBudget = people.length ? (isClose ? 2 : 1) : 0;
+
+        const fromPlaces = places.flatMap((e) =>
+          selectEntityReferences(e, { purpose: placePurpose, max: placeBudget }).map((r) => r.url));
+        const fromPeople = people.flatMap((e) =>
+          selectEntityReferences(e, { purpose: personPurpose, max: personBudget }).map((r) => r.url));
+
+        // Order matters: the first reference is what several families treat
+        // as the primary. A wide leads with the room.
+        const ordered = isClose ? [...fromPeople, ...fromPlaces] : [...fromPlaces, ...fromPeople];
+        refs = [...new Set([...refs.filter(Boolean), ...ordered])];
       } catch (err) {
         console.error("[Director] entity references failed:", err?.message);
       }
@@ -474,10 +510,33 @@ async function executeShotImage(shot, pipeline, brief) {
   }
 }
 
-async function executeShotVideo(shot, pipeline, brief, imageUrl) {
+async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
   const rowId = shotRowId(pipeline.id, shot.id);
   try {
     const videoPrompt = shot.videoStrategy?.prompt || "";
+
+    /* Going straight to video: the cast's references go to the model
+       itself, so the clip holds the face and the room for its whole
+       length rather than drifting away from a first frame. */
+    let directRefs = [];
+    if (opts.referenceField && Array.isArray(shot.entityIds) && shot.entityIds.length) {
+      try {
+        const entities = await prisma.studioEntity.findMany({
+          where: { id: { in: shot.entityIds.slice(0, 6) }, userId: pipeline.userId },
+        });
+        const framing = `${shot.camera?.framing || ""} ${videoPrompt}`.toLowerCase();
+        const isClose = /close-?up|face|portrait|eyes|insert|detail/.test(framing);
+        const places = entities.filter((e) => e.kind === "environment");
+        const people = entities.filter((e) => e.kind !== "environment");
+        const fromPlaces = places.flatMap((e) =>
+          selectEntityReferences(e, { purpose: isClose ? "detail" : "wide", max: isClose ? 1 : 2 }).map((r) => r.url));
+        const fromPeople = people.flatMap((e) =>
+          selectEntityReferences(e, { purpose: isClose ? "closeup" : "wide", max: isClose ? 2 : 1 }).map((r) => r.url));
+        directRefs = [...new Set(isClose ? [...fromPeople, ...fromPlaces] : [...fromPlaces, ...fromPeople])].slice(0, 4);
+      } catch (err) {
+        console.error("[Director] video references failed:", err?.message);
+      }
+    }
     const { model: modelRoute, frameField, schema: videoSchema } = await resolveVideoModel(
       shot.videoStrategy?.modelRoute || brief.modelVideo || DEFAULT_VIDEO_MODEL,
       Boolean(imageUrl),
@@ -494,6 +553,10 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
 
     const filledVideo = applyRequiredDefaults(params, videoSchema, { modelId: modelRoute });
     Object.assign(params, filledVideo.params);
+
+    if (opts.referenceField && directRefs.length) {
+      params[opts.referenceField] = opts.referenceField.endsWith("s") ? directRefs : directRefs[0];
+    }
 
     let result;
     if (imageUrl && frameField) {
@@ -607,7 +670,47 @@ async function executeShotAudio(shot, pipeline, brief) {
 // ──────────────────────────────────────────────
 // Full shot execution (image → video → audio)
 // ──────────────────────────────────────────────
+/* Does this video model take the cast DIRECTLY?
+
+   The still-first pipeline exists for a good reason: a wrong face costs an
+   image instead of a video. But it is only necessary when the video model
+   can be given nothing but a frame. Seedance 2.5 accepts
+   `reference_image_urls` — the face and the room — so rendering a still
+   first and animating it spends an extra generation and an extra wait to
+   arrive somewhere slightly worse: an animated still drifts from its own
+   first frame, where a reference-to-video model is holding the identity
+   for the whole clip. */
+const REFERENCE_VIDEO_FIELDS = ["reference_image_urls", "reference_images", "reference_image", "image_references"];
+
+async function videoTakesReferences(modelId) {
+  if (!modelId) return null;
+  try {
+    const row = await prisma.modelPricing?.findUnique({ where: { modelId } });
+    const fields = row?.inputSchema?.fields || {};
+    const field = REFERENCE_VIDEO_FIELDS.find((f) => fields[f]);
+    return field ? { field, schema: row.inputSchema } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function executeFullShot(shot, pipeline, brief) {
+  /* STRAIGHT TO VIDEO when the model can be shown the cast itself.
+     `storyboard` on the project forces the still-first path for anyone who
+     wants to approve frames before paying for clips. */
+  const wantVideoModel = shot.videoStrategy?.modelRoute || brief.modelVideo || DEFAULT_VIDEO_MODEL;
+  const direct = brief.videoMode !== "storyboard" && (await videoTakesReferences(wantVideoModel));
+
+  if (direct) {
+    const videoOnly = await executeShotVideo(shot, pipeline, brief, null, { referenceField: direct.field });
+    if (!videoOnly.success) return { success: false, error: videoOnly.error, stage: "video" };
+    const audioOnly = await executeShotAudio(shot, pipeline, brief);
+    if (!audioOnly.success) {
+      return { success: false, error: audioOnly.error || "Audio generation failed", stage: "audio", videoUrl: videoOnly.videoUrl };
+    }
+    return { success: true, imageUrl: null, videoUrl: videoOnly.videoUrl, audioUrl: audioOnly.audioUrl };
+  }
+
   // 1. Generate image
   const imageResult = await executeShotImage(shot, pipeline, brief);
   if (!imageResult.success) return { success: false, error: imageResult.error, stage: "image" };
