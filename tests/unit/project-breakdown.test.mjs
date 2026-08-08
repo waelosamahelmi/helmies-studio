@@ -238,3 +238,46 @@ describe("what the person is feeling reaches the frame", () => {
       .toContain("Medium shot of his face");
   });
 });
+
+describe("objects that must not change between shots", () => {
+  // "The phone is different." Props did not exist in the breakdown at all,
+  // so nothing held them still — the same failure as an untracked room, on
+  // a smaller scale and just as visible.
+  const withProps = {
+    characters: [{ key: "wael", name: "Wael", aliases: [], description: "", variants: [] }],
+    environments: [{ key: "bed", name: "Bedroom", description: "", lighting: "" }],
+    props: [
+      { key: "phone", name: "His phone", description: "A black slab phone, cracked corner" },
+      { key: "extra", name: "A passing car", description: "seen once" },
+    ],
+    scenes: [{
+      id: 1, heading: "INT. BEDROOM", summary: "", environmentKey: "bed",
+      shots: [
+        { id: "s1", description: "he holds the phone", type: "medium", durationSec: 6,
+          characters: ["wael"], props: ["phone"], offscreenVoices: [], dialogue: [], continuity: { follows: null }, sfx: [] },
+        { id: "s2", description: "he puts the phone down", type: "closeup", durationSec: 5,
+          characters: ["wael"], props: ["phone", "extra"], offscreenVoices: [], dialogue: [], continuity: { follows: "s1" }, sfx: [] },
+      ],
+    }],
+  };
+
+  it("makes an identity for a prop the script keeps returning to", () => {
+    const wanted = castFromBreakdown(withProps);
+    const phone = wanted.find((w) => w.name === "His phone");
+    expect(phone).toBeTruthy();
+    expect(phone.kind).toBe("product");
+  });
+
+  it("does not make one for something seen once", () => {
+    // Nothing can contradict a single appearance, so an identity for it is
+    // clutter in the cast and a coverage pack nobody will ever look at.
+    expect(castFromBreakdown(withProps).some((w) => w.name === "A passing car")).toBe(false);
+  });
+
+  it("attaches the prop's references to the shots it appears in", () => {
+    const ids = new Map([["wael", "e_wael"], ["bed", "e_bed"], ["phone", "e_phone"]]);
+    const plan = sceneToDirectorPlan(withProps.scenes[0], withProps, { entityIdByKey: ids });
+    expect(plan.shots[0].entityIds).toContain("e_phone");
+    expect(plan.shots[1].entityIds).toContain("e_phone");
+  });
+});

@@ -38,6 +38,33 @@ const DEFAULT_I2V_MODEL = "wan/2-6-image-to-video";
    whole reason the still was approved first. */
 const FIRST_FRAME_FIELDS = ["first_frame_url", "image_url", "image_urls", "start_image", "input_image", "image"];
 
+/* Ask the model to hand back the frame it ENDED on, so the next shot can
+   start from it. Without this, two shots of the same room are two
+   independent inventions of that room — the phone changes, the duvet
+   changes, the light changes — because nothing connects them. */
+const LAST_FRAME_FIELDS = ["return_last_frame", "return_last_image"];
+
+/* Sound. A video model left to its own devices scores every clip
+   separately, so a four-shot scene comes back with four different pieces
+   of music — which is exactly what it sounds like. Audio belongs to the
+   SCENE, composed once over the cut, not to each six-second fragment. */
+const GENERATE_AUDIO_FIELDS = ["generate_audio", "generate_audio_switch", "with_audio"];
+
+/** The frame a previous shot ended on, if this shot continues from it. */
+async function previousLastFrame(pipelineId, shot) {
+  const follows = Array.isArray(shot.continuity) ? shot.continuity[0] : null;
+  if (!follows) return null;
+  try {
+    const row = await prisma.directorShot.findUnique({
+      where: { id: shotRowId(pipelineId, follows) },
+      select: { videoResult: true },
+    });
+    return row?.videoResult?.lastFrameUrl || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The model this clip should run on, and whether the approved still can
  * actually be used as its first frame. Decided from the schema, like the
@@ -603,6 +630,34 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
       _provider: await resolveProvider(modelRoute)
     };
 
+    /* ONE SOUNDTRACK, NOT ONE PER SHOT.
+       Turned off for any scene with more than a single shot: the model
+       would otherwise write its own music for each clip, and four clips
+       means four unrelated tracks. Sound is added over the assembled
+       scene, where it can be one thing. */
+    const shotCount = (pipeline.plan?.shots || []).length;
+    const audioField = GENERATE_AUDIO_FIELDS.find((f) => videoSchema?.fields?.[f]);
+    if (audioField && shotCount > 1) params[audioField] = false;
+
+    /* CONNECT THIS SHOT TO THE ONE BEFORE IT.
+       The breakdown already says which shots continue from which
+       (`continuity`), and nothing used it — so every shot re-invented the
+       room, the light and the props it was meant to be carrying on from.
+       When the previous shot handed back its final frame, this one starts
+       there. */
+    const lastFrameField = LAST_FRAME_FIELDS.find((f) => videoSchema?.fields?.[f]);
+    if (lastFrameField) params[lastFrameField] = true;
+
+    const carriedFrame = await previousLastFrame(pipeline.id, shot);
+    if (carriedFrame && frameField) {
+      params[frameField] = frameField.endsWith("s") ? [carriedFrame] : carriedFrame;
+    } else if (carriedFrame && opts.referenceField) {
+      // No first-frame slot, but it takes references — lead with the frame
+      // we are continuing from so the model sees where it left off.
+      const existing = Array.isArray(params[opts.referenceField]) ? params[opts.referenceField] : [];
+      params[opts.referenceField] = [carriedFrame, ...existing.filter((u) => u !== carriedFrame)].slice(0, 4);
+    }
+
     const filledVideo = applyRequiredDefaults(params, videoSchema, { modelId: modelRoute });
     Object.assign(params, filledVideo.params);
 
@@ -652,7 +707,11 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
         // A completed shot must not still be showing why an EARLIER
         // attempt failed.
         error: null,
-        videoResult: { url: storedUrl, rawUrl: videoUrl, prompt: videoPrompt, modelRoute },
+        videoResult: {
+          url: storedUrl, rawUrl: videoUrl, prompt: videoPrompt, modelRoute,
+          // What the clip ended on. The next shot in the chain starts here.
+          lastFrameUrl: result.lastFrame || result.last_frame_url || result.lastFrameUrl || null,
+        },
         status: SHOT_STATES.COMPLETED
       }
     });

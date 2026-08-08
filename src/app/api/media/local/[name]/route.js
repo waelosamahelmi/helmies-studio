@@ -49,13 +49,63 @@ export async function GET(req, { params }) {
       ".pdf": "application/pdf", ".json": "application/json",
     };
 
+    const contentType = mimeTypes[ext] || "application/octet-stream";
+    const common = {
+      "Content-Type": contentType,
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      // Advertised on EVERY response, not just ranged ones: a client
+      // decides whether it can seek from this header before it asks.
+      "Accept-Ranges": "bytes",
+    };
+
+    /* BYTE RANGES — why video did not play on an iPhone.
+
+       iOS Safari will not play a video it cannot seek. It opens with
+       `Range: bytes=0-1`, and a server that answers 200 with the whole
+       file (which this route did) is treated as unseekable: the element
+       simply never starts. Desktop Chrome is forgiving about it, which is
+       why it looked fine everywhere it was tested.
+
+       Range also means a phone no longer downloads an entire clip before
+       showing the first frame. */
+    const total = object.buffer.length;
+    // Optional-chained: a caller without a Headers object (internal
+    // fetches, tests) must fall through to the whole file, not throw into
+    // the outer catch and 404 a file that is sitting right there.
+    const rangeHeader = req?.headers?.get?.("range") || null;
+    const match = rangeHeader && /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
+
+    if (match) {
+      const [, rawStart, rawEnd] = match;
+      // "bytes=-500" means the LAST 500 bytes, not "from 0 to 500".
+      let start = rawStart === "" ? total - Number(rawEnd) : Number(rawStart);
+      let end = rawStart === "" || rawEnd === "" ? total - 1 : Number(rawEnd);
+      start = Math.max(0, Math.min(start, total));
+      end = Math.max(start, Math.min(end, total - 1));
+
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start >= total) {
+        // Unsatisfiable — say so with the real size rather than serving
+        // the wrong bytes.
+        return new Response(null, {
+          status: 416,
+          headers: { ...common, "Content-Range": `bytes */${total}` },
+        });
+      }
+
+      return new Response(object.buffer.subarray(start, end + 1), {
+        status: 206,
+        headers: {
+          ...common,
+          "Content-Range": `bytes ${start}-${end}/${total}`,
+          "Content-Length": String(end - start + 1),
+        },
+      });
+    }
+
     return new Response(object.buffer, {
-      headers: {
-        "Content-Type": mimeTypes[ext] || "application/octet-stream",
-        "Cache-Control": "public, max-age=31536000, immutable",
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-      },
+      headers: { ...common, "Content-Length": String(total) },
     });
   } catch {
     return NextResponse.json({ error: "File not found" }, { status: 404 });

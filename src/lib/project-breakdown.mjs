@@ -103,6 +103,13 @@ export function sceneToDirectorPlan(scene, breakdown, {
       .filter(Boolean);
     const envEntityId = scene.environmentKey ? entityIdByKey.get(scene.environmentKey) : null;
     if (envEntityId) entityIds.push(envEntityId);
+    // The objects in frame. A phone nobody tracks is a different phone in
+    // the next shot — the same failure as an untracked room, on a smaller
+    // scale and just as visible.
+    for (const key of shot.props || []) {
+      const propId = entityIdByKey.get(key);
+      if (propId) entityIds.push(propId);
+    }
 
     const prompt = shotPrompt(shot, { environment, toneReferences: tone });
 
@@ -197,6 +204,27 @@ export function castFromBreakdown(breakdown, { minAppearances = 1 } = {}) {
       appearances: appearances.get(c.key) || 0,
     }));
 
+  /* Props that appear more than once. An object seen a single time does
+     not need an identity — nothing can contradict it — but one the script
+     keeps returning to must look the same each time. */
+  const propAppearances = new Map();
+  for (const scene of breakdown?.scenes || []) {
+    for (const shot of scene.shots || []) {
+      for (const key of shot.props || []) {
+        propAppearances.set(key, (propAppearances.get(key) || 0) + 1);
+      }
+    }
+  }
+  const props = (breakdown?.props || [])
+    .filter((p) => (propAppearances.get(p.key) || 0) > 1)
+    .map((p) => ({
+      key: p.key,
+      kind: "product",
+      name: p.name,
+      description: p.description || "",
+      appearances: propAppearances.get(p.key) || 0,
+    }));
+
   const usedEnvironments = new Set((breakdown?.scenes || []).map((s) => s.environmentKey).filter(Boolean));
   const environments = (breakdown?.environments || [])
     .filter((e) => usedEnvironments.has(e.key))
@@ -208,7 +236,7 @@ export function castFromBreakdown(breakdown, { minAppearances = 1 } = {}) {
       appearances: (breakdown?.scenes || []).filter((s) => s.environmentKey === e.key).length,
     }));
 
-  return [...characters, ...environments];
+  return [...characters, ...environments, ...props];
 }
 
 /* Matching the breakdown's people to the cast that already exists. A film

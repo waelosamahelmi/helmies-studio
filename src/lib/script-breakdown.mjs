@@ -76,12 +76,13 @@ Read the script and produce a SHOT-LEVEL breakdown. Rules that matter:
 - Within that constraint, aim for roughly one shot per 6-8 seconds of runtime and let a shot hold more than one line where the coverage allows it. A 3-minute film is about 25-35 shots, not 80 — but reaching that number by dropping material is a failure, not a success.
 - "type" MUST be exactly one of: establishing, wide, medium, closeup, extreme_closeup, insert, over_shoulder, pov. Choose the one that matches your own description — if you wrote "extreme close-up of an eye", the type is extreme_closeup, not medium. This drives which reference images the shot is given, so a wrong type produces a face reference for a landscape.
 - "continuity.follows" is for an unbroken continuous movement where the frame literally carries over — a walk that keeps going, a slow fade, a head turn completing. Use it where the motion genuinely continues, typically runs of 2-4 shots. Do NOT chain a whole conversation together just because it happens in one room: cutting between angles is a new frame, not a continuation.
+- "props" are the OBJECTS that must look the same every time they appear — a phone, a pillow, a wall clock, a chair somebody sits in twice. List them once at the top and name them per shot. An object the script keeps returning to and the breakdown does not track is an object that changes shape between cuts, because nothing is holding it still. Do not list scenery that is part of the room, and do not list something seen once and never again.
 - "sfx" lists diegetic sound this shot needs. Reuse the exact same wording for a recurring sound so it can be generated once ("clock tick", not "clock tick (three times)"). "silence" is a valid entry.
 - Be concrete and visual in "description": it becomes the image/video prompt verbatim. Name the framing, the light, and what moves.
 - "performance" is the direction you would give an actor for THIS shot: what the face and body are doing, and the state underneath it. A script that says "his expression is blank" is telling you what a camera sees, not what the man is — write the state ("hollowed out, awake for hours, going through the motions"). Never write a mood into the character's "description": that is who they ARE, and it has to survive every scene including the ones where they are furious or frightened. Put the feeling here, one shot at a time.
 
 Reply with ONLY one valid JSON object — no markdown fences, no commentary:
-{"title":"<film title>","logline":"<one sentence>","toneReferences":"<visual references / grade / mood>","aspectRatio":"16:9|9:16|2.39:1","characters":[{"key":"<slug>","name":"<name>","aliases":["<other names for the same face>"],"description":"<physical description a model can render>","variants":[{"name":"<variant name>","differences":"<wardrobe/lighting/demeanor distinguishing this version>"}],"dialogueLineCount":0}],"environments":[{"key":"<slug>","name":"<name>","description":"<what the space looks like>","lighting":"<lighting>"}],"scenes":[{"id":1,"heading":"<INT./EXT. LOCATION — TIME>","summary":"<what happens>","environmentKey":"<environments[].key>","shots":[{"id":"s1_1","description":"<visual description, becomes the prompt>","type":"wide","durationSec":6,"characters":["<visible character keys>"],"offscreenVoices":["<heard-but-not-seen character keys>"],"characterVariant":"<declared variant name>","performance":"<what the visible character is feeling and doing with their face and body in THIS shot — the direction an actor would be given>","dialogue":[{"speaker":"<character key>","speakerVariant":"<declared variant name>","line":"<spoken words>"}],"continuity":{"follows":"<shot id or null>"},"sfx":["<sound>"],"notes":"<anything the director should know>"}]}],"music":{"description":"<score direction>","cueSheet":[{"fromSceneId":1,"description":"<what the music does here>"}]}}`;
+{"title":"<film title>","logline":"<one sentence>","toneReferences":"<visual references / grade / mood>","aspectRatio":"16:9|9:16|2.39:1","characters":[{"key":"<slug>","name":"<name>","aliases":["<other names for the same face>"],"description":"<physical description a model can render>","variants":[{"name":"<variant name>","differences":"<wardrobe/lighting/demeanor distinguishing this version>"}],"dialogueLineCount":0}],"environments":[{"key":"<slug>","name":"<name>","description":"<what the space looks like>","lighting":"<lighting>"}],"props":[{"key":"<slug>","name":"<name>","description":"<what the object looks like, specifically enough to recognise it again>"}],"scenes":[{"id":1,"heading":"<INT./EXT. LOCATION — TIME>","summary":"<what happens>","environmentKey":"<environments[].key>","shots":[{"id":"s1_1","description":"<visual description, becomes the prompt>","type":"wide","durationSec":6,"characters":["<visible character keys>"],"offscreenVoices":["<heard-but-not-seen character keys>"],"characterVariant":"<declared variant name>","props":["<prop keys visible in this shot>"],"performance":"<what the visible character is feeling and doing with their face and body in THIS shot — the direction an actor would be given>","dialogue":[{"speaker":"<character key>","speakerVariant":"<declared variant name>","line":"<spoken words>"}],"continuity":{"follows":"<shot id or null>"},"sfx":["<sound>"],"notes":"<anything the director should know>"}]}],"music":{"description":"<score direction>","cueSheet":[{"fromSceneId":1,"description":"<what the music does here>"}]}}`;
 
 export const SCRIPT_BREAKDOWN_RETRY_HINT =
   "Your previous reply was not a single valid JSON object. Reply again with ONLY the JSON object — no markdown fences, no commentary.";
@@ -163,6 +164,9 @@ function normalizeShot(raw, sceneId, index, charactersByKey) {
     characters: visible,
     offscreenVoices: offscreen,
     characterVariant: shotVariant,
+    // Objects that must survive the cut unchanged. Same idea as a face: a
+    // phone nobody tracks is a different phone in the next shot.
+    props: asArray(raw?.props).map((k) => slugify(k, "")).filter(Boolean),
     /* WHAT THE PERSON IS FEELING IN THIS SHOT.
 
        Kept apart from the character's identity on purpose. A mood written
@@ -216,6 +220,15 @@ export function parseScriptBreakdown(text) {
     entityId: null,
   }));
 
+  // Objects that must survive the cut unchanged — a phone, a pillow, a
+  // clock. Same treatment as a place: named once, referenced per shot.
+  const props = asArray(parsed.props).map((raw, i) => ({
+    key: slugify(raw?.key || raw?.name, `prop_${i + 1}`),
+    name: asString(raw?.name, 80) || `Prop ${i + 1}`,
+    description: asString(raw?.description),
+    entityId: null,
+  }));
+
   const charactersByKey = new Map(characters.map((c) => [c.key, c]));
 
   const scenes = parsed.scenes.map((raw, i) => {
@@ -239,6 +252,7 @@ export function parseScriptBreakdown(text) {
     aspectRatio: ["16:9", "9:16", "1:1", "2.39:1", "4:5"].includes(parsed.aspectRatio) ? parsed.aspectRatio : "16:9",
     characters,
     environments,
+    props,
     scenes,
     music: {
       description: asString(parsed.music?.description, 1000),
