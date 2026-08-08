@@ -200,3 +200,41 @@ describe("a person and their double", () => {
     expect(speakerLabel("wael", "Other Wael", new Map([["wael", { name: "Wael" }]]))).toBe("Other Wael");
   });
 });
+
+describe("what the person is feeling reaches the frame", () => {
+  // "Did you make sure to show Wael as depressed?" — no, and there was
+  // nowhere to say it. The script says "his expression is blank", which
+  // is what a camera sees; a model given only that renders a man with
+  // nothing wrong with him.
+  const shot = {
+    id: "s1", description: "Medium shot of his face as he scrolls", type: "medium", durationSec: 6,
+    characters: ["wael"], offscreenVoices: [], dialogue: [], continuity: { follows: null }, sfx: [],
+    performance: "hollowed out, awake for hours, going through the motions",
+  };
+  const bd = {
+    characters: [{ key: "wael", name: "Wael", aliases: [], description: "A man in his thirties", variants: [] }],
+    environments: [{ key: "bed", name: "Bedroom", description: "A small dim bedroom", lighting: "phone glow" }],
+    scenes: [{ id: 1, heading: "INT. BEDROOM", summary: "", environmentKey: "bed", shots: [shot] }],
+  };
+
+  it("puts the performance into the prompt, right after what the camera sees", () => {
+    const plan = sceneToDirectorPlan(bd.scenes[0], bd, {});
+    const prompt = plan.shots[0].imageStrategy.prompt;
+    expect(prompt).toContain("hollowed out");
+    expect(prompt.indexOf("hollowed out")).toBeLessThan(prompt.indexOf("A small dim bedroom"));
+  });
+
+  it("keeps the feeling OUT of the character's identity", () => {
+    // A mood written into an identity drags itself into the reference
+    // photographs and then into every scene, including the ones where he
+    // is furious or frightened.
+    const wanted = castFromBreakdown(bd);
+    expect(wanted.find((w) => w.name === "Wael").description).not.toMatch(/hollow|depress|sad/i);
+  });
+
+  it("still builds a prompt for a shot with no direction", () => {
+    const bare = { ...bd, scenes: [{ ...bd.scenes[0], shots: [{ ...shot, performance: "" }] }] };
+    expect(sceneToDirectorPlan(bare.scenes[0], bare, {}).shots[0].imageStrategy.prompt)
+      .toContain("Medium shot of his face");
+  });
+});

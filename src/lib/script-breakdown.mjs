@@ -78,9 +78,10 @@ Read the script and produce a SHOT-LEVEL breakdown. Rules that matter:
 - "continuity.follows" is for an unbroken continuous movement where the frame literally carries over — a walk that keeps going, a slow fade, a head turn completing. Use it where the motion genuinely continues, typically runs of 2-4 shots. Do NOT chain a whole conversation together just because it happens in one room: cutting between angles is a new frame, not a continuation.
 - "sfx" lists diegetic sound this shot needs. Reuse the exact same wording for a recurring sound so it can be generated once ("clock tick", not "clock tick (three times)"). "silence" is a valid entry.
 - Be concrete and visual in "description": it becomes the image/video prompt verbatim. Name the framing, the light, and what moves.
+- "performance" is the direction you would give an actor for THIS shot: what the face and body are doing, and the state underneath it. A script that says "his expression is blank" is telling you what a camera sees, not what the man is — write the state ("hollowed out, awake for hours, going through the motions"). Never write a mood into the character's "description": that is who they ARE, and it has to survive every scene including the ones where they are furious or frightened. Put the feeling here, one shot at a time.
 
 Reply with ONLY one valid JSON object — no markdown fences, no commentary:
-{"title":"<film title>","logline":"<one sentence>","toneReferences":"<visual references / grade / mood>","aspectRatio":"16:9|9:16|2.39:1","characters":[{"key":"<slug>","name":"<name>","aliases":["<other names for the same face>"],"description":"<physical description a model can render>","variants":[{"name":"<variant name>","differences":"<wardrobe/lighting/demeanor distinguishing this version>"}],"dialogueLineCount":0}],"environments":[{"key":"<slug>","name":"<name>","description":"<what the space looks like>","lighting":"<lighting>"}],"scenes":[{"id":1,"heading":"<INT./EXT. LOCATION — TIME>","summary":"<what happens>","environmentKey":"<environments[].key>","shots":[{"id":"s1_1","description":"<visual description, becomes the prompt>","type":"wide","durationSec":6,"characters":["<visible character keys>"],"offscreenVoices":["<heard-but-not-seen character keys>"],"characterVariant":"<declared variant name>","dialogue":[{"speaker":"<character key>","speakerVariant":"<declared variant name>","line":"<spoken words>"}],"continuity":{"follows":"<shot id or null>"},"sfx":["<sound>"],"notes":"<anything the director should know>"}]}],"music":{"description":"<score direction>","cueSheet":[{"fromSceneId":1,"description":"<what the music does here>"}]}}`;
+{"title":"<film title>","logline":"<one sentence>","toneReferences":"<visual references / grade / mood>","aspectRatio":"16:9|9:16|2.39:1","characters":[{"key":"<slug>","name":"<name>","aliases":["<other names for the same face>"],"description":"<physical description a model can render>","variants":[{"name":"<variant name>","differences":"<wardrobe/lighting/demeanor distinguishing this version>"}],"dialogueLineCount":0}],"environments":[{"key":"<slug>","name":"<name>","description":"<what the space looks like>","lighting":"<lighting>"}],"scenes":[{"id":1,"heading":"<INT./EXT. LOCATION — TIME>","summary":"<what happens>","environmentKey":"<environments[].key>","shots":[{"id":"s1_1","description":"<visual description, becomes the prompt>","type":"wide","durationSec":6,"characters":["<visible character keys>"],"offscreenVoices":["<heard-but-not-seen character keys>"],"characterVariant":"<declared variant name>","performance":"<what the visible character is feeling and doing with their face and body in THIS shot — the direction an actor would be given>","dialogue":[{"speaker":"<character key>","speakerVariant":"<declared variant name>","line":"<spoken words>"}],"continuity":{"follows":"<shot id or null>"},"sfx":["<sound>"],"notes":"<anything the director should know>"}]}],"music":{"description":"<score direction>","cueSheet":[{"fromSceneId":1,"description":"<what the music does here>"}]}}`;
 
 export const SCRIPT_BREAKDOWN_RETRY_HINT =
   "Your previous reply was not a single valid JSON object. Reply again with ONLY the JSON object — no markdown fences, no commentary.";
@@ -162,6 +163,18 @@ function normalizeShot(raw, sceneId, index, charactersByKey) {
     characters: visible,
     offscreenVoices: offscreen,
     characterVariant: shotVariant,
+    /* WHAT THE PERSON IS FEELING IN THIS SHOT.
+
+       Kept apart from the character's identity on purpose. A mood written
+       into an identity ("depressed") drags itself into the reference
+       photographs and then into every shot the person appears in —
+       including the ones where they argue, or are afraid, or finally
+       stop being any of it. The identity holds what a face IS; this holds
+       what it is DOING, one shot at a time.
+
+       Without it, a screenplay about a man hollowed out renders a man
+       with a blank expression, which is a different film. */
+    performance: asString(raw?.performance, 240),
     dialogue: asArray(raw?.dialogue)
       .map((d) => {
         // `speaker` is the current field; `character` is accepted as the

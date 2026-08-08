@@ -29,6 +29,13 @@ const cameraFor = (type) => CAMERA_BY_SHOT_TYPE[type] || CAMERA_BY_SHOT_TYPE.med
    comes back a different room three shots later. */
 export function shotPrompt(shot, { environment = null, toneReferences = "" } = {}) {
   const parts = [shot.description];
+  /* The performance, second — right after what the camera sees and before
+     the room and the grade. A screenplay describes behaviour ("his
+     expression is blank"); it does not describe the state underneath it,
+     and a model given only the behaviour renders a man with nothing wrong
+     with him. This is where the film's emotional weight actually reaches
+     the frame. */
+  if (shot.performance) parts.push(shot.performance);
   if (environment?.description) parts.push(environment.description);
   if (environment?.lighting) parts.push(environment.lighting);
   if (toneReferences) parts.push(toneReferences);
