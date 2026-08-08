@@ -638,6 +638,19 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
        itself, so the clip holds the face and the room for its whole
        length rather than drifting away from a first frame. */
     let directRefs = [];
+    /* WHICH REFERENCE IS WHO.
+
+       Four photographs went to the model with no labels at all: the room,
+       Will's face, and two of Wael's. The prompt named them correctly —
+       "Will sits in the chair on the right, Wael stands at the edge of the
+       light" — and the clip came back with the chairs side by side, Wael
+       in one of them and Will standing up holding a lighter.
+
+       Nothing was wrong with the words. The model simply had no way to
+       connect the name "Will" to image 2, so it blended four pictures and
+       cast whoever it liked. Naming them in the same order they are sent
+       is what makes the prompt's blocking mean anything. */
+    let refLegend = "";
     if (opts.referenceField && Array.isArray(shot.entityIds) && shot.entityIds.length) {
       try {
         const entities = await prisma.studioEntity.findMany({
@@ -647,11 +660,42 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
         const isClose = /close-?up|face|portrait|eyes|insert|detail/.test(framing);
         const places = entities.filter((e) => e.kind === "environment");
         const people = entities.filter((e) => e.kind !== "environment");
-        const fromPlaces = places.flatMap((e) =>
-          selectEntityReferences(e, { purpose: isClose ? "detail" : "wide", max: isClose ? 1 : 2 }).map((r) => r.url));
-        const fromPeople = people.flatMap((e) =>
-          selectEntityReferences(e, { purpose: isClose ? "closeup" : "wide", max: isClose ? 2 : 1 }).map((r) => r.url));
-        directRefs = [...new Set(isClose ? [...fromPeople, ...fromPlaces] : [...fromPlaces, ...fromPeople])].slice(0, 4);
+        /* One picture per person when more than one person is in the shot.
+           Two of Wael and one of Will is not a cast list, it is a vote, and
+           the face with more pictures wins both chairs. */
+        const perPerson = people.length > 1 ? 1 : (isClose ? 2 : 1);
+        const ordered = isClose ? [...people, ...places] : [...places, ...people];
+
+        const seen = new Set();
+        const urls = [];
+        const groups = [];
+        for (const e of ordered) {
+          const isPlace = e.kind === "environment";
+          const picks = selectEntityReferences(e, {
+            purpose: isPlace ? (isClose ? "detail" : "wide") : (isClose ? "closeup" : "wide"),
+            max: isPlace ? (isClose ? 1 : 2) : perPerson,
+          }).map((r) => r.url);
+          const positions = [];
+          for (const url of picks) {
+            if (seen.has(url)) continue;
+            seen.add(url);
+            urls.push(url);
+            positions.push(urls.length); // 1-based, matches what is sent
+          }
+          if (positions.length) groups.push({ name: e.name, isPlace, positions });
+        }
+        directRefs = urls.slice(0, 4);
+
+        const named = groups
+          .map((g) => {
+            const kept = g.positions.filter((n) => n <= directRefs.length);
+            if (!kept.length) return null;
+            return `${kept.map((n) => `image ${n}`).join(" and ")} is ${g.isPlace ? "the location" : ""} ${g.name}`.replace(/\s+/g, " ");
+          })
+          .filter(Boolean);
+        if (named.length) {
+          refLegend = `Reference images, in order: ${named.join("; ")}. Each reference shows only that person or place — do not mix their faces, and do not add anyone who is not named in this shot.`;
+        }
       } catch (err) {
         console.error("[Director] video references failed:", err?.message);
       }
@@ -669,7 +713,10 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
     );
 
     const params = {
-      prompt: videoPrompt,
+      // The legend goes with the prompt, never instead of it: the blocking
+      // in the description only means something once each name is tied to
+      // the picture that shows it.
+      prompt: refLegend ? `${videoPrompt}\n\n${refLegend}` : videoPrompt,
       aspect_ratio: brief.aspectRatio || "9:16",
       duration: shot.durationSec || 5,
       model: modelRoute,
