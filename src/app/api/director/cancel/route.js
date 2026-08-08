@@ -4,6 +4,8 @@ import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
 import { apiError } from "@/lib/api-error";
 import prisma from "@/lib/prisma";
+import { refundCredits } from "@/lib/wallet";
+import { log } from "@/lib/log";
 
 /* Stop a scene that is rendering.
    ────────────────────────────────────────────────────────────────────────
@@ -16,6 +18,12 @@ import prisma from "@/lib/prisma";
    because nothing was reserved. */
 
 const RUNNING = ["queued", "generating_images", "generating_videos", "generating_audio", "quality_check", "assembling"];
+
+/* How long a run may go without touching anything before we conclude no
+   process is watching for the cancel flag. A live run writes a shot row
+   as it starts each shot, so silence longer than the slowest single shot
+   means the process is gone — a deploy, a restart, a crash. */
+const ABANDONED_MS = 6 * 60 * 1000;
 
 export async function POST(req) {
   try {
@@ -38,6 +46,58 @@ export async function POST(req) {
         success: true,
         stopped: false,
         message: "That scene is not rendering.",
+      });
+    }
+
+    /* Is anything actually there to see the flag?
+
+       A cancel that only sets a flag is a cancel that never happens when
+       the process running the scene has gone — and that is exactly when
+       somebody presses stop, because the scene looks stuck. So: if
+       nothing has been written for the scene in ABANDONED_MS, stop it
+       here and now, and give back everything that was reserved for shots
+       that never ran. */
+    const [latestShot, full] = await Promise.all([
+      prisma.directorShot.findFirst({
+        where: { pipelineId: pipeline.id },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true },
+      }),
+      prisma.directorPipeline.findUnique({
+        where: { id: pipeline.id },
+        select: { updatedAt: true, costEstimate: true, stateMetadata: true },
+      }),
+    ]);
+    const lastTouch = Math.max(
+      new Date(latestShot?.updatedAt || 0).getTime(),
+      new Date(full?.updatedAt || 0).getTime(),
+    );
+    const abandoned = Date.now() - lastTouch > ABANDONED_MS;
+
+    if (abandoned) {
+      await prisma.directorPipeline.update({
+        where: { id: pipeline.id },
+        data: { status: "cancelled", cancelRequested: false },
+      });
+      await prisma.directorShot.updateMany({
+        where: { pipelineId: pipeline.id, status: { in: ["generating_image", "generating_video", "generating_audio"] } },
+        data: { status: "failed", error: "Stopped — nothing was rendering this." },
+      });
+      // Everything reserved for shots that never ran comes back. The
+      // executor is not there to settle it, so this is the last chance.
+      const reserved = full?.costEstimate?.totalCredits || 0;
+      const spent = full?.stateMetadata?.creditsUsed || 0;
+      const owed = Math.max(0, reserved - spent);
+      if (owed > 0) {
+        await refundCredits(user.id, owed, `director:${pipeline.id}`, "Stopped an abandoned run")
+          .catch((err) => log.error("director_cancel_refund_failed", { pipelineId: pipeline.id, owed, err: err?.message }));
+      }
+      return NextResponse.json({
+        success: true,
+        stopped: true,
+        message: owed > 0
+          ? `Stopped. Nothing was rendering this any more, and ${owed} credits were returned.`
+          : "Stopped. Nothing was rendering this any more.",
       });
     }
 
