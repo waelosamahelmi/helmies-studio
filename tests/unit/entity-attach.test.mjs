@@ -76,3 +76,16 @@ describe("a render finds its way home without a browser", () => {
     expect(normalizeAttachTo({ entityId: "e1", kind: "wide" })).toMatchObject({ entityId: "e1", kind: "wide" });
   });
 });
+
+describe("an assembled scene is a video", () => {
+  it("does not file the cut of a scene as an image", async () => {
+    // "director" was missing from the video tools, so the one artefact
+    // somebody actually came for — the assembled scene — would have
+    // appeared in the library as a broken image thumbnail.
+    const { assetTypeForTool } = await import("@/lib/assets-core");
+    expect(assetTypeForTool("director")).toBe("video");
+    expect(assetTypeForTool("video")).toBe("video");
+    expect(assetTypeForTool("image")).toBe("image");
+    expect(assetTypeForTool("audio")).toBe("audio");
+  });
+});

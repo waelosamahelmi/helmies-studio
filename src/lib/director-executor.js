@@ -7,6 +7,7 @@ import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
 import { selectEntityReferences, imageReferenceSlot, isStillImageModel } from "@/lib/entity-core.mjs";
 import { applyRequiredDefaults } from "@/lib/provider-payload-core.mjs";
+import { recordGenerationAsset } from "@/lib/assets-core";
 
 /* The fallback when a pipeline names no image model. It was "flux-dev",
    which the provider answers with a 500 — so a shot that reached this
@@ -198,6 +199,28 @@ export function shotRowId(pipelineId, shotId) {
 // column — every Generation write here crashed on it) AND the provider's API
 // key, which must never land in the database. Found by
 // tests/integration/director-generate-shot.int.test.mjs.
+/* EVERY RENDER BELONGS IN THE LIBRARY.
+
+   The director writes its Generation rows itself instead of going through
+   the job queue, and recordGenerationAsset is only called from the queue —
+   so a whole film could be shot and the Assets library would show nothing
+   from it. Runs listed it (a Generation row exists); the library did not
+   (no Asset row). "I can see it in Runs but not in Library" is exactly
+   that gap.
+
+   Best-effort, like every other asset write: a library entry must never
+   fail a render that already cost money. */
+async function fileAsset(generation, projectId) {
+  try {
+    await recordGenerationAsset(
+      projectId ? { ...generation, params: { ...(generation.params || {}), projectId } } : generation,
+      { source: "director" },
+    );
+  } catch (err) {
+    console.error("[Director] asset record failed:", err?.message);
+  }
+}
+
 function persistableParams(params) {
   // `_schema` is the model's whole input schema — useful for building the
   // request, pure noise (and kilobytes) on every stored Generation row.
@@ -463,7 +486,7 @@ async function executeShotImage(shot, pipeline, brief) {
     }
 
     // Store in generation table
-    await prisma.generation.create({
+    const imageGeneration = await prisma.generation.create({
       data: {
         userId: pipeline.userId,
         tool: "image",
@@ -475,6 +498,7 @@ async function executeShotImage(shot, pipeline, brief) {
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.image || 2
       }
     });
+    await fileAsset(imageGeneration, pipeline.projectId);
 
     // Update shot record
     await prisma.directorShot.update({
@@ -580,7 +604,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
       }
     }
 
-    await prisma.generation.create({
+    const videoGeneration = await prisma.generation.create({
       data: {
         userId: pipeline.userId,
         tool: "video",
@@ -592,6 +616,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.video || 10
       }
     });
+    await fileAsset(videoGeneration, pipeline.projectId);
 
     await prisma.directorShot.update({
       where: { id: rowId },
@@ -640,7 +665,7 @@ async function executeShotAudio(shot, pipeline, brief) {
       }
     }
 
-    await prisma.generation.create({
+    const audioGeneration = await prisma.generation.create({
       data: {
         userId: pipeline.userId,
         tool: "audio",
@@ -652,6 +677,7 @@ async function executeShotAudio(shot, pipeline, brief) {
         creditsUsed: brief._shotCosts?.[shot.index]?.costs?.audio || 5
       }
     });
+    await fileAsset(audioGeneration, pipeline.projectId);
 
     await prisma.directorShot.update({
       where: { id: shotRowId(pipeline.id, shot.id) },
@@ -971,7 +997,7 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
 
     // Store assembly as a generation record
     if (assembledUrl) {
-      await prisma.generation.create({
+      const assembledGeneration = await prisma.generation.create({
         data: {
           userId,
           tool: "director",
@@ -983,6 +1009,8 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
           creditsUsed: costEstimate.assemblyCost || 0
         }
       });
+      // The finished scene above all — it is the thing somebody came for.
+      await fileAsset(assembledGeneration, pipeline.projectId);
     }
 
     /* Give back what was not spent.

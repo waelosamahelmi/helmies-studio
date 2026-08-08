@@ -12,7 +12,10 @@
 import prisma from "./prisma.js";
 import { log } from "./log.js";
 
-const VIDEO_TOOLS = new Set(["video", "i2v", "v2v", "lipsync", "recast", "marketing"]);
+// "director" is an ASSEMBLED SCENE — the cut of a whole scene's shots, and
+// the thing somebody actually came for. Absent from this set it was typed
+// as an image and would have shown up in the library as a broken thumbnail.
+const VIDEO_TOOLS = new Set(["video", "i2v", "v2v", "lipsync", "recast", "marketing", "director"]);
 const AUDIO_TOOLS = new Set(["audio", "music", "voiceover"]);
 
 export function assetTypeForTool(tool) {
