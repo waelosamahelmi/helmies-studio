@@ -10,6 +10,10 @@ import {
   applyEntityReferences,
   isAllowedReferenceUrl,
   IDENTITY_PACK,
+  COVERAGE_PACKS,
+  REFERENCE_KINDS,
+  stepState,
+  packFor,
   missingPackAngles,
   isStillImageModel,
   canRenderIdentityAngle,
@@ -351,5 +355,62 @@ describe("canRenderIdentityAngle", () => {
     expect(canRenderIdentityAngle(null)).toBe(false);
     expect(canRenderIdentityAngle({})).toBe(false);
     expect(canRenderIdentityAngle({ capability: "image" })).toBe(false);
+  });
+});
+
+describe("coverage packs — a place drifts like a face does", () => {
+  it("gives an environment real views to generate, not just an upload box", () => {
+    // Before this, the Views step for a place was a plain upload shelf:
+    // there was no way to ask for the room from another angle at all.
+    const pack = packFor("environment");
+    expect(pack.length).toBeGreaterThan(1);
+    expect(pack.map((a) => a.kind)).toContain("viewpoint");
+    expect(pack.every((a) => a.prompt && a.label)).toBe(true);
+  });
+
+  it("keeps every environment prompt anchored to the SAME space", () => {
+    // A prompt that just says "a bedroom" gets a different bedroom.
+    for (const view of packFor("environment").slice(1)) {
+      expect(view.prompt.toLowerCase()).toContain("same");
+    }
+  });
+
+  it("keeps people out of environment references", () => {
+    // A reference with somebody in it drags that person into every shot
+    // built from it.
+    for (const view of packFor("environment")) {
+      expect(view.prompt.toLowerCase()).toContain("no people");
+    }
+  });
+
+  it("turns a product around", () => {
+    expect(packFor("product").map((a) => a.kind)).toEqual(["front", "side", "back", "closeup"]);
+  });
+
+  it("uses each kind's own pack to decide what is missing", () => {
+    const room = { kind: "environment", references: [{ kind: "wide", url: "u" }] };
+    const missing = missingPackAngles(room).map((a) => a.kind);
+    expect(missing).not.toContain("wide");
+    expect(missing).toContain("viewpoint");
+  });
+
+  it("every pack kind is a legal reference kind for that entity", () => {
+    // A generated view filed under a kind the entity does not accept would
+    // be rejected on save — after it had already been paid for.
+    for (const [kind, pack] of Object.entries(COVERAGE_PACKS)) {
+      for (const view of pack) {
+        expect(REFERENCE_KINDS[kind], `${kind} has no reference kinds`).toContain(view.kind);
+      }
+    }
+  });
+
+  it("counts a place as covered only when its views are all there", () => {
+    const bare = { kind: "environment", references: [{ kind: "wide", url: "u" }] };
+    expect(stepState(bare).identity).toBe(false);
+    const full = {
+      kind: "environment",
+      references: packFor("environment").map((a) => ({ kind: a.kind, url: `u_${a.kind}` })),
+    };
+    expect(stepState(full).identity).toBe(true);
   });
 });

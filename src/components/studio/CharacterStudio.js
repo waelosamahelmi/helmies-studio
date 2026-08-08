@@ -12,7 +12,7 @@ import {
 } from "@/components/studio/kit";
 import {
   ATTRIBUTE_KEYS, REFERENCE_KINDS,
-  IDENTITY_PACK, missingPackAngles, imageReferenceSlot, canRenderIdentityAngle,
+  IDENTITY_PACK, packFor, missingPackAngles, imageReferenceSlot, canRenderIdentityAngle,
   isObservable, voiceReferences, VOICE_REFERENCE_KIND,
   stepsFor, stepState,
 } from "@/lib/entity-core.mjs";
@@ -122,6 +122,34 @@ const primaryThumb = (entity) => {
     refs[0]?.url || null
   );
 };
+
+/* The coverage sheet says the same thing three ways, because a face, a room
+   and an object drift for the same reason but a user is not thinking about
+   "entities" — they are thinking about a person, a place, or a thing. */
+const SHEET_COPY = {
+  character: {
+    title: "Identity sheet",
+    unit: "angles", one: "angle",
+    hint: "Shots pick their reference by angle — a close-up reads the front, a wide reads the full body. A gap here is where a face starts to drift.",
+  },
+  environment: {
+    title: "Coverage",
+    unit: "views", one: "view",
+    hint: "A room known from one photograph is a room the renderer re-invents the moment the camera turns around. These are the views coverage actually asks for.",
+  },
+  product: {
+    title: "Turnaround",
+    unit: "sides", one: "side",
+    hint: "Every side a shot can be built from, so the object survives the cut unchanged.",
+  },
+};
+
+/* A room reads wide, a body reads tall, a face reads square. */
+function angleAspect(entityKind, angleKind) {
+  if (entityKind === "environment") return angleKind === "texture" ? "1:1" : "16:9";
+  if (entityKind === "product") return "1:1";
+  return angleKind === "full_body" || angleKind === "half_body" ? "3:4" : "1:1";
+}
 
 function Fieldset({ title, hint, right, children }) {
   return (
@@ -334,24 +362,26 @@ export default function CharacterStudio() {
               </div>
             )}
 
-            {step === "identity" && editing.kind === "character" && (
-              <IdentitySheet
-                entity={editing}
-                locked={locked}
-                onAddReference={addReference}
-                onDropReference={dropReference}
-                onError={setError}
-                onNotice={setNotice}
-              />
-            )}
-
-            {/* Products and environments have no five-angle pack, so their
-                Angles/Views step is the plain reference shelf. */}
-            {step === "identity" && editing.kind !== "character" && (
-              <ReferenceShelf
-                entity={editing} locked={locked} hideAngles={false}
-                onAddReference={addReference} onDropReference={dropReference} onError={setError}
-              />
+            {/* Every kind has a coverage pack. A place known from one
+                photograph is a place the renderer re-invents the moment the
+                camera turns around — which is how the same bedroom comes
+                back with a different window three shots later. The shelf
+                below it still takes uploads for anything the pack misses. */}
+            {step === "identity" && (
+              <>
+                <IdentitySheet
+                  entity={editing}
+                  locked={locked}
+                  onAddReference={addReference}
+                  onDropReference={dropReference}
+                  onError={setError}
+                  onNotice={setNotice}
+                />
+                <ReferenceShelf
+                  entity={editing} locked={locked} hideAngles={false}
+                  onAddReference={addReference} onDropReference={dropReference} onError={setError}
+                />
+              </>
             )}
 
             {step === "look" && (
@@ -502,7 +532,7 @@ export default function CharacterStudio() {
               const thumb = primaryThumb(item);
               const refCount = (item.references || []).length;
               const status = STATUS[item.status] || STATUS.draft;
-              const gaps = item.kind === "character" ? missingPackAngles(item).length : 0;
+              const gaps = missingPackAngles(item).length;
               return (
                 <div key={item.id} className="st-item" role="listitem">
                   <button
@@ -725,11 +755,19 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
     return map;
   }, [entity.references]);
 
+  const pack = packFor(entity.kind);
   const missing = missingPackAngles(entity);
-  /* The photographs the user handed us. Every pack angle is derived from
-     these, so one casual snapshot is enough to start — we never ask them to
-     go and shoot a profile themselves. */
-  const sources = (entity.references || []).filter((r) => r.kind === "source");
+  /* What the user handed us. Every pack view is derived from it, so one
+     casual snapshot is enough to start — we never ask them to go and shoot
+     a profile, or walk round the room, themselves.
+
+     A character's upload is filed under the "source" kind precisely so it
+     is not mistaken for an angle. A place or a product has no such slot:
+     the first photograph of a room IS a view of that room, so anything the
+     user uploaded counts as the thing to shoot the rest from. */
+  const sources = entity.kind === "character"
+    ? (entity.references || []).filter((r) => r.kind === "source")
+    : (entity.references || []).filter((r) => r.source !== "generated");
   const hasSource = sources.length > 0;
 
   /* Two tests, both read from the model's own parameters rather than its
@@ -790,9 +828,10 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
           expand: false,
           entityIds: [entity.id],
           entityPurpose: "identity",
-          // Portrait framing for a body angle, square for a face. Everything
-          // else the model requires is filled from its own schema server-side.
-          aspect_ratio: angle.kind === "full_body" || angle.kind === "half_body" ? "3:4" : "1:1",
+          // A room reads wide, a body reads tall, a face reads square.
+          // Everything else the model requires is filled from its own schema
+          // server-side.
+          aspect_ratio: angleAspect(entity.kind, angle.kind),
         }),
       });
       const submitted = await res.json();
@@ -829,20 +868,20 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
     if (made) onNotice?.(`${made} angle${made === 1 ? "" : "s"} added.`);
   }, [model, missing, generateAngle, onNotice]);
 
-  const covered = IDENTITY_PACK.length - missing.length;
+  const covered = pack.length - missing.length;
 
   return (
     <Fieldset
-      title="Identity sheet"
-      hint="Shots pick their reference by angle — a close-up reads the front, a wide reads the full body. A gap here is where a face starts to drift."
+      title={SHEET_COPY[entity.kind]?.title || SHEET_COPY.character.title}
+      hint={SHEET_COPY[entity.kind]?.hint || SHEET_COPY.character.hint}
       right={
         <span className="hs-mono hs-mute" style={{ fontSize: 10, whiteSpace: "nowrap" }}>
-          {covered}/{IDENTITY_PACK.length} angles
+          {covered}/{pack.length} {SHEET_COPY[entity.kind]?.unit || "angles"}
         </span>
       }
     >
       <div className="st-angles" role="list" aria-label="Reference angles">
-        {IDENTITY_PACK.map((angle) => {
+        {pack.map((angle) => {
           const ref = byKind.get(angle.kind);
           const state = running[angle.kind];
             const pending = state === "queued" || state === "running";
@@ -946,7 +985,7 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
                         onClick={fillGaps} disabled={busy || !model}
                         title={!model ? "No image model here accepts a reference photograph" : ""}>
                         {busy ? <span className="hs-spin" /> : <IcSpark className="hs-icon-sm" />}
-                        {busy ? "Generating…" : `Generate ${missing.length === IDENTITY_PACK.length ? "all " : ""}${missing.length} angle${missing.length === 1 ? "" : "s"}`}
+                        {busy ? "Generating…" : `Generate ${missing.length === pack.length ? "all " : ""}${missing.length} ${(SHEET_COPY[entity.kind]?.one || "angle")}${missing.length === 1 ? "" : "s"}`}
                       </button>
                       {model?.credits != null && (
                         <span className="hs-mono hs-mute" style={{ fontSize: 10 }}>
@@ -974,7 +1013,7 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
    REFERENCE SHELF — everything that is not a pack angle
    ══════════════════════════════════════════════════════════════════════ */
 function ReferenceShelf({ entity, locked, hideAngles, onAddReference, onDropReference, onError }) {
-  const packKinds = useMemo(() => new Set(IDENTITY_PACK.map((a) => a.kind)), []);
+  const packKinds = useMemo(() => new Set(packFor(entity.kind).map((a) => a.kind)), [entity.kind]);
   const refs = (entity.references || []).filter((r) => !hideAngles || !packKinds.has(r.kind));
   const kinds = REFERENCE_KINDS[entity.kind] || [];
   const [kind, setKind] = useState(kinds[0] || "other");

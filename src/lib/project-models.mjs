@@ -1,0 +1,111 @@
+// Which models are actually usable for a production (P1.7 / task 12).
+//
+// Filtering by capability alone is what put Veo 3 in the character-angle
+// picker and offered text-only rows as image editors. Capability is a
+// label somebody typed; the SCHEMA is what the model will actually accept.
+// Every test here reads parameters.
+//
+// Pure and worker-safe: the same rules decide what a picker offers and
+// what a plan is allowed to name.
+import { imageReferenceSlot, isStillImageModel } from "./entity-core.mjs";
+
+const has = (schema, field) => Boolean(schema?.fields?.[field]);
+
+const enumOf = (schema, field) => {
+  const v = schema?.fields?.[field]?.enum;
+  return Array.isArray(v) ? v.map(String) : null;
+};
+
+/** Does this model offer the aspect ratio the project is shot in? */
+export function supportsAspect(model, aspectRatio) {
+  if (!aspectRatio) return true;
+  const schema = model?.schema || model?.inputSchema;
+  const allowed = enumOf(schema, "aspect_ratio");
+  // A model with no enum takes what it is given; one with an enum that
+  // omits the ratio would silently render the wrong shape.
+  if (!allowed) return true;
+  return allowed.includes(aspectRatio);
+}
+
+/** Does it make time rather than a frame? */
+export function isVideoModel(model) {
+  const schema = model?.schema || model?.inputSchema;
+  const fields = schema?.fields;
+  if (!fields) return false;
+  return Boolean(fields.duration) || Object.keys(fields).some((k) => /video/i.test(k));
+}
+
+/** Can it start a clip from a still? */
+export function takesFirstFrame(model) {
+  const schema = model?.schema || model?.inputSchema;
+  return ["first_frame_url", "image_url", "start_image", "image", "input_image"].some((f) => has(schema, f));
+}
+
+/**
+ * The image models a production can use.
+ *
+ * A production needs a face and a room to survive thirty shots, so a still
+ * model that cannot take a reference is not a candidate however good it is
+ * — it would invent the person every time. The aspect ratio has to be one
+ * the project actually shoots in.
+ */
+export function imageModelsFor(models = [], { aspectRatio = null } = {}) {
+  return models.filter((m) => {
+    const schema = m?.schema || m?.inputSchema;
+    if (!isStillImageModel(schema)) return false;
+    if (!imageReferenceSlot(schema)) return false;
+    return supportsAspect(m, aspectRatio);
+  });
+}
+
+/**
+ * The video models a production can use.
+ *
+ * Every clip starts from an approved still — that is what makes a wrong
+ * face cost an image instead of a video — so a model that cannot be given
+ * a first frame cannot be the project's video model.
+ */
+export function videoModelsFor(models = [], { aspectRatio = null } = {}) {
+  return models.filter((m) => {
+    if (!isVideoModel(m)) return false;
+    if (!takesFirstFrame(m)) return false;
+    return supportsAspect(m, aspectRatio);
+  });
+}
+
+/** Models that speak. */
+export function voiceModelsFor(models = []) {
+  return models.filter((m) => {
+    const schema = m?.schema || m?.inputSchema;
+    const fields = schema?.fields;
+    if (!fields) return false;
+    if (isVideoModel(m)) return false;
+    return Boolean(fields.voice_name || fields.voice || fields.voice_id || fields.reference_audio_url);
+  });
+}
+
+/* ── What a project will cost to render ──────────────────────────────────
+   Every shot is a still plus a clip, because that is how the pipeline
+   works: approve the frame, then animate it. Shots already rendered are
+   not counted again — the number a person wants is what finishing costs
+   from here, not what the whole film would have cost from scratch.
+
+   It is an estimate and says so. A model's row price is per generation;
+   retries, re-shoots and audio are not in it. */
+export function estimateProjectCost(scenes = [], { imageCredits = 0, videoCredits = 0 } = {}) {
+  let shots = 0;
+  let remaining = 0;
+  for (const scene of scenes) {
+    shots += scene.shots || 0;
+    remaining += Math.max(0, (scene.shots || 0) - (scene.rendered || 0));
+  }
+  const perShot = (imageCredits || 0) + (videoCredits || 0);
+  return {
+    shots,
+    remaining,
+    perShot,
+    total: shots * perShot,
+    toFinish: remaining * perShot,
+    known: perShot > 0,
+  };
+}

@@ -3365,13 +3365,17 @@ select.st-layer__role option {
 }
 
 .st-scene {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--ink-200);
+  overflow: hidden;
+}
+
+.st-scene__row {
   display: flex;
   align-items: center;
   gap: var(--s-3);
   padding: var(--s-3);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--ink-200);
 }
 
 .st-scene__no {
@@ -3398,15 +3402,71 @@ select.st-layer__role option {
   font-size: var(--t-sm);
   font-weight: 500;
   color: var(--tx-head);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* A scene heading is long and a phone is narrow. Wrapping to two lines
+     reads; truncating to "INT. THE ROOM 4 N6" does not. */
+  overflow-wrap: anywhere;
 }
 .st-scene__meta { font-size: 11px; color: var(--tx-mute); }
 
-@media (max-width: 640px) {
-  .st-scene { flex-wrap: wrap; }
-  .st-scene__main { flex-basis: 100%; order: -1; }
+.st-scene__acts {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex: 0 0 auto;
+}
+
+/* ── The shots inside a scene ─────────────────────────────────────────── */
+.st-shots {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s-3) var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  border-top: 1px solid var(--line);
+  padding-top: var(--s-3);
+}
+
+.st-shot {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+}
+
+.st-shot__frame {
+  flex: 0 0 auto;
+  width: 54px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--ink-300);
+  display: grid;
+  place-items: center;
+}
+
+.st-shot__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.st-shot__title { font-size: 12px; color: var(--tx-body); overflow-wrap: anywhere; }
+.st-shot__meta { font-size: 10px; color: var(--tx-mute); font-family: var(--ff-mono); }
+.st-shot__line {
+  font-size: 11px;
+  color: var(--tx-dim);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  /* On a phone the actions cannot sit beside a wrapping heading — they get
+     squeezed to nothing and the Render button becomes unhittable. */
+  .st-scene__row { flex-wrap: wrap; }
+  .st-scene__main { flex-basis: calc(100% - 32px); }
+  .st-scene__acts { flex-basis: 100%; justify-content: flex-end; }
+  .st-shot__frame { width: 44px; }
 }
 
 /* ── Members (cast, places, props filed under a project) ──────────────── */
@@ -3455,4 +3515,28 @@ select.st-layer__role option {
   border: 1px solid var(--line);
   border-radius: var(--r-md);
   background: var(--ink-200);
+}
+
+/* The project detail's own bars. The header carries a name that can be
+   long and a delete control that must stay reachable; the tab bar carries
+   four segments that do not fit a phone's width side by side. */
+.st-project__bar { align-items: center; }
+.st-project__name {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.st-project__tabs {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.st-project__tabs::-webkit-scrollbar { display: none; }
+.st-project__tabs .hs-segmented { min-width: max-content; }
+
+@media (max-width: 720px) {
+  .st-combine { padding: var(--s-3); }
+  /* The setup form's two ratio pickers stack rather than compress. */
+  .st-project__format { flex-direction: column; align-items: stretch; }
 }

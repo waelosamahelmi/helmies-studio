@@ -96,9 +96,9 @@ export function stepState(entity) {
   const written = OBSERVABLE_ATTRIBUTES.filter((k) => (attrs[k] || "").trim()).length;
   return {
     start: Boolean(refs.length || (entity?.description || "").trim() || written),
-    identity: entity?.kind === "character"
-      ? missingPackAngles(entity).length === 0
-      : refs.length >= 2,
+    // Every kind has a coverage pack now. A place known from one photograph
+    // is a place the renderer re-invents when the camera turns around.
+    identity: missingPackAngles(entity).length === 0,
     look: (entity?.references || []).some((r) => ["outfit", "accessory", "prop", "time_of_day", "weather"].includes(r.kind)),
     voice: voiceReferences(entity).length > 0 || Boolean(entity?.voiceId),
     ready: entity?.status === "locked",
@@ -328,12 +328,75 @@ export const IDENTITY_PACK = [
   },
 ];
 
+/* A PLACE has to hold still exactly as much as a face does, and for the
+   same reason: selectEntityReferences reaches for a reference by what the
+   shot needs, so a room known from one photograph is a room the renderer
+   re-invents the moment the camera turns around. That is how the same
+   bedroom comes back with a different window three shots later.
+
+   The views are chosen to be what coverage actually asks for: the master,
+   the reverse, the corner a medium sits in, the texture close-ups a cut
+   needs, and the light. Unlike a face, a room is described rather than
+   posed, so these prompts keep the space and change only the camera. */
+export const ENVIRONMENT_PACK = [
+  {
+    kind: "wide",
+    label: "Master",
+    hint: "The whole space. Every other view is judged against it.",
+    prompt: "Wide establishing photograph of this exact space, showing the full room and how it is laid out, camera at standing eye level, natural even light, sharp focus, no people.",
+  },
+  {
+    kind: "viewpoint",
+    label: "Reverse",
+    hint: "The opposite wall — where the camera turns to for the answering shot.",
+    prompt: "Photograph of this exact same space from the opposite direction, showing the wall the master shot was taken from, same furniture and same fittings, standing eye level, natural even light, sharp focus, no people.",
+  },
+  {
+    kind: "detail",
+    label: "Corner",
+    hint: "Where a medium shot sits. Fixes the depth behind an actor.",
+    prompt: "Photograph of a corner of this exact same space at medium distance, showing the depth and what sits behind someone standing there, same furniture and fittings, natural even light, sharp focus, no people.",
+  },
+  {
+    kind: "texture",
+    label: "Surfaces",
+    hint: "The materials a close-up lands on.",
+    prompt: "Close photograph of the surfaces and materials in this exact same space — walls, floor, fabric, wood — filling the frame, natural even light, sharp focus, no people.",
+  },
+  {
+    kind: "lighting",
+    label: "Light",
+    hint: "Where the light comes from, and what it does to the room.",
+    prompt: "Photograph of this exact same space showing its light sources and how they fall across it, same layout and furniture, sharp focus, no people.",
+  },
+];
+
+/* A product turns; that is the whole of its coverage. */
+export const PRODUCT_PACK = [
+  { kind: "front", label: "Front", hint: "Straight on. The anchor.",
+    prompt: "Product photograph, straight-on front view, centred, flat even studio lighting, plain mid-grey seamless background, sharp focus, no props." },
+  { kind: "side", label: "Side", hint: "Its profile and real depth.",
+    prompt: "Product photograph, full side profile view, centred, flat even studio lighting, plain mid-grey seamless background, sharp focus, no props." },
+  { kind: "back", label: "Back", hint: "What the camera sees when it comes round.",
+    prompt: "Product photograph, straight-on rear view, centred, flat even studio lighting, plain mid-grey seamless background, sharp focus, no props." },
+  { kind: "closeup", label: "Detail", hint: "The finish and the markings a close-up shows.",
+    prompt: "Close product photograph of its surface finish, texture and markings filling the frame, flat even studio lighting, plain background, sharp focus." },
+];
+
+export const COVERAGE_PACKS = {
+  character: IDENTITY_PACK,
+  environment: ENVIRONMENT_PACK,
+  product: PRODUCT_PACK,
+};
+
+export const packFor = (kind) => COVERAGE_PACKS[kind] || IDENTITY_PACK;
+
 // Which pack angles this entity is still missing. A reference the user
 // uploaded themselves counts — we never regenerate an angle they already
 // gave us.
 export function missingPackAngles(entity) {
   const have = new Set((entity?.references || []).map((r) => r.kind));
-  return IDENTITY_PACK.filter((a) => !have.has(a.kind));
+  return packFor(entity?.kind).filter((a) => !have.has(a.kind));
 }
 
 // ── Prompt composition ────────────────────────────────────────────────────

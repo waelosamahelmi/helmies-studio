@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/client-fetch";
 import { parseQuestionBlock, stripQuestionBlock, parsePlanReadyBlock, stripPlanReadyBlock } from "@/lib/agent-chat";
 import {
   Brief, SpendMeter, Group, Specs, Confirm, Sheet,
-  IcSpark, IcFlow, IcCheck, IcAlert, IcChevron, IcExternal, IcInfo,
+  IcSpark, IcFlow, IcCheck, IcAlert, IcChevron, IcExternal, IcInfo, IcUpload, useUpload,
 } from "@/components/studio/kit";
 import SessionList from "@/components/studio/agent/SessionList";
 import Markdown from "@/components/studio/agent/Markdown";
@@ -426,12 +426,17 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
      and pins every shot to the project's format. */
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState(null);
+  /* Files the person attached to this conversation. They travel to the
+     planner as context, so "make her walk toward the window" can mean the
+     photograph they just handed over rather than a description of it. */
+  const [attachments, setAttachments] = useState([]);
 
   const feedRef = useRef(null);
   const abortRef = useRef(null);
   const pollRef = useRef(null); // background-run status poll (3s tick)
   const sessionRef = useRef(null);
   const projectRef = useRef(null);
+  const fileRef = useRef(null);
   const needsTitleRef = useRef(false); // auto-title once, from the first user message
   const idRef = useRef(0);
   const nextId = () => (idRef.current += 1);
@@ -751,6 +756,30 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
   /* ── Message helpers ─────────────────────────────────────────────────── */
   const stop = useCallback(() => { abortRef.current?.abort(); }, []);
 
+  /* Attaching a reference. The URLs go into the planner's context, so a
+     step can point at the real photograph instead of a description of it —
+     which is the difference between rendering this person and rendering
+     somebody who matches the words. */
+  const { upload, busy: uploading } = useUpload();
+  const attach = useCallback(async (files) => {
+    if (!files?.length) return;
+    const done = [];
+    for (const file of files.slice(0, 6)) {
+      const up = await upload(file);
+      if (up) done.push(up);
+    }
+    if (fileRef.current) fileRef.current.value = "";
+    if (!done.length) { setError("That file could not be attached."); return; }
+    setAttachments((prev) => [...prev, ...done].slice(-12));
+    setMessages((prev) => [...prev, {
+      id: `a${++idRef.current}`,
+      role: "user",
+      kind: "attachment",
+      text: done.length === 1 ? `Attached ${done[0].name}` : `Attached ${done.length} files`,
+      attachments: done,
+    }]);
+  }, [upload]);
+
   const clear = useCallback(() => {
     abortRef.current?.abort();
     setMessages([]);
@@ -785,7 +814,14 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
       const res = await apiFetch("/api/agent/plan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, messages: history, stream: false, sessionId: sid, projectId: projectRef.current }),
+        body: JSON.stringify({
+          message: text, messages: history, stream: false,
+          sessionId: sid, projectId: projectRef.current,
+          // The files travel with the brief. Without this the attachment
+          // is only a line in the transcript, and every step still renders
+          // from words.
+          context: attachments.length ? { attachments: attachments.map((a) => a.url) } : undefined,
+        }),
         timeout: 120000,
         retries: 0,
       });
@@ -818,7 +854,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     } finally {
       setBusy("");
     }
-  }, [patch, loadBalance, ensureSession, autoTitle]);
+  }, [patch, loadBalance, ensureSession, autoTitle, attachments]);
 
   /* ── Chat — streams, costs nothing ───────────────────────────────────── */
   /* `textOverride` lets a QuestionCard answer go out as a normal user
@@ -1569,7 +1605,7 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
                 Talk it through first — the agent asks a couple of questions and costs nothing.
                 Once the shape is right it builds the complete costed plan automatically — every
                 asset, every step, every price — and nothing runs until you approve it.
-                (<b>Plan production</b> forces a plan at any moment.)
+                Attach a photograph and it works from that.
               </p>
               <div className="hs-chips" style={{ justifyContent: "center", marginTop: "var(--s-2)" }}>
                 {EXAMPLES.map((example) => (
@@ -1768,15 +1804,30 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
           meterLabel="Chat"
           placeholder="Describe the production. Ask questions first — chatting costs nothing."
           extras={
-            <button
-              type="button"
-              className="hs-btn hs-btn--ghost hs-btn--sm"
-              onClick={propose}
-              disabled={(!input.trim() && !messages.some((m) => m.text)) || !!busy}
-              title="Turn this brief into a costed, step-by-step plan"
-            >
-              <IcFlow className="hs-icon-sm" /> Plan production
-            </button>
+            /* Attaching a reference is the thing people actually reach for
+               here: a photograph of the person, the room, the product they
+               are talking about. The agent plans on its own once the shape
+               is right, so a manual "plan" button was a control nobody
+               needed to press and everybody had to read past. */
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*,video/*,audio/*"
+                multiple
+                style={{ display: "none" }}
+                onChange={(e) => attach(Array.from(e.target.files || []))}
+              />
+              <button
+                type="button"
+                className="hs-btn hs-btn--ghost hs-btn--sm"
+                onClick={() => fileRef.current?.click()}
+                disabled={uploading || !!busy}
+                title="Attach an image, a clip or a recording for the agent to work from"
+              >
+                <IcUpload className="hs-icon-sm" /> {uploading ? "Uploading…" : "Attach"}
+              </button>
+            </>
           }
         />
 

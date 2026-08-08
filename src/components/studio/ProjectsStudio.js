@@ -5,8 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "@/lib/client-fetch";
 import ErrorState from "@/components/states/ErrorState";
+import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import {
-  Confirm, Modal, Field, Segmented,
+  imageModelsFor, videoModelsFor, voiceModelsFor, estimateProjectCost,
+} from "@/lib/project-models.mjs";
+import {
+  Confirm, Modal, Field, Segmented, ModelPicker,
   useGridRoving, LibrarySearch, LibrarySkeleton,
   IcLayers, IcPlus, IcTrash, IcCheck, IcClose, IcChevronLeft,
   IcFilm, IcPersona, IcPalette, IcImage, IcArchive, IcSpark, IcPlay,
@@ -348,7 +352,7 @@ function NewProject({ open, kinds, onClose, onCreated }) {
         </Field>
 
         <Field label="Format" hint="Every shot in this project inherits it, so no scene has to be told again.">
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s-3)" }}>
+          <div className="st-project__format" style={{ display: "flex", flexWrap: "wrap", gap: "var(--s-3)" }}>
             <Segmented label="Aspect ratio" value={aspectRatio} onChange={setAspectRatio}
               options={ASPECTS.map((a) => ({ value: a, label: a }))} />
             <Segmented label="Resolution" value={resolution} onChange={setResolution}
@@ -378,6 +382,11 @@ function ProjectDetail({ id, kinds, onBack, onChanged, onDeleted }) {
   const [tab, setTab] = useState("scenes");
   const [reloads, setReloads] = useState(0);
   const [doomed, setDoomed] = useState(false);
+
+  /* The full catalog, filtered per-project below. Fetched once and shared
+     with the settings pickers, so the header's cost and the picker's list
+     can never disagree about what a model costs. */
+  const { models, loading: modelsLoading } = useModelCatalog();
 
   const reload = useCallback(() => setReloads((n) => n + 1), []);
 
@@ -419,9 +428,22 @@ function ProjectDetail({ id, kinds, onBack, onChanged, onDeleted }) {
   }, [id, onChanged]);
 
   const project = contents?.project;
-  const settings = contents?.settings || {};
+  const settings = useMemo(() => contents?.settings || {}, [contents]);
   const kind = kinds.find((k) => k.value === settings.kind) || kinds[0];
   const unit = kind?.unit || "scene";
+
+  /* What finishing this costs. Every shot is a still plus a clip, because
+     that is how the pipeline runs — approve the frame, then animate it.
+     Shots already rendered are not counted again: the useful number is
+     what is left to pay for, not what the film would have cost from
+     scratch. An estimate, and it says so. */
+  const estimate = useMemo(() => {
+    const byId = new Map((models || []).map((m) => [m.id, m]));
+    return estimateProjectCost(contents?.scenes || [], {
+      imageCredits: byId.get(settings.imageModel)?.credits || 0,
+      videoCredits: byId.get(settings.videoModel)?.credits || 0,
+    });
+  }, [models, contents, settings.imageModel, settings.videoModel]);
 
   if (loading) {
     return (
@@ -453,22 +475,34 @@ function ProjectDetail({ id, kinds, onBack, onChanged, onDeleted }) {
 
   return (
     <div className="st-sheet">
-      <div className="st-lib__bar">
+      <div className="st-lib__bar st-project__bar">
         <button type="button" className="hs-btn hs-btn--ghost hs-btn--sm" onClick={onBack}>
           <IcChevronLeft className="hs-icon-sm" /> Projects
         </button>
-        <strong style={{ fontSize: "var(--t-sm)" }}>{project.name}</strong>
+        <strong className="st-project__name">{project.name}</strong>
         <span className="hs-badge">{kind?.label || "Project"}</span>
         <span className="hs-mono hs-mute" style={{ fontSize: 10, letterSpacing: "0.06em" }}>
           {[settings.aspectRatio, settings.resolution].filter(Boolean).join(" · ")}
         </span>
+        {estimate.shots > 0 && (
+          <span
+            className={`hs-badge${estimate.known ? "" : " hs-badge--caution"}`}
+            title={
+              estimate.known
+                ? `${estimate.shots} shots x ${estimate.perShot} cr each (a still plus a clip). ${estimate.remaining} still to render.`
+                : "Pick an image and a video model under Scenario & format to see what this costs."
+            }
+          >
+            {estimate.known ? `~${estimate.toFinish} cr to finish` : "cost unknown"}
+          </span>
+        )}
         <button type="button" className="hs-btn hs-btn--sm hs-btn--icon hs-btn--danger" style={{ marginLeft: "auto" }}
           onClick={() => setDoomed(true)} aria-label={`Delete ${project.name}`} title="Delete project">
           <IcTrash className="hs-icon-sm" />
         </button>
       </div>
 
-      <div className="st-lib__bar">
+      <div className="st-lib__bar st-project__tabs">
         <Segmented label="Section" value={tab} onChange={setTab}
           options={TABS.map((t) => ({ value: t.id, label: t.id === "scenes" ? `${unit[0].toUpperCase()}${unit.slice(1)}s` : t.label }))} />
       </div>
@@ -495,7 +529,10 @@ function ProjectDetail({ id, kinds, onBack, onChanged, onDeleted }) {
           )}
           {tab === "assets" && <AssetsTab assets={contents.assets || []} />}
           {tab === "setup" && (
-            <SetupTab project={project} settings={settings} kinds={kinds} onSave={patch} />
+            <SetupTab
+              project={project} settings={settings} kinds={kinds} onSave={patch}
+              models={models} modelsLoading={modelsLoading}
+            />
           )}
         </div>
       </div>
@@ -519,32 +556,73 @@ function ScenesTab({ project, contents, unit, onChanged }) {
   const [rendering, setRendering] = useState(null);
   const [breaking, setBreaking] = useState(false);
   const [report, setReport] = useState(null);
+  const [expanded, setExpanded] = useState(null);
   const [error, setError] = useState("");
   const scenes = contents.scenes || [];
 
   /* One read of the screenplay produces the whole structure. Planning scene
      by scene re-reads the script each time and lets the same character come
-     back described differently — which is exactly how a face drifts. */
+     back described differently — which is exactly how a face drifts.
+
+     The read runs on the server and is polled, not awaited: on a real
+     screenplay it takes minutes, and the first version held the request
+     open until the proxy cut it at five minutes and the work was lost. */
+  const poll = useCallback(async () => {
+    try {
+      const res = await apiFetch(`/api/projects/${project.id}/breakdown`, { retries: 0 });
+      const { breakdown } = await res.json();
+      if (!breakdown || breakdown.status === "idle") return true;
+      setReport(breakdown);
+      if (breakdown.status === "reading") return false;
+      setBreaking(false);
+      if (breakdown.status === "done") onChanged?.();
+      else setError(breakdown.error || "The scenario could not be read.");
+      return true;
+    } catch {
+      return false; // transient — the next tick tries again
+    }
+  }, [project.id, onChanged]);
+
+  useEffect(() => {
+    if (!breaking) return undefined;
+    let dead = false;
+    const timer = setInterval(async () => {
+      const finished = await poll();
+      if (finished && !dead) clearInterval(timer);
+    }, 5000);
+    return () => { dead = true; clearInterval(timer); };
+  }, [breaking, poll]);
+
+  // A read already running when the tab was opened must still be watched.
+  useEffect(() => {
+    let dead = false;
+    apiFetch(`/api/projects/${project.id}/breakdown`, { retries: 0 })
+      .then((r) => r.json())
+      .then(({ breakdown }) => {
+        if (dead || !breakdown) return;
+        if (breakdown.status === "reading") { setReport(breakdown); setBreaking(true); }
+        else if (breakdown.status === "done" || breakdown.status === "failed") setReport(breakdown);
+      })
+      .catch(() => {});
+    return () => { dead = true; };
+  }, [project.id]);
+
   const breakDown = useCallback(async () => {
     setBreaking(true);
     setError("");
     setReport(null);
     try {
-      const res = await apiFetch(`/api/projects/${project.id}/breakdown`, {
+      await apiFetch(`/api/projects/${project.id}/breakdown`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ replace: scenes.length > 0 }),
-        timeout: 900000,
         retries: 0,
       });
-      setReport(await res.json());
-      onChanged?.();
     } catch (e) {
-      setError(e?.message || "The scenario could not be broken down.");
-    } finally {
       setBreaking(false);
+      setError(e?.message || "The scenario could not be broken down.");
     }
-  }, [project.id, scenes.length, onChanged]);
+  }, [project.id, scenes.length]);
 
   /* Render a scene without leaving the project. This is the same call
      Director's own button makes — the board is where you go to inspect or
@@ -609,15 +687,21 @@ function ScenesTab({ project, contents, unit, onChanged }) {
           </span>
         </div>
       )}
-      {report && (
+      {report?.status === "done" && (
         <div className="hs-notice hs-notice--signal" role="status">
           <IcCheck className="hs-icon-sm" style={{ marginTop: 2 }} />
           <span style={{ flex: 1 }}>
-            {report.scenes.length} {unit}{report.scenes.length === 1 ? "" : "s"}, {report.summary?.shotCount ?? 0} shots
-            {report.cast.created.length ? `, ${report.cast.created.length} new in the cast` : ""}
-            {report.cast.reused ? `, ${report.cast.reused} reused` : ""}.
+            {report.scenes} {unit}{report.scenes === 1 ? "" : "s"}, {report.shots} shots
+            {report.seconds ? `, about ${Math.round(report.seconds / 60)} min` : ""}
+            {report.created ? `, ${report.created} new in the cast` : ""}
+            {report.reused ? `, ${report.reused} reused` : ""}.
             {report.warnings?.length ? ` Worth checking: ${report.warnings.join(" ")}` : ""}
           </span>
+        </div>
+      )}
+      {(report?.status === "failed" || report?.status === "stalled") && (
+        <div className="hs-notice hs-notice--fault" role="alert">
+          <span style={{ flex: 1 }}>{report.error}</span>
         </div>
       )}
 
@@ -651,34 +735,87 @@ function ScenesTab({ project, contents, unit, onChanged }) {
         </div>
       ) : (
         <ol className="st-scenes">
-          {scenes.map((s, i) => (
-            <li key={s.id} className="st-scene">
-              <span className="st-scene__no hs-mono">{String(i + 1).padStart(2, "0")}</span>
-              <button type="button" className="st-scene__main" onClick={() => openScene(s.id)}>
-                <span className="st-scene__title">{s.title}</span>
-                <span className="st-scene__meta">
-                  {[
-                    SCENE_STATUS[s.status] || s.status,
-                    `${s.shots} shot${s.shots === 1 ? "" : "s"}`,
-                    s.rendered ? `${s.rendered} rendered` : null,
-                    s.assembledUrl ? "assembled" : null,
-                  ].filter(Boolean).join(" · ")}
-                </span>
-              </button>
-              <span className={`hs-badge${s.status === "completed" ? " hs-badge--signal" : s.status === "failed" ? " hs-badge--fault" : ""}`}>
-                {SCENE_STATUS[s.status] || s.status}
-              </span>
-              {s.rendered < s.shots && (
-                <button type="button" className="hs-btn hs-btn--sm hs-btn--primary"
-                  onClick={() => render(s)} disabled={!!rendering}>
-                  {rendering === s.id ? "Rendering…" : s.rendered ? "Finish" : "Render"}
-                </button>
-              )}
-              <button type="button" className="hs-btn hs-btn--sm hs-btn--outline" onClick={() => openScene(s.id)}>
-                <IcPlay className="hs-icon-sm" /> Open board
-              </button>
-            </li>
-          ))}
+          {scenes.map((s, i) => {
+            const open = expanded === s.id;
+            return (
+              <li key={s.id} className="st-scene">
+                <div className="st-scene__row">
+                  <span className="st-scene__no hs-mono">{String(i + 1).padStart(2, "0")}</span>
+                  {/* The row opens the shots. Opening the board is a
+                      separate, explicit action — the common thing a person
+                      wants here is to see what the scene IS. */}
+                  <button
+                    type="button" className="st-scene__main"
+                    aria-expanded={open}
+                    onClick={() => setExpanded(open ? null : s.id)}
+                  >
+                    <span className="st-scene__title">{s.title}</span>
+                    <span className="st-scene__meta">
+                      {[
+                        `${s.shots} shot${s.shots === 1 ? "" : "s"}`,
+                        s.rendered ? `${s.rendered} rendered` : null,
+                        s.assembledUrl ? "assembled" : null,
+                      ].filter(Boolean).join(" · ")}
+                    </span>
+                  </button>
+                  <div className="st-scene__acts">
+                    <span className={`hs-badge${s.status === "completed" ? " hs-badge--signal" : s.status === "failed" ? " hs-badge--fault" : ""}`}>
+                      {SCENE_STATUS[s.status] || s.status}
+                    </span>
+                    {s.rendered < s.shots && (
+                      <button type="button" className="hs-btn hs-btn--sm hs-btn--primary"
+                        onClick={() => render(s)} disabled={!!rendering}>
+                        {rendering === s.id ? "Rendering…" : s.rendered ? "Finish" : "Render"}
+                      </button>
+                    )}
+                    <button type="button" className="hs-btn hs-btn--sm hs-btn--outline" onClick={() => openScene(s.id)}>
+                      <IcPlay className="hs-icon-sm" /> Board
+                    </button>
+                  </div>
+                </div>
+
+                {open && (
+                  <ol className="st-shots">
+                    {(s.board || []).map((shot, n) => (
+                      <li key={shot.id} className="st-shot">
+                        <span className="st-shot__frame">
+                          {shot.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- consistent with every other studio thumbnail
+                            <img src={shot.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : (
+                            <span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-ghost)" }}>
+                              {String(n + 1).padStart(2, "0")}
+                            </span>
+                          )}
+                        </span>
+                        <div className="st-shot__body">
+                          <span className="st-shot__title">{shot.title}</span>
+                          <span className="st-shot__meta">
+                            {[
+                              shot.framing,
+                              shot.seconds ? `${shot.seconds}s` : null,
+                              shot.subjects?.length ? shot.subjects.join(", ") : null,
+                            ].filter(Boolean).join(" · ")}
+                          </span>
+                          {shot.dialogue && <span className="st-shot__line">“{shot.dialogue}”</span>}
+                        </div>
+                        {shot.videoUrl && (
+                          <a className="hs-btn hs-btn--sm hs-btn--ghost" href={shot.videoUrl} target="_blank" rel="noreferrer">
+                            View
+                          </a>
+                        )}
+                      </li>
+                    ))}
+                    {!(s.board || []).length && (
+                      <li className="hs-hint" style={{ padding: "var(--s-2) var(--s-3)" }}>
+                        No shots planned yet — open the board to plan them.
+                      </li>
+                    )}
+                  </ol>
+                )}
+              </li>
+            );
+          })}
         </ol>
       )}
 
@@ -1096,6 +1233,86 @@ function AssetsTab({ assets }) {
   );
 }
 
+/* Writing the scenario, for anyone who arrives with an idea instead of a
+   script. It writes into the textarea rather than saving: a scenario is the
+   spine of everything downstream, so replacing one somebody wrote is their
+   call, not a side effect of pressing a button. */
+function WriteScenario({ projectId, hasDraft, onWritten }) {
+  const [open, setOpen] = useState(false);
+  const [idea, setIdea] = useState("");
+  const [minutes, setMinutes] = useState(3);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const write = useCallback(async () => {
+    if (!idea.trim()) { setError("Say what it is about."); return; }
+    setBusy(true);
+    setError("");
+    try {
+      const res = await apiFetch(`/api/projects/${projectId}/scenario`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idea: idea.trim(), minutes }),
+        timeout: 300000,
+        retries: 0,
+      });
+      const data = await res.json();
+      onWritten?.(data.script);
+      setOpen(false);
+    } catch (e) {
+      setError(e?.message || "The scenario could not be written.");
+    } finally {
+      setBusy(false);
+    }
+  }, [projectId, idea, minutes, onWritten]);
+
+  return (
+    <>
+      <div className="hs-row" style={{ justifyContent: "flex-start" }}>
+        <button type="button" className="hs-btn hs-btn--outline hs-btn--sm" onClick={() => setOpen(true)}>
+          <IcSpark className="hs-icon-sm" /> {hasDraft ? "Rewrite it from an idea" : "Write it from an idea"}
+        </button>
+      </div>
+
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={hasDraft ? "Rewrite the scenario" : "Write the scenario"}
+        footer={
+          <>
+            <button type="button" className="hs-btn hs-btn--ghost" onClick={() => setOpen(false)} disabled={busy}>Cancel</button>
+            <button type="button" className="hs-btn hs-btn--primary" onClick={write} disabled={busy}>
+              {busy ? "Writing…" : "Write it"}
+            </button>
+          </>
+        }
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "var(--s-4)" }}>
+          {error && <div className="hs-notice hs-notice--fault" role="alert"><span style={{ flex: 1 }}>{error}</span></div>}
+          <Field label="What is it about?" hint="A sentence is enough. The cast and places already filed here are written in by name.">
+            {(fid) => (
+              <textarea id={fid} className="hs-input" rows={5} value={idea}
+                onChange={(e) => setIdea(e.target.value)}
+                placeholder="A man meets a version of himself who has been living the life he sleeps through." />
+            )}
+          </Field>
+          <Field label="How long, in minutes" hint="A shorter piece fully shot beats a longer one half made.">
+            {(fid) => (
+              <input id={fid} type="number" className="hs-input" min={1} max={30} value={minutes}
+                onChange={(e) => setMinutes(Number(e.target.value) || 3)} />
+            )}
+          </Field>
+          {hasDraft && (
+            <p className="hs-hint">
+              This replaces what is in the box. Nothing is saved until you press Save.
+            </p>
+          )}
+        </div>
+      </Modal>
+    </>
+  );
+}
+
 /* ── Scenario & format ──────────────────────────────────────────────────── */
 function SetupTab({ project, settings, kinds, onSave }) {
   const [name, setName] = useState(project.name || "");
@@ -1157,14 +1374,60 @@ function SetupTab({ project, settings, kinds, onSave }) {
         )}
       </Field>
 
+      <WriteScenario
+        projectId={project.id}
+        hasDraft={!!brief.trim()}
+        onWritten={(script) => setBrief(script)}
+      />
+
       <Field label="Format" hint="Inherited by every shot in this project.">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s-3)" }}>
+        <div className="st-project__format" style={{ display: "flex", flexWrap: "wrap", gap: "var(--s-3)" }}>
           <Segmented label="Aspect ratio" value={aspectRatio} onChange={setAspectRatio}
             options={ASPECTS.map((a) => ({ value: a, label: a }))} />
           <Segmented label="Resolution" value={resolution} onChange={setResolution}
             options={RESOLUTIONS.map((r) => ({ value: r, label: r }))} />
         </div>
       </Field>
+
+      <Field
+        label="Stills"
+        hint={`Only models that take a reference image and shoot ${aspectRatio} — a model that cannot be shown the face invents it again every shot.`}
+      >
+        <ModelPicker
+          models={imageChoices}
+          value={imageModel}
+          onSelect={setImageModel}
+          loading={modelsLoading}
+          label="Image model"
+          emptyHint={`No image model on the catalog both takes references and shoots ${aspectRatio}.`}
+        />
+      </Field>
+
+      <Field
+        label="Motion"
+        hint="Only models that can start from an approved still. That is what makes a wrong face cost an image instead of a video."
+      >
+        <ModelPicker
+          models={videoChoices}
+          value={videoModel}
+          onSelect={setVideoModel}
+          loading={modelsLoading}
+          label="Video model"
+          emptyHint={`No video model on the catalog both takes a first frame and shoots ${aspectRatio}.`}
+        />
+      </Field>
+
+      {voiceChoices.length > 0 && (
+        <Field label="Voice" hint="Used when a shot has dialogue.">
+          <ModelPicker
+            models={voiceChoices}
+            value={voiceModel}
+            onSelect={setVoiceModel}
+            loading={modelsLoading}
+            label="Voice model"
+          />
+        </Field>
+      )}
 
       <div className="hs-row" style={{ justifyContent: "flex-end" }}>
         <button type="button" className="hs-btn hs-btn--primary" onClick={save} disabled={!dirty || saving}>

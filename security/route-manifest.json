@@ -1114,6 +1114,18 @@
     "notes": "2026-08-08 P1.1/P1.2: one owned project plus everything filed under it (cast, products, environments, assets, sessions, workflows). A non-owner gets the same not_found as a non-existent id. Delete releases members via onDelete:SetNull rather than destroying work that outlives the project."
   },
   {
+    "path": "/api/projects/[id]/scenario",
+    "file": "src/app/api/projects/[id]/scenario/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/projects",
+    "stateChanging": true,
+    "notes": "2026-08-08 P1.6: writes a scenario from an idea, in the form the breakdown reads. The cast already filed under the project goes in by name, so the script is written for faces that have references on file rather than for strangers who would then have to be built. Returns the draft and does NOT save unless save:true — overwriting a scenario somebody wrote is not a thing to do on a button press. An LLM call; spends no credits."
+  },
+  {
     "path": "/api/projects/[id]/scenes",
     "file": "src/app/api/projects/[id]/scenes/route.js",
     "methods": [
@@ -1130,13 +1142,14 @@
     "path": "/api/projects/[id]/breakdown",
     "file": "src/app/api/projects/[id]/breakdown/route.js",
     "methods": [
+      "GET",
       "POST"
     ],
     "auth": "user",
     "originCheck": true,
     "rateLimit": "/api/projects",
     "stateChanging": true,
-    "notes": "2026-08-08 P1.5: reads the project's scenario ONCE and creates a scene (DirectorPipeline) per screenplay scene, with every shot planned. One read rather than one per scene, because re-reading lets the same character come back described differently — which is how a face drifts between scenes. Matches the cast against entities the user already built so a character with real photographs is reused, never shadowed by an empty duplicate. Spends no credits (an LLM read); the shots are quoted when Director renders them. Refuses to run twice without an explicit replace flag, and replace DETACHES old scenes rather than deleting renders somebody paid for."
+    "notes": "2026-08-08 P1.5: reads the project's scenario ONCE and creates a scene (DirectorPipeline) per screenplay scene, with every shot planned. One read rather than one per scene, because re-reading lets the same character come back described differently — which is how a face drifts between scenes. Matches the cast against entities the user already built so a character with real photographs is reused, never shadowed by an empty duplicate. Spends no credits (an LLM read); the shots are quoted when Director renders them. Refuses to run twice without an explicit replace flag, and replace DETACHES old scenes rather than deleting renders somebody paid for. POST starts the read and returns 202; it does NOT hold the request open, because the first version ran past nginx's 300s ceiling on a real screenplay and the work was lost. State lives on the project, GET reports it, and a read that stops being touched is reported as stalled rather than spinning forever."
   },
   {
     "path": "/api/projects/[id]/movie",

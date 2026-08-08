@@ -18,7 +18,10 @@ import {
   castFromBreakdown,
   matchExistingEntities,
 } from "@/lib/project-breakdown.mjs";
-import { getOwnedProject, normalizeSettings, listScenes } from "@/lib/projects";
+import {
+  getOwnedProject, normalizeSettings, listScenes,
+  breakdownState, setBreakdownState,
+} from "@/lib/projects";
 import { log } from "@/lib/log";
 
 /* P1.5 — cut the scenario into scenes and shots.
@@ -27,13 +30,16 @@ import { log } from "@/lib/log";
    it, where it happens, and every shot of every scene. Each scene becomes a
    board you can approve, re-plan or shoot on its own.
 
-   This is a single LLM read, not eleven. Planning scene by scene re-reads
-   the script each time and lets the same character come back described
-   differently — which is the drift that makes a face change between scenes.
+   This is a single LLM read, not one per scene. Reading scene by scene lets
+   the same character come back described differently, which is the drift
+   that makes a face change between scenes.
+
+   IT DOES NOT HOLD THE REQUEST OPEN. The first version did, and on a real
+   screenplay it ran past nginx's 300-second ceiling: the client got an HTML
+   error page and the work was lost. POST now starts the read and returns;
+   the state lives on the project and GET reports it.
 
    Spends no credits. The shots cost money when they are rendered. */
-
-export const maxDuration = 800;
 
 // Anyone appearing in the film gets an identity, because that is what holds
 // a face still. A person seen once still has to look like themselves.
@@ -48,7 +54,7 @@ async function readScreenplay(script) {
     const reply = await llmComplete(messages, {
       maxTokens: 32000,
       temperature: 0.3,
-      timeout: 600000,
+      timeout: 900000,
       withMeta: true,
     });
     const text = reply?.content || "";
@@ -60,6 +66,147 @@ async function readScreenplay(script) {
     messages.push({ role: "user", content: SCRIPT_BREAKDOWN_RETRY_HINT });
   }
   return { breakdown: null, truncated: false };
+}
+
+/* The work itself. Runs detached from the request that started it, so
+   every exit path has to record its own outcome — an unrecorded failure
+   leaves the project reading forever. */
+async function runBreakdown({ projectId, userId, script, settings, replace }) {
+  const started = Date.now();
+  try {
+    const { breakdown, truncated } = await readScreenplay(script);
+    if (!breakdown) {
+      await setBreakdownState(projectId, {
+        status: "failed",
+        at: new Date().toISOString(),
+        error: truncated
+          ? "That screenplay is longer than one read can hold. Split it and break down each part as its own project for now."
+          : "The reader did not return a usable breakdown. Try again in a moment.",
+      });
+      log.error("project_breakdown_failed", { projectId, truncated, chars: script.length });
+      return;
+    }
+
+    const aspectRatio = settings.aspectRatio;
+
+    /* Cast and places, matched against what the user already built BEFORE
+       anything is created — so a character with real reference photographs
+       is reused rather than shadowed by an empty duplicate. */
+    const wanted = castFromBreakdown(breakdown, { minAppearances: MIN_APPEARANCES });
+    const existing = await prisma.studioEntity.findMany({
+      where: { userId, kind: { in: ["character", "environment"] } },
+      select: { id: true, kind: true, name: true, projectId: true },
+      take: 200,
+    });
+    const { matched, missing } = matchExistingEntities(wanted, existing);
+
+    const created = [];
+    for (const want of missing) {
+      const entity = await prisma.studioEntity.create({
+        data: {
+          userId,
+          projectId,
+          kind: want.kind,
+          name: want.name,
+          description: want.description || null,
+          attributes: {},
+          references: [],
+          // Draft, deliberately: it has a description and no photographs
+          // yet. Marking it ready would claim a face exists that does not.
+          status: "draft",
+        },
+      });
+      matched.set(want.key, entity.id);
+      created.push({ id: entity.id, kind: entity.kind, name: entity.name });
+    }
+
+    const reusedIds = new Set(matched.values());
+    const strays = existing.filter((e) => reusedIds.has(e.id) && e.projectId !== projectId);
+    if (strays.length) {
+      await prisma.studioEntity.updateMany({
+        where: { id: { in: strays.map((e) => e.id) }, userId },
+        data: { projectId },
+      });
+    }
+
+    if (replace) {
+      // Detach rather than delete: a scene that was already shot holds
+      // renders somebody paid for.
+      await prisma.directorPipeline.updateMany({
+        where: { projectId, userId },
+        data: { projectId: null },
+      });
+    }
+
+    const boards = breakdownToScenes(breakdown, {
+      aspectRatio,
+      videoModel: settings.videoModel,
+      entityIdByKey: matched,
+    });
+
+    const scenes = [];
+    for (const board of boards) {
+      const characters = [...new Set((board.scene.shots || []).flatMap((s) => s.characters || []))]
+        .map((key) => (breakdown.characters || []).find((c) => c.key === key))
+        .filter(Boolean)
+        .map((c) => ({ name: c.name, description: c.description || "" }));
+
+      const pipeline = await prisma.directorPipeline.create({
+        data: {
+          userId,
+          projectId,
+          title: board.title,
+          type: "short_film",
+          status: "planning",
+          plan: board.plan,
+          brief: {
+            title: board.title,
+            concept: board.scene.summary || "",
+            type: "short_film",
+            aspectRatio,
+            characters,
+          },
+        },
+      });
+      scenes.push({ id: pipeline.id, title: pipeline.title, shots: board.plan.shots.length });
+    }
+
+    const summary = breakdownSummary(breakdown);
+    await setBreakdownState(projectId, {
+      status: "done",
+      at: new Date().toISOString(),
+      scenes: scenes.length,
+      shots: summary?.shotCount ?? 0,
+      seconds: summary?.totalSeconds ?? 0,
+      created: created.length,
+      reused: wanted.length - created.length,
+      warnings: coverageWarnings(breakdown, script),
+    });
+    log.info("project_breakdown_done", {
+      projectId, scenes: scenes.length, shots: summary?.shotCount ?? null,
+      created: created.length, ms: Date.now() - started,
+    });
+  } catch (e) {
+    await setBreakdownState(projectId, {
+      status: "failed",
+      at: new Date().toISOString(),
+      error: "The scenario could not be read. Try again in a moment.",
+    }).catch(() => {});
+    log.error("project_breakdown_threw", { projectId, error: e?.message });
+  }
+}
+
+export async function GET(req, { params }) {
+  try {
+    const user = await getCurrentUser(req);
+    if (!user) return apiError({ code: "unauthorized" });
+    const { id } = await params;
+    const project = await getOwnedProject(user.id, id);
+    if (!project) return apiError({ code: "not_found", message: "Project not found" });
+    return NextResponse.json({ breakdown: breakdownState(project) });
+  } catch (e) {
+    return authzResponse(e);
+  }
 }
 
 export async function POST(req, { params }) {
@@ -82,6 +229,16 @@ export async function POST(req, { params }) {
         message: "Add the scenario under “Scenario & format” first — there is nothing here to break down.",
       });
     }
+    if (!process.env.OPENROUTER_KEY) {
+      return apiError({ code: "internal", message: "The script reader is unavailable right now.", retryable: true });
+    }
+
+    // One read at a time. Two concurrent reads would each create a full set
+    // of scenes and leave the project with two.
+    const state = breakdownState(project);
+    if (state.status === "reading") {
+      return NextResponse.json({ breakdown: state }, { status: 202 });
+    }
 
     const body = await req.json().catch(() => ({}));
     const existingScenes = await listScenes(user.id, id);
@@ -92,132 +249,22 @@ export async function POST(req, { params }) {
       });
     }
 
-    if (!process.env.OPENROUTER_KEY) {
-      return apiError({ code: "internal", message: "The script reader is unavailable right now.", retryable: true });
-    }
+    const startedAt = new Date().toISOString();
+    await setBreakdownState(id, { status: "reading", startedAt });
 
-    const started = Date.now();
-    const { breakdown, truncated } = await readScreenplay(script);
-    if (!breakdown) {
-      log.error("project_breakdown_failed", { projectId: id, truncated, chars: script.length });
-      return apiError({
-        code: "internal",
-        title: "The script could not be read",
-        message: truncated
-          ? "That screenplay is longer than one read can hold. Split it and break down each part as its own project for now."
-          : "The reader did not return a usable breakdown. Try again in a moment.",
-        retryable: true,
-      });
-    }
-
-    const settings = normalizeSettings(project.data || {});
-    // The breakdown proposes an aspect ratio; the PROJECT decides it. That
-    // is the entire point of the setting living up there.
-    const aspectRatio = settings.aspectRatio;
-
-    /* ── Cast and places ──────────────────────────────────────────────────
-       Matched against what the user already built before anything is
-       created, so a character with real reference photographs is reused
-       rather than shadowed by an empty duplicate. */
-    const wanted = castFromBreakdown(breakdown, { minAppearances: MIN_APPEARANCES });
-    const existing = await prisma.studioEntity.findMany({
-      where: { userId: user.id, kind: { in: ["character", "environment"] } },
-      select: { id: true, kind: true, name: true, projectId: true },
-      take: 200,
-    });
-    const { matched, missing } = matchExistingEntities(wanted, existing);
-
-    const created = [];
-    for (const want of missing) {
-      const entity = await prisma.studioEntity.create({
-        data: {
-          userId: user.id,
-          projectId: id,
-          kind: want.kind,
-          name: want.name,
-          description: want.description || null,
-          attributes: {},
-          references: [],
-          // Draft, deliberately: it has a description and no photographs
-          // yet. Marking it ready would claim a face exists that does not.
-          status: "draft",
-        },
-      });
-      matched.set(want.key, entity.id);
-      created.push({ id: entity.id, kind: entity.kind, name: entity.name });
-    }
-
-    // File anything that matched but lived outside the project.
-    const strays = existing.filter((e) => [...matched.values()].includes(e.id) && e.projectId !== id);
-    if (strays.length) {
-      await prisma.studioEntity.updateMany({
-        where: { id: { in: strays.map((e) => e.id) }, userId: user.id },
-        data: { projectId: id },
-      });
-    }
-
-    /* ── Scenes ─────────────────────────────────────────────────────────── */
-    if (body.replace && existingScenes.length) {
-      // Detach rather than delete: a scene that was already shot holds
-      // renders somebody paid for.
-      await prisma.directorPipeline.updateMany({
-        where: { projectId: id, userId: user.id },
-        data: { projectId: null },
-      });
-    }
-
-    const boards = breakdownToScenes(breakdown, {
-      aspectRatio,
-      videoModel: settings.videoModel,
-      entityIdByKey: matched,
-    });
-
-    const scenes = [];
-    for (const board of boards) {
-      const pipeline = await prisma.directorPipeline.create({
-        data: {
-          userId: user.id,
-          projectId: id,
-          title: board.title,
-          type: "short_film",
-          status: "planning",
-          plan: board.plan,
-          brief: {
-            title: board.title,
-            concept: board.scene.summary || "",
-            type: "short_film",
-            aspectRatio,
-            characters: (board.scene.shots || [])
-              .flatMap((s) => s.characters || [])
-              .filter((v, i, a) => a.indexOf(v) === i)
-              .map((key) => {
-                const c = (breakdown.characters || []).find((x) => x.key === key);
-                return c ? { name: c.name, description: c.description || "" } : null;
-              })
-              .filter(Boolean),
-          },
-        },
-      });
-      scenes.push({ id: pipeline.id, title: pipeline.title, shots: board.plan.shots.length });
-    }
-
-    const summary = breakdownSummary(breakdown);
-    const warnings = coverageWarnings(breakdown, script);
-    log.info("project_breakdown_done", {
+    // Detached on purpose: the read outlives any reasonable request. The
+    // app runs as a long-lived Node process, so this keeps going after the
+    // response is sent; a restart mid-read is caught by the staleness check
+    // in breakdownState rather than leaving the UI spinning forever.
+    void runBreakdown({
       projectId: id,
-      scenes: scenes.length,
-      shots: summary?.shotCount ?? null,
-      created: created.length,
-      ms: Date.now() - started,
+      userId: user.id,
+      script,
+      settings: normalizeSettings(project.data || {}),
+      replace: !!body.replace,
     });
 
-    return NextResponse.json({
-      success: true,
-      scenes,
-      cast: { created, reused: wanted.length - created.length },
-      summary,
-      warnings,
-    }, { status: 201 });
+    return NextResponse.json({ breakdown: { status: "reading", startedAt } }, { status: 202 });
   } catch (e) {
     return authzResponse(e);
   }

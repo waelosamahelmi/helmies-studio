@@ -61,6 +61,7 @@ export function normalizeSettings(input = {}, previous = {}) {
     ...(previous.movieUrl ? { movieUrl: previous.movieUrl } : {}),
     ...(previous.movieBuiltAt ? { movieBuiltAt: previous.movieBuiltAt } : {}),
     ...(previous.movieMeta ? { movieMeta: previous.movieMeta } : {}),
+    ...(previous.breakdown ? { breakdown: previous.breakdown } : {}),
   };
 }
 
@@ -202,17 +203,39 @@ export async function getProjectContents(userId, id, { take = 24 } = {}) {
 // plan is what was asked for, the row is what came back. Reading progress
 // off the plan would report every scene as 0 rendered forever.
 export function sceneSummary(pipeline, shotRows = []) {
-  const planned = Array.isArray(pipeline?.plan?.shots) ? pipeline.plan.shots.length : 0;
+  const planned = Array.isArray(pipeline?.plan?.shots) ? pipeline.plan.shots : [];
   const rendered = shotRows.filter((s) => shotVideoUrl(s)).length;
+  const rowsById = new Map(shotRows.map((r) => [r.shotId || r.id, r]));
+  const rowsByIndex = new Map(shotRows.map((r) => [r.index, r]));
+
   return {
     id: pipeline.id,
     title: pipeline.title,
     type: pipeline.type,
     status: pipeline.status,
-    shots: planned || shotRows.length,
+    shots: planned.length || shotRows.length,
     rendered,
     assembledUrl: pipeline.assembledUrl || null,
     updatedAt: pipeline.updatedAt,
+    // The sub-scenes. A scene is a list of shots, and hiding them behind a
+    // count means the only way to see what a scene actually IS is to open
+    // another surface. Kept thin — description, length, who is in it, and
+    // what came back — because a scene list must not carry whole prompts.
+    board: planned.map((shot, i) => {
+      const row = rowsById.get(shot.id) || rowsByIndex.get(shot.index ?? i) || null;
+      return {
+        id: shot.id || `shot_${i}`,
+        index: shot.index ?? i,
+        title: shot.title || shot.imageStrategy?.prompt?.slice(0, 80) || `Shot ${i + 1}`,
+        seconds: shot.durationSec || null,
+        framing: shot.camera?.framing || null,
+        subjects: Array.isArray(shot.subjects) ? shot.subjects : [],
+        dialogue: shot.dialogue || null,
+        status: row?.status || "draft",
+        imageUrl: row?.imageResult?.url || row?.imageResult?.rawUrl || null,
+        videoUrl: shotVideoUrl(row),
+      };
+    }),
   };
 }
 
@@ -231,7 +254,7 @@ export async function listScenes(userId, projectId) {
   const shots = await prisma.directorShot.findMany({
     where: { pipelineId: { in: rows.map((r) => r.id) } },
     orderBy: { index: "asc" },
-    select: { pipelineId: true, index: true, status: true, videoResult: true },
+    select: { id: true, pipelineId: true, index: true, status: true, imageResult: true, videoResult: true },
   });
   const byPipeline = new Map();
   for (const s of shots) {
@@ -276,6 +299,39 @@ export async function collectMovieClips(userId, projectId) {
     byPipeline.get(s.pipelineId).push(s);
   }
   return { ...movieClips(scenes, byPipeline), scenes };
+}
+
+/* ── Reading the scenario ────────────────────────────────────────────────
+   Breaking a screenplay down is a single LLM read of the whole script, and
+   on a feature that runs for minutes. It was written as one long request
+   and died at nginx's 300-second ceiling with the work half done — the
+   client got an HTML error page, and nothing was saved.
+
+   So the state lives on the project and the client polls it. A read that
+   stops being touched is reported as stalled rather than left spinning
+   forever, because a process restart mid-read is a real thing that
+   happens and "still reading…" after an hour is a lie.                  */
+const READ_STALE_MS = 25 * 60 * 1000;
+
+export function breakdownState(project) {
+  const raw = project?.data?.breakdown;
+  if (!raw || typeof raw !== "object") return { status: "idle" };
+  if (raw.status === "reading") {
+    const started = Date.parse(raw.startedAt || "");
+    if (Number.isFinite(started) && Date.now() - started > READ_STALE_MS) {
+      return { ...raw, status: "stalled", error: "The read stopped partway through. Start it again." };
+    }
+  }
+  return raw;
+}
+
+export async function setBreakdownState(projectId, state) {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { data: true } });
+  if (!project) return null;
+  return prisma.project.update({
+    where: { id: projectId },
+    data: { data: { ...(project.data || {}), breakdown: state } },
+  });
 }
 
 // The finished piece is recorded on the project itself so it survives a

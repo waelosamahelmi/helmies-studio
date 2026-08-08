@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   PROJECT_KINDS, PROJECT_KIND_VALUES, kindOf,
-  normalizeSettings, validateProjectPayload, sceneSummary, movieClips,
+  normalizeSettings, validateProjectPayload, sceneSummary, movieClips, breakdownState,
 } from "@/lib/projects";
 
 describe("project kinds", () => {
@@ -163,5 +163,32 @@ describe("the assembled piece survives a settings edit", () => {
     // body would let anyone point a project at any URL.
     const out = normalizeSettings({ movieUrl: "https://evil/x.mp4" }, {});
     expect(out.movieUrl).toBeUndefined();
+  });
+});
+
+describe("reading the scenario is durable", () => {
+  it("reports a read nobody has touched in half an hour as stalled, not still reading", () => {
+    // A process restart mid-read is a real thing. "Still reading…" an hour
+    // later is a lie, and it leaves the user with no way forward.
+    const old = new Date(Date.now() - 40 * 60 * 1000).toISOString();
+    const state = breakdownState({ data: { breakdown: { status: "reading", startedAt: old } } });
+    expect(state.status).toBe("stalled");
+    expect(state.error).toMatch(/again/i);
+  });
+
+  it("leaves a read that started a minute ago alone", () => {
+    const recent = new Date(Date.now() - 60 * 1000).toISOString();
+    expect(breakdownState({ data: { breakdown: { status: "reading", startedAt: recent } } }).status).toBe("reading");
+  });
+
+  it("says idle when nothing has ever been read", () => {
+    expect(breakdownState({ data: {} }).status).toBe("idle");
+    expect(breakdownState({}).status).toBe("idle");
+  });
+
+  it("carries the read state through a settings edit", () => {
+    // Same trap as movieUrl: updateProject rewrites `data` wholesale.
+    const out = normalizeSettings({ aspectRatio: "16:9" }, { breakdown: { status: "done", scenes: 11 } });
+    expect(out.breakdown).toEqual({ status: "done", scenes: 11 });
   });
 });
