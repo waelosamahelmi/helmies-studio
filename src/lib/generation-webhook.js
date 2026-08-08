@@ -86,6 +86,7 @@ import { extractKieResults } from "@/lib/media-download";
 import { advanceTemplateRun } from "@/lib/template-runner";
 import { advanceAgentRun } from "@/lib/agent-runner";
 import { recordGenerationAsset } from "@/lib/assets-core";
+import { attachGenerationToEntity } from "@/lib/entity-attach";
 
 // Phase A: agent-run steps follow the exact CRITICAL-1 pattern documented
 // above for template runs — the run's ONE reservation is owned by
@@ -262,6 +263,17 @@ export async function handleGenerationWebhook(body) {
       // Outside the transaction (advanceTemplateRun does its own DB
       // read/writes against the now-committed generation row) — only the
       // delivery that actually won the CAS above advances the run, exactly
+      /* Same as job-runner: file the render against the thing it was made
+         for, whichever branch settles the money. The provider can answer
+         here instead of on the poll, and a render that arrives this way
+         must land in exactly the same place. */
+      if (won) {
+        await attachGenerationToEntity(prisma, {
+          ...generation,
+          outputUrl: localUrl || generation.outputUrl,
+        });
+      }
+
       // once, mirroring job-runner.js's own three call sites.
       if (won && isTemplateStep) {
         await safeAdvanceTemplateRun(job.payload.templateRunId);

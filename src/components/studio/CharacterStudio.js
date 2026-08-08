@@ -878,6 +878,10 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
           // Everything else the model requires is filled from its own schema
           // server-side.
           aspect_ratio: angleAspect(entity.kind, angle.kind),
+          // The worker attaches it when the render settles, so closing the
+          // tab no longer means a paid-for angle goes nowhere. The poll
+          // below is only so the sheet fills in while you are watching.
+          attachTo: { entityId: entity.id, kind: angle.kind, label: angle.label },
         }),
       });
       const submitted = await res.json();

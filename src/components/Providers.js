@@ -4,7 +4,6 @@ import { SessionProvider } from "next-auth/react";
 import { ToastProvider } from "@/components/ToastProvider";
 import { AuthModalProvider } from "@/components/AuthModal";
 import { Toaster } from "react-hot-toast";
-import DevMode from "@/components/DevMode";
 import OfflineBanner from "@/components/states/OfflineBanner";
 import AnnouncementBar from "@/components/AnnouncementBar";
 import AnnouncementPopup from "@/components/AnnouncementPopup";
@@ -25,7 +24,6 @@ export default function Providers({ children }) {
       <AnnouncementBar />
       <AnnouncementPopup />
       <PwaInstallPrompt />
-      <DevMode />
       <Toaster
         position="top-right"
         toastOptions={{

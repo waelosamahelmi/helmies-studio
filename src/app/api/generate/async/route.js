@@ -240,6 +240,11 @@ export async function POST(req) {
       stepId: _sid,
       entityIds: _eids,
       entityPurpose: _epurpose,
+      // `attachTo` says where the finished image belongs. It is OURS, never
+      // the provider's, and it is what makes a render survive the tab
+      // closing: the attach used to happen in the browser after a poll, so
+      // walking away meant the work completed and then went nowhere.
+      attachTo: _attach,
       ...cleanParams
     } = effectiveParams;
     const providerModelId = dbPricing?.providerModelId || staticModel?.providerModelId || model;

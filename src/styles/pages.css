@@ -906,3 +906,43 @@
   font-family: var(--ff-display);
   letter-spacing: -0.03em;
 }
+
+/* ── Dev mode ─────────────────────────────────────────────────────────────
+   The terminal frames and the log pane. Both need a real height: a shell
+   in a box that grows with its content is unusable, because the prompt
+   moves every time anything prints. */
+.dev-term {
+  height: min(70vh, 640px);
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: #0a0a12;
+}
+.dev-term > iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.dev-logs {
+  margin: 0;
+  padding: var(--s-3);
+  height: min(60vh, 560px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: #0a0a12;
+  color: var(--tx-dim);
+  font-family: var(--ff-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  .dev-term { height: 60vh; min-height: 260px; }
+  .dev-logs { height: 50vh; }
+}

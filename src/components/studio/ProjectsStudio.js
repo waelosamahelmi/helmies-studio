@@ -1097,37 +1097,32 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
           prompt: [entity.description, anchor.prompt].filter(Boolean).join(". "),
           expand: false,
           aspect_ratio: entity.kind === "environment" ? "16:9" : "1:1",
+          // The server attaches it when the render settles. Nothing here
+          // has to stay open — walking away used to mean the view
+          // completed, was paid for, and went nowhere.
+          attachTo: { entityId: entity.id, kind: anchor.kind, label: anchor.label },
         }),
       });
-      const submitted = await res.json();
+      await res.json();
+      setNotice?.(`${entity.name}: the ${anchor.label.toLowerCase()} is rendering. It attaches itself when it lands — you can leave this page.`);
 
+      /* Watched, not depended on. If this tab is still here the row
+         refreshes on its own; if it is not, the attach happens anyway. */
       const started = Date.now();
       for (;;) {
-        if (Date.now() - started > 5 * 60 * 1000) {
-          throw new Error("That view is taking unusually long. It is still running — check back shortly.");
-        }
-        await new Promise((r) => setTimeout(r, 2500));
-        const s = await apiFetch(`/api/generations/status?id=${submitted.generationId}`, { retries: 0 });
-        const gen = await s.json();
-        if (gen.status === "completed" && gen.outputUrl) {
-          await apiFetch(`/api/entities/${entity.id}/references`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ url: gen.outputUrl, kind: anchor.kind, label: anchor.label, source: "generated" }),
-          });
-          setNotice?.(`${entity.name}: the ${anchor.label.toLowerCase()} is in. Open it in Cast to generate the rest from it.`);
-          onChanged?.();
-          loadCoverage();
-          return;
-        }
-        if (gen.status === "failed") throw new Error(gen.error || "That view failed.");
+        if (Date.now() - started > 5 * 60 * 1000) return;
+        await new Promise((r) => setTimeout(r, 4000));
+        const fresh = await apiFetch(`/api/projects/${projectId}/coverage`, { retries: 0 }).then((r) => r.json());
+        const row = (fresh.entities || []).find((x) => x.id === entity.id);
+        setCoverage(fresh);
+        if (row && row.references > (gap.total - gap.missing.length)) { onChanged?.(); return; }
       }
     } catch (e) {
-      setError?.(e?.message || "That view could not be made.");
+      setError?.(e?.message || "That view could not be started.");
     } finally {
       setMaking(null);
     }
-  }, [gapFor, models, onChanged, loadCoverage, setNotice, setError]);
+  }, [gapFor, models, projectId, onChanged, setNotice, setError]);
 
   useEffect(() => {
     let cancelled = false;

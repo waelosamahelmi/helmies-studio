@@ -87,6 +87,7 @@ import { advanceTemplateRun } from "./template-runner.js";
 // Same hoisted-async circular-import safety as advanceTemplateRun.
 import { advanceAgentRun, executeInternalJob } from "./agent-runner.js";
 import { recordGenerationAsset } from "./assets-core.js";
+import { attachGenerationToEntity } from "./entity-attach.js";
 
 // A1.4.3: asset writes are best-effort and must never mask the money/advance
 // path (recordGenerationAsset already never throws — this is belt and braces
@@ -398,6 +399,16 @@ export async function runJob(job, { workerId, signal } = {}) {
       outputUrl: localUrl || outputs?.[0] || generation.outputUrl,
     });
     if (won) {
+      /* Whatever kind of job this was, if it was made FOR something it is
+         filed against it here — before the branching, because every branch
+         below settles money differently but they all produced an image
+         somebody is waiting to see attached. This is the step that used to
+         run in the browser after a poll, so leaving the page lost it. */
+      await attachGenerationToEntity(prisma, {
+        ...generation,
+        outputUrl: localUrl || outputs?.[0] || generation.outputUrl,
+      });
+
       // Phase 6 Task 3 / Phase A: same split as handleFailure above — a
       // template-run or agent-run step chains to its runner (which owns the
       // run's ONE reservation) instead of settling a per-generation

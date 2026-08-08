@@ -29,6 +29,7 @@ import CmsEditor from "./CmsEditor";
 import MetricsPanel from "./MetricsPanel";
 import OpsPanel from "./OpsPanel";
 import AnnouncementsPanel from "./AnnouncementsPanel";
+import DevPanel from "@/components/admin/DevPanel";
 import {
   AuditPanel, FlagsPanel, JobsPanel,
   ProviderHealthPanel, RefundsPanel, UsersPanel,
@@ -50,6 +51,7 @@ const SECTIONS = [
   { id: "cms",           label: "CMS content",     icon: IcText },
   { id: "flags",         label: "Feature flags",   icon: IcSettings },
   { id: "announcements", label: "Announcements",   icon: IcMegaphone },
+  { id: "dev",           label: "Dev mode",        icon: IcBolt },
 ];
 
 function View({ section }) {
@@ -68,6 +70,7 @@ function View({ section }) {
     case "cms":           return <CmsEditor />;
     case "flags":         return <FlagsPanel />;
     case "announcements": return <AnnouncementsPanel />;
+    case "dev":           return <DevPanel />;
     default:              return <OverviewDashboard />;
   }
 }
