@@ -486,3 +486,70 @@ describe("a shot is as long as what happens in it", () => {
     expect(spokenWords({})).toBe(0);
   });
 });
+
+describe("the screenplay says who speaks, not the read", () => {
+  // Scene 3 came back with "Not tonight." spoken by Other Wael. The script
+  // puts it under WAEL — the man walking says it, the seated silhouette
+  // says "Sit." two beats later. Backwards, that swaps the two men in the
+  // scene that introduces them, and since the variant follows the speaker
+  // it puts them both in the same clothes too.
+  const SCENE = `SCENE 3 — THE ROOM
+
+Wael stands in the darkness.
+STEP.
+
+WOMAN (O.S.)
+Where are you going?
+
+WAEL
+Not tonight.
+
+He reaches the chair.
+
+SILHOUETTE
+Sit.`;
+
+  it("reads each line's speaker off the character cue", async () => {
+    const { scriptSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
+    const by = scriptSpeakers(SCENE);
+    expect(by.get("not tonight")).toBe("WAEL");
+    expect(by.get("sit")).toBe("SILHOUETTE");
+    expect(by.get("where are you going")).toBe("WOMAN");
+  });
+
+  it("does not mistake a sound effect for a character", async () => {
+    // "STEP." is capitals on its own line and nobody says it.
+    const { scriptSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
+    expect([...scriptSpeakers(SCENE).values()]).not.toContain("STEP");
+  });
+
+  it("takes the line back off the wrong man", async () => {
+    const { attributeSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
+    const [shot] = attributeSpeakers(
+      [{ dialogue: [{ speaker: "Other Wael", speakerVariant: "Other Wael", line: "Not tonight." }] }],
+      SCENE,
+    );
+    expect(shot.dialogue[0].speaker).toBe("WAEL");
+    expect(shot.dialogue[0].speakerVariant).toBe("WAEL");
+  });
+
+  it("leaves a line the script does not contain exactly as it is", async () => {
+    // A paraphrase is the read's own. Rewriting its speaker on a guess is
+    // worse than leaving it alone.
+    const { attributeSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
+    const shots = [{ dialogue: [{ speaker: "Other Wael", line: "Something he never says." }] }];
+    expect(attributeSpeakers(shots, SCENE)[0]).toBe(shots[0]);
+  });
+
+  it("leaves a correctly attributed line untouched", async () => {
+    const { attributeSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
+    const shots = [{ dialogue: [{ speaker: "SILHOUETTE", line: "Sit." }] }];
+    expect(attributeSpeakers(shots, SCENE)[0]).toBe(shots[0]);
+  });
+
+  it("matches regardless of punctuation and case", async () => {
+    const { attributeSpeakers } = await import("@/lib/script-breakdown-passes.mjs");
+    const [shot] = attributeSpeakers([{ dialogue: [{ speaker: "x", line: "not tonight" }] }], SCENE);
+    expect(shot.dialogue[0].speaker).toBe("WAEL");
+  });
+});

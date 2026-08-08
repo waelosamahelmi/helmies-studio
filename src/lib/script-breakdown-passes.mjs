@@ -522,3 +522,65 @@ export function tightenDurations(shots = [], limits = undefined) {
     return { ...shot, durationSec: want };
   });
 }
+
+/* ── Who says a line is written in the screenplay ─────────────────────────
+   Scene 3 came back with "Not tonight." spoken by Other Wael. The script
+   puts it under WAEL — it is the man walking who says it, and the seated
+   silhouette who says "Sit." two beats later. Getting that backwards swaps
+   the two men in the only scene that introduces them, and because the
+   variant follows the speaker it also puts them both in the same clothes,
+   which is the wardrobe bug arriving by a different road.
+
+   A screenplay states this unambiguously: a character cue in capitals, the
+   line underneath. So it is read from the text, the same way the (O.S.)
+   tags are, and only ever overrides when the line is found. A line the
+   read invented or paraphrased is left exactly as it came. */
+
+// "WAEL", "SILHOUETTE", "WOMAN (O.S.)", "OTHER WAEL (CONT'D)" — a cue is
+// capitals on its own line, optionally with a parenthetical after it.
+const CHARACTER_CUE = /^\s*([A-Z][A-Z0-9 .'\-]{1,40}?)\s*(\([^)]*\))?\s*$/;
+
+const normalise = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+
+/** Every spoken line in the scene, with the character the script gives it to. */
+export function scriptSpeakers(sceneText = "") {
+  const byLine = new Map();
+  const lines = String(sceneText).split(/\r?\n/);
+  let cue = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { cue = null; continue; }
+    const m = CHARACTER_CUE.exec(raw);
+    // A cue is capitals AND has letters — "TICK." and "STEP." qualify as
+    // capitals, but nothing follows them, so they never claim a line.
+    if (m && /[A-Z]{2}/.test(m[1])) { cue = m[1].trim(); continue; }
+    if (cue) {
+      const key = normalise(line);
+      if (key && !byLine.has(key)) byLine.set(key, cue);
+    }
+  }
+  return byLine;
+}
+
+/**
+ * Give every line back to whoever the screenplay says said it.
+ *
+ * Untouched when the line is not in the script — a paraphrase is the read's
+ * own, and rewriting its speaker on a guess would be worse than leaving it.
+ */
+export function attributeSpeakers(shots = [], sceneText = "") {
+  const byLine = scriptSpeakers(sceneText);
+  if (!byLine.size) return shots;
+  return shots.map((shot) => {
+    const lines = Array.isArray(shot?.dialogue) ? shot.dialogue : null;
+    if (!lines?.length) return shot;
+    let changed = false;
+    const fixed = lines.map((d) => {
+      const who = byLine.get(normalise(d?.line));
+      if (!who || normalise(who) === normalise(d?.speaker)) return d;
+      changed = true;
+      return { ...d, speaker: who, speakerVariant: who };
+    });
+    return changed ? { ...shot, dialogue: fixed } : shot;
+  });
+}

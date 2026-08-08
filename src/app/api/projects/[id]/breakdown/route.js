@@ -28,6 +28,7 @@ import {
   sceneIsCovered,
   keepOffscreenOffscreen,
   tightenDurations,
+  attributeSpeakers,
 } from "@/lib/script-breakdown-passes.mjs";
 import { shotDurationLimits } from "@/lib/project-models.mjs";
 import {
@@ -203,7 +204,10 @@ ${text}`,
        length the read gave it. */
     scenes.push({
       ...scene,
-      shots: tightenDurations(keepOffscreenOffscreen(shots || [], text), limits || undefined),
+      shots: tightenDurations(
+        attributeSpeakers(keepOffscreenOffscreen(shots || [], text), text),
+        limits || undefined,
+      ),
     });
     onProgress?.(i + 1, structure.scenes.length);
   }
