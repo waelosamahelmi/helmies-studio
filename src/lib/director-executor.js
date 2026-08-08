@@ -5,6 +5,13 @@ import { estimateCredits } from "@/lib/pricing-engine";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
+import { selectEntityReferences } from "@/lib/entity-core.mjs";
+
+/* The fallback when a pipeline names no image model. It was "flux-dev",
+   which the provider answers with a 500 — so a shot that reached this
+   line could never succeed. Kept as a named constant so the next person
+   changing it can see it is a real, callable model and not a guess. */
+const DEFAULT_IMAGE_MODEL = "seedream/5-pro-text-to-image";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 
 // ──────────────────────────────────────────────
@@ -237,18 +244,48 @@ async function executeShotImage(shot, pipeline, brief) {
       ));
     }
 
+    /* THE CAST OF THIS SHOT.
+       Every shot the screenplay breakdown produces carries `entityIds` —
+       the real characters and places, with reference photographs on file.
+       Nothing here read them, so a scene planned around Wael rendered a
+       stranger: the director only understood $CHARACTER_ tokens, which
+       the breakdown does not emit. Their references are pulled in here and
+       joined with whatever the plan already listed. */
+    if (Array.isArray(shot.entityIds) && shot.entityIds.length) {
+      try {
+        const entities = await prisma.studioEntity.findMany({
+          where: { id: { in: shot.entityIds.slice(0, 6) }, userId: pipeline.userId },
+        });
+        const fromCast = entities.flatMap((e) =>
+          selectEntityReferences(e, { purpose: "default", max: 2 }).map((r) => r.url));
+        refs = [...new Set([...refs.filter(Boolean), ...fromCast])];
+      } catch (err) {
+        console.error("[Director] entity references failed:", err?.message);
+      }
+    }
+
+    /* THE MODEL THE PROJECT CHOSE.
+       This was `brief.modelImage || "flux-dev"` — and nothing ever set
+       brief.modelImage, so every director shot rendered on a hardcoded
+       default whatever the project had been configured with. flux-dev is
+       also one of the ids the provider answers with a 500, which is why
+       all four shots of scene 1 failed. */
+    const wantModel = brief.modelImage || DEFAULT_IMAGE_MODEL;
+
     // Build generation params
     const params = {
       prompt: imagePrompt,
       aspect_ratio: brief.aspectRatio || "9:16",
       images_list: refs.slice(0, 3), // limit refs per model capabilities
-      _provider: await resolveProvider(brief.modelImage || "flux-dev")
+      model: wantModel,
+      _provider: await resolveProvider(wantModel)
     };
 
     // Choose between T2I and I2I based on references
     let result;
     if (refs.length > 0 && refs[0]) {
       params.image_url = refs[0];
+      params.image_urls = refs.slice(0, 3);
       params.strength = 0.6;
       result = await generateI2I(params);
     } else {
@@ -271,7 +308,7 @@ async function executeShotImage(shot, pipeline, brief) {
       data: {
         userId: pipeline.userId,
         tool: "image",
-        model: brief.modelImage || "flux-dev",
+        model: brief.modelImage || DEFAULT_IMAGE_MODEL,
         prompt: imagePrompt,
         params: persistableParams(params),
         outputUrl: storedUrl,

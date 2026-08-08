@@ -87,6 +87,8 @@ export async function POST(req, { params }) {
         duration: Number.isFinite(body.duration) ? body.duration : 30,
         type: kind.directorType,
         aspectRatio: settings.aspectRatio,
+        modelImage: settings.imageModel || undefined,
+        modelVideo: settings.videoModel || undefined,
         characters,
         references: characters.map((c) => c.referenceUrl).filter(Boolean),
       },

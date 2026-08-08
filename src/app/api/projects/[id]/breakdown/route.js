@@ -161,6 +161,11 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
         concept: board.scene.summary || "",
         type: "short_film",
         aspectRatio,
+        // The project's chosen models travel with the scene. Without them
+        // the executor fell back to a hardcoded default and rendered every
+        // shot on a model nobody picked.
+        modelImage: settings.imageModel || undefined,
+        modelVideo: settings.videoModel || undefined,
         characters,
       };
       const costEstimate = await estimateDirectorCost(board.plan, briefForScene).catch(() => null);
@@ -174,13 +179,7 @@ async function runBreakdown({ projectId, userId, script, settings, replace }) {
           status: "planning",
           plan: board.plan,
           costEstimate,
-          brief: {
-            title: board.title,
-            concept: board.scene.summary || "",
-            type: "short_film",
-            aspectRatio,
-            characters,
-          },
+          brief: briefForScene,
         },
       });
       scenes.push({ id: pipeline.id, title: pipeline.title, shots: board.plan.shots.length });
