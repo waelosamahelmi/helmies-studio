@@ -71,6 +71,7 @@ import { assembleVideos } from "./video-assembly.js";
 import { chainStepIfNeeded } from "./video-chain.js";
 import { log } from "./log.js";
 import { injectEntities, purposeForStep } from "./entity-inject.js";
+import { imageReferenceSlot, voiceReferenceSlot } from "./entity-core.mjs";
 import { applyRequiredDefaults } from "./provider-payload-core.mjs";
 
 // How many MEDIA jobs a single run may have in flight at once. Internal
@@ -204,6 +205,25 @@ async function persistProgress(run, stepRows) {
   return stepResults;
 }
 
+// Does this step actually carry the media its model needs?
+//
+// This used to test four hardcoded names — image_url, images_list, video_url,
+// audio_url. Seedream's field is `image_urls` (plural), so a shot carrying six
+// reference photographs still read as "text only" and got demoted onto
+// z-image, which takes no reference at all. Same hardcoded-field-list trap as
+// absolutizeMediaUrls and maxImages: ask the model's OWN schema where its
+// media goes, then look there.
+function hasMediaInput(row, params = {}) {
+  const filled = (v) => (Array.isArray(v) ? v.length > 0 : Boolean(v));
+  const slot = imageReferenceSlot(row?.inputSchema);
+  if (slot && filled(params[slot.field])) return true;
+  const voice = voiceReferenceSlot(row?.inputSchema);
+  if (voice && filled(params[voice.field])) return true;
+  // Backstop for rows whose schema we do not have.
+  return ["image_url", "image_urls", "images_list", "image_input", "reference_image",
+          "reference_image_urls", "video_url", "audio_url", "first_frame_url"].some((f) => filled(params[f]));
+}
+
 // ── Model resolution with budget ceiling (worker-safe) ────────────────────
 // quoteCatalogModel (model-catalog.js) is "@/"-free, so substitution can
 // re-quote here in the worker. A substitute that re-quotes above the step's
@@ -215,7 +235,7 @@ async function resolveStepModel(step, params) {
   if (!catalogKind || !planned) return { modelId: planned, row: null, substitution: null };
 
   let row = await resolveRunnableModel(planned).catch(() => null);
-  if (row && requiresMediaInput(row) && !params.image_url && !params.images_list?.length && !params.video_url && !params.audio_url) {
+  if (row && requiresMediaInput(row) && !hasMediaInput(row, params)) {
     row = null; // media-required model on a text-only step — substitute instead of wasting a provider call
   }
   if (row) return { modelId: row.modelId, row, substitution: null };
