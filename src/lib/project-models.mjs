@@ -73,6 +73,49 @@ export function videoModelsFor(models = [], { aspectRatio = null } = {}) {
   });
 }
 
+/**
+ * Still-image models that need NO reference — for drawing the first view of
+ * a place from its description, where there is nothing to reference yet.
+ *
+ * The rule that matters here is POSITIVE EVIDENCE. A model whose schema we
+ * do not have is excluded, not allowed through: treating "we know nothing
+ * about it" as "it is safe" is what let a text-to-video model be chosen to
+ * draw a room. isStillImageModel returns false for an absent schema, which
+ * is exactly the behaviour this needs.
+ */
+export function textToImageModelsFor(models = [], { aspectRatio = null } = {}) {
+  return models.filter((m) => {
+    const schema = m?.schema || m?.inputSchema;
+    if (!isStillImageModel(schema)) return false;
+    const fields = schema?.fields || {};
+    // Nothing that DEMANDS an image we do not have.
+    if (Object.entries(fields).some(([name, f]) => f?.required && /image|reference/i.test(name))) return false;
+    return supportsAspect(m, aspectRatio);
+  });
+}
+
+/**
+ * Which of them to use.
+ *
+ * `preferred` is the project's own choice and wins outright when it can do
+ * the job. Otherwise the MOST CAPABLE AFFORDABLE one — explicitly not the
+ * most expensive: ranking by price descending picks whatever the priciest
+ * row in the catalog happens to be, which is how a video model got chosen
+ * to draw a bedroom.
+ */
+export function pickTextToImageModel(models = [], { preferred = null, aspectRatio = null } = {}) {
+  const usable = textToImageModelsFor(models, { aspectRatio });
+  if (!usable.length) return null;
+  if (preferred) {
+    const hit = usable.find((m) => m.id === preferred);
+    if (hit) return hit;
+  }
+  // Middle of the range: cheap rows are draft-quality, the dearest is
+  // rarely the right default for a reference nobody will look at twice.
+  const ranked = [...usable].sort((a, b) => (a.credits ?? 0) - (b.credits ?? 0));
+  return ranked[Math.floor(ranked.length / 2)] || ranked[0];
+}
+
 /** Models that speak. */
 export function voiceModelsFor(models = []) {
   return models.filter((m) => {

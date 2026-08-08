@@ -18,6 +18,7 @@ import {
   stepsFor, stepState,
 } from "@/lib/entity-core.mjs";
 import { GEMINI_TTS_VOICES } from "@/lib/model-catalog-core.mjs";
+import { pickTextToImageModel } from "@/lib/project-models.mjs";
 
 /* One model does the identity work, and it is not switchable. A picker here
    was a decision nobody wanted to make in the middle of building a character,
@@ -835,17 +836,13 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
   const anchorKind = pack[0]?.kind;
   const fromScratchModel = useMemo(() => {
     if (entity.kind === "character") return null;
-    const candidates = (models || []).filter((m) => {
-      const schema = m.schema;
-      if (!isStillImageModel(schema)) return false;
-      const fields = schema?.fields || {};
-      // Nothing that DEMANDS an image we do not have.
-      return !Object.entries(fields).some(([name, f]) => f?.required && /image|reference/i.test(name));
-    });
-    const preferred = TEXT_TO_IMAGE_PREFERENCE.find((id) => candidates.some((m) => m.id === id));
-    if (preferred) return candidates.find((m) => m.id === preferred);
-    return [...candidates].sort((a, b) => (b.credits ?? 0) - (a.credits ?? 0))[0] || null;
-  }, [models, entity.kind, pack]);
+    /* One shared rule, so this and the Projects panel can never disagree
+       about what may draw a room. It requires POSITIVE evidence that a
+       model makes a still — an absent schema is excluded, not waved
+       through, which is what let a text-to-video model be picked. */
+    const preferred = TEXT_TO_IMAGE_PREFERENCE.find((id) => (models || []).some((m) => m.id === id));
+    return pickTextToImageModel(models, { preferred });
+  }, [models, entity.kind]);
 
   const canStartFromScratch = !hasSource && !!fromScratchModel && Boolean((entity.description || "").trim());
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   imageModelsFor, videoModelsFor, voiceModelsFor,
   supportsAspect, isVideoModel, takesFirstFrame, estimateProjectCost,
+  textToImageModelsFor, pickTextToImageModel,
 } from "@/lib/project-models.mjs";
 
 const model = (id, fields, extra = {}) => ({ id, credits: 10, schema: { fields }, ...extra });
@@ -99,5 +100,55 @@ describe("what a production costs from here", () => {
 
   it("survives a project with no scenes", () => {
     expect(estimateProjectCost([], { imageCredits: 5, videoCredits: 5 })).toMatchObject({ shots: 0, toFinish: 0 });
+  });
+});
+
+describe("what may draw a room from a description", () => {
+  // This shipped wrong: pressing "Draw it" on an environment ran
+  // hailuo/02-text-to-video-pro. Two causes, both here.
+  const WITH_UNKNOWNS = [
+    ...CATALOG,
+    // A row whose schema we simply do not have.
+    { id: "mystery-model", credits: 500, schema: null },
+    { id: "hailuo/02-text-to-video-pro", credits: 400, schema: { fields: { prompt: {}, duration: {} } } },
+    { id: "cheap-draft", credits: 1, schema: { fields: { prompt: {}, aspect_ratio: { enum: ["16:9"] } } } },
+  ];
+
+  it("excludes a model whose schema we do not have, instead of assuming it is safe", () => {
+    // CAUSE 1: `m.schema?.fields || {}` made an unknown model look like it
+    // had no video fields, so it passed every check.
+    const ids = textToImageModelsFor(WITH_UNKNOWNS, {}).map((m) => m.id);
+    expect(ids).not.toContain("mystery-model");
+  });
+
+  it("never offers a text-to-video model for drawing a still", () => {
+    const ids = textToImageModelsFor(WITH_UNKNOWNS, {}).map((m) => m.id);
+    expect(ids).not.toContain("hailuo/02-text-to-video-pro");
+    expect(ids).not.toContain("seedance");
+  });
+
+  it("does not pick the most expensive row in the catalog", () => {
+    // CAUSE 2: ranking by price DESCENDING picks whatever the priciest row
+    // happens to be, which is how a video model won.
+    const picked = pickTextToImageModel(WITH_UNKNOWNS, {});
+    expect(picked).toBeTruthy();
+    expect(picked.credits).toBeLessThan(400);
+  });
+
+  it("uses the project's own image model when it can do the job", () => {
+    const picked = pickTextToImageModel(WITH_UNKNOWNS, { preferred: "cheap-draft", aspectRatio: "16:9" });
+    expect(picked.id).toBe("cheap-draft");
+  });
+
+  it("ignores a preferred model that cannot do the job", () => {
+    // The project's image model may be an EDIT model, which cannot draw
+    // something from nothing.
+    const picked = pickTextToImageModel(WITH_UNKNOWNS, { preferred: "hailuo/02-text-to-video-pro" });
+    expect(picked.id).not.toBe("hailuo/02-text-to-video-pro");
+  });
+
+  it("returns null rather than something wrong when nothing fits", () => {
+    expect(pickTextToImageModel([{ id: "v", schema: { fields: { duration: {} } } }], {})).toBeNull();
+    expect(pickTextToImageModel([], {})).toBeNull();
   });
 });

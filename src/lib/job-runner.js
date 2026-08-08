@@ -328,7 +328,18 @@ async function handleFailure(job, generation, err) {
 
   const retryable = isRetryableError(err);
   const message = err?.message || String(err);
-  const result = await failJob(job.id, message, { retryable });
+
+  /* The job row is supposed to keep the RAW reason so an operator can tell
+     one failure from another — the branded string is for the user. It was
+     storing the branded string too, because providers.js brands at the
+     THROW site and attaches the real reason as the error's `.cause`, which
+     nothing here read. The result: 29 of 54 production failures all said
+     "An unexpected error occurred", across eleven different models, with
+     no way to tell a rate limit from a bad payload from an outage.
+
+     `.cause` first, branded message as the fallback. */
+  const rawReason = err?.cause?.message || err?.cause || message;
+  const result = await failJob(job.id, String(rawReason).slice(0, 2000), { retryable });
 
   if (result.willRetry) {
     // Still retryable and under maxAttempts — the job goes back to `queued`

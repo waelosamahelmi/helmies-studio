@@ -7,7 +7,7 @@ import { apiFetch } from "@/lib/client-fetch";
 import ErrorState from "@/components/states/ErrorState";
 import { useModelCatalog } from "@/components/studio/useModelCatalog";
 import {
-  imageModelsFor, videoModelsFor, voiceModelsFor, estimateProjectCost,
+  imageModelsFor, videoModelsFor, voiceModelsFor, estimateProjectCost, pickTextToImageModel,
 } from "@/lib/project-models.mjs";
 import {
   Confirm, Modal, Field, Segmented, ModelPicker,
@@ -1076,12 +1076,14 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
     const gap = gapFor(entity.id);
     if (!gap?.missing?.length) return;
 
-    const usable = (models || []).filter((m) => {
-      const fields = m.schema?.fields || {};
-      if (fields.duration || Object.keys(fields).some((k) => /video/i.test(k))) return false;
-      return !Object.entries(fields).some(([name, f]) => f?.required && /image|reference/i.test(name));
+    /* The project's own image model first, and only a model whose schema
+       PROVES it makes a still. An earlier version treated an absent schema
+       as safe and then ranked by price descending — which is how a
+       text-to-video model was picked to draw a bedroom. */
+    const scratchModel = pickTextToImageModel(models, {
+      preferred: coverage?.settings?.imageModel,
+      aspectRatio: coverage?.settings?.aspectRatio,
     });
-    const scratchModel = usable.sort((a, b) => (b.credits ?? 0) - (a.credits ?? 0))[0];
     if (!scratchModel) { setError?.("No model here can draw a view from a description."); return; }
 
     setMaking(entity.id);
@@ -1122,7 +1124,7 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
     } finally {
       setMaking(null);
     }
-  }, [gapFor, models, projectId, onChanged, setNotice, setError]);
+  }, [gapFor, models, coverage, projectId, onChanged, setNotice, setError]);
 
   useEffect(() => {
     let cancelled = false;

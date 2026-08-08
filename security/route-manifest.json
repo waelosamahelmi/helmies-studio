@@ -635,6 +635,18 @@
     "notes": "Bearer CRON_SECRET; fails closed with 503 if unset (cron/automation instead returns 401 for the same unset-secret case — a harmless status-code inconsistency between the two cron routes, not a vulnerability). Not a Task 3 origin-check target. Origin check N/A: authenticated by a bearer CRON_SECRET from an external cron dispatcher, not a browser session — no Origin/Referer header to check."
   },
   {
+    "path": "/api/dev/failures",
+    "file": "src/app/api/dev/failures/route.js",
+    "methods": [
+      "GET"
+    ],
+    "auth": "admin",
+    "originCheck": false,
+    "rateLimit": "none",
+    "stateChanging": false,
+    "notes": "2026-08-08 Dev mode: failures of the last 14 days grouped by the RAW provider reason, with ids scrubbed so the same failure lands in the same bucket. The user is shown a branded message on purpose (it does not name the upstream provider); the operator needs the opposite and was getting the branded string too, so \"An unexpected error occurred\" covered eleven models and every distinct cause. Reports dispatched-vs-not per group, which is the difference between \"we broke\" and \"they broke\". Read-only."
+  },
+  {
     "path": "/api/dev/logs",
     "file": "src/app/api/dev/logs/route.js",
     "methods": [
