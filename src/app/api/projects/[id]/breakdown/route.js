@@ -36,7 +36,7 @@ import {
 } from "@/lib/project-breakdown.mjs";
 import {
   getOwnedProject, normalizeSettings, listScenes,
-  breakdownState, setBreakdownState,
+  breakdownState, setBreakdownState, orderByScreenplay,
 } from "@/lib/projects";
 import { estimateDirectorCost } from "@/lib/director-planner";
 import { log } from "@/lib/log";
@@ -231,11 +231,16 @@ async function runBreakdown({ projectId, userId, script, settings, replace, keep
     /* Scenes already shot, by POSITION in the screenplay — the only thing
        that ties an existing pipeline to a scene the structure pass will
        return. */
-    const existingOrdered = await prisma.directorPipeline.findMany({
+    const existingOrdered = orderByScreenplay(await prisma.directorPipeline.findMany({
       where: { projectId, userId },
+      // createdAt is only a stand-in for screenplay position until a scene
+      // is re-read, and by definition every scene here has been through
+      // that. Sorted by the screenplay's own numbering, the same way the
+      // project lists them — otherwise "keep everything except scene 3"
+      // keeps the wrong nine and re-reads a scene nobody asked about.
       orderBy: { createdAt: "asc" },
-      select: { id: true },
-    });
+      select: { id: true, plan: true },
+    }));
     const keepIndexes = new Set(
       existingOrdered.map((p, i) => (keepSceneIds.includes(p.id) ? i : -1)).filter((i) => i >= 0),
     );
