@@ -49,6 +49,20 @@ const MEMBER_GROUPS = [
 
 /* A scene in one of these is working, and the row offers Stop rather than
    Render. Matches the executor's own in-flight set. */
+/* What a shot row says about itself. A shot mid-render used to show the
+   reason an EARLIER attempt failed, which reads as broken rather than
+   busy. */
+const SHOT_STATE_LABEL = {
+  generating_image: "making the frame…",
+  generating_video: "making the clip…",
+  generating_audio: "making the sound…",
+  completed: "done",
+  failed: "failed",
+  draft: null,
+};
+
+const SHOT_WORKING = ["generating_image", "generating_video", "generating_audio"];
+
 const SCENE_RUNNING = ["queued", "generating_images", "generating_videos", "generating_audio", "quality_check", "assembling"];
 
 const SCENE_STATUS = {
@@ -570,6 +584,17 @@ function ScenesTab({ project, contents, unit, onChanged }) {
   const [error, setError] = useState("");
   const scenes = contents.scenes || [];
 
+  /* A scene being rendered has to look like it. Clips take minutes each,
+     so without this the list sat on whatever it said when you opened it —
+     a shot mid-render still showing why an older attempt failed, and no
+     sign anything was happening. Polled only while something IS working. */
+  const anyWorking = scenes.some((s) => SCENE_RUNNING.includes(s.status));
+  useEffect(() => {
+    if (!anyWorking) return undefined;
+    const t = setInterval(() => onChanged?.(), 8000);
+    return () => clearInterval(t);
+  }, [anyWorking, onChanged]);
+
   /* One read of the screenplay produces the whole structure. Planning scene
      by scene re-reads the script each time and lets the same character come
      back described differently — which is exactly how a face drifts.
@@ -823,8 +848,11 @@ function ScenesTab({ project, contents, unit, onChanged }) {
                   <ol className="st-shots">
                     {(s.board || []).map((shot, n) => (
                       <li key={shot.id} className="st-shot">
-                        <span className="st-shot__frame">
-                          {shot.imageUrl ? (
+                        <span className={`st-shot__frame${SHOT_WORKING.includes(shot.status) ? " is-working" : ""}`}>
+                          {shot.videoUrl ? (
+                            <video src={shot.videoUrl} muted playsInline preload="metadata"
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          ) : shot.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element -- consistent with every other studio thumbnail
                             <img src={shot.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                           ) : (
@@ -837,6 +865,7 @@ function ScenesTab({ project, contents, unit, onChanged }) {
                           <span className="st-shot__title">{shot.title}</span>
                           <span className="st-shot__meta">
                             {[
+                              SHOT_STATE_LABEL[shot.status] || null,
                               shot.framing,
                               shot.seconds ? `${shot.seconds}s` : null,
                               shot.subjects?.length ? shot.subjects.join(", ") : null,

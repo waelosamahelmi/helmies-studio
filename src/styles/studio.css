@@ -3540,3 +3540,18 @@ select.st-layer__role option {
   /* The setup form's two ratio pickers stack rather than compress. */
   .st-project__format { flex-direction: column; align-items: stretch; }
 }
+
+/* A shot being made right now. The pulse is the only thing distinguishing
+   "working on it" from "nothing is happening" during the minutes a clip
+   takes to render. */
+.st-shot__frame.is-working {
+  border: 1px solid var(--filament-lit);
+  animation: st-shot-pulse 1.8s ease-in-out infinite;
+}
+@keyframes st-shot-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .st-shot__frame.is-working { animation: none; }
+}

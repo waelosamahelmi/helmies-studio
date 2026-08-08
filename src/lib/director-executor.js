@@ -536,6 +536,34 @@ async function executeShotImage(shot, pipeline, brief) {
 
 async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
   const rowId = shotRowId(pipeline.id, shot.id);
+
+  /* SAY THAT THIS SHOT IS BEING MADE, BEFORE MAKING IT.
+
+     Only the image stage marked a shot as in progress, and going straight
+     to video skips that stage — so for the six minutes a clip takes, the
+     scene showed the shot's PREVIOUS state (often "failed" from an older
+     attempt) and nothing anywhere said work was happening. It looked
+     stalled while it was running, which is the worst thing a long job can
+     look like.
+
+     Upsert, not update: in direct mode nothing has created this row yet,
+     and update on a missing row throws. */
+  await prisma.directorShot.upsert({
+    where: { id: rowId },
+    create: {
+      id: rowId,
+      pipelineId: pipeline.id,
+      index: shot.index,
+      title: shot.title,
+      status: SHOT_STATES.GENERATING_VIDEO,
+      plan: shot,
+      imageResult: null,
+      videoResult: null,
+      audioResult: null,
+    },
+    update: { status: SHOT_STATES.GENERATING_VIDEO, plan: shot, error: null },
+  }).catch((err) => console.error("[Director] shot row upsert failed:", err?.message));
+
   try {
     const videoPrompt = shot.videoStrategy?.prompt || "";
 
@@ -621,6 +649,9 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
     await prisma.directorShot.update({
       where: { id: rowId },
       data: {
+        // A completed shot must not still be showing why an EARLIER
+        // attempt failed.
+        error: null,
         videoResult: { url: storedUrl, rawUrl: videoUrl, prompt: videoPrompt, modelRoute },
         status: SHOT_STATES.COMPLETED
       }
