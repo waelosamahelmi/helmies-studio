@@ -184,6 +184,17 @@ export function estimateProjectCost(scenes = [], { imageCredits = 0, videoCredit
 
    A model that can hold thirty seconds should be given thirty seconds of
    the script, so a conversation plays out in one take instead of five. */
+/* The floor for a model that declares none.
+
+   Deliberately NOT the old 4. Seedance 2.5 says `minimum: -1` — the model
+   decides — and 4 was a guess that became a rule, padding every short beat
+   in the film. Three seconds is the shortest clip a provider in this
+   catalogue has returned. Two seconds is what a one-word line actually
+   takes on screen — "Sit." — and neither the schema nor the model
+   dictionary declares anything shorter is refused. A model with a REAL
+   minimum still wins outright; this only fills a hole. */
+const OPEN_FLOOR_SECONDS = 2;
+
 export function shotDurationLimits(model) {
   const field = (model?.schema || model?.inputSchema)?.fields?.duration;
   const fallback = { min: 4, max: 10 };
@@ -195,9 +206,16 @@ export function shotDurationLimits(model) {
   }
 
   const max = Number(field.maximum);
-  // `minimum: -1` is a sentinel for "the model decides", not a real floor.
+  /* `minimum: -1` is a sentinel for "the model decides", not a real floor.
+
+     What went in its place was a hardcoded 4, and that invented floor is
+     why a two-word line came out four seconds long and a glance came out
+     eight: every beat in the film was forced up to a number no provider
+     ever asked for. When a model declares no minimum, the shortest clip we
+     have actually seen it return is the honest answer — not a constant
+     somebody picked. */
   const rawMin = Number(field.minimum);
-  const min = Number.isFinite(rawMin) && rawMin > 0 ? rawMin : fallback.min;
+  const min = Number.isFinite(rawMin) && rawMin > 0 ? rawMin : OPEN_FLOOR_SECONDS;
   if (!Number.isFinite(max) || max <= 0) return { ...fallback, min };
   return { min: Math.min(min, max), max };
 }

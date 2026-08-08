@@ -421,3 +421,68 @@ describe("people underplay, so the direction has to", () => {
     expect(prompt).not.toMatch(/what the face and body are doing/);
   });
 });
+
+describe("a shot is as long as what happens in it", () => {
+  // Asked for in the prompt twice and still padded: eight seconds for a
+  // man standing still, eight for a wide of an empty room, four for a
+  // two-word line. Computed rather than requested, same as the wardrobe.
+  const limits = { min: 2, max: 30 };
+
+  it("gives a two-word line the time to say it and no more", async () => {
+    // "Not tonight." is a TWO second shot. Padding by two seconds and
+    // flooring at four made it four, and an actor who finishes speaking
+    // while the clip runs on reads as the frame freezing.
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(neededSeconds({ durationSec: 8, dialogue: [{ line: "Not tonight." }] }, limits)).toBe(2);
+    expect(neededSeconds({ durationSec: 4, dialogue: [{ line: "Sit." }] }, limits)).toBe(2);
+    expect(neededSeconds({ durationSec: 8, dialogue: [{ line: "Where are you going?" }] }, limits)).toBe(3);
+  });
+
+  it("gives a long speech the room it needs", async () => {
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    const line = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
+    // 40 words at two a second, plus the pause and the beat after.
+    expect(neededSeconds({ durationSec: 25, dialogue: [{ line }] }, limits)).toBe(21);
+  });
+
+  it("drops a silent action beat to the floor", async () => {
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(neededSeconds({ durationSec: 8, description: "He walks toward the chairs." }, limits)).toBe(2);
+  });
+
+  it("believes a shot that says it is being held", async () => {
+    // The script's own word is better evidence than any number the read
+    // attached to it — "silence", "slowly", "lingers".
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    const held = { durationSec: 8, description: "They face each other. Silence." };
+    expect(neededSeconds(held, limits)).toBe(8);
+    expect(neededSeconds({ durationSec: 7, description: "He slowly lowers himself in." }, limits)).toBe(7);
+  });
+
+  it("only ever shortens", async () => {
+    // A read asking for less than the content needs is a different problem,
+    // and lengthening on a guess invents footage nobody asked for.
+    const { tightenDurations } = await import("@/lib/script-breakdown-passes.mjs");
+    const shots = [{ durationSec: 3, dialogue: [{ line: "a b c d e f g h i j" }] }];
+    expect(tightenDurations(shots, limits)[0].durationSec).toBe(3);
+  });
+
+  it("returns an already-tight shot untouched", async () => {
+    const { tightenDurations } = await import("@/lib/script-breakdown-passes.mjs");
+    const shot = { durationSec: 2, description: "He walks." };
+    expect(tightenDurations([shot], limits)[0]).toBe(shot);
+  });
+
+  it("never goes under the model's own declared minimum", async () => {
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    // A model that really does refuse anything under 5 still gets 5.
+    expect(neededSeconds({ durationSec: 9, description: "He walks." }, { min: 5, max: 10 })).toBe(5);
+  });
+
+  it("counts the words across every line in the shot", async () => {
+    const { spokenWords } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(spokenWords({ dialogue: [{ line: "Where are you going?" }, { line: "Not tonight." }] })).toBe(6);
+    expect(spokenWords({ dialogue: [] })).toBe(0);
+    expect(spokenWords({})).toBe(0);
+  });
+});

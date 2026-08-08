@@ -27,6 +27,7 @@ import {
   VARIANT_RETRY_HINT,
   sceneIsCovered,
   keepOffscreenOffscreen,
+  tightenDurations,
 } from "@/lib/script-breakdown-passes.mjs";
 import { shotDurationLimits } from "@/lib/project-models.mjs";
 import {
@@ -195,7 +196,15 @@ ${text}`,
        the beat; listing her among the shot's visible characters puts her
        face in frame, and with no photograph of her on file that is a
        different woman every time she appears. */
-    scenes.push({ ...scene, shots: keepOffscreenOffscreen(shots || [], text) });
+    /* Trimmed to the length the content justifies. Asked for in the prompt
+       twice and still padded — eight seconds for a man standing still, four
+       for a two-word line — so it is computed here instead. Only ever
+       shortens, and a shot whose own description says it is held keeps the
+       length the read gave it. */
+    scenes.push({
+      ...scene,
+      shots: tightenDurations(keepOffscreenOffscreen(shots || [], text), limits || undefined),
+    });
     onProgress?.(i + 1, structure.scenes.length);
   }
 

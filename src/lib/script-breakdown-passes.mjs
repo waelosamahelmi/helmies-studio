@@ -462,3 +462,63 @@ export function keepOffscreenOffscreen(shots = [], sceneText = "") {
     };
   });
 }
+
+/* ── A shot is as long as what happens in it ──────────────────────────────
+   Asked twice in the prompt, and the reads still came back padded: eight
+   seconds for a man standing still, eight for an establishing wide of an
+   empty room, four for a two-word line. So it is computed rather than
+   requested — the same move as the wardrobe check, for the same reason.
+
+   Only ever SHORTENS. A read that asks for less than the content needs is
+   a different problem, and lengthening a shot on a guess would invent
+   footage nobody asked for.
+
+   Speech is measurable: about two words a second at dramatic pace, plus a
+   single second to carry the breath either side. "Not tonight." is two
+   words, so it is a TWO SECOND shot. "Sit." is one word and is also two.
+   Earlier versions of this padded by two seconds and floored at four,
+   which turned both of those into four-second shots — the actor finishes
+   speaking and the clip keeps running, which on screen reads as the frame
+   freezing.
+
+   Action is not measurable, so it is not guessed at. A shot with no
+   dialogue drops to the floor UNLESS its own description says it is being
+   held — "silence", "slowly", "lingers", "stretches". The script's word is
+   better evidence than any number the read attached to it. */
+const HOLDS_THE_FRAME = /\b(hold|holds|holding|held|linger|lingers|slow|slowly|stretch|stretches|silence|silent|motionless|unbroken|beat of|a long|stares|staring|waits|waiting|gradually)\b/i;
+
+const WORDS_PER_SECOND = 2;
+const SPEECH_PAD_SECONDS = 1;
+
+/** How many words are actually spoken in this shot. */
+export function spokenWords(shot) {
+  const lines = Array.isArray(shot?.dialogue) ? shot.dialogue : [];
+  return lines.reduce((n, d) => n + String(d?.line || "").trim().split(/\s+/).filter(Boolean).length, 0);
+}
+
+/** The longest this shot has any business being. */
+export function neededSeconds(shot, { min = 4, max = 30 } = {}) {
+  const clamp = (n) => Math.max(min, Math.min(max, Math.round(n)));
+  const words = spokenWords(shot);
+  if (words > 0) return clamp(Math.ceil(words / WORDS_PER_SECOND) + SPEECH_PAD_SECONDS);
+
+  const text = `${shot?.description || ""} ${shot?.performance || ""}`;
+  // The script says this one is held. Take the read's number for it.
+  if (HOLDS_THE_FRAME.test(text)) return clamp(shot?.durationSec || min);
+  return min;
+}
+
+/**
+ * Trim every shot to the length its content justifies.
+ *
+ * Returns new shots; the caller's array is untouched, and a shot already
+ * at or under its needed length is returned exactly as it came in.
+ */
+export function tightenDurations(shots = [], limits = undefined) {
+  return shots.map((shot) => {
+    const want = neededSeconds(shot, limits);
+    const had = Number(shot?.durationSec) || 0;
+    if (!had || had <= want) return shot;
+    return { ...shot, durationSec: want };
+  });
+}

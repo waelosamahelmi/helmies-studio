@@ -215,3 +215,20 @@ describe("how long a shot may be", () => {
     expect(shotDurationLimits(null)).toEqual({ min: 4, max: 10 });
   });
 });
+
+describe("a model that declares no minimum does not get an invented one", () => {
+  it("does not force a 4-second floor on Seedance", async () => {
+    // Seedance 2.5 says minimum: -1 — the model decides — and the code put
+    // a hardcoded 4 in its place. That guess became a rule and padded every
+    // short beat in the film: a two-word line came out four seconds long.
+    const { shotDurationLimits } = await import("@/lib/project-models.mjs");
+    const seedance = { schema: { fields: { duration: { type: "number", default: 5, maximum: 30, minimum: -1 } } } };
+    expect(shotDurationLimits(seedance)).toEqual({ min: 2, max: 30 });
+  });
+
+  it("still obeys a model that declares a real one", async () => {
+    const { shotDurationLimits } = await import("@/lib/project-models.mjs");
+    const strict = { schema: { fields: { duration: { minimum: 5, maximum: 10 } } } };
+    expect(shotDurationLimits(strict)).toEqual({ min: 5, max: 10 });
+  });
+});
