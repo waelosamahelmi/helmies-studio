@@ -199,7 +199,9 @@ export function shotRowId(pipelineId, shotId) {
 // key, which must never land in the database. Found by
 // tests/integration/director-generate-shot.int.test.mjs.
 function persistableParams(params) {
-  const { _provider, ...rest } = params || {};
+  // `_schema` is the model's whole input schema — useful for building the
+  // request, pure noise (and kilobytes) on every stored Generation row.
+  const { _provider, _schema, ...rest } = params || {};
   return rest;
 }
 
@@ -383,6 +385,10 @@ async function executeShotImage(shot, pipeline, brief) {
       prompt: imagePrompt,
       aspect_ratio: brief.aspectRatio || "9:16",
       model: wantModel,
+      // The model's own schema travels with the request so the payload
+      // builder forwards the fields THIS model declares, instead of a
+      // hand-written list that cannot know them.
+      _schema: modelSchema,
       _provider: await resolveProvider(wantModel)
     };
 
@@ -482,6 +488,7 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl) {
       aspect_ratio: brief.aspectRatio || "9:16",
       duration: shot.durationSec || 5,
       model: modelRoute,
+      _schema: videoSchema,
       _provider: await resolveProvider(modelRoute)
     };
 
