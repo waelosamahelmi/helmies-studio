@@ -595,3 +595,35 @@ describe("a montage is the one shot that must not be trimmed", () => {
     expect(neededSeconds({ ...montage, durationSec: 90 }, limits)).toBe(30);
   });
 });
+
+describe("a direction written in the scene wins over the rules", () => {
+  it("makes ONE UNBROKEN TAKE binding, above every other rule", async () => {
+    // The beat, blocking and pacing rules all push toward splitting. A
+    // director who writes "no cuts" on the page has to outrank them, or
+    // the tool cannot be told how to shoot anything.
+    const { sceneShotsPrompt } = await import("@/lib/script-breakdown-passes.mjs");
+    const prompt = sceneShotsPrompt({ min: 2, max: 30 });
+    expect(prompt).toMatch(/OVERRIDES EVERY RULE BELOW/);
+    expect(prompt).toMatch(/ONE UNBROKEN TAKE/);
+    expect(prompt).toMatch(/return exactly ONE shot/);
+    // It has to come before the rules it overrides, or "below" is a lie.
+    expect(prompt.indexOf("OVERRIDES EVERY RULE BELOW")).toBeLessThan(prompt.indexOf("ONE SHOT IS ONE BEAT"));
+  });
+
+  it("gives a six-line exchange the seconds to say it in one take", async () => {
+    // The new scene: 53 words across six lines, which has to fit inside a
+    // 30-second take or it cannot be one shot at all.
+    const { neededSeconds } = await import("@/lib/script-breakdown-passes.mjs");
+    const lines = [
+      "Alright, alright. Tell me who is she?",
+      "Who is who?",
+      "You know who I'm talking about!",
+      "You still didn't recognise?",
+      "She is another version of you. Your head created her to fulfil what you're missing. Caring. Sharing.",
+      "You just wanted someone who is like you to share your life. So you created her.",
+    ].map((line) => ({ line }));
+    const seconds = neededSeconds({ durationSec: 30, dialogue: lines }, { min: 2, max: 30 });
+    expect(seconds).toBeGreaterThan(24);
+    expect(seconds).toBeLessThanOrEqual(30);
+  });
+});
