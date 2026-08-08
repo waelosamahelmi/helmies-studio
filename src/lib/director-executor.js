@@ -553,6 +553,13 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
           }
           return { success: false, error: `Shot ${shot.id} failed`, results, pipelineId, status: PIPELINE_STATES.FAILED };
         }
+        // A failed shot consumed NOTHING. Counting it as used is what made
+        // a scene whose four shots all failed still bill 53 credits: the
+        // whole estimate was debited up front, `creditsUsed` was
+        // incremented for every shot regardless of outcome, and the
+        // end-of-run refund of (total - used) therefore refunded nothing.
+        // Failed work is never charged.
+        continue;
       }
 
       creditsUsed += costEstimate.shotCosts?.[shot.index]?.total || 0;
@@ -625,13 +632,35 @@ export async function executeProductionPipeline(pipelineId, userId, options = {}
       });
     }
 
+    /* Give back what was not spent.
+
+       The whole estimate is debited up front, and until now the ONLY paths
+       that returned the remainder were stopOnFailure and a crash. A run
+       that finished with some shots failed simply kept the difference —
+       which is how four failed shots cost 53 credits. Every exit now
+       settles: charged for what ran, refunded for what did not. */
+    const unspent = (costEstimate.totalCredits || 0) - creditsUsed;
+    if (unspent > 0) {
+      try {
+        await refundCredits(userId, unspent, `director:${pipelineId}`, "Shots that did not run");
+      } catch (refundErr) {
+        console.error("[Director] Refund of unspent credits failed:", {
+          pipelineId, userId, unspent, err: refundErr?.message,
+        });
+      }
+    }
+
     return {
       success: true,
       results,
       assembledUrl,
       pipelineId,
       status: PIPELINE_STATES.COMPLETED,
-      creditsUsed: costEstimate.totalCredits || creditsUsed
+      // What was actually consumed — NOT the estimate. Reporting the
+      // estimate told the user they had spent money the refund above just
+      // gave back.
+      creditsUsed,
+      creditsRefunded: unspent > 0 ? unspent : 0,
     };
   } catch (err) {
     // Crash safety net: the debit above has already charged the user, so an

@@ -86,6 +86,7 @@ vi.mock("@/lib/video-assembly", () => ({
 
 vi.mock("@/lib/director-planner", () => ({
   validatePrompt: vi.fn(),
+  estimateDirectorCost: vi.fn(async () => ({ totalCredits: 0, shotCosts: [] })),
 }));
 
 import prisma from "@/lib/prisma";
@@ -475,5 +476,60 @@ describe("rerunShot — charges before regenerating", () => {
         expect.objectContaining({ data: expect.objectContaining({ status: "completed" }) })
       );
     });
+  });
+});
+
+describe("failed work is never charged", () => {
+  // A real scene: all four shots failed at the image stage and the run
+  // still billed 53 credits. The whole estimate is debited up front,
+  // `creditsUsed` was incremented for EVERY shot regardless of outcome,
+  // and the only refund paths were stopOnFailure and a crash — so a run
+  // that "completed" with failures quietly kept the difference.
+  const shots = [
+    { id: "s1", index: 0 },
+    { id: "s2", index: 1 },
+  ];
+  const costEstimate = {
+    totalCredits: 40,
+    shotCosts: [
+      { total: 20, costs: { image: 20 } },
+      { total: 20, costs: { image: 20 } },
+    ],
+  };
+
+  beforeEach(() => {
+    pipelineState = makePipeline({ status: "quoted", plan: { shots }, costEstimate });
+    prisma.directorPipeline.findFirst.mockImplementation(async () => ({ ...pipelineState }));
+    getWallet.mockResolvedValue({ available: 10_000 });
+    resolveProvider.mockReturnValue({ name: "KIE" });
+  });
+
+  it("refunds every credit when every shot fails", async () => {
+    generateImage.mockRejectedValue(new Error("Server exception, please try again later"));
+    const res = await executeProductionPipeline("p1", "u1", { autoAssemble: false });
+
+    expect(debitWallet).toHaveBeenCalledWith("u1", 40, expect.any(String), expect.any(String));
+    const refunded = refundCredits.mock.calls.reduce((sum, c) => sum + c[1], 0);
+    expect(refunded).toBe(40);
+    // And it must not TELL the user it spent what it just gave back.
+    expect(res.creditsUsed).toBe(0);
+  });
+
+  it("charges only for the shot that worked", async () => {
+    let call = 0;
+    generateImage.mockImplementation(async () => {
+      call += 1;
+      if (call === 1) return { url: "https://cdn/1.png", imageUrl: "https://cdn/1.png" };
+      throw new Error("Server exception");
+    });
+    ingestFromUrl.mockResolvedValue({ url: "https://cdn/local.png" });
+
+    const res = await executeProductionPipeline("p1", "u1", { autoAssemble: false });
+    const refunded = refundCredits.mock.calls.reduce((sum, c) => sum + c[1], 0);
+
+    // Whatever the split, the invariant holds: charged + refunded === debited,
+    // and nothing is charged for the shot that failed.
+    expect(res.creditsUsed + refunded).toBe(40);
+    expect(res.creditsUsed).toBeLessThan(40);
   });
 });
