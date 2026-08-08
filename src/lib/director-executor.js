@@ -5,7 +5,7 @@ import { estimateCredits } from "@/lib/pricing-engine";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
-import { selectEntityReferences, imageReferenceSlot, isStillImageModel } from "@/lib/entity-core.mjs";
+import { selectEntityReferences, voiceReferences, imageReferenceSlot, isStillImageModel } from "@/lib/entity-core.mjs";
 import { applyRequiredDefaults } from "@/lib/provider-payload-core.mjs";
 import { recordGenerationAsset } from "@/lib/assets-core";
 
@@ -50,6 +50,12 @@ const LAST_FRAME_FIELDS = ["return_last_frame", "return_last_image"];
    SCENE, composed once over the cut, not to each six-second fragment. */
 const GENERATE_AUDIO_FIELDS = ["generate_audio", "generate_audio_switch", "with_audio"];
 
+/* Where a model takes an audio reference — a voice to match, a room tone
+   to sit in. This is what makes sound CONTINUOUS across a cut without
+   silencing the shots: the same voice, shot after shot, instead of each
+   clip inventing its own speaker and its own score. */
+const REFERENCE_AUDIO_FIELDS = ["reference_audio_urls", "reference_audio", "audio_reference_urls"];
+
 /* THE FRAME THE LAST SHOT ENDED ON.
 
    Two different uses, and the difference is the difference between a cut
@@ -85,7 +91,14 @@ async function previousShotFrame(pipelineId, shot, allShots = []) {
     });
     const url = row?.videoResult?.lastFrameUrl || row?.imageResult?.url || null;
     if (!url) return null;
-    return { url, asFirstFrame: Boolean(explicit) };
+    /* EVERY shot begins on the frame the last one ended. Not only the ones
+       the breakdown marked as continuing — a cut to a new angle in the
+       same room still starts from what was actually there, which is the
+       only thing that keeps the light, the props and the furniture from
+       being re-invented at every cut. The trade-off is deliberate: the
+       model moves the camera from that frame rather than hard-cutting, so
+       a scene reads as one continuous piece. */
+    return { url, asFirstFrame: true, declared: Boolean(explicit) };
   } catch {
     return null;
   }
@@ -663,14 +676,56 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
       _provider: await resolveProvider(modelRoute)
     };
 
-    /* ONE SOUNDTRACK, NOT ONE PER SHOT.
-       Turned off for any scene with more than a single shot: the model
-       would otherwise write its own music for each clip, and four clips
-       means four unrelated tracks. Sound is added over the assembled
-       scene, where it can be one thing. */
-    const shotCount = (pipeline.plan?.shots || []).length;
+    /* SOUND: CONTINUOUS, NOT SILENT.
+
+       The first attempt at "four clips, four different soundtracks" was to
+       turn audio off for any multi-shot scene. That fixed the
+       inconsistency by removing the sound, which is not a fix — a film
+       with voice-over and dialogue cannot be shot mute.
+
+       What actually makes sound continuous is a REFERENCE. The cast's
+       voice recordings go to the model as reference audio, so the person
+       speaking in shot four is the same person who spoke in shot one,
+       rather than each clip inventing a speaker. The same reference also
+       anchors the room tone the score sits in.
+
+       Audio is asked for when the shot HAS something to hear — dialogue
+       or named diegetic sound. A silent beat stays silent, because that
+       is what the script asked for. */
     const audioField = GENERATE_AUDIO_FIELDS.find((f) => videoSchema?.fields?.[f]);
-    if (audioField && shotCount > 1) params[audioField] = false;
+    const hasSomethingToHear = Boolean(shot.dialogue) || Boolean(shot.audioCues);
+    if (audioField) params[audioField] = hasSomethingToHear;
+
+    const audioRefField = REFERENCE_AUDIO_FIELDS.find((f) => videoSchema?.fields?.[f]);
+    if (audioRefField && hasSomethingToHear && Array.isArray(shot.entityIds) && shot.entityIds.length) {
+      try {
+        const speakers = await prisma.studioEntity.findMany({
+          where: { id: { in: shot.entityIds.slice(0, 6) }, userId: pipeline.userId, kind: "character" },
+        });
+        const voices = speakers.flatMap((e) => voiceReferences(e).map((r) => r.url)).filter(Boolean);
+        if (voices.length) {
+          params[audioRefField] = voices.slice(0, 2);
+        }
+      } catch (err) {
+        console.error("[Director] voice references failed:", err?.message);
+      }
+    }
+
+    /* What is HEARD in this shot, said plainly to the model. Without it a
+       clip scores itself: it writes music nobody asked for, and a
+       different piece of it every time. Naming the dialogue and the
+       diegetic sound is what keeps it to the sound the scene actually
+       has. */
+    if (hasSomethingToHear) {
+      const heard = [
+        shot.dialogue ? `Spoken aloud: ${shot.dialogue}` : null,
+        shot.audioCues ? `Sound: ${shot.audioCues}` : null,
+        "No added music or score.",
+      ].filter(Boolean).join(" ");
+      params.prompt = `${params.prompt}
+
+${heard}`;
+    }
 
     /* CONNECT THIS SHOT TO THE ONE BEFORE IT.
        The breakdown already says which shots continue from which

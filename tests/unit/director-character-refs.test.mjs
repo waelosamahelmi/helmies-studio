@@ -353,18 +353,86 @@ describe("carrying the last frame across a cut", () => {
     expect(params.first_frame_url).toBe("https://cdn/last.png");
   });
 
-  it("REFERENCES it on a plain cut, rather than starting on it", async () => {
-    // A new angle must not literally begin on the old frame — but it is
-    // the same room, and the frame just rendered carries it better than
-    // words do.
+  it("starts on the last frame even on a plain cut", async () => {
+    // Every shot begins where the last one ended, not only the ones the
+    // breakdown marked as continuing: a new angle in the same room still
+    // starts from what was actually there, which is the only thing that
+    // keeps the light, the props and the furniture from being re-invented
+    // at every cut.
     // s2 declares no continuity; its neighbour is s1.
     const params = await runVideoShot(shots[1], shots, endedOn("s1"));
-    expect(params.first_frame_url).toBeUndefined();
-    expect(params.reference_image_urls[0]).toBe("https://cdn/last.png");
+    expect(params.first_frame_url).toBe("https://cdn/last.png");
   });
 
   it("carries nothing into the first shot of a scene", async () => {
     const params = await runVideoShot(shots[0], shots, null);
     expect(params.first_frame_url).toBeUndefined();
+  });
+});
+
+describe("sound is continuous, not absent", () => {
+  // The first attempt at "four clips, four soundtracks" turned audio off
+  // for any multi-shot scene. That fixed the inconsistency by removing the
+  // sound, which is not a fix — a film with voice-over cannot be shot mute.
+  const speaker = {
+    id: "ch1", kind: "character", userId: "u1",
+    references: [
+      { kind: "face_front", url: "https://cdn/face.png" },
+      { kind: "voice", url: "https://cdn/wael.mp3" },
+    ],
+  };
+
+  const runAudioShot = async (shot) => {
+    prisma.studioEntity.findMany.mockResolvedValue([speaker]);
+    prisma.modelPricing.findUnique.mockResolvedValue({
+      modelId: "seedance-2-5",
+      inputSchema: { fields: { prompt: {}, duration: {}, generate_audio: {}, reference_audio_urls: {}, reference_image_urls: {} } },
+    });
+    prisma.directorShot.findUnique.mockResolvedValue(null);
+    pipelineState = makePipeline({ plan: { shots: [shot, { id: "other", index: 1 }] } });
+    prisma.directorPipeline.findFirst.mockImplementation(async () => ({ ...pipelineState }));
+    generateVideo.mockResolvedValue({ url: "https://cdn/out.mp4" });
+    generateI2V.mockResolvedValue({ url: "https://cdn/out.mp4" });
+    ingestFromUrl.mockResolvedValue({ url: "https://cdn/local.mp4" });
+    await generateShotAsset("p1", "u1", shot.id, "video");
+    return (generateI2V.mock.calls[0] || generateVideo.mock.calls[0])?.[0];
+  };
+
+  it("asks for audio on a shot that has something to hear", async () => {
+    const params = await runAudioShot({
+      id: "s1", index: 0, entityIds: ["ch1"], camera: {},
+      dialogue: "Wael: Who are you?", videoStrategy: { prompt: "he speaks" },
+    });
+    expect(params.generate_audio).toBe(true);
+  });
+
+  it("sends the cast's VOICE so the same person speaks in every shot", async () => {
+    // Without a reference each clip invents its own speaker, which is what
+    // made the sound change shot to shot.
+    const params = await runAudioShot({
+      id: "s1", index: 0, entityIds: ["ch1"], camera: {},
+      dialogue: "Wael: Who are you?", videoStrategy: { prompt: "he speaks" },
+    });
+    expect(params.reference_audio_urls).toEqual(["https://cdn/wael.mp3"]);
+  });
+
+  it("names what is heard and forbids invented music", async () => {
+    const params = await runAudioShot({
+      id: "s1", index: 0, entityIds: ["ch1"], camera: {},
+      dialogue: "Wael: Who are you?", audioCues: "clock tick",
+      videoStrategy: { prompt: "he speaks" },
+    });
+    expect(params.prompt).toContain("Who are you?");
+    expect(params.prompt).toContain("clock tick");
+    expect(params.prompt).toMatch(/no added music/i);
+  });
+
+  it("leaves a silent beat silent, because that is what the script asked for", async () => {
+    const params = await runAudioShot({
+      id: "s1", index: 0, entityIds: ["ch1"], camera: {},
+      videoStrategy: { prompt: "he stares at the ceiling" },
+    });
+    expect(params.generate_audio).toBe(false);
+    expect(params.reference_audio_urls).toBeUndefined();
   });
 });
