@@ -1,0 +1,9143 @@
+{
+  "add-instrumental": {
+    "name": "Add Instrumental",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "add-instrumental",
+    "providerModelId": "add-instrumental",
+    "api": {
+      "fields": [
+        "audio_url",
+        "negative_tags",
+        "style",
+        "title"
+      ],
+      "required": [
+        "audio_url",
+        "negative_tags",
+        "style",
+        "title"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "add-vocals": {
+    "name": "Add Vocals",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "add-vocals",
+    "providerModelId": "add-vocals",
+    "api": {
+      "fields": [
+        "audio_url",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title"
+      ],
+      "required": [
+        "audio_url",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen3-tts-flash": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.005,
+    "credits": 2,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen3-tts-instruct-flash": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.005,
+    "credits": 2,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "audio-isolation": {
+    "name": "Audio Isolation",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.01,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "boost-music-style": {
+    "name": "Boost Music Style",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "boost-music-style",
+    "providerModelId": "boost-music-style",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "convert-to-wav": {
+    "name": "Convert To Wav",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.001,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "convert-to-wav",
+    "providerModelId": "convert-to-wav",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "elevenlabs-tts-multilingual": {
+    "name": "Elevenlabs TTS Multilingual",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.07,
+    "credits": 5,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "elevenlabs-tts-turbo": {
+    "name": "Elevenlabs TTS Turbo",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.07,
+    "credits": 5,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "elevenlabs-tts-v3": {
+    "name": "Elevenlabs TTS V3",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.07,
+    "credits": 5,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "elevenlabs/audio-isolation": {
+    "name": "Elevenlabs Audio Isolation",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.01,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": "elevenlabs/audio-isolation",
+    "providerModelId": "elevenlabs/audio-isolation",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "elevenlabs/text-to-dialogue-v3": {
+    "name": "Elevenlabs Text To Dialogue V3",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": false,
+    "endpoint": "elevenlabs/text-to-dialogue-v3",
+    "providerModelId": "elevenlabs/text-to-dialogue-v3",
+    "api": {
+      "fields": [
+        "prompt",
+        "voice"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "elevenlabs/text-to-speech-multilingual-v2": {
+    "name": "Elevenlabs Text To Speech Multilingual V2",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": false,
+    "endpoint": "elevenlabs/text-to-speech-multilingual-v2",
+    "providerModelId": "elevenlabs/text-to-speech-multilingual-v2",
+    "api": {
+      "fields": [
+        "prompt",
+        "similarity_boost",
+        "speed",
+        "stability",
+        "voice"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "elevenlabs/text-to-speech-turbo-2-5": {
+    "name": "Elevenlabs Text To Speech Turbo 2.5",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": false,
+    "endpoint": "elevenlabs/text-to-speech-turbo-2-5",
+    "providerModelId": "elevenlabs/text-to-speech-turbo-2-5",
+    "api": {
+      "fields": [
+        "prompt",
+        "similarity_boost",
+        "speed",
+        "stability",
+        "voice"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "extend-music": {
+    "name": "Extend Music",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "extend-music",
+    "providerModelId": "extend-music",
+    "api": {
+      "fields": [
+        "duration",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        30,
+        60,
+        120,
+        180,
+        240
+      ]
+    },
+    "verification": null
+  },
+  "gemini-flash-tts": {
+    "name": "Gemini Flash TTS",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.05,
+    "credits": 5,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gemini-omni-audio": {
+    "name": "Gemini Omni Audio",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.1,
+    "credits": 25,
+    "costKnown": true,
+    "endpoint": "gemini-omni-audio",
+    "providerModelId": "gemini-omni-audio",
+    "api": {
+      "fields": [
+        "audio_id",
+        "example_dialogue",
+        "name",
+        "voice_description"
+      ],
+      "required": [
+        "audio_id",
+        "name"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gemini-pro-tts": {
+    "name": "Gemini Pro TTS",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": false,
+    "cost": 0.1,
+    "credits": 5,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "generate-lyrics": {
+    "name": "Generate Lyrics",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.001,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "generate-lyrics",
+    "providerModelId": "generate-lyrics",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "generate-mashup": {
+    "name": "Generate Mashup",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "generate-mashup",
+    "providerModelId": "generate-mashup",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "generate-midi": {
+    "name": "Generate Midi",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "generate-midi",
+    "providerModelId": "generate-midi",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "generate-music": {
+    "name": "Generate Music",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "generate-music",
+    "providerModelId": "generate-music",
+    "api": {
+      "fields": [
+        "duration",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        30,
+        60,
+        120,
+        180,
+        240
+      ]
+    },
+    "verification": null
+  },
+  "generate-persona": {
+    "name": "Generate Persona",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "generate-persona",
+    "providerModelId": "generate-persona",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "generate-sounds": {
+    "name": "Generate Sounds",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "generate-sounds",
+    "providerModelId": "generate-sounds",
+    "api": {
+      "fields": [
+        "engine",
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/gemini-3-1-flash-tts": {
+    "name": "Google Gemini 3.1 Flash TTS",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "text-to-speech",
+    "active": true,
+    "cost": 0.05,
+    "credits": 13,
+    "costKnown": true,
+    "endpoint": "google/gemini-3-1-flash-tts",
+    "providerModelId": "google/gemini-3-1-flash-tts",
+    "api": {
+      "fields": [
+        "prompt",
+        "voice_name"
+      ],
+      "required": [
+        "prompt",
+        "voice_name"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "replace-section": {
+    "name": "Replace Section",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "replace-section",
+    "providerModelId": "replace-section",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "separate-vocals": {
+    "name": "Separate Vocals",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "separate-vocals",
+    "providerModelId": "separate-vocals",
+    "api": {
+      "fields": [
+        "audio_url",
+        "type"
+      ],
+      "required": [
+        "audio_url"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "suno-v4": {
+    "name": "Suno V4",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "duration",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        30,
+        60,
+        120,
+        180,
+        240
+      ]
+    },
+    "verification": null
+  },
+  "suno-v4.5": {
+    "name": "Suno V4.5",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "duration",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        30,
+        60,
+        120,
+        180,
+        240
+      ]
+    },
+    "verification": null
+  },
+  "suno-v4.5-all": {
+    "name": "Suno V4.5 All",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "duration",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        30,
+        60,
+        120,
+        180,
+        240
+      ]
+    },
+    "verification": null
+  },
+  "suno-v4.5-plus": {
+    "name": "Suno V4.5 Plus",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "duration",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        30,
+        60,
+        120,
+        180,
+        240
+      ]
+    },
+    "verification": null
+  },
+  "suno-v5": {
+    "name": "Suno V5",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "duration",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        30,
+        60,
+        120,
+        180,
+        240
+      ]
+    },
+    "verification": null
+  },
+  "suno-v5.5": {
+    "name": "Suno V5.5",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "duration",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        30,
+        60,
+        120,
+        180,
+        240
+      ]
+    },
+    "verification": null
+  },
+  "suno-voice-check-voice": {
+    "name": "Suno Voice Check Voice",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "suno-voice-check-voice",
+    "providerModelId": "suno-voice-check-voice",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "suno-voice-generate": {
+    "name": "Suno Voice Generate",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "suno-voice-generate",
+    "providerModelId": "suno-voice-generate",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "suno-voice-generate-callback": {
+    "name": "Suno Voice Generate Callback",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "suno-voice-generate-callback",
+    "providerModelId": "suno-voice-generate-callback",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "suno-voice-record-info": {
+    "name": "Suno Voice Record Info",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "suno-voice-record-info",
+    "providerModelId": "suno-voice-record-info",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "suno-voice-regenerate": {
+    "name": "Suno Voice Regenerate",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "suno-voice-regenerate",
+    "providerModelId": "suno-voice-regenerate",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "suno-voice-validate": {
+    "name": "Suno Voice Validate",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "suno-voice-validate",
+    "providerModelId": "suno-voice-validate",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "suno-voice-validate-callback": {
+    "name": "Suno Voice Validate Callback",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "suno-voice-validate-callback",
+    "providerModelId": "suno-voice-validate-callback",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "suno-voice-validate-info": {
+    "name": "Suno Voice Validate Info",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "suno-voice-validate-info",
+    "providerModelId": "suno-voice-validate-info",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "upload-and-cover-audio": {
+    "name": "Upload And Cover Audio",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "upload-and-cover-audio",
+    "providerModelId": "upload-and-cover-audio",
+    "api": {
+      "fields": [
+        "audio_url",
+        "instrumental",
+        "negative_tags",
+        "prompt",
+        "style",
+        "title",
+        "vocal_gender"
+      ],
+      "required": [
+        "audio_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "upload-and-extend-audio": {
+    "name": "Upload And Extend Audio",
+    "provider": "KIE",
+    "category": "audio",
+    "capability": "audio",
+    "active": true,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "upload-and-extend-audio",
+    "providerModelId": "upload-and-extend-audio",
+    "api": {
+      "fields": [
+        "audio_url",
+        "continue_at",
+        "prompt",
+        "style",
+        "title"
+      ],
+      "required": [
+        "audio_url"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen-image-2.0": {
+    "name": "Qwen Image 2.0",
+    "provider": "Alibaba",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.035,
+    "credits": 9,
+    "costKnown": false,
+    "endpoint": "qwen-image-2.0",
+    "providerModelId": "qwen-image-2.0",
+    "api": {
+      "fields": [
+        "images_list",
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen-image-2.0-pro": {
+    "name": "Qwen Image 2.0 Pro",
+    "provider": "Alibaba",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.075,
+    "credits": 19,
+    "costKnown": false,
+    "endpoint": "qwen-image-2.0-pro",
+    "providerModelId": "qwen-image-2.0-pro",
+    "api": {
+      "fields": [
+        "images_list",
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen-image-edit": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.02,
+    "credits": 5,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen-image-edit-max": {
+    "name": "Qwen Image Edit Max",
+    "provider": "Alibaba",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.075,
+    "credits": 19,
+    "costKnown": false,
+    "endpoint": "qwen-image-edit-max",
+    "providerModelId": "qwen-image-edit-max",
+    "api": {
+      "fields": [
+        "images_list",
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen-image-edit-plus": {
+    "name": "Qwen Image Edit Plus",
+    "provider": "Alibaba",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": "qwen-image-edit-plus",
+    "providerModelId": "qwen-image-edit-plus",
+    "api": {
+      "fields": [
+        "images_list",
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:wan2.6-image": {
+    "name": "Wan 2.6 Image",
+    "provider": "Alibaba",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": "wan2.6-image",
+    "providerModelId": "wan2.6-image",
+    "api": {
+      "fields": [
+        "images_list",
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "crisp-upscale": {
+    "name": "Crisp Upscale",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-upscale",
+    "active": false,
+    "cost": 0.004,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-2/flex-image-to-image": {
+    "name": "Flux 2 Flex",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "flux-2/flex-image-to-image",
+    "providerModelId": "flux-2/flex-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "input_urls",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "aspect_ratio",
+        "input_urls",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "3:2",
+        "2:3",
+        "auto"
+      ],
+      "resolutions": [
+        "1K",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-2/pro-image-to-image": {
+    "name": "Flux 2 Pro",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "flux-2/pro-image-to-image",
+    "providerModelId": "flux-2/pro-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "input_urls",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "aspect_ratio",
+        "input_urls",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "3:2",
+        "2:3",
+        "auto"
+      ],
+      "resolutions": [
+        "1K",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux2/flex-image-to-image": {
+    "name": "Flux2 Flex",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "flux2/flex-image-to-image",
+    "providerModelId": "flux2/flex-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_url",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux2/pro-image-to-image": {
+    "name": "Flux2 Pro",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "flux2/pro-image-to-image",
+    "providerModelId": "flux2/pro-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_url",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "generate-or-edit-image": {
+    "name": "Generate Or Edit Image",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "generate-or-edit-image",
+    "providerModelId": "generate-or-edit-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_url",
+        "model_tier",
+        "output_format",
+        "prompt",
+        "prompt_upsampling",
+        "safety_tolerance",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "21:9",
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16",
+        "16:21"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/pro-image-to-image": {
+    "name": "Google Pro",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "google/pro-image-to-image",
+    "providerModelId": "google/pro-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_input",
+        "output_format",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "9:16",
+        "16:9",
+        "21:9",
+        "auto"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "gpt-image-2-image-to-image": {
+    "name": "GPT Image 2",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "gpt-image-2-image-to-image",
+    "providerModelId": "gpt-image-2-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "input_urls",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "input_urls",
+        "prompt"
+      ],
+      "aspects": [
+        "auto",
+        "1:1",
+        "3:2",
+        "2:3",
+        "4:3",
+        "3:4",
+        "5:4",
+        "4:5",
+        "16:9",
+        "9:16",
+        "2:1",
+        "1:2",
+        "3:1",
+        "1:3",
+        "21:9",
+        "9:21"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "gpt-image/1.5-image-to-image": {
+    "name": "GPT Image 1.5",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "gpt-image/1.5-image-to-image",
+    "providerModelId": "gpt-image/1.5-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "input_urls",
+        "prompt",
+        "quality"
+      ],
+      "required": [
+        "aspect_ratio",
+        "input_urls",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "grok-imagine/image-to-image": {
+    "name": "Grok Imagine",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "grok-imagine/image-to-image",
+    "providerModelId": "grok-imagine/image-to-image",
+    "api": {
+      "fields": [
+        "image_urls",
+        "nsfw_checker",
+        "prompt"
+      ],
+      "required": [
+        "image_urls"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "grok-imagine/upscale": {
+    "name": "Grok Imagine Upscale",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-upscale",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "grok-imagine/upscale",
+    "providerModelId": "grok-imagine/upscale",
+    "api": {
+      "fields": [
+        "resolution",
+        "task_id"
+      ],
+      "required": [
+        "task_id"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram-v3-remix": {
+    "name": "Ideogram V3 Remix",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.06,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "expand_prompt",
+        "image_size",
+        "image_url",
+        "negative_prompt",
+        "num_images",
+        "prompt",
+        "rendering_speed",
+        "seed",
+        "strength",
+        "style"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram/character-edit": {
+    "name": "Ideogram Character Edit",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.06,
+    "credits": 15,
+    "costKnown": true,
+    "endpoint": "ideogram/character-edit",
+    "providerModelId": "ideogram/character-edit",
+    "api": {
+      "fields": [
+        "expand_prompt",
+        "image_url",
+        "mask_url",
+        "num_images",
+        "prompt",
+        "reference_image_urls",
+        "rendering_speed",
+        "style"
+      ],
+      "required": [
+        "image_url",
+        "mask_url",
+        "prompt",
+        "reference_image_urls"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram/character-remix": {
+    "name": "Ideogram Character Remix",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.06,
+    "credits": 15,
+    "costKnown": true,
+    "endpoint": "ideogram/character-remix",
+    "providerModelId": "ideogram/character-remix",
+    "api": {
+      "fields": [
+        "expand_prompt",
+        "image_size",
+        "image_url",
+        "negative_prompt",
+        "num_images",
+        "prompt",
+        "reference_image_urls",
+        "rendering_speed",
+        "seed",
+        "strength",
+        "style"
+      ],
+      "required": [
+        "image_url",
+        "prompt",
+        "reference_image_urls"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram/v3-remix": {
+    "name": "Ideogram V3 Remix",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.06,
+    "credits": 15,
+    "costKnown": true,
+    "endpoint": "ideogram/v3-remix",
+    "providerModelId": "ideogram/v3-remix",
+    "api": {
+      "fields": [
+        "expand_prompt",
+        "image_size",
+        "image_url",
+        "negative_prompt",
+        "num_images",
+        "prompt",
+        "rendering_speed",
+        "seed",
+        "strength",
+        "style"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "image-upscale": {
+    "name": "Image Upscale",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-upscale",
+    "active": false,
+    "cost": 0.01,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-image-edit": {
+    "name": "Kling Image Edit",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.028,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen-2/image-edit": {
+    "name": "Qwen 2 Image Edit",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "qwen-2/image-edit",
+    "providerModelId": "qwen-2/image-edit",
+    "api": {
+      "fields": [
+        "image_size",
+        "image_url",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen/image-edit": {
+    "name": "Qwen Image Edit",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "qwen/image-edit",
+    "providerModelId": "qwen/image-edit",
+    "api": {
+      "fields": [
+        "acceleration",
+        "enable_safety_checker",
+        "guidance_scale",
+        "image_size",
+        "image_url",
+        "negative_prompt",
+        "nsfw_checker",
+        "num_images",
+        "num_inference_steps",
+        "output_format",
+        "prompt",
+        "seed",
+        "sync_mode"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen/image-to-image": {
+    "name": "Qwen",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "qwen/image-to-image",
+    "providerModelId": "qwen/image-to-image",
+    "api": {
+      "fields": [
+        "acceleration",
+        "enable_safety_checker",
+        "guidance_scale",
+        "image_url",
+        "negative_prompt",
+        "nsfw_checker",
+        "num_inference_steps",
+        "output_format",
+        "prompt",
+        "seed",
+        "strength"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen2/image-edit": {
+    "name": "Qwen2 Image Edit",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "qwen2/image-edit",
+    "providerModelId": "qwen2/image-edit",
+    "api": {
+      "fields": [
+        "image_size",
+        "image_url",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen3-pro/image-to-image": {
+    "name": "Qwen3 Pro",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "qwen3-pro/image-to-image",
+    "providerModelId": "qwen3-pro/image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_url",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen3/image-to-image": {
+    "name": "Qwen3",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "qwen3/image-to-image",
+    "providerModelId": "qwen3/image-to-image",
+    "api": {
+      "fields": [
+        "image_size",
+        "image_urls",
+        "negative_prompt",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "image_urls",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "1K",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen3/pro-image-to-image": {
+    "name": "Qwen3 Pro",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "qwen3/pro-image-to-image",
+    "providerModelId": "qwen3/pro-image-to-image",
+    "api": {
+      "fields": [
+        "image_size",
+        "image_urls",
+        "negative_prompt",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "image_urls",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "1K",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "recraft/crisp-upscale": {
+    "name": "Recraft Crisp Upscale",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-upscale",
+    "active": true,
+    "cost": 0.004,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "recraft/crisp-upscale",
+    "providerModelId": "recraft/crisp-upscale",
+    "api": {
+      "fields": [
+        "image"
+      ],
+      "required": [
+        "image"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "recraft/remove-background": {
+    "name": "Recraft Remove Background",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "background-removal",
+    "active": true,
+    "cost": 0.02,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": "recraft/remove-background",
+    "providerModelId": "recraft/remove-background",
+    "api": {
+      "fields": [
+        "image"
+      ],
+      "required": [
+        "image"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "remove-background": {
+    "name": "Remove Background",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "background-removal",
+    "active": false,
+    "cost": 0.02,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream-5-lite-image-to-image": {
+    "name": "Seedream 5 Lite",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": false,
+    "cost": 0.035,
+    "credits": 9,
+    "costKnown": true,
+    "endpoint": "seedream-5-lite-image-to-image",
+    "providerModelId": "seedream-5-lite-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_url",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream/5-pro-image-to-image": {
+    "name": "Seedream 5 Pro",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-to-image",
+    "active": true,
+    "cost": 0.045,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": "seedream/5-pro-image-to-image",
+    "providerModelId": "seedream/5-pro-image-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_urls",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "quality"
+      ],
+      "required": [
+        "aspect_ratio",
+        "image_urls",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "2:3",
+        "3:2",
+        "21:9"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "topaz/image-upscale": {
+    "name": "Topaz",
+    "provider": "KIE",
+    "category": "i2i",
+    "capability": "image-upscale",
+    "active": true,
+    "cost": 0.01,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": "topaz/image-upscale",
+    "providerModelId": "topaz/image-upscale",
+    "api": {
+      "fields": [
+        "image_url",
+        "upscale_factor"
+      ],
+      "required": [
+        "image_url",
+        "upscale_factor"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:wan2.6-i2v": {
+    "name": "Wan 2.6 Image to Video",
+    "provider": "Alibaba",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": false,
+    "endpoint": "wan2.6-i2v",
+    "providerModelId": "wan2.6-i2v",
+    "api": {
+      "fields": [
+        "audio",
+        "audio_url",
+        "duration",
+        "image_url",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "image_url",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "alibaba:wan2.6-i2v-flash": {
+    "name": "Wan 2.6 Image to Video Flash",
+    "provider": "Alibaba",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.125,
+    "credits": 32,
+    "costKnown": false,
+    "endpoint": "wan2.6-i2v-flash",
+    "providerModelId": "wan2.6-i2v-flash",
+    "api": {
+      "fields": [
+        "audio",
+        "audio_url",
+        "duration",
+        "image_url",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "image_url",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "alibaba:wan2.7-i2v": {
+    "name": "Wan 2.7 Image to Video",
+    "provider": "Alibaba",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": false,
+    "endpoint": "wan2.7-i2v",
+    "providerModelId": "wan2.7-i2v",
+    "api": {
+      "fields": [
+        "audio",
+        "audio_url",
+        "duration",
+        "image_url",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "image_url",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10,
+        15
+      ]
+    },
+    "verification": null
+  },
+  "bytedance/v1-lite-image-to-video": {
+    "name": "Seedance V1 Lite",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "bytedance/v1-lite-image-to-video",
+    "providerModelId": "bytedance/v1-lite-image-to-video",
+    "api": {
+      "fields": [
+        "camera_fixed",
+        "duration",
+        "enable_safety_checker",
+        "end_image_url",
+        "image_url",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "bytedance/v1-pro-fast-image-to-video": {
+    "name": "Seedance V1 Pro Fast",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "bytedance/v1-pro-fast-image-to-video",
+    "providerModelId": "bytedance/v1-pro-fast-image-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "image_url",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "bytedance/v1-pro-image-to-video": {
+    "name": "Seedance V1 Pro",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "bytedance/v1-pro-image-to-video",
+    "providerModelId": "bytedance/v1-pro-image-to-video",
+    "api": {
+      "fields": [
+        "camera_fixed",
+        "duration",
+        "enable_safety_checker",
+        "image_url",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "grok-imagine/image-to-video": {
+    "name": "Grok Imagine",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.05,
+    "credits": 13,
+    "costKnown": true,
+    "endpoint": "grok-imagine/image-to-video",
+    "providerModelId": "grok-imagine/image-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "image_urls",
+        "index",
+        "mode",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "task_id"
+      ],
+      "required": [],
+      "aspects": [
+        "2:3",
+        "3:2",
+        "1:1",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo-02-i2v-pro": {
+    "name": "Hailuo 02 I2v Pro",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.48,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo-02-i2v-standard": {
+    "name": "Hailuo 02 I2v Standard",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.23,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo-2.3-i2v": {
+    "name": "Hailuo 2.3 I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.28,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo-2.3-pro-i2v": {
+    "name": "Hailuo 2.3 Pro I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.49,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo/02-image-to-video-pro": {
+    "name": "Hailuo 02 Image To Video Pro",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.48,
+    "credits": 120,
+    "costKnown": true,
+    "endpoint": "hailuo/02-image-to-video-pro",
+    "providerModelId": "hailuo/02-image-to-video-pro",
+    "api": {
+      "fields": [
+        "end_image_url",
+        "image_url",
+        "nsfw_checker",
+        "prompt",
+        "prompt_optimizer"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo/02-image-to-video-standard": {
+    "name": "Hailuo 02 Image To Video Standard",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.23,
+    "credits": 58,
+    "costKnown": true,
+    "endpoint": "hailuo/02-image-to-video-standard",
+    "providerModelId": "hailuo/02-image-to-video-standard",
+    "api": {
+      "fields": [
+        "duration",
+        "end_image_url",
+        "image_url",
+        "nsfw_checker",
+        "prompt",
+        "prompt_optimizer",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "512P",
+        "768P"
+      ],
+      "durations": [
+        "6",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "hailuo/2-3-image-to-video-pro": {
+    "name": "Hailuo 2.3 Image To Video Pro",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.49,
+    "credits": 123,
+    "costKnown": true,
+    "endpoint": "hailuo/2-3-image-to-video-pro",
+    "providerModelId": "hailuo/2-3-image-to-video-pro",
+    "api": {
+      "fields": [
+        "duration",
+        "image_url",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "768P",
+        "1080P"
+      ],
+      "durations": [
+        "6",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "hailuo/2-3-image-to-video-standard": {
+    "name": "Hailuo 2.3 Image To Video Standard",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.28,
+    "credits": 70,
+    "costKnown": true,
+    "endpoint": "hailuo/2-3-image-to-video-standard",
+    "providerModelId": "hailuo/2-3-image-to-video-standard",
+    "api": {
+      "fields": [
+        "duration",
+        "image_url",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "768P",
+        "1080P"
+      ],
+      "durations": [
+        "6",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "happyhorse-1-1/image-to-video": {
+    "name": "HappyHorse 1.1",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "happyhorse-1-1/image-to-video",
+    "providerModelId": "happyhorse-1-1/image-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "image_url",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        8,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "happyhorse/image-to-video": {
+    "name": "HappyHorse",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "happyhorse/image-to-video",
+    "providerModelId": "happyhorse/image-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "image_url",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        8,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "kling-2.6/image-to-video": {
+    "name": "Kling 2.6",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "kling-2.6/image-to-video",
+    "providerModelId": "kling-2.6/image-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "image_urls",
+        "prompt",
+        "sound"
+      ],
+      "required": [
+        "duration",
+        "image_urls",
+        "prompt",
+        "sound"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling-2.6/motion-control": {
+    "name": "Kling 2.6 Motion Control",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "recast",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "kling-2.6/motion-control",
+    "providerModelId": "kling-2.6/motion-control",
+    "api": {
+      "fields": [
+        "character_orientation",
+        "input_urls",
+        "mode",
+        "prompt",
+        "video_urls"
+      ],
+      "required": [
+        "character_orientation",
+        "input_urls",
+        "mode",
+        "video_urls"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-3.0/motion-control": {
+    "name": "Kling 3.0 Motion Control",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "recast",
+    "active": true,
+    "cost": 0.42,
+    "credits": 105,
+    "costKnown": true,
+    "endpoint": "kling-3.0/motion-control",
+    "providerModelId": "kling-3.0/motion-control",
+    "api": {
+      "fields": [
+        "background_source",
+        "character_orientation",
+        "input_urls",
+        "mode",
+        "prompt",
+        "video_urls"
+      ],
+      "required": [
+        "input_urls",
+        "video_urls"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-image-to-video": {
+    "name": "Kling",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.42,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "duration",
+        "image_urls",
+        "prompt",
+        "sound"
+      ],
+      "required": [
+        "duration",
+        "image_urls",
+        "prompt",
+        "sound"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling-v2.1-master-i2v": {
+    "name": "Kling V2.1 Master I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 1.3,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-v2.1-pro-i2v": {
+    "name": "Kling V2.1 Pro I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.45,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-v2.1-standard-i2v": {
+    "name": "Kling V2.1 Standard I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.25,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-v2.5-turbo-pro-i2v": {
+    "name": "Kling V2.5 Turbo Pro I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.35,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-v3-turbo-i2v": {
+    "name": "Kling V3 Turbo I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.42,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling/v2-1-master-image-to-video": {
+    "name": "Kling V2.1 Master",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 1.3,
+    "credits": 325,
+    "costKnown": true,
+    "endpoint": "kling/v2-1-master-image-to-video",
+    "providerModelId": "kling/v2-1-master-image-to-video",
+    "api": {
+      "fields": [
+        "cfg_scale",
+        "duration",
+        "image_url",
+        "negative_prompt",
+        "prompt"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling/v2-5-turbo-image-to-video-pro": {
+    "name": "Kling V2.5 Turbo Image To Video Pro",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.35,
+    "credits": 88,
+    "costKnown": true,
+    "endpoint": "kling/v2-5-turbo-image-to-video-pro",
+    "providerModelId": "kling/v2-5-turbo-image-to-video-pro",
+    "api": {
+      "fields": [
+        "cfg_scale",
+        "duration",
+        "image_url",
+        "negative_prompt",
+        "prompt",
+        "tail_image_url"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling/v3-turbo-image-to-video": {
+    "name": "Kling V3 Turbo",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.42,
+    "credits": 105,
+    "costKnown": true,
+    "endpoint": "kling/v3-turbo-image-to-video",
+    "providerModelId": "kling/v3-turbo-image-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "image_urls",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "duration",
+        "image_urls",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "minimax-h3/image-to-video": {
+    "name": "MiniMax H3",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "minimax-h3/image-to-video",
+    "providerModelId": "minimax-h3/image-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "first_frame_url",
+        "last_frame_url",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "duration",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "768P",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "pixverse-v6/image-to-video": {
+    "name": "PixVerse V6",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "pixverse-v6/image-to-video",
+    "providerModelId": "pixverse-v6/image-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "generate_audio_switch",
+        "generate_multi_clip_switch",
+        "image_urls",
+        "prompt",
+        "quality",
+        "seed",
+        "template_id"
+      ],
+      "required": [
+        "image_urls",
+        "prompt",
+        "quality"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedance-1.5-pro-i2v": {
+    "name": "Seedance 1.5 Pro I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.26,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedance-2-i2v": {
+    "name": "Seedance 2 I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.57,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "veo3-i2v": {
+    "name": "Veo3 I2v",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 1.28,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.2-turbo-i2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.05,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.5-i2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.25,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.6-flash-i2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.25,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.6-i2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.7-i2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-2-a14b-image-to-video-turbo": {
+    "name": "Wan 2.2 A14B Image To Video Turbo",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.05,
+    "credits": 13,
+    "costKnown": true,
+    "endpoint": "wan/2-2-a14b-image-to-video-turbo",
+    "providerModelId": "wan/2-2-a14b-image-to-video-turbo",
+    "api": {
+      "fields": [
+        "acceleration",
+        "enable_prompt_expansion",
+        "image_url",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-2-animate-move": {
+    "name": "Wan 2.2 Animate Move",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "recast",
+    "active": true,
+    "cost": 0.1,
+    "credits": 25,
+    "costKnown": true,
+    "endpoint": "wan/2-2-animate-move",
+    "providerModelId": "wan/2-2-animate-move",
+    "api": {
+      "fields": [
+        "image_url",
+        "nsfw_checker",
+        "resolution",
+        "video_url"
+      ],
+      "required": [
+        "image_url",
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "580p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-2-animate-replace": {
+    "name": "Wan 2.2 Animate Replace",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "recast",
+    "active": true,
+    "cost": 0.1,
+    "credits": 25,
+    "costKnown": true,
+    "endpoint": "wan/2-2-animate-replace",
+    "providerModelId": "wan/2-2-animate-replace",
+    "api": {
+      "fields": [
+        "image_url",
+        "nsfw_checker",
+        "resolution",
+        "video_url"
+      ],
+      "required": [
+        "image_url",
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "580p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-5-image-to-video": {
+    "name": "Wan 2.5",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.25,
+    "credits": 63,
+    "costKnown": true,
+    "endpoint": "wan/2-5-image-to-video",
+    "providerModelId": "wan/2-5-image-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "enable_prompt_expansion",
+        "image_url",
+        "negative_prompt",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "duration",
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "wan/2-6-flash-image-to-video": {
+    "name": "Wan 2.6 Flash",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.25,
+    "credits": 63,
+    "costKnown": true,
+    "endpoint": "wan/2-6-flash-image-to-video",
+    "providerModelId": "wan/2-6-flash-image-to-video",
+    "api": {
+      "fields": [
+        "audio",
+        "duration",
+        "image_urls",
+        "multi_shots",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "audio",
+        "image_urls",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10",
+        "15"
+      ]
+    },
+    "verification": null
+  },
+  "wan/2-6-image-to-video": {
+    "name": "Wan 2.6",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan/2-6-image-to-video",
+    "providerModelId": "wan/2-6-image-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "image_urls",
+        "multi_shots",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "image_urls",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10",
+        "15"
+      ]
+    },
+    "verification": null
+  },
+  "wan/2-7-image-to-video": {
+    "name": "Wan 2.7",
+    "provider": "KIE",
+    "category": "i2v",
+    "capability": "image-to-video",
+    "active": true,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan/2-7-image-to-video",
+    "providerModelId": "wan/2-7-image-to-video",
+    "api": {
+      "fields": [
+        "driving_audio_url",
+        "duration",
+        "first_clip_url",
+        "first_frame_url",
+        "last_frame_url",
+        "negative_prompt",
+        "nsfw_checker",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "seed",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen-image-max": {
+    "name": "Qwen Image Max",
+    "provider": "Alibaba",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.075,
+    "credits": 19,
+    "costKnown": false,
+    "endpoint": "qwen-image-max",
+    "providerModelId": "qwen-image-max",
+    "api": {
+      "fields": [
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:qwen-image-plus": {
+    "name": "Qwen Image Plus",
+    "provider": "Alibaba",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "qwen-image-plus",
+    "providerModelId": "qwen-image-plus",
+    "api": {
+      "fields": [
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:wan2.7-image": {
+    "name": "Wan 2.7 Image",
+    "provider": "Alibaba",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": "wan2.7-image",
+    "providerModelId": "wan2.7-image",
+    "api": {
+      "fields": [
+        "images_list",
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:wan2.7-image-pro": {
+    "name": "Wan 2.7 Image Pro",
+    "provider": "Alibaba",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.075,
+    "credits": 19,
+    "costKnown": false,
+    "endpoint": "wan2.7-image-pro",
+    "providerModelId": "wan2.7-image-pro",
+    "api": {
+      "fields": [
+        "images_list",
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:z-image-turbo": {
+    "name": "Z-Image Turbo",
+    "provider": "Alibaba",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.01434,
+    "credits": 4,
+    "costKnown": false,
+    "endpoint": "z-image-turbo",
+    "providerModelId": "z-image-turbo",
+    "api": {
+      "fields": [
+        "n",
+        "negative_prompt",
+        "prompt",
+        "prompt_extend",
+        "size"
+      ],
+      "required": [
+        "prompt",
+        "prompt_extend"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "bytedance/seedream": {
+    "name": "Seedream",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "bytedance/seedream",
+    "providerModelId": "bytedance/seedream",
+    "api": {
+      "fields": [
+        "guidance_scale",
+        "image_size",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "cover-suno": {
+    "name": "Cover Suno",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.002,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "cover-suno",
+    "providerModelId": "cover-suno",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-2-dev": {
+    "name": "Flux 2 Dev",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.012,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-2-flex": {
+    "name": "Flux 2 Flex",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-2-pro": {
+    "name": "Flux 2 Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-2/flex-text-to-image": {
+    "name": "Flux 2 Flex",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "flux-2/flex-text-to-image",
+    "providerModelId": "flux-2/flex-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "3:2",
+        "2:3"
+      ],
+      "resolutions": [
+        "1K",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-2/pro-text-to-image": {
+    "name": "Flux 2 Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "flux-2/pro-text-to-image",
+    "providerModelId": "flux-2/pro-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "3:2",
+        "2:3"
+      ],
+      "resolutions": [
+        "1K",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-dev": {
+    "name": "Flux Dev",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.012,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-kontext-dev": {
+    "name": "Flux Kontext Dev",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.02,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-kontext-dev-edit": {
+    "name": "Flux Kontext Dev Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.02,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-kontext-pro": {
+    "name": "Flux Kontext Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-kontext-pro-edit": {
+    "name": "Flux Kontext Pro Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux-schnell": {
+    "name": "Flux Schnell",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.003,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux2/flex-text-to-image": {
+    "name": "Flux2 Flex",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "flux2/flex-text-to-image",
+    "providerModelId": "flux2/flex-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "flux2/pro-text-to-image": {
+    "name": "Flux2 Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "flux2/pro-text-to-image",
+    "providerModelId": "flux2/pro-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "generate-4-o-image": {
+    "name": "GPT-4o Image",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "generate-4-o-image",
+    "providerModelId": "generate-4-o-image",
+    "api": {
+      "fields": [
+        "enableFallback",
+        "fallbackModel",
+        "filesUrl",
+        "isEnhance",
+        "maskUrl",
+        "nVariants",
+        "prompt",
+        "size"
+      ],
+      "required": [
+        "size"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/imagen4": {
+    "name": "Google Imagen4",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.038,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "google/imagen4",
+    "providerModelId": "google/imagen4",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "negative_prompt",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "9:16",
+        "3:4",
+        "4:3",
+        "auto"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/imagen4-fast": {
+    "name": "Google Imagen4 Fast",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.018,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": "google/imagen4-fast",
+    "providerModelId": "google/imagen4-fast",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "negative_prompt",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "9:16",
+        "3:4",
+        "4:3",
+        "auto"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/imagen4-ultra": {
+    "name": "Google Imagen4 Ultra",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.058,
+    "credits": 15,
+    "costKnown": true,
+    "endpoint": "google/imagen4-ultra",
+    "providerModelId": "google/imagen4-ultra",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "negative_prompt",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "9:16",
+        "3:4",
+        "4:3",
+        "auto"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/nano-banana": {
+    "name": "Google Nano Banana",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "google/nano-banana",
+    "providerModelId": "google/nano-banana",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_size",
+        "nsfw_checker",
+        "output_format",
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "9:16",
+        "16:9",
+        "21:9",
+        "auto"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/nano-banana-2-lite": {
+    "name": "Google Nano Banana 2 Lite",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "google/nano-banana-2-lite",
+    "providerModelId": "google/nano-banana-2-lite",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_urls",
+        "prompt"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2",
+        "1:4",
+        "4:1",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "1:8",
+        "8:1",
+        "9:16",
+        "16:9",
+        "21:9",
+        "auto"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/nano-banana-edit": {
+    "name": "Google Nano Banana Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "google/nano-banana-edit",
+    "providerModelId": "google/nano-banana-edit",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_urls",
+        "output_format",
+        "prompt"
+      ],
+      "required": [
+        "image_urls",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "9:16",
+        "16:9",
+        "21:9",
+        "auto"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gpt-image-1.5": {
+    "name": "Gpt Image 1.5",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gpt-image-1.5-edit": {
+    "name": "Gpt Image 1.5 Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gpt-image-2": {
+    "name": "Gpt Image 2",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gpt-image-2-edit": {
+    "name": "Gpt Image 2 Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gpt-image-2-text-to-image": {
+    "name": "GPT Image 2",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "gpt-image-2-text-to-image",
+    "providerModelId": "gpt-image-2-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "auto",
+        "1:1",
+        "3:2",
+        "2:3",
+        "4:3",
+        "3:4",
+        "5:4",
+        "4:5",
+        "16:9",
+        "9:16",
+        "2:1",
+        "1:2",
+        "3:1",
+        "1:3",
+        "21:9",
+        "9:21"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "gpt-image/1.5-text-to-image": {
+    "name": "GPT Image 1.5",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "gpt-image/1.5-text-to-image",
+    "providerModelId": "gpt-image/1.5-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "prompt",
+        "quality"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "grok-imagine-text-to-image": {
+    "name": "Grok Imagine",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.022,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "enable_pro",
+        "nsfw_checker",
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "2:3",
+        "3:2",
+        "1:1",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "grok-imagine/text-to-image": {
+    "name": "Grok Imagine",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.022,
+    "credits": 6,
+    "costKnown": true,
+    "endpoint": "grok-imagine/text-to-image",
+    "providerModelId": "grok-imagine/text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "enable_pro",
+        "nsfw_checker",
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "2:3",
+        "3:2",
+        "1:1",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hunyuan-image-3": {
+    "name": "Hunyuan Image 3",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.1,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram-v3": {
+    "name": "Ideogram V3",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.06,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram-v3-edit": {
+    "name": "Ideogram V3 Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.06,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "expand_prompt",
+        "image_url",
+        "mask_url",
+        "prompt",
+        "rendering_speed",
+        "seed"
+      ],
+      "required": [
+        "image_url",
+        "mask_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram/character": {
+    "name": "Ideogram Character",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "ideogram/character",
+    "providerModelId": "ideogram/character",
+    "api": {
+      "fields": [
+        "expand_prompt",
+        "image_size",
+        "negative_prompt",
+        "num_images",
+        "prompt",
+        "reference_image_urls",
+        "rendering_speed",
+        "seed",
+        "style"
+      ],
+      "required": [
+        "prompt",
+        "reference_image_urls"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram/v3-edit": {
+    "name": "Ideogram V3 Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.06,
+    "credits": 15,
+    "costKnown": true,
+    "endpoint": "ideogram/v3-edit",
+    "providerModelId": "ideogram/v3-edit",
+    "api": {
+      "fields": [
+        "expand_prompt",
+        "image_url",
+        "mask_url",
+        "prompt",
+        "rendering_speed",
+        "seed"
+      ],
+      "required": [
+        "image_url",
+        "mask_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ideogram/v3-text-to-image": {
+    "name": "Ideogram V3",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.06,
+    "credits": 15,
+    "costKnown": true,
+    "endpoint": "ideogram/v3-text-to-image",
+    "providerModelId": "ideogram/v3-text-to-image",
+    "api": {
+      "fields": [
+        "expand_prompt",
+        "image_size",
+        "negative_prompt",
+        "prompt",
+        "rendering_speed",
+        "seed",
+        "style"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "imagen4": {
+    "name": "Imagen4",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.038,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "imagen4-fast": {
+    "name": "Imagen4 Fast",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.018,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "imagen4-ultra": {
+    "name": "Imagen4 Ultra",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.058,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-text-to-image": {
+    "name": "Kling",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.028,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "nano-banana": {
+    "name": "Nano Banana",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "nano-banana-2": {
+    "name": "Nano Banana 2",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "nano-banana-2",
+    "providerModelId": "nano-banana-2",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_input",
+        "output_format",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2",
+        "1:4",
+        "4:1",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "1:8",
+        "8:1",
+        "9:16",
+        "16:9",
+        "21:9",
+        "auto"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "nano-banana-2-lite": {
+    "name": "Nano Banana 2 Lite",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "nano-banana-2-lite",
+    "providerModelId": "nano-banana-2-lite",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_urls",
+        "prompt"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2",
+        "1:4",
+        "4:1",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "1:8",
+        "8:1",
+        "9:16",
+        "16:9",
+        "21:9",
+        "auto"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "nano-banana-edit": {
+    "name": "Nano Banana Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "nano-banana-pro": {
+    "name": "Nano Banana Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.09,
+    "credits": 23,
+    "costKnown": true,
+    "endpoint": "nano-banana-pro",
+    "providerModelId": "nano-banana-pro",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_input",
+        "output_format",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "2:3",
+        "3:2",
+        "3:4",
+        "4:3",
+        "4:5",
+        "5:4",
+        "9:16",
+        "16:9",
+        "21:9",
+        "auto"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "nano-banana-pro-edit": {
+    "name": "Nano Banana Pro Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.09,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen-2/text-to-image": {
+    "name": "Qwen 2",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "qwen-2/text-to-image",
+    "providerModelId": "qwen-2/text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen-image": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.02,
+    "credits": 2,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen/text-to-image": {
+    "name": "Qwen",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.02,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": "qwen/text-to-image",
+    "providerModelId": "qwen/text-to-image",
+    "api": {
+      "fields": [
+        "acceleration",
+        "enable_safety_checker",
+        "guidance_scale",
+        "image_size",
+        "negative_prompt",
+        "nsfw_checker",
+        "num_inference_steps",
+        "output_format",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen2/text-to-image": {
+    "name": "Qwen2",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "qwen2/text-to-image",
+    "providerModelId": "qwen2/text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen3-pro/text-to-image": {
+    "name": "Qwen3 Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "qwen3-pro/text-to-image",
+    "providerModelId": "qwen3-pro/text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "num_images",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "1k",
+        "2k",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "qwen3/text-to-image": {
+    "name": "Qwen3",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.03,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": "qwen3/text-to-image",
+    "providerModelId": "qwen3/text-to-image",
+    "api": {
+      "fields": [
+        "image_size",
+        "negative_prompt",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "1K",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream-5-lite": {
+    "name": "Seedream 5 Lite",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.035,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream-5-pro": {
+    "name": "Seedream 5 Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.045,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream-5-pro-edit": {
+    "name": "Seedream 5 Pro Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.045,
+    "credits": 3,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream-v4": {
+    "name": "Seedream V4",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.027,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream-v4-edit": {
+    "name": "Seedream V4 Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.027,
+    "credits": 3,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream/4.5-edit": {
+    "name": "Seedream 4.5 Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.035,
+    "credits": 9,
+    "costKnown": true,
+    "endpoint": "seedream/4.5-edit",
+    "providerModelId": "seedream/4.5-edit",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "image_urls",
+        "nsfw_checker",
+        "prompt",
+        "quality"
+      ],
+      "required": [
+        "aspect_ratio",
+        "image_urls",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "2:3",
+        "3:2",
+        "21:9"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream/4.5-text-to-image": {
+    "name": "Seedream 4.5",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.035,
+    "credits": 9,
+    "costKnown": true,
+    "endpoint": "seedream/4.5-text-to-image",
+    "providerModelId": "seedream/4.5-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "nsfw_checker",
+        "prompt",
+        "quality"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "2:3",
+        "3:2",
+        "21:9"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream/5-lite-text-to-image": {
+    "name": "Seedream 5 Lite",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.035,
+    "credits": 9,
+    "costKnown": true,
+    "endpoint": "seedream/5-lite-text-to-image",
+    "providerModelId": "seedream/5-lite-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "quality"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "2:3",
+        "3:2",
+        "21:9"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream/5-pro-text-to-image": {
+    "name": "Seedream 5 Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": true,
+    "cost": 0.045,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": "seedream/5-pro-text-to-image",
+    "providerModelId": "seedream/5-pro-text-to-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "quality"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "2:3",
+        "3:2",
+        "21:9"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream/seedream-v4-edit": {
+    "name": "Seedream Seedream V4 Edit",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.027,
+    "credits": 7,
+    "costKnown": true,
+    "endpoint": "seedream/seedream-v4-edit",
+    "providerModelId": "seedream/seedream-v4-edit",
+    "api": {
+      "fields": [
+        "image_resolution",
+        "image_size",
+        "image_urls",
+        "max_images",
+        "nsfw_checker",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "image_urls",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedream/seedream-v4-text-to-image": {
+    "name": "Seedream Seedream V4",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "text-to-image",
+    "active": false,
+    "cost": 0.027,
+    "credits": 7,
+    "costKnown": true,
+    "endpoint": "seedream/seedream-v4-text-to-image",
+    "providerModelId": "seedream/seedream-v4-text-to-image",
+    "api": {
+      "fields": [
+        "image_resolution",
+        "image_size",
+        "max_images",
+        "nsfw_checker",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.7-image": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.02,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "bbox_list",
+        "color_palette",
+        "enable_sequential",
+        "input_urls",
+        "n",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed",
+        "thinking_mode",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "4:3",
+        "21:9",
+        "3:4",
+        "9:16",
+        "8:1",
+        "1:8"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.7-image-pro": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.04,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "bbox_list",
+        "color_palette",
+        "enable_sequential",
+        "input_urls",
+        "n",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed",
+        "thinking_mode",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "4:3",
+        "21:9",
+        "3:4",
+        "9:16",
+        "8:1",
+        "1:8"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-7-image": {
+    "name": "Wan 2.7 Image",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.02,
+    "credits": 5,
+    "costKnown": true,
+    "endpoint": "wan/2-7-image",
+    "providerModelId": "wan/2-7-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "bbox_list",
+        "color_palette",
+        "enable_sequential",
+        "input_urls",
+        "n",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed",
+        "thinking_mode",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "4:3",
+        "21:9",
+        "3:4",
+        "9:16",
+        "8:1",
+        "1:8"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-7-image-pro": {
+    "name": "Wan 2.7 Image Pro",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": true,
+    "cost": 0.04,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": "wan/2-7-image-pro",
+    "providerModelId": "wan/2-7-image-pro",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "bbox_list",
+        "color_palette",
+        "enable_sequential",
+        "input_urls",
+        "n",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed",
+        "thinking_mode",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "4:3",
+        "21:9",
+        "3:4",
+        "9:16",
+        "8:1",
+        "1:8"
+      ],
+      "resolutions": [
+        "1K",
+        "2K",
+        "4K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "z-image": {
+    "name": "Z Image",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.004,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "z-image",
+    "providerModelId": "z-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "nsfw_checker",
+        "prompt"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "z-image/z-image": {
+    "name": "Z Image Z Image",
+    "provider": "KIE",
+    "category": "image",
+    "capability": "image",
+    "active": false,
+    "cost": 0.004,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": "z-image/z-image",
+    "providerModelId": "z-image/z-image",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "nsfw_checker",
+        "prompt"
+      ],
+      "required": [
+        "aspect_ratio",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gemini-omni-character": {
+    "name": "Gemini Omni Character",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": false,
+    "cost": 0.15,
+    "credits": 38,
+    "costKnown": true,
+    "endpoint": "gemini-omni-character",
+    "providerModelId": "gemini-omni-character",
+    "api": {
+      "fields": [
+        "audio_ids",
+        "character_name",
+        "descriptions",
+        "image_urls"
+      ],
+      "required": [
+        "descriptions",
+        "image_urls"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "infinitalk/from-audio": {
+    "name": "Infinitalk From Audio",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": true,
+    "cost": 0.1,
+    "credits": 25,
+    "costKnown": true,
+    "endpoint": "infinitalk/from-audio",
+    "providerModelId": "infinitalk/from-audio",
+    "api": {
+      "fields": [
+        "audio_url",
+        "image_url",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-ai-avatar-pro": {
+    "name": "Kling AI Avatar Pro",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": false,
+    "cost": 0.56,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "required": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-ai-avatar-standard": {
+    "name": "Kling AI Avatar Standard",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": false,
+    "cost": 0.42,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "required": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling/ai-avatar-pro": {
+    "name": "Kling AI Avatar Pro",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": true,
+    "cost": 0.56,
+    "credits": 140,
+    "costKnown": true,
+    "endpoint": "kling/ai-avatar-pro",
+    "providerModelId": "kling/ai-avatar-pro",
+    "api": {
+      "fields": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "required": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling/ai-avatar-standard": {
+    "name": "Kling AI Avatar Standard",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": true,
+    "cost": 0.42,
+    "credits": 105,
+    "costKnown": true,
+    "endpoint": "kling/ai-avatar-standard",
+    "providerModelId": "kling/ai-avatar-standard",
+    "api": {
+      "fields": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "required": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "omnihuman-1-5": {
+    "name": "Omnihuman 1.5",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": false,
+    "cost": 0.2,
+    "credits": 50,
+    "costKnown": true,
+    "endpoint": "omnihuman-1-5",
+    "providerModelId": "omnihuman-1-5",
+    "api": {
+      "fields": [
+        "audio_url",
+        "image_url",
+        "mask_url",
+        "output_resolution",
+        "pe_fast_mode",
+        "prompt",
+        "seed"
+      ],
+      "required": [
+        "audio_url",
+        "image_url"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "omnihuman-1-5/human-identification": {
+    "name": "Omnihuman 1.5 Human Identification",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": true,
+    "cost": 0.2,
+    "credits": 50,
+    "costKnown": true,
+    "endpoint": "omnihuman-1-5/human-identification",
+    "providerModelId": "omnihuman-1-5/human-identification",
+    "api": {
+      "fields": [
+        "image_url"
+      ],
+      "required": [
+        "image_url"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "omnihuman-1-5/subject-detection": {
+    "name": "Omnihuman 1.5 Subject Detection",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": true,
+    "cost": 0.2,
+    "credits": 50,
+    "costKnown": true,
+    "endpoint": "omnihuman-1-5/subject-detection",
+    "providerModelId": "omnihuman-1-5/subject-detection",
+    "api": {
+      "fields": [
+        "image_url"
+      ],
+      "required": [
+        "image_url"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "volcengine/video-to-video-lip-sync": {
+    "name": "Volcengine Video To Video Lip Sync",
+    "provider": "KIE",
+    "category": "lipsync",
+    "capability": "avatar-video",
+    "active": true,
+    "cost": 0.08,
+    "credits": 20,
+    "costKnown": true,
+    "endpoint": "volcengine/video-to-video-lip-sync",
+    "providerModelId": "volcengine/video-to-video-lip-sync",
+    "api": {
+      "fields": [
+        "align_audio",
+        "align_audio_reverse",
+        "audio_url",
+        "mode",
+        "open_scenedet",
+        "separate_vocal",
+        "templ_start_seconds",
+        "video_url"
+      ],
+      "required": [
+        "audio_url",
+        "mode",
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "google/gemini-2.5-flash-openai": {
+    "name": "Google Gemini 2.5 Flash Openai",
+    "provider": "KIE",
+    "category": "uncategorized",
+    "capability": null,
+    "active": false,
+    "cost": 0.001,
+    "credits": 1,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "grok-imagine-extend": {
+    "name": "Grok Imagine Extend",
+    "provider": "KIE",
+    "category": "uncategorized",
+    "capability": null,
+    "active": false,
+    "cost": 0.05,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "extend_at",
+        "extend_times",
+        "prompt",
+        "task_id"
+      ],
+      "required": [
+        "extend_times",
+        "prompt",
+        "task_id"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "infinitetalk": {
+    "name": "Infinitetalk",
+    "provider": "KIE",
+    "category": "uncategorized",
+    "capability": null,
+    "active": false,
+    "cost": 0.15,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "midjourney": {
+    "name": "Midjourney",
+    "provider": "KIE",
+    "category": "uncategorized",
+    "capability": null,
+    "active": false,
+    "cost": 0.1,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "sora-2": {
+    "name": "Sora 2",
+    "provider": "KIE",
+    "category": "uncategorized",
+    "capability": null,
+    "active": false,
+    "cost": 0.4,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "volcengine-lipsync": {
+    "name": "Volcengine Lipsync",
+    "provider": "KIE",
+    "category": "uncategorized",
+    "capability": null,
+    "active": false,
+    "cost": 0.08,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "ai-clipping": {
+    "name": "AI Clipping",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "ai-clipping",
+    "providerModelId": "ai-clipping",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "num_highlights",
+        "return_coordinates_only",
+        "video_url"
+      ],
+      "required": [
+        "video_url"
+      ],
+      "aspects": [
+        "9:16",
+        "1:1",
+        "4:5",
+        "16:9",
+        "4:3"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:wan2.7-videoedit": {
+    "name": "Wan 2.7 Video Edit",
+    "provider": "Alibaba",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan2.7-videoedit",
+    "providerModelId": "wan2.7-videoedit",
+    "api": {
+      "fields": [
+        "duration",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "video_url",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "resolution",
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10,
+        15
+      ]
+    },
+    "verification": null
+  },
+  "grok-imagine/extend": {
+    "name": "Grok Imagine Extend",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": true,
+    "cost": 0.05,
+    "credits": 13,
+    "costKnown": true,
+    "endpoint": "grok-imagine/extend",
+    "providerModelId": "grok-imagine/extend",
+    "api": {
+      "fields": [
+        "extend_at",
+        "extend_times",
+        "prompt",
+        "task_id"
+      ],
+      "required": [
+        "extend_times",
+        "prompt",
+        "task_id"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "happyhorse/video-edit": {
+    "name": "HappyHorse Video Edit",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "happyhorse/video-edit",
+    "providerModelId": "happyhorse/video-edit",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution",
+        "video_url"
+      ],
+      "required": [
+        "prompt",
+        "video_url"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        8,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "pixverse-v6/extend": {
+    "name": "PixVerse V6 Extend",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "pixverse-v6/extend",
+    "providerModelId": "pixverse-v6/extend",
+    "api": {
+      "fields": [
+        "duration",
+        "generate_audio_switch",
+        "prompt",
+        "quality",
+        "seed",
+        "taskId",
+        "video_url"
+      ],
+      "required": [
+        "duration",
+        "prompt",
+        "quality"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "topaz/video-upscale": {
+    "name": "Topaz",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-upscale",
+    "active": true,
+    "cost": 0.025,
+    "credits": 7,
+    "costKnown": true,
+    "endpoint": "topaz/video-upscale",
+    "providerModelId": "topaz/video-upscale",
+    "api": {
+      "fields": [
+        "upscale_factor",
+        "video_url"
+      ],
+      "required": [
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "video-upscale": {
+    "name": "Video Upscale",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-upscale",
+    "active": false,
+    "cost": 0.025,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.6-flash-v2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": false,
+    "cost": 0.25,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.6-v2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.7-video-edit": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 8,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-6-flash-video-to-video": {
+    "name": "Wan 2.6 Flash",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": true,
+    "cost": 0.25,
+    "credits": 63,
+    "costKnown": true,
+    "endpoint": "wan/2-6-flash-video-to-video",
+    "providerModelId": "wan/2-6-flash-video-to-video",
+    "api": {
+      "fields": [
+        "audio",
+        "duration",
+        "multi_shots",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "video_urls"
+      ],
+      "required": [
+        "prompt",
+        "video_urls"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "wan/2-6-video-to-video": {
+    "name": "Wan 2.6",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": true,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan/2-6-video-to-video",
+    "providerModelId": "wan/2-6-video-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "multi_shots",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "video_urls"
+      ],
+      "required": [
+        "prompt",
+        "video_urls"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "wan/2-7-videoedit": {
+    "name": "Wan 2.7 Videoedit",
+    "provider": "KIE",
+    "category": "v2v",
+    "capability": "video-to-video",
+    "active": true,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan/2-7-videoedit",
+    "providerModelId": "wan/2-7-videoedit",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "audio_setting",
+        "duration",
+        "negative_prompt",
+        "nsfw_checker",
+        "prompt",
+        "prompt_extend",
+        "reference_image",
+        "resolution",
+        "seed",
+        "video_url",
+        "watermark"
+      ],
+      "required": [
+        "video_url"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:wan2.1-t2v-turbo": {
+    "name": "Wan 2.1 Text to Video Turbo",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.18,
+    "credits": 45,
+    "costKnown": false,
+    "endpoint": "wan2.1-t2v-turbo",
+    "providerModelId": "wan2.1-t2v-turbo",
+    "api": {
+      "fields": [
+        "duration",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "durations": [
+        5
+      ]
+    },
+    "verification": null
+  },
+  "alibaba:wan2.2-animate-mix": {
+    "name": "Wan Animate Mix",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": false,
+    "cost": 0.2,
+    "credits": 50,
+    "costKnown": false,
+    "endpoint": "wan2.2-animate-mix",
+    "providerModelId": "wan2.2-animate-mix",
+    "api": {
+      "fields": [
+        "duration",
+        "image_url",
+        "mode",
+        "resolution",
+        "video_url"
+      ],
+      "required": [
+        "duration",
+        "image_url",
+        "mode",
+        "resolution",
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:wan2.2-animate-move": {
+    "name": "Wan Animate Move",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": false,
+    "cost": 0.2,
+    "credits": 50,
+    "costKnown": false,
+    "endpoint": "wan2.2-animate-move",
+    "providerModelId": "wan2.2-animate-move",
+    "api": {
+      "fields": [
+        "duration",
+        "image_url",
+        "mode",
+        "resolution",
+        "video_url"
+      ],
+      "required": [
+        "duration",
+        "image_url",
+        "mode",
+        "resolution",
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "alibaba:wan2.2-t2v-plus": {
+    "name": "Wan 2.2 Text to Video Plus",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.1,
+    "credits": 25,
+    "costKnown": false,
+    "endpoint": "wan2.2-t2v-plus",
+    "providerModelId": "wan2.2-t2v-plus",
+    "api": {
+      "fields": [
+        "duration",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "1080p"
+      ],
+      "durations": [
+        5
+      ]
+    },
+    "verification": null
+  },
+  "alibaba:wan2.5-t2v-preview": {
+    "name": "Wan 2.5 Text to Video Preview",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.25,
+    "credits": 63,
+    "costKnown": false,
+    "endpoint": "wan2.5-t2v-preview",
+    "providerModelId": "wan2.5-t2v-preview",
+    "api": {
+      "fields": [
+        "duration",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "alibaba:wan2.6-r2v": {
+    "name": "Wan 2.6 Reference to Video",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": false,
+    "endpoint": "wan2.6-r2v",
+    "providerModelId": "wan2.6-r2v",
+    "api": {
+      "fields": [
+        "audio",
+        "audio_url",
+        "duration",
+        "image_url",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "video_url",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "image_url",
+        "resolution",
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "alibaba:wan2.6-t2v": {
+    "name": "Wan 2.6 Text to Video",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": false,
+    "endpoint": "wan2.6-t2v",
+    "providerModelId": "wan2.6-t2v",
+    "api": {
+      "fields": [
+        "audio",
+        "audio_url",
+        "duration",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10,
+        15
+      ]
+    },
+    "verification": null
+  },
+  "alibaba:wan2.7-r2v": {
+    "name": "Wan 2.7 Reference to Video",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan2.7-r2v",
+    "providerModelId": "wan2.7-r2v",
+    "api": {
+      "fields": [
+        "audio",
+        "audio_url",
+        "duration",
+        "image_url",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "video_url",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "image_url",
+        "resolution",
+        "video_url"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10,
+        15
+      ]
+    },
+    "verification": null
+  },
+  "alibaba:wan2.7-t2v": {
+    "name": "Wan 2.7 Text to Video",
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": false,
+    "endpoint": "wan2.7-t2v",
+    "providerModelId": "wan2.7-t2v",
+    "api": {
+      "fields": [
+        "audio",
+        "audio_url",
+        "duration",
+        "prompt",
+        "prompt_extend",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10,
+        15
+      ]
+    },
+    "verification": null
+  },
+  "bytedance/seedance-1.5-pro": {
+    "name": "Seedance 1.5 Pro",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.26,
+    "credits": 65,
+    "costKnown": true,
+    "endpoint": "bytedance/seedance-1.5-pro",
+    "providerModelId": "bytedance/seedance-1.5-pro",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "fixed_lens",
+        "generate_audio",
+        "input_urls",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "aspect_ratio",
+        "duration",
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "21:9"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "bytedance/seedance-2": {
+    "name": "Seedance 2",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.57,
+    "credits": 143,
+    "costKnown": true,
+    "endpoint": "bytedance/seedance-2",
+    "providerModelId": "bytedance/seedance-2",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "first_frame_url",
+        "generate_audio",
+        "last_frame_url",
+        "nsfw_checker",
+        "prompt",
+        "reference_audio_urls",
+        "reference_image_urls",
+        "reference_video_urls",
+        "resolution",
+        "return_last_frame",
+        "web_search"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "21:9",
+        "adaptive"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "bytedance/seedance-2-5": {
+    "name": "Seedance 2.5",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.57,
+    "credits": 143,
+    "costKnown": true,
+    "endpoint": "bytedance/seedance-2-5",
+    "providerModelId": "bytedance/seedance-2-5",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "frame_key",
+        "generate_audio",
+        "nsfw_checker",
+        "output_format",
+        "prompt",
+        "reference_audio_urls",
+        "reference_image_urls",
+        "reference_video_urls",
+        "resolution",
+        "return_last_frame",
+        "web_search"
+      ],
+      "required": [],
+      "aspects": [
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16",
+        "21:9",
+        "adaptive"
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "bytedance/seedance-2-fast": {
+    "name": "Seedance 2 Fast",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "bytedance/seedance-2-fast",
+    "providerModelId": "bytedance/seedance-2-fast",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "first_frame_url",
+        "generate_audio",
+        "last_frame_url",
+        "nsfw_checker",
+        "prompt",
+        "reference_audio_urls",
+        "reference_image_urls",
+        "reference_video_urls",
+        "resolution",
+        "return_last_frame",
+        "web_search"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "21:9",
+        "adaptive"
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "bytedance/seedance-2-mini": {
+    "name": "Seedance 2 Mini",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.6,
+    "credits": 150,
+    "costKnown": true,
+    "endpoint": "bytedance/seedance-2-mini",
+    "providerModelId": "bytedance/seedance-2-mini",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "first_frame_url",
+        "generate_audio",
+        "last_frame_url",
+        "nsfw_checker",
+        "prompt",
+        "reference_audio_urls",
+        "reference_image_urls",
+        "reference_video_urls",
+        "resolution",
+        "web_search"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "1:1",
+        "4:3",
+        "3:4",
+        "16:9",
+        "9:16",
+        "21:9",
+        "adaptive"
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "bytedance/v1-lite-text-to-video": {
+    "name": "Seedance V1 Lite",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "bytedance/v1-lite-text-to-video",
+    "providerModelId": "bytedance/v1-lite-text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "camera_fixed",
+        "duration",
+        "enable_safety_checker",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16",
+        "9:21"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "bytedance/v1-pro-text-to-video": {
+    "name": "Seedance V1 Pro",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "bytedance/v1-pro-text-to-video",
+    "providerModelId": "bytedance/v1-pro-text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "camera_fixed",
+        "duration",
+        "enable_safety_checker",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "21:9",
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "create-music-video": {
+    "name": "Create Music Video",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.005,
+    "credits": 2,
+    "costKnown": true,
+    "endpoint": "create-music-video",
+    "providerModelId": "create-music-video",
+    "api": {
+      "fields": [
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "extend-ai-video": {
+    "name": "Extend AI Video",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.05,
+    "credits": 13,
+    "costKnown": true,
+    "endpoint": "extend-ai-video",
+    "providerModelId": "extend-ai-video",
+    "api": {
+      "fields": [
+        "prompt",
+        "quality",
+        "task_id",
+        "watermark"
+      ],
+      "required": [
+        "prompt",
+        "quality",
+        "task_id"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "extend-video": {
+    "name": "Extend Video",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "extend-video",
+    "providerModelId": "extend-video",
+    "api": {
+      "fields": [
+        "model_tier",
+        "prompt",
+        "seeds",
+        "task_id",
+        "watermark"
+      ],
+      "required": [
+        "prompt",
+        "task_id"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "gemini-omni-video": {
+    "name": "Gemini Omni Video",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.15,
+    "credits": 38,
+    "costKnown": true,
+    "endpoint": "gemini-omni-video",
+    "providerModelId": "gemini-omni-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "audio_ids",
+        "character_ids",
+        "duration",
+        "image_urls",
+        "prompt",
+        "resolution",
+        "seed",
+        "video_list"
+      ],
+      "required": [
+        "duration",
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "durations": [
+        "4",
+        "6",
+        "8",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "generate-ai-video": {
+    "name": "Generate AI Video",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.05,
+    "credits": 13,
+    "costKnown": true,
+    "endpoint": "generate-ai-video",
+    "providerModelId": "generate-ai-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "image_url",
+        "prompt",
+        "quality",
+        "watermark"
+      ],
+      "required": [
+        "duration",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16"
+      ],
+      "resolutions": null,
+      "durations": [
+        5,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "generate-aleph-video": {
+    "name": "Runway Aleph",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "generate-aleph-video",
+    "providerModelId": "generate-aleph-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "prompt",
+        "reference_image",
+        "seed",
+        "video_url",
+        "watermark"
+      ],
+      "required": [
+        "prompt",
+        "video_url"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "4:3",
+        "3:4",
+        "1:1",
+        "21:9"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "generate-veo-3-video": {
+    "name": "Veo 3",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 1.28,
+    "credits": 320,
+    "costKnown": true,
+    "endpoint": "generate-veo-3-video",
+    "providerModelId": "generate-veo-3-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "enable_translation",
+        "generation_type",
+        "image_urls",
+        "model_tier",
+        "prompt",
+        "resolution",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "Auto"
+      ],
+      "resolutions": [
+        "720p",
+        "1080p",
+        "4k"
+      ],
+      "durations": [
+        4,
+        6,
+        8
+      ]
+    },
+    "verification": null
+  },
+  "grok-imagine-text-to-video": {
+    "name": "Grok Imagine",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.05,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "mode",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "2:3",
+        "3:2",
+        "1:1",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "grok-imagine-video-1-5-preview": {
+    "name": "Grok Imagine Video 1.5",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "grok-imagine-video-1-5-preview",
+    "providerModelId": "grok-imagine-video-1-5-preview",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        8,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "grok-imagine/text-to-video": {
+    "name": "Grok Imagine",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.05,
+    "credits": 13,
+    "costKnown": true,
+    "endpoint": "grok-imagine/text-to-video",
+    "providerModelId": "grok-imagine/text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "mode",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "2:3",
+        "3:2",
+        "1:1",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo-02-pro": {
+    "name": "Hailuo 02 Pro",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.48,
+    "credits": 10,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo-02-standard": {
+    "name": "Hailuo 02 Standard",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.23,
+    "credits": 10,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo-2.3": {
+    "name": "Hailuo 2.3",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.28,
+    "credits": 10,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo/02-text-to-video-pro": {
+    "name": "Hailuo 02 Text To Video Pro",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.48,
+    "credits": 120,
+    "costKnown": true,
+    "endpoint": "hailuo/02-text-to-video-pro",
+    "providerModelId": "hailuo/02-text-to-video-pro",
+    "api": {
+      "fields": [
+        "nsfw_checker",
+        "prompt",
+        "prompt_optimizer"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "hailuo/02-text-to-video-standard": {
+    "name": "Hailuo 02 Text To Video Standard",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.23,
+    "credits": 58,
+    "costKnown": true,
+    "endpoint": "hailuo/02-text-to-video-standard",
+    "providerModelId": "hailuo/02-text-to-video-standard",
+    "api": {
+      "fields": [
+        "duration",
+        "nsfw_checker",
+        "prompt",
+        "prompt_optimizer"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        "6",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "happyhorse-1-1/reference-to-video": {
+    "name": "HappyHorse 1.1 (from references)",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "happyhorse-1-1/reference-to-video",
+    "providerModelId": "happyhorse-1-1/reference-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        8,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "happyhorse-1-1/text-to-video": {
+    "name": "HappyHorse 1.1 (from text)",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "happyhorse-1-1/text-to-video",
+    "providerModelId": "happyhorse-1-1/text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        8,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "happyhorse/reference-to-video": {
+    "name": "HappyHorse (from references)",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "happyhorse/reference-to-video",
+    "providerModelId": "happyhorse/reference-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        8,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "happyhorse/text-to-video": {
+    "name": "HappyHorse (from text)",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "happyhorse/text-to-video",
+    "providerModelId": "happyhorse/text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "480p",
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        5,
+        8,
+        10
+      ]
+    },
+    "verification": null
+  },
+  "kling-2.6/text-to-video": {
+    "name": "Kling 2.6",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "kling-2.6/text-to-video",
+    "providerModelId": "kling-2.6/text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "sound"
+      ],
+      "required": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "sound"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling-3-0": {
+    "name": "Kling 3.0",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.42,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-3.0/video": {
+    "name": "Kling 3.0 Video",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.42,
+    "credits": 105,
+    "costKnown": true,
+    "endpoint": "kling-3.0/video",
+    "providerModelId": "kling-3.0/video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "image_urls",
+        "kling_elements",
+        "mode",
+        "multi_prompt",
+        "multi_shots",
+        "prompt",
+        "sound"
+      ],
+      "required": [
+        "multi_shots",
+        "prompt",
+        "sound"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": null,
+      "durations": [
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15"
+      ]
+    },
+    "verification": null
+  },
+  "kling-text-to-video": {
+    "name": "Kling",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.42,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "sound"
+      ],
+      "required": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "sound"
+      ],
+      "aspects": [
+        "1:1",
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling-v2.1-master": {
+    "name": "Kling V2.1 Master",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 1.3,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-v2.1-pro-recast": {
+    "name": "Kling V2.1 Pro Recast",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.45,
+    "credits": 12,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-v2.5-turbo-pro": {
+    "name": "Kling V2.5 Turbo Pro",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.35,
+    "credits": 10,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-v3-pro-recast": {
+    "name": "Kling V3 Pro Recast",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.56,
+    "credits": 12,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling-v3-turbo": {
+    "name": "Kling V3 Turbo",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.42,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "kling/v2-1-master-text-to-video": {
+    "name": "Kling V2.1 Master",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 1.3,
+    "credits": 325,
+    "costKnown": true,
+    "endpoint": "kling/v2-1-master-text-to-video",
+    "providerModelId": "kling/v2-1-master-text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "cfg_scale",
+        "duration",
+        "negative_prompt",
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling/v2-1-pro": {
+    "name": "Kling V2.1 Pro",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.45,
+    "credits": 113,
+    "costKnown": true,
+    "endpoint": "kling/v2-1-pro",
+    "providerModelId": "kling/v2-1-pro",
+    "api": {
+      "fields": [
+        "cfg_scale",
+        "duration",
+        "image_url",
+        "negative_prompt",
+        "prompt",
+        "tail_image_url"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling/v2-1-standard": {
+    "name": "Kling V2.1 Standard",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.25,
+    "credits": 63,
+    "costKnown": true,
+    "endpoint": "kling/v2-1-standard",
+    "providerModelId": "kling/v2-1-standard",
+    "api": {
+      "fields": [
+        "cfg_scale",
+        "duration",
+        "image_url",
+        "negative_prompt",
+        "prompt"
+      ],
+      "required": [
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling/v2-5-turbo-text-to-video-pro": {
+    "name": "Kling V2.5 Turbo Text To Video Pro",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.35,
+    "credits": 88,
+    "costKnown": true,
+    "endpoint": "kling/v2-5-turbo-text-to-video-pro",
+    "providerModelId": "kling/v2-5-turbo-text-to-video-pro",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "cfg_scale",
+        "duration",
+        "negative_prompt",
+        "prompt"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": null,
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "kling/v3-turbo-text-to-video": {
+    "name": "Kling V3 Turbo",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.42,
+    "credits": 105,
+    "costKnown": true,
+    "endpoint": "kling/v3-turbo-text-to-video",
+    "providerModelId": "kling/v3-turbo-text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "aspects": [
+        "1:1",
+        "9:16",
+        "16:9"
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "minimax-h3/reference-to-video": {
+    "name": "MiniMax H3 (from references)",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "minimax-h3/reference-to-video",
+    "providerModelId": "minimax-h3/reference-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "reference_audio_urls",
+        "reference_image_urls",
+        "reference_video_urls",
+        "resolution"
+      ],
+      "required": [
+        "duration",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "768P",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "minimax-h3/text-to-video": {
+    "name": "MiniMax H3 (from text)",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "minimax-h3/text-to-video",
+    "providerModelId": "minimax-h3/text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "aspect_ratio",
+        "duration",
+        "prompt"
+      ],
+      "aspects": [
+        "21:9",
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16"
+      ],
+      "resolutions": [
+        "768P",
+        "2K"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "pixverse-v6/reference-to-video": {
+    "name": "PixVerse V6 (from references)",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "pixverse-v6/reference-to-video",
+    "providerModelId": "pixverse-v6/reference-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "generate_audio_switch",
+        "image_references",
+        "prompt",
+        "quality",
+        "seed"
+      ],
+      "required": [
+        "image_references",
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16",
+        "2:3",
+        "3:2",
+        "21:9"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "pixverse-v6/text-to-video": {
+    "name": "PixVerse V6 (from text)",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "pixverse-v6/text-to-video",
+    "providerModelId": "pixverse-v6/text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "generate_audio_switch",
+        "generate_multi_clip_switch",
+        "prompt",
+        "quality",
+        "seed"
+      ],
+      "required": [
+        "duration",
+        "prompt",
+        "quality"
+      ],
+      "aspects": [
+        "16:9",
+        "4:3",
+        "1:1",
+        "3:4",
+        "9:16",
+        "2:3",
+        "3:2",
+        "21:9"
+      ],
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "pixverse-v6/transition": {
+    "name": "PixVerse V6 Transition",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.3,
+    "credits": 75,
+    "costKnown": true,
+    "endpoint": "pixverse-v6/transition",
+    "providerModelId": "pixverse-v6/transition",
+    "api": {
+      "fields": [
+        "duration",
+        "first_frame_image_url",
+        "generate_audio_switch",
+        "last_frame_image_url",
+        "prompt",
+        "quality",
+        "seed"
+      ],
+      "required": [
+        "duration",
+        "first_frame_image_url",
+        "last_frame_image_url",
+        "prompt",
+        "quality"
+      ],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "runway-aleph": {
+    "name": "Runway Aleph",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.05,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "runway-extend": {
+    "name": "Runway Extend",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.05,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedance-1.5-pro": {
+    "name": "Seedance 1.5 Pro",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.26,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedance-2": {
+    "name": "Seedance 2",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.57,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedance-2-fast": {
+    "name": "Seedance 2 Fast",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "seedance-2-mini": {
+    "name": "Seedance 2 Mini",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.6,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "veo3": {
+    "name": "Veo3",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 1.28,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "veo3-extend": {
+    "name": "Veo3 Extend",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 1.28,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "veo3-fast": {
+    "name": "Veo3 Fast",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 1.2,
+    "credits": 10,
+    "costKnown": true,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.5-t2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.25,
+    "credits": 10,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.6-t2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 10,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-2.7-t2v": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": false,
+    "cost": 0.5,
+    "credits": 10,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-animate-move": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.1,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-animate-replace": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.1,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan-speech-to-video": {
+    "name": null,
+    "provider": "Alibaba",
+    "category": "video",
+    "capability": "video",
+    "active": false,
+    "cost": 0.1,
+    "credits": 8,
+    "costKnown": false,
+    "endpoint": null,
+    "providerModelId": null,
+    "api": {
+      "fields": [],
+      "required": [],
+      "aspects": null,
+      "resolutions": null,
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-2-a14b-speech-to-video-turbo": {
+    "name": "Wan 2.2 A14B Speech To Video Turbo",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "video",
+    "active": true,
+    "cost": 0.1,
+    "credits": 25,
+    "costKnown": true,
+    "endpoint": "wan/2-2-a14b-speech-to-video-turbo",
+    "providerModelId": "wan/2-2-a14b-speech-to-video-turbo",
+    "api": {
+      "fields": [
+        "audio_url",
+        "frames_per_second",
+        "guidance_scale",
+        "image_url",
+        "negative_prompt",
+        "nsfw_checker",
+        "num_frames",
+        "num_inference_steps",
+        "prompt",
+        "resolution",
+        "seed",
+        "shift"
+      ],
+      "required": [
+        "audio_url",
+        "image_url",
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "480p",
+        "580p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-2-a14b-text-to-video-turbo": {
+    "name": "Wan 2.2 A14B Text To Video Turbo",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.05,
+    "credits": 13,
+    "costKnown": true,
+    "endpoint": "wan/2-2-a14b-text-to-video-turbo",
+    "providerModelId": "wan/2-2-a14b-text-to-video-turbo",
+    "api": {
+      "fields": [
+        "acceleration",
+        "aspect_ratio",
+        "enable_prompt_expansion",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16"
+      ],
+      "resolutions": [
+        "480p",
+        "720p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-5-text-to-video": {
+    "name": "Wan 2.5",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.25,
+    "credits": 63,
+    "costKnown": true,
+    "endpoint": "wan/2-5-text-to-video",
+    "providerModelId": "wan/2-5-text-to-video",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "enable_prompt_expansion",
+        "negative_prompt",
+        "nsfw_checker",
+        "prompt",
+        "resolution",
+        "seed"
+      ],
+      "required": [
+        "duration",
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10"
+      ]
+    },
+    "verification": null
+  },
+  "wan/2-6-text-to-video": {
+    "name": "Wan 2.6",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan/2-6-text-to-video",
+    "providerModelId": "wan/2-6-text-to-video",
+    "api": {
+      "fields": [
+        "duration",
+        "multi_shots",
+        "nsfw_checker",
+        "prompt",
+        "resolution"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": [
+        "5",
+        "10",
+        "15"
+      ]
+    },
+    "verification": null
+  },
+  "wan/2-7-r2v": {
+    "name": "Wan 2.7 R2V",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "reference-to-video",
+    "active": true,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan/2-7-r2v",
+    "providerModelId": "wan/2-7-r2v",
+    "api": {
+      "fields": [
+        "aspect_ratio",
+        "duration",
+        "first_frame",
+        "negative_prompt",
+        "nsfw_checker",
+        "prompt",
+        "prompt_extend",
+        "reference_image",
+        "reference_video",
+        "reference_voice",
+        "resolution",
+        "seed",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": [
+        "16:9",
+        "9:16",
+        "1:1",
+        "4:3",
+        "3:4"
+      ],
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  },
+  "wan/2-7-text-to-video": {
+    "name": "Wan 2.7",
+    "provider": "KIE",
+    "category": "video",
+    "capability": "text-to-video",
+    "active": true,
+    "cost": 0.5,
+    "credits": 125,
+    "costKnown": true,
+    "endpoint": "wan/2-7-text-to-video",
+    "providerModelId": "wan/2-7-text-to-video",
+    "api": {
+      "fields": [
+        "audio_url",
+        "duration",
+        "negative_prompt",
+        "nsfw_checker",
+        "prompt",
+        "prompt_extend",
+        "ratio",
+        "resolution",
+        "seed",
+        "watermark"
+      ],
+      "required": [
+        "prompt"
+      ],
+      "aspects": null,
+      "resolutions": [
+        "720p",
+        "1080p"
+      ],
+      "durations": null
+    },
+    "verification": null
+  }
+}

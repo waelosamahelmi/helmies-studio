@@ -18,6 +18,7 @@ import { CURATED_SCHEMAS, inferKieModelFromUrl, MEDIA_EXCEPTIONS, modelTypeForCa
 import { readVerification, verificationAllowsActive, withProviderRequired, STATUS_PENDING, VERIFICATION_KEY } from "@/lib/catalog-verification.mjs";
 import { calculateCredits } from "@/lib/pricing-engine";
 import { getPricing, KIE_PRICING_OVERRIDES, DEFAULT_PRICING } from "@/lib/kie-pricing-core.mjs";
+import { mayActivate } from "@/lib/model-dictionary.mjs";
 
 export { getPricing };
 
@@ -270,12 +271,23 @@ export async function syncKieModels() {
     const verification = existingRow
       ? existingVerification
       : { status: STATUS_PENDING, callable: null, verdict: null, reason: "awaiting first verification probe", checkedAt: null };
-    const isActive = verificationAllowsActive(
+    /* THE DICTIONARY DECIDES WHAT MAY BE SERVED (task 15).
+       This sync builds ids by crawling a documentation sitemap, which
+       invented rows the provider had never heard of, guessed prices for
+       sixty of them, and filed video models as image models. So it may
+       still discover and describe a model — it may no longer decide that
+       one is live. A row the checked-in dictionary does not describe is
+       synced as INACTIVE, whatever this crawl believes. */
+    const permitted = mayActivate(model.modelId);
+    const isActive = permitted.ok && verificationAllowsActive(
       verification ? { [VERIFICATION_KEY]: verification } : null,
       // Fallback for a pre-existing row with no verdict yet: keep the
       // activity it already has rather than flipping it either way.
       existingRow ? existingRow.isActive !== false : true,
     );
+    if (!permitted.ok && existingRow?.isActive) {
+      console.warn(`[sync] deactivating "${model.modelId}" — ${permitted.reason}`);
+    }
     const existingProviderRequired = Array.isArray(existingRow?.inputSchema?.providerRequired)
       ? existingRow.inputSchema.providerRequired
       : [];

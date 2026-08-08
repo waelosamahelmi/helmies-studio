@@ -16,9 +16,14 @@ import { syncKieModels } from "@/lib/kie-sync";
 
 const SITEMAP_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset>
-  <url><loc>https://docs.kie.ai/market/nano-banana-pro/text-to-image</loc></url>
+  <url><loc>https://docs.kie.ai/market/seedream/5-pro-text-to-image</loc></url>
 </urlset>`;
-const MODEL_ID = "nano-banana-pro/text-to-image";
+/* A REAL id from models/dictionary.json. The sync may no longer activate a
+   model the dictionary does not describe (task 15), so a made-up fixture id
+   is now correctly refused — which is the guard working, not a broken test.
+   These cases are about VERIFICATION-aware activity, so they need a model
+   that clears the dictionary gate in order to exercise it. */
+const MODEL_ID = "seedream/5-pro-text-to-image";
 
 function updatedData() {
   expect(prismaMock.modelPricing.update).toHaveBeenCalled();
