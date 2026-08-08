@@ -117,13 +117,18 @@ describe("the shot list follows what the model can hold", () => {
     const { durationRules, pacingRules } = await import("@/lib/script-breakdown-passes.mjs");
     expect(durationRules({ min: 4, max: 30 })).toMatch(/ONE take/);
     expect(durationRules({ min: 4, max: 30 })).toMatch(/30/);
-    expect(pacingRules({ max: 30 })).toMatch(/only when the FRAMING/i);
+    // Pacing is no longer "cut less" — it is "cut on every change, and
+    // hold a beat as long as that ONE beat runs".
+    expect(pacingRules({ max: 30 })).toMatch(/cut on every change/i);
   });
 
   it("keeps the old short-clip pacing for a 10-second model", async () => {
     const { durationRules, pacingRules } = await import("@/lib/script-breakdown-passes.mjs");
     expect(durationRules({ min: 4, max: 10 })).toMatch(/never write a shot shorter/);
-    expect(pacingRules({ max: 10 })).toMatch(/6-8 seconds/);
+    // The same specificity rule applies at every take length; only the
+    // "hold it longer" clause is dropped for a short-clip model.
+    expect(pacingRules({ max: 10 })).toMatch(/cut on every change/i);
+    expect(pacingRules({ max: 10 })).not.toMatch(/held up to/i);
   });
 
   it("writes the limits into the scene prompt itself", async () => {
@@ -135,46 +140,42 @@ describe("the shot list follows what the model can hold", () => {
   });
 });
 
-describe("how many cuts a scene is worth", () => {
-  // The same read gave one two-hander 30-second takes and another
-  // twenty-two four-second shots. Video models bill a FLAT rate per clip,
-  // so the chopped scene cost four times as much and gave the room four
-  // times as many chances to change.
+describe("beats decide the shot count, not a budget", () => {
+  // An earlier version made the budget a hard ceiling and retried any
+  // scene over it. That optimised for cost and produced a 28-second shot
+  // carrying eight separate events — an empty chair, an occupied chair, a
+  // man walking, footsteps, a voice from off-screen, him stopping, a line
+  // of dialogue — which rendered as none of them. A wrong 30-second clip
+  // costs exactly what a wrong 5-second clip costs and loses the scene.
   const conversation = (() => {
     const l = [];
     for (let i = 0; i < 20; i++) l.push(i % 2 ? "OTHER WAEL" : "WAEL", `line number ${i}`);
-    return `INT. THE ROOM\n${l.join("\n")}`;
+    return ["INT. THE ROOM", ...l].join("\n");
   })();
 
-  it("allows far fewer shots when a take can hold thirty seconds", async () => {
-    const { shotBudget } = await import("@/lib/script-breakdown-passes.mjs");
-    const long = shotBudget(conversation, { max: 30 });
-    const short = shotBudget(conversation, { max: 10 });
-    expect(long.ceiling).toBeLessThan(short.ceiling);
-  });
-
-  it("states the ceiling as a NUMBER the model can be measured against", async () => {
-    // An adjective can be interpreted away; a number cannot.
+  it("offers the scene's length as SCALE, never as a limit", async () => {
     const { shotBudget, budgetRule } = await import("@/lib/script-breakdown-passes.mjs");
-    const b = shotBudget(conversation, { max: 30 });
-    expect(budgetRule(b)).toContain(String(b.ceiling));
-    expect(budgetRule(b)).toMatch(/must not exceed/i);
+    const rule = budgetRule(shotBudget(conversation, { max: 30 }));
+    expect(rule).toMatch(/let the beats decide/i);
+    expect(rule).not.toMatch(/must not exceed/i);
   });
 
-  it("catches a scene chopped into fragments", async () => {
-    const { shotBudget, sceneIsWithinBudget } = await import("@/lib/script-breakdown-passes.mjs");
-    const b = shotBudget(conversation, { max: 30 });
-    const chopped = Array.from({ length: 22 }, (_, i) => ({ id: `s${i}` }));
-    const held = Array.from({ length: 5 }, (_, i) => ({ id: `s${i}` }));
-    expect(sceneIsWithinBudget(chopped, b)).toBe(false);
-    expect(sceneIsWithinBudget(held, b)).toBe(true);
+  it("tells the model to cut on every change", async () => {
+    // "Precision beats economy" — the rule that replaced the ceiling.
+    const { pacingRules } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(pacingRules({ max: 30 })).toMatch(/cut on every change/i);
+    expect(pacingRules({ max: 30 })).toMatch(/30 seconds when a SINGLE action/i);
   });
 
-  it("is a ceiling, not a target — a short scene is not forced to one shot", async () => {
-    // It exists to catch four-second fragments, not to impose a rhythm on
-    // a director with a reason to cut.
+  it("forbids packing several events into one long take", async () => {
+    // The exact failure: length and content are different axes.
+    const { BEAT_RULE } = await import("@/lib/script-breakdown-passes.mjs");
+    expect(BEAT_RULE).toMatch(/ONE SHOT IS ONE BEAT/);
+    expect(BEAT_RULE).toMatch(/holding ONE action longer/i);
+  });
+
+  it("still estimates a scene's length for scale", async () => {
     const { shotBudget } = await import("@/lib/script-breakdown-passes.mjs");
-    const b = shotBudget("INT. BEDROOM\nHe lies still.\nThe clock ticks.", { max: 30 });
-    expect(b.ceiling).toBeGreaterThanOrEqual(3);
+    expect(shotBudget(conversation, { max: 30 }).seconds).toBeGreaterThan(30);
   });
 });

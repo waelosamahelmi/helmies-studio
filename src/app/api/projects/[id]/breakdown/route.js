@@ -148,9 +148,9 @@ ${text}`,
         continue;
       }
 
-      // Keep the best answer so far, so a retry that comes back worse
-      // never loses what already worked.
-      if (!shots || parsed.length < shots.length) shots = parsed;
+      // Keep the fullest answer so far: on a retry for coverage, MORE
+      // shots is the improvement, not fewer.
+      if (!shots || parsed.length > shots.length) shots = parsed;
 
       // A scene with a fraction of its dialogue is a summary, not a
       // breakdown. Coverage first — it is the thing that cannot be fixed
@@ -159,14 +159,10 @@ ${text}`,
         messages.push({ role: "user", content: SCENE_COVERAGE_RETRY_HINT });
         continue;
       }
-      // Covered, but chopped into more clips than the scene needs. Each
-      // extra cut is a full clip's cost and another chance for the room
-      // to change.
-      if (!sceneIsWithinBudget(parsed, budget)) {
-        shots = parsed;
-        messages.push({ role: "user", content: SCENE_BUDGET_RETRY_HINT });
-        continue;
-      }
+      /* No retry on shot COUNT any more. Forcing a scene under a ceiling
+         is what produced a twenty-eight-second shot carrying eight
+         separate events, which rendered as none of them. The beats decide
+         how many shots there are; the budget above is scale, not a limit. */
       shots = parsed;
       break;
     }
@@ -252,10 +248,17 @@ async function runBreakdown({ projectId, userId, script, settings, replace, keep
       select: { id: true, kind: true, name: true, projectId: true },
       take: 200,
     });
-    const { matched, missing } = matchExistingEntities(wanted, existing);
+    const { matched, missing, claimed } = matchExistingEntities(wanted, existing);
 
     const created = [];
     for (const want of missing) {
+      // A second key that canonicalises to one already created in this
+      // pass shares its identity rather than becoming a duplicate.
+      const reserved = want.canonicalKey ? claimed.get(want.canonicalKey) : null;
+      if (reserved) {
+        matched.set(want.key, reserved);
+        continue;
+      }
       const entity = await prisma.studioEntity.create({
         data: {
           userId,
@@ -271,6 +274,7 @@ async function runBreakdown({ projectId, userId, script, settings, replace, keep
         },
       });
       matched.set(want.key, entity.id);
+      if (want.canonicalKey) claimed.set(want.canonicalKey, entity.id);
       created.push({ id: entity.id, kind: entity.kind, name: entity.name });
     }
 

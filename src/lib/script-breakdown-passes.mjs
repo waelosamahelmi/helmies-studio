@@ -38,6 +38,9 @@ You are given the production's cast, places and props, and the text of a single 
 
 Rules that matter:
 - COVERAGE IS NOT OPTIONAL. Every line of spoken dialogue in this scene appears exactly once, verbatim, across your shots. You are breaking the scene down, not summarising it. A conversation of twenty lines is not one shot.
+- COVER THE ACTION TOO, not only the dialogue. Every thing the script says HAPPENS — a walk, a turn, a door, a voice arriving from off-screen, an object picked up — belongs to some shot. A beat the script wrote and no shot contains is a beat that will not be in the film.
+{{BEAT_RULE}}
+- WHEN TWO VERSIONS OF ONE CHARACTER SHARE A FRAME, say so explicitly in the description and name what each is wearing: "two men with the same face, one in <X>, the other in <Y>". Their faces are identical on purpose; if the description does not separate them by clothing, the shot renders the same man twice.
 {{PACING_RULES}}
 {{DURATION_RULES}}
 - "characters" means WHO IS VISIBLE. Someone only heard (O.S., V.O.) goes in "offscreenVoices".
@@ -56,6 +59,7 @@ Reply with ONLY one valid JSON object - no fences, no commentary:
 /** The scene prompt, written for the model this project renders on. */
 export function sceneShotsPrompt(limits, budget = null) {
   return SCENE_SHOTS_SYSTEM_PROMPT
+    .replace("{{BEAT_RULE}}", BEAT_RULE)
     .replace("{{PACING_RULES}}", pacingRules(limits))
     .replace(
       "{{DURATION_RULES}}",
@@ -119,10 +123,10 @@ export const parseStructureReply = (text) => {
 /* How often to cut, which follows from how long a take can be. A model
    that holds thirty seconds does not want a cut every six. */
 export function pacingRules({ max = 10 } = {}) {
-  if (max >= 20) {
-    return `- Cut only when the FRAMING has to change — a reveal, a reaction that needs to fill the frame, a move to another part of the room. A whole exchange of dialogue in one sustained take is correct here, and better than three short ones.`;
-  }
-  return `- Aim for roughly one shot per 6-8 seconds of screen time, and cut on who is speaking and on what changes. Two people talking is a shot every exchange or two, not one wide held for a minute.`;
+  const held = max >= 20
+    ? ` A take may be held up to ${max} seconds when a SINGLE action fills it — a long look, a slow approach, one unbroken exchange.`
+    : "";
+  return `- BE SPECIFIC AND CUT ON EVERY CHANGE. A new camera position, a new speaker, a new action, a reveal, an object that matters — each is its own shot. Precision beats economy: a scene of many exactly-specified shots renders correctly, and one of a few overloaded shots renders as mush.${held}`;
 }
 
 export function durationRules({ min = 4, max = 10 } = {}) {
@@ -220,9 +224,33 @@ export function shotBudget(sceneText, { max = 10 } = {}) {
   return { seconds, perTake, ideal, ceiling: Math.max(3, Math.ceil(ideal * 1.6)) };
 }
 
+/* Guidance, NOT a ceiling.
+
+   An earlier version made this a hard limit and retried any scene that
+   exceeded it. That was the wrong instinct: it optimised for cost and
+   produced a twenty-eight-second shot carrying eight separate events,
+   which rendered as none of them. A wrong thirty-second clip costs
+   exactly what a wrong five-second clip costs and loses the whole scene.
+
+   THE BEAT COUNT DECIDES HOW MANY SHOTS THERE ARE. This only says how
+   long each may be held. */
 export function budgetRule(budget) {
-  return `- THIS SCENE runs roughly ${budget.seconds} seconds of screen time. At around ${budget.perTake} seconds a take, that is about ${budget.ideal} shots, and it must not exceed ${budget.ceiling}. A model bills the same for a four-second clip as for a thirty-second one, so every unnecessary cut costs a full clip and risks the room changing. If you find yourself writing more than ${budget.ceiling} shots, you are cutting where you should be letting the take run.`;
+  return `- For scale: this scene runs roughly ${budget.seconds} seconds of screen time. Let the beats decide how many shots that is — do not compress two beats into one to hit a number, and do not cut a beat in half to make more. A take may run up to its maximum when ONE action genuinely fills it.`;
 }
+
+/* ONE SHOT IS ONE BEAT.
+
+   This is the rule that was missing, and its absence produced a
+   twenty-eight-second shot asking for: an empty chair, an occupied chair,
+   a man at the edge of darkness, him walking, footsteps, a woman's voice
+   from behind, him stopping, and a line of dialogue. A video model given
+   eight events renders an average of them — both chairs occupied, no
+   woman, no walk. Every beat WAS in the prompt; none of it was in the
+   clip.
+
+   Length and content are different axes. A thirty-second take is one
+   action HELD for thirty seconds, not six actions compressed into it. */
+export const BEAT_RULE = `- ONE SHOT IS ONE BEAT, whatever its length. A shot is a single continuous action seen from one camera position: a man walking toward a chair IS a shot; him arriving, being spoken to, and sitting down is THREE. If your description contains "then", or a second character starting to do something, or a sound arriving from off-screen, you have written more than one shot — split it. A long take means holding ONE action longer, never packing more events into it. A model handed several events at once renders an average of them and none of them properly.`;
 
 /** Did the scene come back within its budget? */
 export const sceneIsWithinBudget = (shots, budget) => (shots?.length || 0) <= budget.ceiling;

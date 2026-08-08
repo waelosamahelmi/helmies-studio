@@ -281,18 +281,53 @@ export function castFromBreakdown(breakdown, { minAppearances = 1 } = {}) {
    whose lead is already built must not get a second, empty copy of him —
    that is how a face starts drifting between scenes. Matched on name and on
    the aliases the breakdown itself collected ("OTHER WAEL" is Wael's face). */
+/* Names that mean the same object. Successive breakdowns produced "Wooden
+   Chairs", "Wooden Chair" and "Two Wooden Chairs" as three separate props,
+   and every one of them injected a chair reference into the same shot —
+   which is why a two-chair scene rendered with three chairs in it.
+
+   Singular/plural and a leading count are the two ways the same thing gets
+   written differently. */
+const CANONICAL = (name) => String(name || "")
+  .trim()
+  .toLowerCase()
+  .replace(/^(the|a|an|two|three|four|both|pair of)\s+/g, "")
+  .replace(/(\w+?)ies/g, "$1y")
+  .replace(/(\w+?)([^s])s/g, "$1$2")
+  .replace(/\s+/g, " ")
+  .trim();
+
 export function matchExistingEntities(wanted, existing) {
-  const norm = (s) => String(s || "").trim().toLowerCase();
   const byName = new Map();
   for (const e of existing || []) {
-    byName.set(`${e.kind}:${norm(e.name)}`, e);
+    // First writer wins, so an entity with real references is never
+    // shadowed by a later near-duplicate of its name.
+    const key = `${e.kind}:${CANONICAL(e.name)}`;
+    if (!byName.has(key)) byName.set(key, e);
   }
+
   const matched = new Map();
   const missing = [];
+  const claimed = new Map(); // canonical name -> the want that took it
+
   for (const want of wanted) {
-    const hit = byName.get(`${want.kind}:${norm(want.name)}`);
-    if (hit) matched.set(want.key, hit.id);
-    else missing.push(want);
+    const key = `${want.kind}:${CANONICAL(want.name)}`;
+    const hit = byName.get(key);
+    if (hit) {
+      matched.set(want.key, hit.id);
+      continue;
+    }
+    /* Two keys in the SAME breakdown that canonicalise to one thing — the
+       breakdown itself proposing both "Wooden Chair" and "Wooden Chairs".
+       They share one identity rather than becoming two. */
+    const already = claimed.get(key);
+    if (already) {
+      matched.set(want.key, already);
+      continue;
+    }
+    claimed.set(key, null); // reserved; the id is filled in by the caller
+    missing.push({ ...want, canonicalKey: key });
   }
-  return { matched, missing };
+
+  return { matched, missing, claimed };
 }
