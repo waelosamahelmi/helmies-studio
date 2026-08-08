@@ -54,10 +54,13 @@ Reply with ONLY one valid JSON object - no fences, no commentary:
 {"shots":[{"id":"s<sceneId>_1","description":"<visual description, becomes the prompt>","type":"medium","durationSec":6,"characters":["<visible character keys>"],"offscreenVoices":["<heard-not-seen keys>"],"characterVariant":"<declared variant name>","props":["<prop keys visible here>"],"performance":"<the actor's direction for this shot>","dialogue":[{"speaker":"<character key>","speakerVariant":"<variant>","line":"<spoken words>"}],"continuity":{"follows":"<shot id or null>"},"sfx":["<sound>"],"notes":""}]}`;
 
 /** The scene prompt, written for the model this project renders on. */
-export function sceneShotsPrompt(limits) {
+export function sceneShotsPrompt(limits, budget = null) {
   return SCENE_SHOTS_SYSTEM_PROMPT
     .replace("{{PACING_RULES}}", pacingRules(limits))
-    .replace("{{DURATION_RULES}}", durationRules(limits));
+    .replace(
+      "{{DURATION_RULES}}",
+      [durationRules(limits), budget ? budgetRule(budget) : null].filter(Boolean).join("\n"),
+    );
 }
 
 export const SCENE_COVERAGE_RETRY_HINT =
@@ -174,3 +177,55 @@ export function sceneIsCovered(sceneText, shots, { minRatio = 0.7 } = {}) {
   const got = countShotDialogue(shots);
   return got >= Math.ceil(wanted * minRatio);
 }
+
+/* ── How many shots a scene should come back with ─────────────────────────
+   "Let a shot run" is advice, and advice gets applied to some scenes and
+   not others: the same read gave one two-hander 30-second takes and
+   another twenty-two shots of four seconds. Same room, same kind of
+   scene.
+
+   That inconsistency is expensive in a way that is easy to miss. Video
+   models bill a FLAT RATE per clip — 143 credits whether the clip is four
+   seconds or thirty — so a scene cut into twenty-two shots costs four
+   times the same scene in five takes, and every extra cut is another
+   chance for the room to change.
+
+   So the budget is computed and stated as a number. A ceiling the model
+   can be measured against beats an adjective it can interpret away. */
+
+/** Roughly how long a scene plays, from its text. */
+export function estimateSceneSeconds(sceneText) {
+  const lines = String(sceneText || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const spoken = countScriptDialogue(sceneText);
+  // A spoken line runs about three seconds; a line of action about two.
+  // Cue lines are not themselves screen time, so they are excluded.
+  const action = Math.max(0, lines.length - spoken * 2 - 1);
+  return Math.max(8, spoken * 3 + action * 2);
+}
+
+/**
+ * The most shots a scene should need, given what one take can hold.
+ *
+ * Deliberately generous — a ceiling, not a target. It exists to catch a
+ * scene chopped into four-second fragments, not to force an arbitrary
+ * rhythm on a director who has a reason to cut.
+ */
+export function shotBudget(sceneText, { max = 10 } = {}) {
+  const seconds = estimateSceneSeconds(sceneText);
+  // Assume a take averages two thirds of the ceiling: nobody writes every
+  // shot at the maximum.
+  const perTake = Math.max(4, Math.round(max * 0.66));
+  const ideal = Math.max(1, Math.ceil(seconds / perTake));
+  // Room for coverage — a reverse, an insert, a reaction.
+  return { seconds, perTake, ideal, ceiling: Math.max(3, Math.ceil(ideal * 1.6)) };
+}
+
+export function budgetRule(budget) {
+  return `- THIS SCENE runs roughly ${budget.seconds} seconds of screen time. At around ${budget.perTake} seconds a take, that is about ${budget.ideal} shots, and it must not exceed ${budget.ceiling}. A model bills the same for a four-second clip as for a thirty-second one, so every unnecessary cut costs a full clip and risks the room changing. If you find yourself writing more than ${budget.ceiling} shots, you are cutting where you should be letting the take run.`;
+}
+
+/** Did the scene come back within its budget? */
+export const sceneIsWithinBudget = (shots, budget) => (shots?.length || 0) <= budget.ceiling;
+
+export const SCENE_BUDGET_RETRY_HINT =
+  "That is more shots than this scene needs. Return the SAME scene again with fewer, longer takes — hold a whole exchange in one shot instead of cutting on every line. Keep every line of dialogue; only the shot boundaries change.";

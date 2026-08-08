@@ -16,6 +16,9 @@ import {
 import {
   STRUCTURE_SYSTEM_PROMPT,
   SCENE_COVERAGE_RETRY_HINT,
+  SCENE_BUDGET_RETRY_HINT,
+  shotBudget,
+  sceneIsWithinBudget,
   sceneShotsPrompt,
   splitScenes,
   parseStructureReply,
@@ -114,8 +117,14 @@ async function readScreenplay(script, onProgress, { limits = null, keepIndexes =
     // order — and fall back to the whole script if the split disagrees.
     const text = sceneTexts[i]?.text || script;
 
+    /* What this scene should cost in cuts. A ceiling the model can be
+       measured against beats an adjective it can interpret away — the same
+       read gave one two-hander 30-second takes and another twenty-two
+       four-second shots. */
+    const budget = shotBudget(text, limits || undefined);
+
     const messages = [
-      { role: "system", content: sceneShotsPrompt(limits || undefined) },
+      { role: "system", content: sceneShotsPrompt(limits || undefined, budget) },
       {
         role: "user",
         content: `THE PRODUCTION:
@@ -129,20 +138,37 @@ ${text}`,
     ];
 
     let shots = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       const reply = await llmComplete(messages, {
         maxTokens: 8000, temperature: 0.3, timeout: 300000, withMeta: true,
       });
       const parsed = parseSceneShotsReply(reply?.content || "");
-      if (parsed) {
-        shots = parsed;
-        // A scene that came back with a fraction of its dialogue is a
-        // summary, not a breakdown. Ask once more before accepting it.
-        if (sceneIsCovered(text, parsed)) break;
-        messages.push({ role: "user", content: SCENE_COVERAGE_RETRY_HINT });
-      } else {
+      if (!parsed) {
         messages.push({ role: "user", content: SCRIPT_BREAKDOWN_RETRY_HINT });
+        continue;
       }
+
+      // Keep the best answer so far, so a retry that comes back worse
+      // never loses what already worked.
+      if (!shots || parsed.length < shots.length) shots = parsed;
+
+      // A scene with a fraction of its dialogue is a summary, not a
+      // breakdown. Coverage first — it is the thing that cannot be fixed
+      // by editing later.
+      if (!sceneIsCovered(text, parsed)) {
+        messages.push({ role: "user", content: SCENE_COVERAGE_RETRY_HINT });
+        continue;
+      }
+      // Covered, but chopped into more clips than the scene needs. Each
+      // extra cut is a full clip's cost and another chance for the room
+      // to change.
+      if (!sceneIsWithinBudget(parsed, budget)) {
+        shots = parsed;
+        messages.push({ role: "user", content: SCENE_BUDGET_RETRY_HINT });
+        continue;
+      }
+      shots = parsed;
+      break;
     }
 
     scenes.push({ ...scene, shots: shots || [] });

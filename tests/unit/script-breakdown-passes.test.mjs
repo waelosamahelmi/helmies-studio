@@ -134,3 +134,47 @@ describe("the shot list follows what the model can hold", () => {
     expect(prompt).not.toContain("{{PACING_RULES}}");
   });
 });
+
+describe("how many cuts a scene is worth", () => {
+  // The same read gave one two-hander 30-second takes and another
+  // twenty-two four-second shots. Video models bill a FLAT rate per clip,
+  // so the chopped scene cost four times as much and gave the room four
+  // times as many chances to change.
+  const conversation = (() => {
+    const l = [];
+    for (let i = 0; i < 20; i++) l.push(i % 2 ? "OTHER WAEL" : "WAEL", `line number ${i}`);
+    return `INT. THE ROOM\n${l.join("\n")}`;
+  })();
+
+  it("allows far fewer shots when a take can hold thirty seconds", async () => {
+    const { shotBudget } = await import("@/lib/script-breakdown-passes.mjs");
+    const long = shotBudget(conversation, { max: 30 });
+    const short = shotBudget(conversation, { max: 10 });
+    expect(long.ceiling).toBeLessThan(short.ceiling);
+  });
+
+  it("states the ceiling as a NUMBER the model can be measured against", async () => {
+    // An adjective can be interpreted away; a number cannot.
+    const { shotBudget, budgetRule } = await import("@/lib/script-breakdown-passes.mjs");
+    const b = shotBudget(conversation, { max: 30 });
+    expect(budgetRule(b)).toContain(String(b.ceiling));
+    expect(budgetRule(b)).toMatch(/must not exceed/i);
+  });
+
+  it("catches a scene chopped into fragments", async () => {
+    const { shotBudget, sceneIsWithinBudget } = await import("@/lib/script-breakdown-passes.mjs");
+    const b = shotBudget(conversation, { max: 30 });
+    const chopped = Array.from({ length: 22 }, (_, i) => ({ id: `s${i}` }));
+    const held = Array.from({ length: 5 }, (_, i) => ({ id: `s${i}` }));
+    expect(sceneIsWithinBudget(chopped, b)).toBe(false);
+    expect(sceneIsWithinBudget(held, b)).toBe(true);
+  });
+
+  it("is a ceiling, not a target — a short scene is not forced to one shot", async () => {
+    // It exists to catch four-second fragments, not to impose a rhythm on
+    // a director with a reason to cut.
+    const { shotBudget } = await import("@/lib/script-breakdown-passes.mjs");
+    const b = shotBudget("INT. BEDROOM\nHe lies still.\nThe clock ticks.", { max: 30 });
+    expect(b.ceiling).toBeGreaterThanOrEqual(3);
+  });
+});
