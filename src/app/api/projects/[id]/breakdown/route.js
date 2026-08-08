@@ -135,10 +135,13 @@ async function readScreenplay(script, onProgress, { limits = null, keepIndexes =
      server restart lands in the middle of one and throws the whole read
      away. Several did.
 
-     A small pool rather than all at once: twelve simultaneous calls invite
-     a provider rate-limit, and one 429 costs more than the wait it saved.
-     Four at a time turns twenty-three minutes into about six. */
-  const CONCURRENT_SCENES = 4;
+     Four at a time was the first cut of this and still took six minutes,
+     because it is three sequential rounds wearing a coat. Every scene goes
+     at once. The cap is a guard against a feature-length script opening a
+     hundred sockets, not a pacing choice: a screenplay's worth of scenes
+     is one round, so the read costs the structure pass plus the single
+     slowest scene — a minute and a half instead of twenty-three. */
+  const CONCURRENT_SCENES = 16;
   const scenes = new Array(structure.scenes.length);
   let finished = 0;
   const readOneScene = async (i) => {
