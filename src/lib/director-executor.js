@@ -7,7 +7,7 @@ import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
 import { selectEntityReferences, voiceReferences, imageReferenceSlot, isStillImageModel } from "@/lib/entity-core.mjs";
 import { applyRequiredDefaults } from "@/lib/provider-payload-core.mjs";
-import { speakingDirection } from "@/lib/project-breakdown.mjs";
+import { speakingDirection, dialogueSpeakers } from "@/lib/project-breakdown.mjs";
 import { recordGenerationAsset } from "@/lib/assets-core";
 
 /* The fallback when a pipeline names no image model. It was "flux-dev",
@@ -770,9 +770,32 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
         const speakers = await prisma.studioEntity.findMany({
           where: { id: { in: shot.entityIds.slice(0, 6) }, userId: pipeline.userId, kind: "character" },
         });
-        const voices = speakers.flatMap((e) => voiceReferences(e).map((r) => r.url)).filter(Boolean);
+        /* ONE VOICE, AND IT IS THE ONE SPEAKING.
+
+           Sending every character's sample failed the whole request:
+
+             {"code":422,"msg":"The total duration of reference audios
+              cannot exceed 30 seconds"}
+
+           Two people in a shot meant two samples, and the limit is on their
+           TOTAL, not on each. It is also the wrong thing to ask for — a
+           shot where Will speaks should be anchored to Will's voice, not to
+           an average of his and Wael's. So: whoever the dialogue says is
+           talking, and nobody else. */
+        const talking = dialogueSpeakers(shot);
+        const bySpeaker = talking.length
+          ? speakers.filter((e) => talking.some((who) => {
+            const a = String(who).toLowerCase().replace(/\s*\([^)]*\)/g, "").trim();
+            return a === String(e.name).toLowerCase().trim();
+          }))
+          : [];
+        // Nobody matched by name — fall back to the one person in frame, and
+        // only when there IS just one, because a guess between two people
+        // with the same face is worse than no sample at all.
+        const chosen = bySpeaker.length ? bySpeaker : (speakers.length === 1 ? speakers : []);
+        const voices = chosen.flatMap((e) => voiceReferences(e).map((r) => r.url)).filter(Boolean);
         if (voices.length) {
-          params[audioRefField] = voices.slice(0, 2);
+          params[audioRefField] = voices.slice(0, 1);
         }
       } catch (err) {
         console.error("[Director] voice references failed:", err?.message);
