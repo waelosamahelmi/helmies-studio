@@ -142,7 +142,7 @@ describe("route security manifest — security/route-manifest.json", () => {
       "/api/generate/audio", "/api/generate/async",
       "/api/analyze", "/api/prompt", "/api/agent", "/api/workflow", "/api/workflow/regen",
       "/api/upload", "/api/contact",
-      "/api/entities",
+      "/api/entities", "/api/projects",
     ]);
     const bad = manifest.filter((e) => e.rateLimit !== "none" && !KNOWN_RATE_LIMIT_KEYS.has(e.rateLimit));
     expect(bad.map((e) => `${e.file}: ${e.rateLimit}`)).toEqual([]);

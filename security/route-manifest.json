@@ -1087,6 +1087,33 @@
     "notes": "Static hardcoded model list; not a real upstream call."
   },
   {
+    "path": "/api/projects",
+    "file": "src/app/api/projects/route.js",
+    "methods": [
+      "GET",
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/projects",
+    "stateChanging": true,
+    "notes": "2026-08-08 P1.1: the caller's projects \u2014 the container a production lives in (type, scenario, and the format every shot inherits). Owner-scoped list + create; spends no credits. The Project table existed since migration 0.1.5 and was never written to."
+  },
+  {
+    "path": "/api/projects/[id]",
+    "file": "src/app/api/projects/[id]/route.js",
+    "methods": [
+      "GET",
+      "PATCH",
+      "DELETE"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/projects",
+    "stateChanging": true,
+    "notes": "2026-08-08 P1.1/P1.2: one owned project plus everything filed under it (cast, products, environments, assets, sessions, workflows). A non-owner gets the same not_found as a non-existent id. Delete releases members via onDelete:SetNull rather than destroying work that outlives the project."
+  },
+  {
     "path": "/api/promos/redeem",
     "file": "src/app/api/promos/redeem/route.js",
     "methods": [

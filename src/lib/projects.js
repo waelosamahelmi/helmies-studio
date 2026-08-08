@@ -1,0 +1,173 @@
+// Helmies Studio — Projects (P1.1).
+//
+// A project is the container a production actually lives in: its type, its
+// scenario, the format every shot inherits, and the cast, environments,
+// assets and sessions that belong to it. The table has existed since the
+// Phase 0 migration and was never written to — "Projects" in the rail opened
+// ProjectMemory, which is a different thing entirely.
+//
+// Owner-scoped throughout: a miss reads as not-found rather than forbidden,
+// so an id probe can never confirm somebody else's project exists.
+import prisma from "./prisma.js";
+
+// What kind of thing is being made. This is not decoration — it decides what
+// a scene means (an episode in a series, a cut in an ad), which is why it is
+// asked for once at the top rather than inferred per shot.
+export const PROJECT_KINDS = [
+  { value: "movie", label: "Film", unit: "scene", blurb: "A single story told in scenes." },
+  { value: "series", label: "Series", unit: "episode", blurb: "Episodes that share a cast and a world." },
+  { value: "social", label: "Social video", unit: "cut", blurb: "Short vertical pieces for feeds." },
+  { value: "ad", label: "Ad", unit: "cut", blurb: "A campaign deliverable with a product at its centre." },
+  { value: "branding", label: "Branding", unit: "piece", blurb: "Identity work — a look, not a story." },
+];
+
+export const PROJECT_KIND_VALUES = PROJECT_KINDS.map((k) => k.value);
+export const kindOf = (v) => PROJECT_KINDS.find((k) => k.value === v) || PROJECT_KINDS[0];
+
+const ASPECTS = ["9:16", "16:9", "1:1", "4:5", "2.39:1", "21:9"];
+const RESOLUTIONS = ["480p", "720p", "1080p", "4k"];
+
+const MAX_NAME = 120;
+const MAX_BRIEF = 40000; // a feature screenplay fits
+
+// Format lives on the project so no individual shot has to be told it. Every
+// generation in the project inherits these unless it overrides them.
+export function normalizeSettings(input = {}, previous = {}) {
+  const out = { ...previous };
+  if (input.kind !== undefined) out.kind = PROJECT_KIND_VALUES.includes(input.kind) ? input.kind : "movie";
+  if (input.aspectRatio !== undefined && ASPECTS.includes(input.aspectRatio)) out.aspectRatio = input.aspectRatio;
+  if (input.resolution !== undefined && RESOLUTIONS.includes(input.resolution)) out.resolution = input.resolution;
+  if (input.imageModel !== undefined) out.imageModel = String(input.imageModel || "").slice(0, 120) || null;
+  if (input.videoModel !== undefined) out.videoModel = String(input.videoModel || "").slice(0, 120) || null;
+  if (input.voiceModel !== undefined) out.voiceModel = String(input.voiceModel || "").slice(0, 120) || null;
+  return {
+    kind: out.kind || "movie",
+    aspectRatio: out.aspectRatio || "16:9",
+    resolution: out.resolution || "720p",
+    imageModel: out.imageModel ?? null,
+    videoModel: out.videoModel ?? null,
+    voiceModel: out.voiceModel ?? null,
+  };
+}
+
+export function validateProjectPayload(body = {}, { partial = false } = {}) {
+  const errors = [];
+  const value = {};
+
+  if (!partial || body.name !== undefined) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) errors.push("A name is required.");
+    else if (name.length > MAX_NAME) errors.push(`The name must be ${MAX_NAME} characters or fewer.`);
+    else value.name = name;
+  }
+
+  if (body.description !== undefined) {
+    value.description = body.description ? String(body.description).slice(0, 2000) : null;
+  }
+  // The scenario. Long on purpose: this is where a whole screenplay lives, and
+  // it is what lets every later step be prefilled instead of re-asked.
+  if (body.brief !== undefined) {
+    if (typeof body.brief === "string" && body.brief.length > MAX_BRIEF) {
+      errors.push("That scenario is too long to store.");
+    } else {
+      value.brief = body.brief ? String(body.brief) : null;
+    }
+  }
+  if (body.status !== undefined) {
+    if (!["active", "archived"].includes(body.status)) errors.push("Unknown status.");
+    else value.status = body.status;
+  }
+
+  return { valid: errors.length === 0, errors, value };
+}
+
+export async function listProjects(userId, { status = null, limit = 50 } = {}) {
+  return prisma.project.findMany({
+    where: { userId, ...(status ? { status } : {}) },
+    orderBy: { updatedAt: "desc" },
+    take: Math.min(Math.max(1, limit), 100),
+  });
+}
+
+export async function getOwnedProject(userId, id) {
+  if (!id) return null;
+  return prisma.project.findFirst({ where: { id, userId } });
+}
+
+export async function createProject(userId, body = {}) {
+  const { valid, errors, value } = validateProjectPayload(body);
+  if (!valid) {
+    const err = new Error(errors[0]);
+    err.code = "invalid_params";
+    err.errors = errors;
+    throw err;
+  }
+  return prisma.project.create({
+    data: {
+      userId,
+      name: value.name,
+      description: value.description ?? null,
+      brief: value.brief ?? null,
+      status: "active",
+      data: normalizeSettings(body.settings || body),
+    },
+  });
+}
+
+export async function updateProject(userId, id, body = {}) {
+  const existing = await getOwnedProject(userId, id);
+  if (!existing) return null;
+
+  const { valid, errors, value } = validateProjectPayload(body, { partial: true });
+  if (!valid) {
+    const err = new Error(errors[0]);
+    err.code = "invalid_params";
+    err.errors = errors;
+    throw err;
+  }
+
+  const data = {};
+  for (const key of ["name", "description", "brief", "status"]) {
+    if (value[key] !== undefined) data[key] = value[key];
+  }
+  if (body.settings !== undefined || body.kind !== undefined) {
+    data.data = normalizeSettings({ ...(body.settings || {}), ...(body.kind ? { kind: body.kind } : {}) }, existing.data || {});
+  }
+  if (!Object.keys(data).length) return existing;
+
+  return prisma.project.update({ where: { id: existing.id }, data });
+}
+
+export async function deleteProject(userId, id) {
+  const existing = await getOwnedProject(userId, id);
+  if (!existing) return false;
+  // The FKs are all onDelete: SetNull — deleting a project releases its cast
+  // and assets rather than destroying work that outlives it.
+  await prisma.project.delete({ where: { id: existing.id } });
+  return true;
+}
+
+// Everything that belongs to this project, for the detail view. Counts plus a
+// first page each, in one round trip rather than five.
+export async function getProjectContents(userId, id, { take = 24 } = {}) {
+  const project = await getOwnedProject(userId, id);
+  if (!project) return null;
+
+  const [entities, assets, sessions, workflows] = await Promise.all([
+    prisma.studioEntity.findMany({ where: { projectId: id, userId }, orderBy: { updatedAt: "desc" }, take }),
+    prisma.asset.findMany({ where: { projectId: id, userId, isDeleted: false }, orderBy: { createdAt: "desc" }, take }),
+    prisma.agentSession.findMany({ where: { projectId: id, userId }, orderBy: { updatedAt: "desc" }, take: 10 }),
+    prisma.workflow.findMany({ where: { projectId: id, userId }, orderBy: { updatedAt: "desc" }, take: 10 }),
+  ]);
+
+  return {
+    project,
+    settings: normalizeSettings(project.data || {}),
+    cast: entities.filter((e) => e.kind === "character"),
+    products: entities.filter((e) => e.kind === "product"),
+    environments: entities.filter((e) => e.kind === "environment"),
+    assets,
+    sessions,
+    workflows,
+  };
+}
