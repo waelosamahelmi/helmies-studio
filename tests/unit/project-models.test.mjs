@@ -217,13 +217,14 @@ describe("how long a shot may be", () => {
 });
 
 describe("a model that declares no minimum does not get an invented one", () => {
-  it("does not force a 4-second floor on Seedance", async () => {
-    // Seedance 2.5 says minimum: -1 — the model decides — and the code put
-    // a hardcoded 4 in its place. That guess became a rule and padded every
-    // short beat in the film: a two-word line came out four seconds long.
+  it("uses a floor the provider actually accepts", async () => {
+    // Seedance 2.5 declares minimum: -1 — "the model decides" — so the floor
+    // has to come from what the API accepts, not from what the schema says.
+    // Lowering it to 2 on the schema's word got every short shot refused:
+    // {"code":422,"msg":"Invalid duration"}.
     const { shotDurationLimits } = await import("@/lib/project-models.mjs");
     const seedance = { schema: { fields: { duration: { type: "number", default: 5, maximum: 30, minimum: -1 } } } };
-    expect(shotDurationLimits(seedance)).toEqual({ min: 2, max: 30 });
+    expect(shotDurationLimits(seedance)).toEqual({ min: 4, max: 30 });
   });
 
   it("still obeys a model that declares a real one", async () => {

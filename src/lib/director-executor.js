@@ -744,8 +744,29 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
     const hasSomethingToHear = Boolean(shot.dialogue) || Boolean(shot.audioCues);
     if (audioField) params[audioField] = hasSomethingToHear;
 
+    /* REFERENCE AUDIO IS OFF, AND THIS IS NOT A PREFERENCE.
+
+       Seedance refuses the request outright whenever a voice reference is
+       attached — every single shot carrying dialogue died on submit:
+
+         {"code":422,"msg":"Each reference audio must be between 2 and 30
+          seconds"}
+
+       The file it is complaining about is 18.4 seconds long, served over
+       https, and returns 200 with audio/mpeg. So the message does not
+       describe the actual objection, and guessing at the real one costs a
+       failed render per guess. A whole film that will not start is worse
+       than a film whose voices are not anchored to a sample.
+
+       `generate_audio` above stays ON, so clips still carry sound; what is
+       lost is the voice being held to one recording across shots. Restore
+       this the moment the true constraint is known — the selection code is
+       kept below rather than deleted so there is something to switch back
+       on, not something to rewrite. */
+    const SEND_VOICE_REFERENCES = false;
     const audioRefField = REFERENCE_AUDIO_FIELDS.find((f) => videoSchema?.fields?.[f]);
-    if (audioRefField && hasSomethingToHear && Array.isArray(shot.entityIds) && shot.entityIds.length) {
+    if (SEND_VOICE_REFERENCES && audioRefField && hasSomethingToHear
+        && Array.isArray(shot.entityIds) && shot.entityIds.length) {
       try {
         const speakers = await prisma.studioEntity.findMany({
           where: { id: { in: shot.entityIds.slice(0, 6) }, userId: pipeline.userId, kind: "character" },
