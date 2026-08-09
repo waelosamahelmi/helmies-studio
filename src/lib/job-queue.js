@@ -117,7 +117,35 @@ export async function enqueueJob(
 // spuriously fail to claim. Binding one shared `now` value sidesteps any
 // host/DB clock skew entirely; it does not change the atomicity guarantee
 // above — SKIP LOCKED still makes the whole statement race-proof.
-export async function claimNextJob(workerId, { leaseMs = DEFAULT_LEASE_MS } = {}) {
+/* ── Fairness and provider protection (B1.4) ──────────────────────────────
+   The claim above took the oldest queued job, full stop. Two things go
+   wrong with that, and both are the same shape.
+
+   ONE USER CAN TAKE THE WHOLE QUEUE. A film is a hundred and thirty shots
+   enqueued in one press. Until they drain, everybody else's single image
+   sits behind them — not because the system is busy, but because the
+   ordering has no notion of whose work it is. The person who enqueued one
+   thing waits for somebody else's feature film.
+
+   ONE PROVIDER CAN BE HAMMERED. Every job for a provider having a bad
+   minute is claimed, submitted, rate-limited and retried, which turns a
+   provider's soft limit into our own retry storm against it.
+
+   Both are fixed by the same rule: a queued job is only CLAIMABLE if its
+   user and its provider are under their cap right now. It is enforced
+   inside the claim statement rather than checked before it, because
+   anything checked separately is a race — two workers would both read
+   "under the cap" and both claim.
+
+   This is a delay, never a drop: a job over the cap is skipped this round
+   and claimed as soon as one of its siblings finishes. And because the
+   ORDER BY still runs over everything eligible, skipping one user's
+   overflow promotes the next user's work, which is precisely the fairness
+   that was missing. */
+const perUserCap = () => Math.max(1, parseInt(process.env.JOB_USER_CONCURRENCY, 10) || 6);
+const perProviderCap = () => Math.max(1, parseInt(process.env.JOB_PROVIDER_CONCURRENCY, 10) || 24);
+
+export async function claimNextJob(workerId, { leaseMs = DEFAULT_LEASE_MS, userCap = perUserCap(), providerCap = perProviderCap() } = {}) {
   const now = new Date();
   const rows = await prisma.$queryRaw`
     UPDATE "GenerationJob" SET
@@ -127,9 +155,19 @@ export async function claimNextJob(workerId, { leaseMs = DEFAULT_LEASE_MS } = {}
       "attempts" = "attempts" + 1,
       "updatedAt" = ${now}
     WHERE "id" = (
-      SELECT "id" FROM "GenerationJob"
-      WHERE "status" = 'queued' AND "nextRunAt" <= ${now}
-      ORDER BY "nextRunAt" ASC
+      SELECT j."id" FROM "GenerationJob" j
+      WHERE j."status" = 'queued' AND j."nextRunAt" <= ${now}
+        AND (
+          SELECT COUNT(*) FROM "GenerationJob" u
+          WHERE u."status" = 'running' AND u."userId" = j."userId"
+        ) < ${userCap}
+        AND (
+          j."providerName" IS NULL OR (
+            SELECT COUNT(*) FROM "GenerationJob" p
+            WHERE p."status" = 'running' AND p."providerName" = j."providerName"
+          ) < ${providerCap}
+        )
+      ORDER BY j."nextRunAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
     )
