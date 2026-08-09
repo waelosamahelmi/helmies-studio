@@ -347,20 +347,77 @@ async function castHint(context = {}) {
   try {
     const rows = await prisma.studioEntity.findMany({
       where: { userId, status: { in: ["ready", "locked"] } },
-      select: { id: true, kind: true, name: true, description: true },
+      select: { id: true, kind: true, name: true, description: true, references: true },
       orderBy: { updatedAt: "desc" },
       take: 12,
     });
-    if (!rows.length) return "";
-    const lines = rows.map((r) => `- ${r.id} · ${r.kind} · ${r.name}${r.description ? ` — ${r.description.slice(0, 100)}` : ""}`);
-    return [
-      "",
-      "",
-      "THE USER'S CAST — characters, products and places they have already defined, with reference images on file:",
-      lines.join("\n"),
-      "",
-      "When a step shows one of these, put its id in that step's params.entityIds (an array). Their appearance is then supplied from the real reference photographs — do NOT describe them in the prompt, and never invent a competing description, because a written description that disagrees with the reference is what makes a face drift. A step that shows nobody from this list omits entityIds entirely.",
-    ].join("\n");
+    const out = [];
+    if (rows.length) {
+      /* A voice on file is not decoration — it is the difference between a
+         song sung in the user's voice and a song sung by a stranger. The
+         planner could not see it, so it never asked for it, so a music step
+         never carried one. Marked per character, because the voice a shot
+         uses is the voice of whoever speaks in it. */
+      const lines = rows.map((r) => {
+        const refs = Array.isArray(r.references) ? r.references : [];
+        const voice = refs.some((ref) => ref?.kind === "voice") ? " · VOICE ON FILE" : "";
+        return `- ${r.id} · ${r.kind} · ${r.name}${voice}${r.description ? ` — ${r.description.slice(0, 100)}` : ""}`;
+      });
+      out.push(
+        "",
+        "",
+        "THE USER'S CAST — characters, products and places they have already defined, with reference images on file:",
+        lines.join("\n"),
+        "",
+        "When a step shows one of these, put its id in that step's params.entityIds (an array). Their appearance is then supplied from the real reference photographs — do NOT describe them in the prompt, and never invent a competing description, because a written description that disagrees with the reference is what makes a face drift. A step that shows nobody from this list omits entityIds entirely.",
+        "A character marked VOICE ON FILE speaks or sings in their own voice when a step names them in entityIds and the chosen model takes a voice reference — put their id on the music or dialogue step too, not just on the shots they appear in.",
+      );
+    }
+
+    const brandBlock = await brandHint(userId);
+    if (brandBlock) out.push(brandBlock);
+    return out.join("\n");
+  } catch {
+    return "";
+  }
+}
+
+/* The brand: the logo, the palette, the type.
+   ────────────────────────────────────────────────────────────────────────
+   A logo is the one image in a production that must not be generated. A
+   model asked to draw "the Helmies Studio logo" draws a logo that is not
+   theirs — confidently, and in every frame of the end card. The planner had
+   no idea a real one was on file, so it had no alternative to inventing one.
+
+   The url is handed over so a title/overlay step can composite the REAL
+   mark, and the colours so generated frames sit next to it instead of
+   fighting it. */
+async function brandHint(userId) {
+  try {
+    const kit = await prisma.brandKit.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { updatedAt: "desc" },
+      select: { name: true, primaryColors: true, fonts: true, visualReferences: true, toneOfVoice: true },
+    });
+    if (!kit) return "";
+    const refs = Array.isArray(kit.visualReferences) ? kit.visualReferences : [];
+    const logo = refs.find((r) => r?.role === "logo" && typeof r?.url === "string");
+    const colors = (Array.isArray(kit.primaryColors) ? kit.primaryColors : []).slice(0, 4);
+    const fonts = (Array.isArray(kit.fonts) ? kit.fonts : []).slice(0, 3);
+
+    const lines = ["", "", `THE BRAND — "${kit.name}".`];
+    if (logo) {
+      lines.push(
+        `Logo (the real file, already on record): ${logo.url}`,
+        "Put THIS url in params.logoUrl on any title/overlay step that shows the mark. NEVER ask an image or video model to draw the logo — a drawn logo is a different logo, and it will be wrong in every frame it appears in.",
+      );
+    } else {
+      lines.push("No logo on file. If the production shows one, say so plainly rather than generating a substitute.");
+    }
+    if (colors.length) lines.push(`Brand colours: ${colors.join(", ")} — use them for typography and UI accents.`);
+    if (fonts.length) lines.push(`Typefaces: ${fonts.join(", ")}.`);
+    if (kit.toneOfVoice) lines.push(`Tone: ${kit.toneOfVoice.slice(0, 200)}`);
+    return lines.join("\n");
   } catch {
     return "";
   }

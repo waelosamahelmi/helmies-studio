@@ -11,7 +11,11 @@ import { AuthzError } from "@/lib/authz-error";
 // not_found envelope.
 
 const MESSAGE_ROLES = new Set(["user", "assistant", "system"]);
-const MESSAGE_KINDS = new Set(["text", "question", "plan", "run", "outputs"]);
+// "assets" is an assistant turn carrying an ```asset-request block — the
+// upload card. appendMessage THROWS on an unknown kind, so a kind the chat
+// route can produce but this set does not list would lose the turn entirely
+// and the user would watch a reply arrive and then vanish on reload.
+const MESSAGE_KINDS = new Set(["text", "question", "plan", "run", "outputs", "assets"]);
 
 // Settings keys a client may persist on a session. Anything else in the
 // payload is dropped (mass-assignment guard), matching the shape the plan

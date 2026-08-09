@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/client-fetch";
-import { parseQuestionBlock, stripQuestionBlock, parsePlanReadyBlock, stripPlanReadyBlock } from "@/lib/agent-chat";
+import {
+  parseQuestionBlock, stripQuestionBlock,
+  parsePlanReadyBlock, stripPlanReadyBlock,
+  parseAssetRequestBlock, stripAssetRequestBlock,
+} from "@/lib/agent-chat";
 import {
   Brief, SpendMeter, Group, Specs, Confirm, Sheet,
   IcSpark, IcFlow, IcCheck, IcAlert, IcChevron, IcExternal, IcInfo, IcUpload, useUpload,
@@ -10,6 +14,7 @@ import {
 import SessionList from "@/components/studio/agent/SessionList";
 import Markdown from "@/components/studio/agent/Markdown";
 import QuestionCard from "@/components/studio/agent/QuestionCard";
+import AssetRequestCard from "@/components/studio/agent/AssetRequestCard";
 import ThinkingCard from "@/components/studio/agent/ThinkingCard";
 import PlanApproval, { modelsForStep } from "@/components/studio/agent/PlanApproval";
 import StepProgress from "@/components/studio/agent/StepProgress";
@@ -959,6 +964,24 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     send(answer, { clearInput: false });
   }, [busy, patch, send]);
 
+  /* The upload card was filled and the server filed everything.
+     The receipt goes out as the next user message rather than being shown
+     as a quiet confirmation, for the same reason answerQuestion sends the
+     answer: the assistant only knows what the CONVERSATION says. A card
+     that filed a face silently would be followed by a turn that still
+     believes there is no face. The server has already appended the same
+     receipt to the session, so a reload shows exactly this. */
+  const assetsFiled = useCallback((message, result) => {
+    if (busy) return;
+    const filed = (result?.results || []).filter((r) => !r.error);
+    patch(message.id, {
+      answered: filed.length
+        ? filed.map((r) => r.name || r.kind).join(", ")
+        : "nothing could be filed",
+    });
+    if (result?.receipt) send(result.receipt, { clearInput: false });
+  }, [busy, patch, send]);
+
   /* ── Plan — the manual escape hatch and the revision path ────────────── */
   /* `textOverride` lets a plan-card revision request re-plan without
      touching the composer's draft. The conversation always travels along
@@ -1629,9 +1652,14 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
                  becomes a QuestionCard (the LAST block wins — same parser
                  the server persists with). */
               const question = !mine && message.text ? parseQuestionBlock(message.text) : null;
+              /* A ```asset-request block becomes the upload card — the agent
+                 asking for the face, product, logo or voice a production
+                 needs and no model can invent. */
+              const assetRequest = !mine && message.text ? parseAssetRequestBlock(message.text) : null;
               /* A9: the ```plan-ready block is a machine signal — never shown. */
               let prose = !mine && message.text ? stripPlanReadyBlock(message.text) : message.text;
               if (question) prose = stripQuestionBlock(prose);
+              if (assetRequest) prose = stripAssetRequestBlock(prose);
               const showThinking =
                 !mine && !message.text && !message.plan && !message.run &&
                 (message.thinking || busy === "chat");
@@ -1655,6 +1683,17 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
                         answered={message.answered}
                         disabled={!!busy}
                         onAnswer={(answer) => answerQuestion(message, answer)}
+                      />
+                    )}
+
+                    {assetRequest && (
+                      <AssetRequestCard
+                        request={assetRequest}
+                        answered={message.answered}
+                        sessionId={sessionId}
+                        projectId={projectId}
+                        disabled={!!busy}
+                        onFiled={(result) => assetsFiled(message, result)}
                       />
                     )}
 

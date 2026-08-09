@@ -297,6 +297,18 @@
     "notes": "Task 3 origin-check target. PATCH can grant the admin role and directly adjust a user's wallet balance — the highest-privilege mutation in the app. Task 3: verifyOrigin wired on PATCH (GET read-only, unchecked)."
   },
   {
+    "path": "/api/agent/assets",
+    "file": "src/app/api/agent/assets/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/agent",
+    "stateChanging": true,
+    "notes": "2026-08-09 asset requests: accepts a filled ```asset-request card and files each slot as the thing it is - a StudioEntity with the uploads as references, the brand kit's logo, or a voice reference on the character it belongs to. Owner-scoped throughout; every url is re-validated with isAllowedReferenceUrl because 'the client sent it back' is not provenance. Spends no credits (no provider is called), but it CREATES rows, so verifyOrigin is wired on POST and the shared '/api/agent' rate-limit key applies. body.sessionId must name an OWNED session or it is a uniform not_found; nothing is written to the session here - the receipt travels back to the client, which sends it as the next chat turn, so exactly one writer persists it."
+  },
+  {
     "path": "/api/agent/chat",
     "file": "src/app/api/agent/chat/route.js",
     "methods": [

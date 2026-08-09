@@ -4,8 +4,9 @@ import { llmComplete, brandError } from "@/lib/providers";
 import { apiError } from "@/lib/api-error";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
-import { buildChatSystemPrompt, parseQuestionBlock } from "@/lib/agent-chat";
+import { buildChatSystemPrompt, parseQuestionBlock, parseAssetRequestBlock } from "@/lib/agent-chat";
 import { appendMessage, resolveOwnedSession } from "@/lib/agent-sessions";
+import prisma from "@/lib/prisma";
 import { getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind } from "@/lib/model-catalog-core.mjs";
 import { resolveMentionRows } from "@/lib/agents";
@@ -51,8 +52,62 @@ async function chatModelOptions() {
 
 async function persistAssistantTurn(sessionId, text) {
   if (!sessionId || !text) return;
-  const kind = parseQuestionBlock(text) ? "question" : "text";
+  // An asset request outranks a question: a turn carrying both is a contract
+  // violation the prompt forbids, and the upload card is the one the user
+  // has to act on.
+  const kind = parseAssetRequestBlock(text) ? "assets" : parseQuestionBlock(text) ? "question" : "text";
   await appendMessage(sessionId, { role: "assistant", kind, content: text }).catch(() => {});
+}
+
+/* What the user already has, so the assistant never asks for it twice.
+   ────────────────────────────────────────────────────────────────────────
+   Asking somebody to re-upload a face they filed last week reads as not
+   listening, and it is worse than rude: a second character built from the
+   same photographs is a second identity, and the two drift apart across a
+   film. The counts matter as much as the names — a character on file with
+   NO reference images is exactly the case where the assistant SHOULD ask. */
+async function chatInventory(userId) {
+  try {
+    const [entities, brandKits, voiceProfiles] = await Promise.all([
+      prisma.studioEntity.findMany({
+        where: { userId, status: { in: ["ready", "locked"] } },
+        select: { name: true, kind: true, references: true },
+        orderBy: { updatedAt: "desc" },
+        take: 20,
+      }),
+      prisma.brandKit.findMany({
+        where: { userId, isActive: true },
+        select: { name: true, visualReferences: true, primaryColors: true },
+        orderBy: { updatedAt: "desc" },
+        take: 4,
+      }),
+      prisma.voiceProfile.findMany({
+        where: { userId },
+        select: { name: true, status: true },
+        orderBy: { updatedAt: "desc" },
+        take: 8,
+      }),
+    ]);
+    const refs = (row) => (Array.isArray(row.references) ? row.references : []);
+    return {
+      entities: entities.map((e) => ({
+        name: e.name,
+        kind: e.kind,
+        references: refs(e).filter((r) => r?.kind !== "voice").length,
+        hasVoice: refs(e).some((r) => r?.kind === "voice"),
+      })),
+      brandKits: brandKits.map((b) => ({
+        name: b.name,
+        hasLogo: (Array.isArray(b.visualReferences) ? b.visualReferences : []).some((r) => r?.role === "logo"),
+        colors: (Array.isArray(b.primaryColors) ? b.primaryColors : []).slice(0, 3).join(" "),
+      })),
+      voiceProfiles: voiceProfiles.map((v) => ({ name: v.name, status: v.status })),
+    };
+  } catch {
+    // An inventory we cannot read must not take the chat down with it. The
+    // assistant then asks for everything, which is merely annoying.
+    return {};
+  }
 }
 
 // Authoritative resolution of a model the user names in chat (2026-08-06):
@@ -146,7 +201,8 @@ export async function POST(req) {
     // real price) so the assistant's confirmation and the plan's pin can
     // never disagree.
     const resolved = await resolveChatModelMention(messages);
-    const systemPrompt = buildChatSystemPrompt({ modelOptions: await chatModelOptions() }) +
+    const [modelOptions, inventory] = await Promise.all([chatModelOptions(), chatInventory(user.id)]);
+    const systemPrompt = buildChatSystemPrompt({ modelOptions, inventory }) +
       (resolved
         ? `\n\n<resolved-model>\nThe user's most recent model mention resolves to:\n- kind: ${resolved.kind}\n- exact id: ${resolved.modelId}\n- price: ${resolved.credits} cr\n${resolved.exact ? "This is an exact catalog match." : "This is the closest available model — confirm it with the user before proceeding."}\n</resolved-model>`
         : "");
