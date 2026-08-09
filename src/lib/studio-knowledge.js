@@ -17,7 +17,17 @@
 // the limits that decide a choice, is something a planner can act on.
 import prisma from "./prisma.js";
 import { shotDurationLimits } from "./project-models.mjs";
-import { NON_PROVIDER_STEP_CREDITS } from "./pricing-engine.js";
+
+/* The steps that cost no model at all.
+   ────────────────────────────────────────────────────────────────────────
+   Deliberately a local copy rather than an import of pricing-engine.js's
+   NON_PROVIDER_STEP_CREDITS. That module reaches for "@/lib/..." aliases,
+   which exist only inside the Next bundle: importing it here would make
+   this file unloadable under plain node and quietly bar the digest from
+   ever being used anywhere near the worker. The copy is kept honest by
+   tests/unit/studio-knowledge.test.mjs, which fails if the two disagree. */
+const FREE_STEPS = { assembly: 5, export: 0, storyboard: 0, title: 1 };
+
 
 /* Catalogue reads are the same for every user and change when a sync runs,
    not between turns. A minute of cache turns three database round-trips per
@@ -148,7 +158,7 @@ export async function studioCapabilities() {
     "- Words the viewer must read are a `title` step, never a prompt.",
     "",
     "STEPS THAT COST NO MODEL AT ALL:",
-    ...Object.entries(NON_PROVIDER_STEP_CREDITS).map(([kind, credits]) => `  ${kind} — ${credits} cr (runs locally with ffmpeg or the LLM; no provider involved)`),
+    ...Object.entries(FREE_STEPS).map(([kind, credits]) => `  ${kind} — ${credits} cr (runs locally with ffmpeg or the LLM; no provider involved)`),
     "",
     "THE REST OF THE STUDIO — tools the user can also open by hand, so do not offer to rebuild them:",
     "  Projects — a production's spine: format, cast, scenes, the screenplay, render and combine.",
