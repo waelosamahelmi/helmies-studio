@@ -39,6 +39,12 @@
 import prisma from "./prisma.js";
 import { randomUUID } from "node:crypto";
 import { topoSort } from "./template-graph.js";
+
+/* How many of a template run's steps may sit at a provider at once.
+   The per-user cap in job-queue.js is the real backstop; this keeps one
+   run from filling that cap by itself and starving the same user's other
+   work. */
+const TEMPLATE_IN_FLIGHT_CAP = Math.max(1, parseInt(process.env.TEMPLATE_IN_FLIGHT_CAP, 10) || 3);
 import { reserveCredits, settleReservation } from "./wallet.js";
 import { enqueueJob } from "./job-queue.js";
 import { releaseOrRefund } from "./job-runner.js";
@@ -302,87 +308,103 @@ export async function advanceTemplateRun(runId) {
   const stepById = new Map(graph.steps.map((s) => [s.id, s]));
 
   const stepState = { ...run.stepState };
-  const currentStepId = Object.keys(stepState).find((id) => stepState[id]?.status === "running");
-  if (!currentStepId) return; // nothing actively running — already advanced/closed out
 
-  const currentGenerationId = stepState[currentStepId].generationId;
-  const generation = currentGenerationId
-    ? await prisma.generation.findUnique({ where: { id: currentGenerationId } })
-    : null;
-  if (!generation) {
-    console.error(
-      `[template-runner] advanceTemplateRun: Generation ${currentGenerationId} not found for run ${runId} step ${currentStepId}`
-    );
+  /* ── Every ready step runs, not just the next one (B1.3) ───────────────
+     This used to take the single step currently "running", complete it,
+     and enqueue order[index + 1] — the next id in TOPOLOGICAL order. Topo
+     order is a valid SEQUENCE, but it is not a schedule: it says a step
+     may not start before its dependencies, and says nothing about whether
+     two steps could have run side by side. A template whose three product
+     shots depend only on the same hero still ran them one after another,
+     so the run took three provider round-trips where it needed one.
+
+     The rule is the one agent-runner already uses: a step is ready when
+     every id in its dependsOn has COMPLETED. That makes this function
+     idempotent over several in-flight steps, which it has to be — with
+     parallelism, more than one generation can reach a terminal state at
+     the same moment, and job-runner calls here once for each of them. */
+
+  // 1. Settle whatever has actually finished. With several steps in flight
+  //    this cannot assume the caller's step is the only running one.
+  let sawTerminal = false;
+  for (const [id, st] of Object.entries(stepState)) {
+    if (st?.status !== "running" || !st.generationId) continue;
+    const generation = await prisma.generation.findUnique({ where: { id: st.generationId } });
+    if (!generation) {
+      console.error(`[template-runner] advanceTemplateRun: Generation ${st.generationId} not found for run ${runId} step ${id}`);
+      continue;
+    }
+    if (generation.status === "completed") {
+      stepState[id] = { ...st, status: "completed", outputUrl: generation.outputUrl, error: null };
+      sawTerminal = true;
+    } else if (generation.status === "failed") {
+      stepState[id] = { ...st, status: "failed", error: generation.error || "Generation failed" };
+      sawTerminal = true;
+    }
+  }
+
+  // 2. Any failure fails the run. Steps still at a provider are left to
+  //    finish — the provider bills us whether or not we are listening —
+  //    but nothing new is started and the reservation is released once.
+  const failed = Object.entries(stepState).find(([, st]) => st?.status === "failed");
+  if (failed) {
+    await prisma.templateRun.update({ where: { id: runId }, data: { status: "failed", stepState } });
+    await releaseOrRefund({ userId: run.userId, id: runId, creditsUsed: run.totalCredits }, { payload: {} });
     return;
   }
 
-  if (generation.status === "completed") {
-    stepState[currentStepId] = {
-      ...stepState[currentStepId],
-      status: "completed",
-      outputUrl: generation.outputUrl,
-      error: null,
-    };
+  const statuses = Object.values(stepState);
+  if (!sawTerminal && statuses.some((st) => st?.status === "running")) return; // nothing new to act on
 
-    const order = topoSort(graph);
-    const nextStepId = order[order.indexOf(currentStepId) + 1];
+  // 3. Finished when every step has completed.
+  if (statuses.every((st) => st?.status === "completed")) {
+    await safeSettleRun(run.userId, runId, run.totalCredits);
+    await prisma.templateRun.update({ where: { id: runId }, data: { status: "completed", stepState } });
+    return;
+  }
 
-    if (!nextStepId) {
-      // Last step done — settle the WHOLE reservation at the quoted total,
-      // exactly once, and close the run out.
-      await safeSettleRun(run.userId, runId, run.totalCredits);
-      await prisma.templateRun.update({ where: { id: runId }, data: { status: "completed", stepState } });
-      return;
-    }
+  // 4. Start everything whose dependencies are now satisfied.
+  const stepOutputs = {};
+  for (const [id, st] of Object.entries(stepState)) {
+    if (st?.status === "completed") stepOutputs[id] = st.outputUrl;
+  }
 
-    const stepOutputs = {};
-    for (const [id, s] of Object.entries(stepState)) {
-      if (s.status === "completed") stepOutputs[id] = s.outputUrl;
-    }
+  const inFlight = statuses.filter((st) => st?.status === "running").length;
+  let capacity = Math.max(0, TEMPLATE_IN_FLIGHT_CAP - inFlight);
+  let started = 0;
 
-    const nextStep = stepById.get(nextStepId);
-    const model = await prisma.modelPricing.findUnique({ where: { modelId: nextStep.modelId } });
+  for (const stepId of topoSort(graph)) {
+    if (capacity <= 0) break;
+    if (stepState[stepId]?.status !== "pending") continue;
+    const step = stepById.get(stepId);
+    const deps = Array.isArray(step?.dependsOn) ? step.dependsOn : [];
+    if (!deps.every((d) => stepState[d]?.status === "completed")) continue;
+
+    const model = await prisma.modelPricing.findUnique({ where: { modelId: step.modelId } });
     if (!model) {
       // Structurally impossible if canPublish gated this version —
-      // defensive only. Treat exactly like a step failure: release/refund
-      // the run's one reservation exactly once, mark it failed.
-      stepState[nextStepId] = {
-        status: "failed",
-        generationId: null,
-        outputUrl: null,
-        error: `Model "${nextStep.modelId}" is no longer available`,
-      };
+      // defensive only. Treated exactly like a step failure.
+      stepState[stepId] = { status: "failed", generationId: null, outputUrl: null, error: `Model "${step.modelId}" is no longer available` };
       await prisma.templateRun.update({ where: { id: runId }, data: { status: "failed", stepState } });
       await releaseOrRefund({ userId: run.userId, id: runId, creditsUsed: run.totalCredits }, { payload: {} });
       return;
     }
 
     // IMPORTANT-3 FIX: run.inputs (persisted at startTemplateRun, not {})
-    // — a caller-supplied per-step override (e.g. a longer duration) was
-    // priced into the ORIGINAL quote/reservation but, before this fix, a
-    // later step always re-resolved against the graph's bare defaults
-    // instead, so what was quoted and what actually ran (and its true
-    // provider cost) silently diverged.
-    const params = resolveStepParams(nextStep, stepOutputs, run.inputs || {});
-    const nextGeneration = await enqueueStep({ runId, userId: run.userId, step: nextStep, model, params });
+    // — a caller-supplied per-step override was priced into the ORIGINAL
+    // quote/reservation, so re-resolving against the graph's bare defaults
+    // would make what was quoted and what actually ran silently diverge.
+    const params = resolveStepParams(step, stepOutputs, run.inputs || {});
+    const generation = await enqueueStep({ runId, userId: run.userId, step, model, params });
+    stepState[stepId] = { status: "running", generationId: generation.id, outputUrl: null, error: null };
+    capacity--;
+    started++;
+  }
 
-    stepState[nextStepId] = { status: "running", generationId: nextGeneration.id, outputUrl: null, error: null };
+  if (started || sawTerminal) {
     await prisma.templateRun.update({ where: { id: runId }, data: { stepState } });
-    return;
   }
-
-  if (generation.status === "failed") {
-    stepState[currentStepId] = {
-      ...stepState[currentStepId],
-      status: "failed",
-      error: generation.error || "Generation failed",
-    };
-    await prisma.templateRun.update({ where: { id: runId }, data: { status: "failed", stepState } });
-    // Release-or-refund the run's ONE reservation exactly once — reused
-    // unchanged from job-runner.js, never a second implementation.
-    await releaseOrRefund({ userId: run.userId, id: runId, creditsUsed: run.totalCredits }, { payload: {} });
-    return;
-  }
+  return;
 
   // Still pending/processing — defensive no-op. In practice this function
   // is only ever invoked right after the generation's own terminal

@@ -499,23 +499,130 @@ describe("advanceTemplateRun — idempotency", () => {
     expect(releaseOrRefund).not.toHaveBeenCalled();
   });
 
-  it("is a no-op when no step is currently 'running' (already advanced by an earlier call)", async () => {
+  it("STARTS a ready step that was left pending — a stalled run recovers", async () => {
+    /* This used to assert a no-op, and under sequential scheduling that was
+       right: the only way to reach the next step was to be the call that
+       completed the previous one, so a run in this state was "already
+       advanced". Under ready-step scheduling it is a run that stalled with
+       work it could do — a lost advance call, a restart mid-step — and the
+       right answer is to pick it up rather than leave it stuck forever. */
     prisma.templateRun.findUnique.mockResolvedValue({
       id: "run1",
+      userId: "user1",
       status: "running",
       versionId: "v1",
+      totalCredits: 30,
+      inputs: {},
       stepState: {
-        step1: { status: "completed", generationId: "gen1", outputUrl: "x", error: null },
+        step1: { status: "completed", generationId: "gen1", outputUrl: "https://x/a.png", error: null },
         step2: { status: "pending", generationId: null, outputUrl: null, error: null },
       },
     });
     prisma.templateVersion.findUnique.mockResolvedValue({ id: "v1", graph: twoStepGraph() });
+    prisma.modelPricing.findUnique.mockResolvedValue(modelRow("model-b"));
+    prisma.generation.create.mockResolvedValue({ id: "gen2" });
+
+    await advanceTemplateRun("run1");
+
+    const written = prisma.templateRun.update.mock.calls.at(-1)[0].data.stepState;
+    expect(written.step2.status).toBe("running");
+    // Recovery is not completion: nothing is settled or refunded here.
+    expect(settleReservation).not.toHaveBeenCalled();
+    expect(releaseOrRefund).not.toHaveBeenCalled();
+  });
+
+  it("is a no-op while a step is still at the provider", async () => {
+    prisma.templateRun.findUnique.mockResolvedValue({
+      id: "run1",
+      userId: "user1",
+      status: "running",
+      versionId: "v1",
+      totalCredits: 30,
+      inputs: {},
+      stepState: {
+        step1: { status: "running", generationId: "gen1", outputUrl: null, error: null },
+        step2: { status: "pending", generationId: null, outputUrl: null, error: null },
+      },
+    });
+    prisma.templateVersion.findUnique.mockResolvedValue({ id: "v1", graph: twoStepGraph() });
+    prisma.generation.findUnique.mockResolvedValue({ id: "gen1", status: "processing" });
 
     await advanceTemplateRun("run1");
 
     expect(prisma.templateRun.update).not.toHaveBeenCalled();
     expect(settleReservation).not.toHaveBeenCalled();
     expect(releaseOrRefund).not.toHaveBeenCalled();
+  });
+
+  it("runs INDEPENDENT steps side by side instead of one after another", async () => {
+    /* The whole point of B1.3. Topological order is a valid sequence, not a
+       schedule: it says a step may not start before its dependencies, and
+       says nothing about whether two steps could have gone at once. Three
+       shots that all depend only on the same hero used to cost three
+       provider round-trips where they needed one. */
+    const fanOut = {
+      steps: [
+        { id: "hero", tool: "image", modelId: "model-a", inputs: { prompt: "hero" }, dependsOn: [] },
+        { id: "shotA", tool: "i2v", modelId: "model-b", inputs: { image_url: "$hero.output" }, dependsOn: ["hero"] },
+        { id: "shotB", tool: "i2v", modelId: "model-b", inputs: { image_url: "$hero.output" }, dependsOn: ["hero"] },
+        { id: "shotC", tool: "i2v", modelId: "model-b", inputs: { image_url: "$hero.output" }, dependsOn: ["hero"] },
+      ],
+    };
+    prisma.templateRun.findUnique.mockResolvedValue({
+      id: "run1", userId: "user1", status: "running", versionId: "v1", totalCredits: 90, inputs: {},
+      stepState: {
+        hero: { status: "running", generationId: "genHero", outputUrl: null, error: null },
+        shotA: { status: "pending", generationId: null, outputUrl: null, error: null },
+        shotB: { status: "pending", generationId: null, outputUrl: null, error: null },
+        shotC: { status: "pending", generationId: null, outputUrl: null, error: null },
+      },
+    });
+    prisma.templateVersion.findUnique.mockResolvedValue({ id: "v1", graph: fanOut });
+    prisma.generation.findUnique.mockResolvedValue({ id: "genHero", status: "completed", outputUrl: "https://x/hero.png" });
+    prisma.modelPricing.findUnique.mockResolvedValue(modelRow("model-b"));
+    let n = 0;
+    prisma.generation.create.mockImplementation(async () => ({ id: `gen-${++n}` }));
+
+    await advanceTemplateRun("run1");
+
+    const written = prisma.templateRun.update.mock.calls.at(-1)[0].data.stepState;
+    expect(written.hero.status).toBe("completed");
+    // All three, in one advance — capped at TEMPLATE_IN_FLIGHT_CAP (3).
+    for (const id of ["shotA", "shotB", "shotC"]) expect(written[id].status).toBe("running");
+    expect(prisma.generation.create).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not start a step whose dependencies are not all finished", async () => {
+    const diamond = {
+      steps: [
+        { id: "a", tool: "image", modelId: "model-a", inputs: {}, dependsOn: [] },
+        { id: "b", tool: "image", modelId: "model-a", inputs: {}, dependsOn: [] },
+        { id: "join", tool: "i2v", modelId: "model-b", inputs: {}, dependsOn: ["a", "b"] },
+      ],
+    };
+    prisma.templateRun.findUnique.mockResolvedValue({
+      id: "run1", userId: "user1", status: "running", versionId: "v1", totalCredits: 40, inputs: {},
+      stepState: {
+        a: { status: "running", generationId: "genA", outputUrl: null, error: null },
+        b: { status: "running", generationId: "genB", outputUrl: null, error: null },
+        join: { status: "pending", generationId: null, outputUrl: null, error: null },
+      },
+    });
+    prisma.templateVersion.findUnique.mockResolvedValue({ id: "v1", graph: diamond });
+    // Only one of the two finished.
+    prisma.generation.findUnique.mockImplementation(async ({ where }) => (
+      where.id === "genA"
+        ? { id: "genA", status: "completed", outputUrl: "https://x/a.png" }
+        : { id: "genB", status: "processing" }
+    ));
+    prisma.modelPricing.findUnique.mockResolvedValue(modelRow("model-b"));
+
+    await advanceTemplateRun("run1");
+
+    const written = prisma.templateRun.update.mock.calls.at(-1)[0].data.stepState;
+    expect(written.a.status).toBe("completed");
+    expect(written.join.status).toBe("pending");
+    expect(prisma.generation.create).not.toHaveBeenCalled();
   });
 
   it("is a no-op (and never throws) when the run id does not exist at all", async () => {
