@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { isPlaceholderPricing, calculateProviderQuote } from "../../src/lib/model-catalog-core.mjs";
 
 const flat = (price, unit = "image") => ({ unit, currency: "USD", rules: [{ price }] });
@@ -43,5 +43,49 @@ describe("isPlaceholderPricing", () => {
   it("does not change what a genuine rule quotes", () => {
     const q = calculateProviderQuote(flat(0.57), {});
     expect(q.providerCost).toBe(0.57);
+  });
+});
+
+describe("quoting a row with no usable schedule", () => {
+  // Clearing the 51 placeholder blocks turned a latent throw into a real
+  // one: quoteCatalogModel refused any row without pricingRules, so a model
+  // with a perfectly good measured cost became unquotable — it could not be
+  // substituted to, and could not be re-quoted mid-run.
+  it("falls back to the stored price instead of refusing", async () => {
+    vi.resetModules();
+    vi.doMock("../../src/lib/prisma.js", () => ({
+      default: {
+        modelPricing: {
+          findUnique: vi.fn(async () => null),
+          findFirst: vi.fn(async () => ({
+            modelId: "topaz/video-upscale", providerName: "kie", isActive: true, isDeprecated: false,
+            inputSchema: null, pricingRules: null, providerCost: 0.025, creditsCost: 7,
+          })),
+        },
+        providerConfig: { findUnique: vi.fn(async () => ({ markup: 2.5 })) },
+      },
+    }));
+    const { quoteCatalogModel } = await import("../../src/lib/model-catalog.js");
+    const q = await quoteCatalogModel("topaz/video-upscale", {});
+    expect(q).toMatchObject({ valid: true, credits: 7, pricingSource: "stored" });
+  });
+
+  it("still refuses a row that has no price at all", async () => {
+    vi.resetModules();
+    vi.doMock("../../src/lib/prisma.js", () => ({
+      default: {
+        modelPricing: {
+          findUnique: vi.fn(async () => null),
+          findFirst: vi.fn(async () => ({
+            modelId: "mystery/model", providerName: "kie", isActive: true, isDeprecated: false,
+            inputSchema: null, pricingRules: null, providerCost: 0, creditsCost: 0,
+          })),
+        },
+        providerConfig: { findUnique: vi.fn(async () => null) },
+      },
+    }));
+    const { quoteCatalogModel } = await import("../../src/lib/model-catalog.js");
+    // Guessing at somebody's money is worse than failing.
+    await expect(quoteCatalogModel("mystery/model", {})).rejects.toThrow(/no verified pricing/i);
   });
 });

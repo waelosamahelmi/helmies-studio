@@ -276,15 +276,33 @@ export async function quoteCatalogModel(modelId, params = {}) {
   if (!row || !row.isActive || row.isDeprecated) throw new Error("Model is unavailable");
   const errors = validateModelInput(row.inputSchema, params);
   if (errors.length) return { valid: false, errors };
-  if (!row.pricingRules) throw new Error("Model has no verified pricing");
   const config = await prisma.providerConfig.findUnique({ where: { name: row.providerName } }).catch(() => null);
   const markup = config?.markup || DEFAULT_MARKUP;
 
-  /* The row's own stored price wins over a placeholder rule — see
-     isPlaceholderPricing for the audit that made this necessary. Quoting
-     from the rule charged 42x too little for Veo 3 and 12x too much for a
-     video upscale, and the quote is what the user is shown AND billed. */
-  if (isPlaceholderPricing(row.pricingRules, row.providerCost)) {
+  /* Quote from the row's own stored price when there is no usable schedule.
+     ──────────────────────────────────────────────────────────────────────
+     Two cases, one answer:
+
+     NO RULES AT ALL. This used to throw "Model has no verified pricing",
+     which was survivable only because every row happened to have a rules
+     block — including the 51 that were placeholders. Clearing those (see
+     scripts/clear-placeholder-pricing.mjs) turned the latent throw into a
+     real one: a model with a perfectly good measured cost became
+     unquotable, so it could not be substituted to and could not be
+     re-quoted mid-run. A row carrying providerCost and creditsCost is
+     quotable; refusing it was never right.
+
+     A PLACEHOLDER RULE. See isPlaceholderPricing. Quoting from those
+     charged 42x too little for Veo 3 and 12x too much for a video upscale,
+     and the quote is both what the user is shown and what they are billed.
+
+     A row with neither a schedule nor a stored price is genuinely unpriced
+     and still refuses, because guessing at somebody's money is worse than
+     failing. */
+  if (!row.pricingRules || isPlaceholderPricing(row.pricingRules, row.providerCost)) {
+    if (!(row.creditsCost > 0) && !(row.providerCost > 0)) {
+      throw new Error("Model has no verified pricing");
+    }
     return {
       valid: true,
       modelId,
