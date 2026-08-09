@@ -38,7 +38,10 @@ async function resolveMarkup(providerName) {
 //
 // 5 for assembly is the director's own assembly charge
 // (director-planner.js's assemblyCost), for the same ffmpeg work.
-export const NON_PROVIDER_STEP_CREDITS = { assembly: 5, export: 0, storyboard: 0 };
+// `title` renders typography with ffmpeg — no provider, no model, so it is
+// priced like assembly rather than quoted from a catalog row. Cheaper than
+// assembly because it encodes seconds rather than minutes.
+export const NON_PROVIDER_STEP_CREDITS = { assembly: 5, export: 0, storyboard: 0, title: 1 };
 
 // ── Estimate credits for a task before execution ──
 export async function estimateCredits(tool, model, params = {}) {

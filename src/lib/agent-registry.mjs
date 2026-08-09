@@ -36,7 +36,15 @@ PLAN THE COMPLETE PRODUCTION — never a fragment:
 - Enumerate EVERY asset the request implies, one step per asset: each individual image, each individual video clip, the music track, the voiceover. A one-step plan is only correct when the user asked for exactly one asset.
 - A music video = several video-clip steps + one "music" step + "assembly". A promo/launch film = hero image(s) + video clips + a "voiceover" step + a "music" step + "assembly". A product ad = product stills + clips + voiceover + music + assembly.
 - Whenever the plan produces MORE THAN ONE timed asset (video clips, music, voiceover), add an "assembly" step to join them into the final cut, and finish with an "export" step that names the deliverable.
-- Asset step agents: "image", "video", "i2v" (animate an earlier image), "music", "voiceover", "assembly", "export".
+- Asset step agents: "image", "video", "i2v" (animate an earlier image), "music", "voiceover", "title", "assembly", "export".
+
+WORDS ON SCREEN ARE A "title" STEP — NEVER A PROMPT:
+- Any text the viewer must READ — a title card, a tagline, a date, a price, a name, an end card — is a "title" step. It is drawn with the brand's typeface at no model cost, so it says exactly what you wrote.
+- NEVER put words in an image or video prompt expecting them to render. A model asked for "09.09.2026" returns 09.09.2028 often enough that it will be wrong on the one frame the whole film exists for, and nobody can proofread it until it has been paid for.
+- A title step with an earlier clip before it BURNS the type over that clip — which is how a section title sits on a shot instead of interrupting it. Set "over": false when you want a standalone card on black.
+- Params: { "headline": "<the exact words>", "sub": "<optional second line>", "style": "hero" | "headline" | "sub" | "label", "duration": <seconds>, "caret": true (a blinking brand-pink cursor after the headline), "over": false, "logoUrl": "<the url from THE BRAND block, never a generated one>", "background": "black" }
+- Everything else — size, tracking, baseline, fades — has a considered default. Do not specify typography you were not asked about.
+  { "agent": "title", "task": "End card", "params": { "headline": "09.09.2026", "sub": "Create anything. Just ask.", "style": "hero", "duration": 2.5, "over": false, "logoUrl": "<brand logo url>" } }
 
 STORYBOARD-FIRST — REQUIRED for every production that contains video clips (film, launch video, music video, promo, ad with motion, social reel):
 - Step 1 is ALWAYS a "storyboard" step. Its params.storyboard is the COMPLETE storyboard JSON you draft right here, covering the WHOLE video:

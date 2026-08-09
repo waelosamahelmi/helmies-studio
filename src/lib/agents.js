@@ -9,6 +9,8 @@ import {
 import { detectAbuse } from "@/lib/security";
 import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { assembleVideos } from "@/lib/video-assembly";
+import { renderTitleCard, overlayTitles } from "@/lib/title-render";
+import { titleLines, titleDuration } from "@/lib/title-step.mjs";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind, requiresMediaInput } from "@/lib/model-catalog-core.mjs";
 import {
@@ -913,6 +915,8 @@ export async function executeStep(step, previousOutputs = []) {
       return await executeMusicStep(resolvedParams);
     case "voiceover":
       return await executeVoiceoverStep(resolvedParams);
+    case "title":
+      return await executeTitleStep(resolvedParams, previousOutputs);
     case "assembly":
       return await executeAssemblyStep(resolvedParams, previousOutputs);
     case "export":
@@ -1092,6 +1096,30 @@ async function executeUpscaleStep(params, previousOutputs) {
   const provider = await resolveProvider(params.model || endpoint);
   const result = await generateI2I({ ...params, endpoint, image_url: image, _provider: provider });
   return result.url || result.outputs?.[0];
+}
+
+/* Typography. No provider, no model, no credits beyond the flat
+   NON_PROVIDER_STEP_CREDITS rate — this is ffmpeg drawing the brand's own
+   typeface, so the words are exactly the words the plan approved.
+
+   Mirrors the durable runner's `title` branch (agent-runner.js); the shared
+   half lives in title-step.mjs so the two can never disagree about what a
+   card looks like. */
+async function executeTitleStep(params, previousOutputs = []) {
+  const lines = titleLines(params, { height: 1080 });
+  if (!lines.length) throw new Error("A title step needs a headline or a subtitle to draw.");
+  const logoUrl = typeof params.logoUrl === "string" && params.logoUrl ? params.logoUrl : null;
+  const over = params.over === false ? null : previousOutputs.filter(isVideoOutput).pop() || null;
+  const result = over
+    ? await overlayTitles(over, { lines, logoUrl, logoWidth: params.logoWidth })
+    : await renderTitleCard({
+      lines,
+      duration: titleDuration(params, lines),
+      background: params.background || "black",
+      logoUrl,
+      logoWidth: params.logoWidth,
+    });
+  return result.url;
 }
 
 // Music and voiceover are the same audio route with different model pools —

@@ -68,6 +68,8 @@ import {
 } from "./storyboard-core.mjs";
 import { AGENTS, TOOL_AGENT_KEYS, GENERIC_PERSONA_PROMPT } from "./agent-registry.mjs";
 import { assembleVideos } from "./video-assembly.js";
+import { renderTitleCard, overlayTitles } from "./title-render.js";
+import { titleLines, titleDuration } from "./title-step.mjs";
 import { chainStepIfNeeded } from "./video-chain.js";
 import { log } from "./log.js";
 import { injectEntities, purposeForStep } from "./entity-inject.js";
@@ -850,6 +852,33 @@ export async function executeInternalJob(payload) {
     if (params?.transitionDuration != null) options.transitionDuration = params.transitionDuration;
     outputUrl = await assembleVideos(clips, options);
     output = outputUrl;
+  } else if (kind === "title") {
+    /* Typography, rendered rather than generated — see title-cards.mjs for
+       why that distinction is the whole point. Two modes, decided by what
+       came before: with an earlier clip to sit on, the type is burned over
+       it (a section title on a shot, which is what makes three sequences
+       read as one film); with nothing before it, the card stands alone. */
+    const format = await projectFormatFor(run);
+    const height = format?.resolution === "1080p" || !format?.resolution ? 1080 : 720;
+    const lines = titleLines(params, { height });
+    if (!lines.length) throw new Error("A title step needs a headline or a subtitle to draw.");
+
+    const logoUrl = typeof params.logoUrl === "string" && params.logoUrl ? params.logoUrl : null;
+    const over = params.over === false ? null : prevOutputs.filter(isVideoOutput).pop() || null;
+
+    const result = over
+      ? await overlayTitles(over, { lines, logoUrl, logoWidth: params.logoWidth })
+      : await renderTitleCard({
+        lines,
+        duration: titleDuration(params, lines),
+        width: height === 1080 ? 1920 : 1280,
+        height,
+        background: params.background || "black",
+        logoUrl,
+        logoWidth: params.logoWidth,
+      });
+    outputUrl = result.url;
+    output = result.url;
   } else if (kind === "export") {
     output = buildExportResult(params, prevOutputs, step.task);
     outputUrl = output.url || null;

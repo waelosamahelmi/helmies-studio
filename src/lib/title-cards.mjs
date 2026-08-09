@@ -28,6 +28,45 @@ export const FONT_WEIGHTS = {
 
 export const HELMIES_PINK = "#ff2d8f";
 
+/* Colour, in the only syntax ffmpeg's filter parser will take.
+   ────────────────────────────────────────────────────────────────────────
+   A comma separates filters in a chain, so "rgba(255,255,255,0.72)" — the
+   most natural thing to write, and what a planner or a stylesheet hands
+   over — does not render a translucent white subtitle. It tears the filter
+   graph in half and the whole card fails to build. Alpha in ffmpeg is a
+   suffix: "#ffffff@0.72".
+
+   Anything still carrying a character the parser reads as syntax is dropped
+   to plain white rather than passed through: a card that renders in the
+   wrong colour can be fixed by looking at it, and one that fails to build
+   at all just looks like the renderer is broken. */
+export function normalizeColor(color, fallback = "#ffffff") {
+  const raw = String(color ?? "").trim();
+  if (!raw) return fallback;
+
+  const rgba = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(raw);
+  if (rgba) {
+    const hex = [rgba[1], rgba[2], rgba[3]]
+      .map((v) => Math.max(0, Math.min(255, Number(v))).toString(16).padStart(2, "0"))
+      .join("");
+    const a = rgba[4] == null ? 1 : Math.max(0, Math.min(1, Number(rgba[4])));
+    return a >= 1 ? `#${hex}` : `#${hex}@${a}`;
+  }
+
+  // #RRGGBBAA — CSS's way of writing alpha, which ffmpeg does not read.
+  const hex8 = /^#([0-9a-f]{6})([0-9a-f]{2})$/i.exec(raw);
+  if (hex8) {
+    const a = parseInt(hex8[2], 16) / 255;
+    return a >= 1 ? `#${hex8[1]}` : `#${hex8[1]}@${a.toFixed(3)}`;
+  }
+
+  if (/^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(raw)) return raw;
+  if (/^[a-z]+(@[\d.]+)?$/i.test(raw)) return raw;            // named, optionally with alpha
+  if (/^#[0-9a-f]{6}@[\d.]+$/i.test(raw)) return raw;         // already correct
+  if (/^0x[0-9a-f]{6,8}(@[\d.]+)?$/i.test(raw)) return raw;
+  return fallback;
+}
+
 /* drawtext's text is read by ffmpeg's expression parser before it is drawn,
    so a colon or a backslash in the copy changes the FILTER rather than the
    words. "09.09.2026" is safe; "COMING: 09.09.2026" silently truncates. */
@@ -197,7 +236,7 @@ export function lineFilters(line, { fontDir = "" } = {}) {
     `drawtext=fontfile='${fontPath}'`,
     `text='${escapeDrawtext(body)}'`,
     `fontsize=${fontsize}`,
-    `fontcolor=${color}`,
+    `fontcolor=${normalizeColor(color)}`,
     `x=${xExpr}`,
     `y=${yExpr}`,
     `alpha='${alpha}'`,

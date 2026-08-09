@@ -13,7 +13,10 @@ import {
   snapToBeat,
   centeredBaseline,
   FONT_WEIGHTS,
+  HELMIES_PINK,
+  normalizeColor,
 } from "../../src/lib/title-cards.mjs";
+import { titleLines, titleDuration } from "../../src/lib/title-step.mjs";
 
 describe("escapeDrawtext", () => {
   it("escapes the characters ffmpeg reads as syntax", () => {
@@ -197,5 +200,78 @@ describe("beats", () => {
 
   it("leaves the time alone when there is no grid", () => {
     expect(snapToBeat(1.234, [])).toBe(1.234);
+  });
+});
+
+describe("normalizeColor", () => {
+  it("turns rgba() into ffmpeg's alpha suffix", () => {
+    // The bug this exists for: a comma separates FILTERS, so an rgba()
+    // colour tore the chain in half and the whole card failed to build.
+    expect(normalizeColor("rgba(255,255,255,0.72)")).toBe("#ffffff@0.72");
+    expect(normalizeColor("rgb(255, 45, 143)")).toBe("#ff2d8f");
+  });
+
+  it("turns #RRGGBBAA into the same", () => {
+    expect(normalizeColor("#ffffff80")).toMatch(/^#ffffff@0\.50/);
+    expect(normalizeColor("#ffffffff")).toBe("#ffffff");
+  });
+
+  it("passes through what ffmpeg already understands", () => {
+    for (const c of ["#ff2d8f", "#fff", "white", "white@0.5", "#ffffff@0.72", "0xff2d8f"]) {
+      expect(normalizeColor(c)).toBe(c);
+    }
+  });
+
+  it("falls back rather than emitting something that breaks the graph", () => {
+    // Wrong colour is fixable by looking at it; a filter that will not
+    // build just looks like the renderer is broken.
+    expect(normalizeColor("hsl(120, 50%, 50%)")).toBe("#ffffff");
+    expect(normalizeColor("")).toBe("#ffffff");
+    expect(normalizeColor(null)).toBe("#ffffff");
+  });
+
+  it("never lets a comma or colon reach the filter", () => {
+    const out = lineFilters({ text: "A", color: "rgba(1,2,3,0.5)" })[0];
+    expect(out).toContain("fontcolor=#010203@0.5");
+    expect(out.split("fontcolor=")[1].split(":")[0]).not.toContain(",");
+  });
+});
+
+describe("titleLines", () => {
+  it("builds the end card the ad closes on", () => {
+    const lines = titleLines({ headline: "09.09.2026", sub: "Create anything. Just ask.", duration: 3 });
+    expect(lines).toHaveLength(2);
+    expect(lines[0].text).toBe("09.09.2026");
+    expect(lines[1].text).toBe("Create anything. Just ask.");
+    // Both are laid out against explicit baselines so they cannot collide.
+    expect(lines[0].baseline).toBeTruthy();
+    expect(lines[1].baseline).toBeTruthy();
+  });
+
+  it("puts the caret flush after the headline, in brand pink", () => {
+    const lines = titleLines({ headline: "EVEN THIS AD.", caret: true, duration: 3 });
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toMatchObject({ text: "|", cursor: true, color: HELMIES_PINK });
+    const offset = Number(String(lines[1].x).match(/\+([\d.]+)$/)[1]);
+    expect(offset).toBeGreaterThan(0);
+  });
+
+  it("sizes type against the frame, so a 9:16 crop is not clipped", () => {
+    const tall = titleLines({ headline: "SHORT FILMS", style: "headline" }, { height: 1920 });
+    const wide = titleLines({ headline: "SHORT FILMS", style: "headline" }, { height: 1080 });
+    expect(tall[0].size).toBeGreaterThan(wide[0].size);
+  });
+
+  it("draws nothing when there is nothing to say", () => {
+    expect(titleLines({})).toEqual([]);
+    expect(titleLines({ headline: "" })).toEqual([]);
+  });
+
+  it("holds the clip long enough for its last line to finish", () => {
+    const params = { headline: "ONE TOOL.", sub: "One prompt.", duration: 1 };
+    const lines = titleLines(params);
+    // The declared duration is too short for the subtitle's own timing;
+    // a card that cuts its last word off is worse than one held a beat.
+    expect(titleDuration(params, lines)).toBeGreaterThan(1);
   });
 });
