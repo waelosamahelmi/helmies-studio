@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import prisma from "@/lib/prisma";
+import { runProgress } from "@/lib/template-graph";
 
 // GET /api/templates/runs/[runId] — poll a TemplateRun's status/per-step
 // state. Read-only, scoped to the caller: a run belonging to someone else
@@ -24,6 +25,10 @@ export async function GET(req, { params }) {
       versionId: run.versionId,
       status: run.status,
       stepState: run.stepState,
+      // Reduced once here rather than in every client, and shaped for
+      // parallel steps: with several in flight there is no single "current"
+      // step to report. See runProgress.
+      progress: runProgress(run.stepState),
       totalCredits: run.totalCredits,
       createdAt: run.createdAt,
       updatedAt: run.updatedAt,

@@ -153,3 +153,41 @@ export function validateGraph(graph) {
 
   return { valid: errors.length === 0, errors };
 }
+
+/* Progress a person can read (B1.6).
+   ────────────────────────────────────────────────────────────────────────
+   The run route handed back stepState — the raw per-step map — and left
+   every caller to reduce it themselves. They each did it slightly
+   differently, and none of them could answer the one question somebody
+   watching a run actually asks: how far along is it.
+
+   That question got harder, not easier, when steps started running in
+   parallel (B1.3): "which step is running" no longer has one answer, so a
+   client counting on a single current step now shows an arbitrary one of
+   several. Counts are the honest shape.
+
+   Pure — no database, no request. */
+export function runProgress(stepState = {}) {
+  const steps = Object.entries(stepState || {}).map(([id, s]) => ({ id, status: s?.status || "pending" }));
+  const total = steps.length;
+  const count = (status) => steps.filter((s) => s.status === status).length;
+
+  const completed = count("completed");
+  const failed = count("failed");
+  const running = steps.filter((s) => s.status === "running").map((s) => s.id);
+
+  return {
+    total,
+    completed,
+    failed,
+    running: running.length,
+    pending: count("pending"),
+    // The ids, plural and in graph order, because with parallel steps there
+    // is no such thing as "the" current one.
+    runningStepIds: running,
+    // Whole percent, and never 100 until it genuinely is: a run showing
+    // 100% while a step is still at a provider is the most annoying
+    // possible lie for somebody deciding whether to wait.
+    percent: total === 0 ? 0 : Math.min(completed === total ? 100 : 99, Math.round((completed / total) * 100)),
+  };
+}
