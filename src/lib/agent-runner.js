@@ -71,6 +71,7 @@ import { assembleVideos } from "./video-assembly.js";
 import { renderTitleCard, overlayTitles } from "./title-render.js";
 import { titleLines, titleDuration } from "./title-step.mjs";
 import { renderFinalCut } from "./final-cut.js";
+import { runProductionStep } from "./production-step.js";
 import { chainStepIfNeeded } from "./video-chain.js";
 import { log } from "./log.js";
 import { injectEntities, purposeForStep } from "./entity-inject.js";
@@ -904,6 +905,14 @@ export async function executeInternalJob(payload) {
       });
     outputUrl = result.url;
     output = result.url;
+  } else if (kind === "production") {
+    /* A film, not a montage — see production-step.js. Builds the project
+       and its shot list from the screenplay the agent wrote; deliberately
+       does NOT render, because the render's cost cannot be quoted before
+       the breakdown exists and this run's reservation is already fixed. */
+    const built = await runProductionStep(params, { userId: run.userId });
+    output = JSON.stringify(built);
+    outputUrl = built.url;
   } else if (kind === "export") {
     output = buildExportResult(params, prevOutputs, step.task);
     outputUrl = output.url || null;

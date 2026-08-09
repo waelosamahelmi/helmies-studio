@@ -9,6 +9,7 @@ import prisma from "./prisma.js";
 import { ALIBABA_MEDIA_MODELS } from "./alibaba-catalog.js";
 import {
   calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput,
+  isPlaceholderPricing,
   modelTypeForCapability, UNCATEGORIZED_MODEL_TYPE, slugToTitle, toPublicModelId, resolveModelPricingRow,
   inferCapabilityFromRow, sanitizeCatalogDescription, sanitizeDisplayName,
   isRunnableModelRow, runnableProviderModelId, requiresMediaInput,
@@ -276,10 +277,33 @@ export async function quoteCatalogModel(modelId, params = {}) {
   const errors = validateModelInput(row.inputSchema, params);
   if (errors.length) return { valid: false, errors };
   if (!row.pricingRules) throw new Error("Model has no verified pricing");
-  const quote = calculateProviderQuote(row.pricingRules, params);
   const config = await prisma.providerConfig.findUnique({ where: { name: row.providerName } }).catch(() => null);
   const markup = config?.markup || DEFAULT_MARKUP;
-  return { valid: true, modelId, provider: row.providerName, ...quote, markup, credits: providerCostToCredits(quote.providerCost, markup) };
+
+  /* The row's own stored price wins over a placeholder rule — see
+     isPlaceholderPricing for the audit that made this necessary. Quoting
+     from the rule charged 42x too little for Veo 3 and 12x too much for a
+     video upscale, and the quote is what the user is shown AND billed. */
+  if (isPlaceholderPricing(row.pricingRules, row.providerCost)) {
+    return {
+      valid: true,
+      modelId,
+      provider: row.providerName,
+      providerCost: row.providerCost,
+      currency: "USD",
+      unit: "fixed",
+      unitPrice: row.providerCost,
+      quantity: 1,
+      multiplier: 1,
+      matchedRule: null,
+      pricingSource: "stored",
+      markup,
+      credits: row.creditsCost > 0 ? row.creditsCost : providerCostToCredits(row.providerCost, markup),
+    };
+  }
+
+  const quote = calculateProviderQuote(row.pricingRules, params);
+  return { valid: true, modelId, provider: row.providerName, ...quote, pricingSource: "rules", markup, credits: providerCostToCredits(quote.providerCost, markup) };
 }
 
 // ── Runnable-model resolution (URGENT production fix) ──────────────────────

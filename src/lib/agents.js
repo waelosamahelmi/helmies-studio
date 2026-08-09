@@ -12,6 +12,7 @@ import { assembleVideos } from "@/lib/video-assembly";
 import { renderTitleCard, overlayTitles } from "@/lib/title-render";
 import { titleLines, titleDuration } from "@/lib/title-step.mjs";
 import { renderFinalCut } from "@/lib/final-cut";
+import { runProductionStep } from "@/lib/production-step";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind, requiresMediaInput } from "@/lib/model-catalog-core.mjs";
 import {
@@ -874,7 +875,7 @@ export async function buildHeuristicPlan(userMessage, context = {}) {
 }
 
 // ── Execute a single step ──
-export async function executeStep(step, previousOutputs = []) {
+export async function executeStep(step, previousOutputs = [], options = {}) {
   const { agent, params } = step;
 
   let resolvedParams = { ...params };
@@ -919,6 +920,8 @@ export async function executeStep(step, previousOutputs = []) {
       return await executeVoiceoverStep(resolvedParams);
     case "title":
       return await executeTitleStep(resolvedParams, previousOutputs);
+    case "production":
+      return JSON.stringify(await runProductionStep(resolvedParams, { userId: options.userId }));
     case "assembly":
       return await executeAssemblyStep(resolvedParams, previousOutputs);
     case "export":
@@ -1287,7 +1290,7 @@ async function getFallbackModels(agentKind, excludeModelIds = [], limit = 2) {
 // instead of wasting a real provider call on something guaranteed to fail.
 // If NO runnable model exists for this capability at all, the step fails
 // immediately with a clear, actionable error instead of a raw provider 500.
-export async function executeStepWithRetry(step, previousOutputs, attempt = 0, budget = null) {
+export async function executeStepWithRetry(step, previousOutputs, attempt = 0, budget = null, options = {}) {
   const agentKind = normalizeAgentKey(step.agent);
   const originalModel = step.params?.model || step.params?._modelId || null;
   const ceiling = budget && typeof budget.max === "number" ? budget.max : null;
@@ -1346,7 +1349,7 @@ export async function executeStepWithRetry(step, previousOutputs, attempt = 0, b
     }
 
     try {
-      const output = await executeStep(candidate.step, previousOutputs);
+      const output = await executeStep(candidate.step, previousOutputs, options);
       return { output, credits, model: candidate.step.params?.model || null };
     } catch (error) {
       if (!firstError) firstError = error;

@@ -103,6 +103,53 @@ function quantityForUnit(unit, params) {
   }
 }
 
+/* Is this pricing block a real schedule, or a placeholder?
+   ────────────────────────────────────────────────────────────────────────
+   Audited against production on 2026-08-09: 60 of 134 active models carried
+   a SINGLE flat rule whose price disagreed with the row's own measured
+   providerCost — and the rule wins, so the rule is what gets charged.
+
+   The disagreements were not small and they ran both ways:
+
+     generate-veo-3-video    cost $1.28   rule $0.03   →  42x UNDER-charged
+     topaz/video-upscale     cost $0.025  rule $0.30   →  12x OVER-charged
+
+   The tell is that the "prices" repeat: 0.03, 0.04 and 0.30 appear across
+   dozens of unrelated models of wildly different cost. They are seed
+   defaults from a catalog import, not quotes anybody measured. providerCost
+   and creditsCost, meanwhile, agree with each other at a steady ~250 credits
+   per dollar across the whole catalog — those are the real numbers.
+
+   So a single flat rule that contradicts the measured cost is treated as
+   what it is: not a price. Genuine schedules — several rules, per-second or
+   per-megapixel units, `when` conditions — are untouched, because those are
+   the ones somebody actually wrote.
+
+   `fixed`-unit only: a per-unit rule's price is not comparable to a whole
+   generation's cost, so it is never judged this way. */
+export function isPlaceholderPricing(pricing, providerCost) {
+  if (!Number.isFinite(Number(providerCost)) || Number(providerCost) <= 0) return false;
+  const rules = pricing?.rules;
+  if (!Array.isArray(rules) || rules.length !== 1) return false;
+  const rule = rules[0];
+  if (rule?.when && Object.keys(rule.when).length) return false;
+  const unit = rule?.unit || pricing?.unit || "fixed";
+  // "image" is what the importer wrote for a whole generation; both it and
+  // "fixed" mean one price for one run.
+  if (unit !== "fixed" && unit !== "image") return false;
+  const price = Number(rule?.price);
+  if (!Number.isFinite(price) || price <= 0) return false;
+
+  /* Judged as a RATIO, not in cents. A placeholder is wrong by a factor —
+     the real ones run from 1.3x to 42x — while an honest row can round a
+     third of a cent ($0.035 stored against a $0.03 rule) and mean the same
+     thing. An absolute threshold either lets a 1.3x error through or
+     rewrites a rounding difference as a pricing bug. */
+  const cost = Number(providerCost);
+  const ratio = Math.max(price, cost) / Math.min(price, cost);
+  return ratio > 1.25;
+}
+
 export function calculateProviderQuote(pricing, params = {}) {
   if (!pricing || !Array.isArray(pricing.rules) || !pricing.rules.length) {
     throw new Error("Model has no verified pricing rules");

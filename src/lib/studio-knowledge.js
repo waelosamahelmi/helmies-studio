@@ -26,7 +26,7 @@ import { shotDurationLimits } from "./project-models.mjs";
    this file unloadable under plain node and quietly bar the digest from
    ever being used anywhere near the worker. The copy is kept honest by
    tests/unit/studio-knowledge.test.mjs, which fails if the two disagree. */
-const FREE_STEPS = { assembly: 5, export: 0, storyboard: 0, title: 1 };
+const FREE_STEPS = { assembly: 5, export: 0, storyboard: 0, title: 1, production: 0 };
 
 
 /* Catalogue reads are the same for every user and change when a sync runs,

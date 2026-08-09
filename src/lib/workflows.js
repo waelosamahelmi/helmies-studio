@@ -147,7 +147,7 @@ export async function executeWorkflow(workflowId, userId, inputs = {}) {
         // -aware form added for agent runs) — unwrap it, or the raw object
         // lands in `outputs` and every later $STEP_N_OUTPUT interpolates as
         // "[object Object]".
-        const { output } = await executeStepWithRetry(step, outputs, 0);
+        const { output } = await executeStepWithRetry(step, outputs, 0, null, { userId });
         outputs.push(output);
         stepResults.push({ step: i + 1, agent: step.agent, status: "completed", output: typeof output === "string" ? output.slice(0, 500) : output });
         await checkpoint();
@@ -222,7 +222,7 @@ export async function regenerateStep(workflowId, userId, stepIndex, newParams = 
   try {
     // Same fallback chain as a full run — rerunning one step is the user's
     // answer to a step that failed, so it is exactly where retries matter.
-    const { output } = await executeStepWithRetry(step, priorOutputs, 0);
+    const { output } = await executeStepWithRetry(step, priorOutputs, 0, null, { userId });
     await settleReservation(userId, jobId, stepCost).catch(() => {});
     await syncLegacyCredits(userId);
     return { success: true, output, creditsUsed: stepCost };

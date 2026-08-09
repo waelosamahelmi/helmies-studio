@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { calculateProviderQuote, providerCostToCredits, resolveModelPricingRow } from "@/lib/model-catalog-core.mjs";
+import { calculateProviderQuote, providerCostToCredits, resolveModelPricingRow, isPlaceholderPricing } from "@/lib/model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
 const CREDIT_TO_EUR = 0.01;
@@ -41,7 +41,7 @@ async function resolveMarkup(providerName) {
 // `title` renders typography with ffmpeg — no provider, no model, so it is
 // priced like assembly rather than quoted from a catalog row. Cheaper than
 // assembly because it encodes seconds rather than minutes.
-export const NON_PROVIDER_STEP_CREDITS = { assembly: 5, export: 0, storyboard: 0, title: 1 };
+export const NON_PROVIDER_STEP_CREDITS = { assembly: 5, export: 0, storyboard: 0, title: 1, production: 0 };
 
 // ── Estimate credits for a task before execution ──
 export async function estimateCredits(tool, model, params = {}) {
@@ -53,7 +53,13 @@ export async function estimateCredits(tool, model, params = {}) {
   // hands back to clients — see resolveModelPricingRow's header.
   const pricing = await resolveModelPricingRow(prisma, model).catch(() => null);
   if (pricing) {
-    if (pricing.pricingRules) {
+    /* A single flat rule that contradicts the row's measured providerCost is
+       a seed default, not a price — see isPlaceholderPricing. Sixty of the
+       catalog's 134 active rows carried one, and because the rule wins, the
+       rule is what got charged: 42x under on Veo 3, 12x over on the Topaz
+       upscaler. Skipping it here falls through to creditsCost, which agrees
+       with providerCost across the whole catalog. */
+    if (pricing.pricingRules && !isPlaceholderPricing(pricing.pricingRules, pricing.providerCost)) {
       try {
         const quote = calculateProviderQuote(pricing.pricingRules, params);
         const markup = await resolveMarkup(pricing.providerName);
