@@ -13,6 +13,7 @@ import { audioSubmitPath, audioPollPath, formatAudioRequest, parseSunoPoll, pars
 import { imageSubmitPath, imagePollPath, formatImageRequest, parseImagePoll } from "./image-payload-core.mjs";
 import { videoSubmitPath, videoPollTarget, formatVideoRequest, parseVideoPoll } from "./video-payload-core.mjs";
 import { log } from "./log.js";
+import { DEFAULT_LLM, llmModel, resolveLlm } from "./llm-models.mjs";
 
 const BRANDED_ERRORS = {
   rate_limit: "Too many requests. Please wait a moment and try again.",
@@ -286,18 +287,56 @@ export const PROVIDERS = {
   },
 };
 
+/* The LLM the agent thinks with.
+   ────────────────────────────────────────────────────────────────────────
+   The registry lives in llm-models.mjs, along with the fact that decides
+   this whole design: every DeepSeek model is TEXT-ONLY. The old default was
+   one, which was harmless while the agent only read and wrote text and
+   became silently wrong the moment somebody attached a photograph — the
+   model never received it and answered about it anyway.
+
+   resolveModelFor therefore takes what the CALL needs, not just what the
+   caller asked for, and substitutes a model that can actually take it. */
 const LLM_PROVIDER = {
   baseUrl: "https://openrouter.ai/api/v1",
   getKey: () => process.env.OPENROUTER_KEY,
-  defaultModel: "deepseek/deepseek-v4-flash",
-  models: {
-    "gemini-2.5-flash": "deepseek/deepseek-v4-flash",
-    "gemini-2.5-flash-openai": "deepseek/deepseek-v4-flash",
-    "gemini-2.5-pro": "deepseek/deepseek-v4-flash",
-    "google/gemini-2.5-flash-openai": "deepseek/deepseek-v4-flash",
-    "google/gemini-3.6-flash": "deepseek/deepseek-v4-flash",
+  get defaultModel() {
+    // An env override is honoured only if the registry knows it; an unknown
+    // id would be a guess about modality, and guessing is what this fixes.
+    const override = process.env.LLM_MODEL;
+    return override && llmModel(override) ? override : DEFAULT_LLM;
   },
 };
+
+/* What modalities a message list actually carries.
+   OpenAI-shaped content parts: a string is text; an array may hold
+   image_url / input_audio / file parts. */
+export function messageModalities(messages = []) {
+  const found = new Set(["text"]);
+  for (const m of messages) {
+    if (!Array.isArray(m?.content)) continue;
+    for (const part of m.content) {
+      if (part?.type === "image_url") found.add("image");
+      else if (part?.type === "input_audio") found.add("audio");
+      else if (part?.type === "file") found.add("file");
+      else if (part?.type === "video_url") found.add("video");
+    }
+  }
+  return [...found];
+}
+
+function resolveModelFor(messages, options) {
+  const requested = options.model || LLM_PROVIDER.defaultModel;
+  const needs = options.needs || messageModalities(messages);
+  const { id, substituted, missing } = resolveLlm(requested, { needs, fallback: LLM_PROVIDER.defaultModel });
+  if (substituted) {
+    // Loud, because the alternative is an answer about an image nobody sent.
+    try {
+      log.info("llm_model_substituted", { requested: substituted, used: id, missing });
+    } catch { /* logging must never take a completion down */ }
+  }
+  return id;
+}
 
 export const DEFAULT_PROVIDER = "kie";
 
@@ -667,7 +706,7 @@ export async function llmComplete(messages, options = {}) {
   const p = LLM_PROVIDER;
   const key = p.getKey();
   if (!key) throw new Error("OPENROUTER_KEY not configured");
-  const modelId = p.models[options.model] || p.defaultModel;
+  const modelId = resolveModelFor(messages, options);
 
   const res = await fetch(`${p.baseUrl}/chat/completions`, {
     method: "POST",
@@ -711,7 +750,7 @@ export async function llmStream(messages, options = {}) {
   const p = LLM_PROVIDER;
   const key = p.getKey();
   if (!key) throw new Error("OPENROUTER_KEY not configured");
-  const modelId = p.models[options.model] || p.defaultModel;
+  const modelId = resolveModelFor(messages, options);
 
   const res = await fetch(`${p.baseUrl}/chat/completions`, {
     method: "POST",

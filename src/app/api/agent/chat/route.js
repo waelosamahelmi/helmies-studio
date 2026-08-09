@@ -8,6 +8,8 @@ import { buildChatSystemPrompt, parseQuestionBlock, parseAssetRequestBlock } fro
 import { appendMessage, resolveOwnedSession } from "@/lib/agent-sessions";
 import prisma from "@/lib/prisma";
 import { getRunnableModelsForType } from "@/lib/model-catalog";
+import { studioCapabilities } from "@/lib/studio-knowledge";
+import { buildUserParts, contentText } from "@/lib/agent-multimodal.mjs";
 import { runnableProviderModelId, audioKind } from "@/lib/model-catalog-core.mjs";
 import { resolveMentionRows } from "@/lib/agents";
 
@@ -183,7 +185,15 @@ export async function POST(req) {
     // The client sends the full history; only the FINAL user message is new.
     const last = messages[messages.length - 1];
     if (sessionId && last?.role === "user" && typeof last.content === "string" && last.content.trim()) {
-      await appendMessage(sessionId, { role: "user", kind: "text", content: last.content }).catch(() => {});
+      // The transcript records WHAT WAS ATTACHED, not just what was typed —
+      // a resumed session that shows the sentence but not the photograph
+      // reads as though the user never sent one.
+      const noted = Array.isArray(body.attachments) && body.attachments.length
+        ? `${last.content}
+
+[Attached: ${body.attachments.map((a) => a?.name || a?.url).filter(Boolean).join(", ")}]`
+        : last.content;
+      await appendMessage(sessionId, { role: "user", kind: "text", content: noted }).catch(() => {});
     }
 
     const selectedModel = model || process.env.LLM_MODEL || "deepseek/deepseek-v4-flash";
@@ -201,15 +211,37 @@ export async function POST(req) {
     // real price) so the assistant's confirmation and the plan's pin can
     // never disagree.
     const resolved = await resolveChatModelMention(messages);
-    const [modelOptions, inventory] = await Promise.all([chatModelOptions(), chatInventory(user.id)]);
-    const systemPrompt = buildChatSystemPrompt({ modelOptions, inventory }) +
+    const [modelOptions, inventory, capabilities] = await Promise.all([
+      chatModelOptions(), chatInventory(user.id), studioCapabilities(),
+    ]);
+    const systemPrompt = buildChatSystemPrompt({ modelOptions, inventory }) + capabilities +
       (resolved
         ? `\n\n<resolved-model>\nThe user's most recent model mention resolves to:\n- kind: ${resolved.kind}\n- exact id: ${resolved.modelId}\n- price: ${resolved.credits} cr\n${resolved.exact ? "This is an exact catalog match." : "This is the closest available model — confirm it with the user before proceeding."}\n</resolved-model>`
         : "");
 
+    /* Attachments become CONTENT PARTS on the newest user turn.
+       ────────────────────────────────────────────────────────────────────
+       The attach button has existed for a long time and never did anything:
+       the client sent the urls, no server code read them, and the model was
+       handed a plain string. It then answered about the picture anyway,
+       from the filename and the sentence around it, and nothing said it had
+       not looked. Sending them as parts is the whole fix — and providers.js
+       substitutes a model that can actually see when the chosen one cannot,
+       because a blind model receiving image parts is the same silence with
+       extra steps. */
+    const attachments = Array.isArray(body.attachments) ? body.attachments : [];
+    const baseUrl = process.env.NEXTAUTH_URL || "https://studio.helmies.fi";
+    const mapped = messages.map((m, i) => {
+      const isLast = i === messages.length - 1;
+      if (!isLast || m.role !== "user" || !attachments.length) {
+        return { role: m.role, content: m.content };
+      }
+      return { role: m.role, content: buildUserParts(contentText(m.content) || m.content, attachments, { baseUrl }) };
+    });
+
     const allMessages = [
       { role: "system", content: systemPrompt },
-      ...messages.map((m) => ({ role: m.role, content: m.content })),
+      ...mapped,
     ];
 
     // OpenRouter exposes an OpenAI-compatible /chat/completions endpoint.

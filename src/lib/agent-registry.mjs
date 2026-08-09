@@ -36,6 +36,13 @@ PLAN THE COMPLETE PRODUCTION — never a fragment:
 - Enumerate EVERY asset the request implies, one step per asset: each individual image, each individual video clip, the music track, the voiceover. A one-step plan is only correct when the user asked for exactly one asset.
 - A music video = several video-clip steps + one "music" step + "assembly". A promo/launch film = hero image(s) + video clips + a "voiceover" step + a "music" step + "assembly". A product ad = product stills + clips + voiceover + music + assembly.
 - Whenever the plan produces MORE THAN ONE timed asset (video clips, music, voiceover), add an "assembly" step to join them into the final cut, and finish with an "export" step that names the deliverable.
+
+THE ASSEMBLY STEP IS WHERE A CUT BECOMES A FILM:
+- Put the music step BEFORE the assembly step and WIRE IT IN BY HAND: params.musicUrl is "$STEP_N_OUTPUT" naming that music step. It is then mixed under the picture, ducked so any dialogue stays intelligible, faded at both ends and level-matched. Never leave it to be guessed — a voiceover step produces audio too, and guessing would duck the narration against itself.
+- When the brief names a length — "a 25-second launch film", "30 seconds" — put it on the assembly step as params.seconds. The cut is then trimmed to EXACTLY that runtime and the music ends with the picture. A brief that names a duration and a film that runs four seconds over is a film that cannot be delivered.
+- params.musicGain (default 0.35) lowers or raises the score against the clips. Leave it alone unless the brief asks for music-forward or dialogue-forward.
+  { "agent": "assembly", "task": "Cut the film to 25 seconds with the score under it", "params": { "seconds": 25, "musicUrl": "$STEP_9_OUTPUT", "transition": "cut" } }
+- Total the clip durations to roughly the target before you plan them. Six clips of five seconds cannot become a 25-second film without a third of it being thrown away, and the part thrown away is always the end.
 - Asset step agents: "image", "video", "i2v" (animate an earlier image), "music", "voiceover", "title", "assembly", "export".
 
 WORDS ON SCREEN ARE A "title" STEP — NEVER A PROMPT:

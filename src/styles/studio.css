@@ -3555,3 +3555,91 @@ select.st-layer__role option {
 @media (prefers-reduced-motion: reduce) {
   .st-shot__frame.is-working { animation: none; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ASSET REQUEST CARD — the agent asking for a face, a product, a logo
+   ══════════════════════════════════════════════════════════════════════════ */
+.st-assets {
+  display: flex; flex-direction: column; gap: var(--s-3);
+  padding: var(--s-4); margin-top: var(--s-3);
+  border: 1px solid var(--line-accent); border-radius: var(--r-3);
+  background: var(--filament-a08);
+}
+.st-assets__intro { font-size: var(--t-base); font-weight: 600; color: var(--tx); }
+.st-assets__list { display: flex; flex-direction: column; gap: var(--s-4); margin: 0; padding: 0; list-style: none; }
+.st-assets__slot { display: flex; flex-direction: column; gap: var(--s-2); }
+.st-assets__head { display: flex; align-items: baseline; gap: var(--s-2); flex-wrap: wrap; }
+.st-assets__head strong { font-size: var(--t-sm); color: var(--tx); }
+.st-assets__opt {
+  font-size: var(--t-xs); color: var(--tx-mute); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.st-assets__hint { font-size: var(--t-sm); color: var(--tx-dim); line-height: 1.5; }
+.st-assets__pick, .st-assets__name, .st-assets__describe { display: flex; flex-direction: column; gap: var(--s-1); }
+.st-assets__describe-label { font-size: var(--t-xs); color: var(--tx-mute); }
+.st-assets__describe textarea { resize: vertical; min-height: 3.2em; line-height: 1.5; font-family: inherit; }
+.st-assets__drop { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.st-assets__count { font-size: var(--t-xs); color: var(--signal); }
+.st-assets__actions { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.st-assets__pending { font-size: var(--t-xs); color: var(--tx-mute); }
+.st-assets--done { border-color: var(--line); background: var(--fill-01); }
+
+/* Hold-to-talk: the button itself is the level meter, so a dead microphone
+   is visibly dead rather than indistinguishable from silence. */
+.st-ptt--live {
+  position: relative;
+  box-shadow: 0 0 0 calc(var(--level, 0) * 10px) var(--filament-a24);
+  transition: box-shadow 90ms linear;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CALL
+   ══════════════════════════════════════════════════════════════════════════ */
+.st-call {
+  position: fixed; inset: 0; z-index: 90;
+  display: grid; place-items: center;
+  background: rgba(4, 4, 8, 0.92);
+  backdrop-filter: blur(18px);
+  animation: st-call-in 180ms ease-out;
+}
+@keyframes st-call-in { from { opacity: 0; } to { opacity: 1; } }
+.st-call__inner {
+  display: flex; flex-direction: column; align-items: center; gap: var(--s-5);
+  width: min(30rem, 92vw); padding: var(--s-6) var(--s-5);
+  text-align: center;
+}
+.st-call__head { display: flex; flex-direction: column; gap: var(--s-1); }
+.st-call__who { font-family: var(--ff-display); font-size: var(--t-lg); color: var(--tx); }
+.st-call__clock { font-family: var(--ff-mono); font-size: var(--t-sm); color: var(--tx-mute); font-variant-numeric: tabular-nums; }
+
+.st-call__orb-wrap { display: flex; flex-direction: column; align-items: center; gap: var(--s-3); }
+/* One object that breathes with whoever is speaking — the only thing on
+   screen that says the line is live. */
+.st-call__orb {
+  width: 8.5rem; height: 8.5rem; border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, var(--filament-lit), var(--filament-deep) 70%);
+  transform: scale(calc(0.86 + var(--level, 0) * 0.22));
+  box-shadow: 0 0 calc(28px + var(--level, 0) * 70px) var(--filament-a40);
+  transition: transform 110ms ease-out, box-shadow 110ms ease-out;
+}
+.st-call__orb--out { background: radial-gradient(circle at 50% 45%, #7ad7ff, #1f6f9c 70%); box-shadow: 0 0 calc(28px + var(--level, 0) * 70px) rgba(122,215,255,0.35); }
+.st-call__state { font-size: var(--t-sm); color: var(--tx-dim); letter-spacing: 0.04em; }
+.st-call__heard { font-size: var(--t-sm); color: var(--tx); max-width: 26rem; line-height: 1.5; }
+
+.st-call__log {
+  display: flex; flex-direction: column; gap: var(--s-2);
+  margin: 0; padding: 0; list-style: none;
+  width: 100%; max-height: 11rem; overflow-y: auto; text-align: left;
+}
+.st-call__line { font-size: var(--t-sm); line-height: 1.5; padding: var(--s-2) var(--s-3); border-radius: var(--r-2); }
+.st-call__line--user { background: var(--fill-02); color: var(--tx); }
+.st-call__line--agent { background: var(--filament-a08); color: var(--tx-dim); }
+
+.st-call__controls { display: flex; gap: var(--s-2); flex-wrap: wrap; justify-content: center; }
+.st-call__end { min-width: 7rem; }
+.st-call__note { display: inline-flex; align-items: center; gap: var(--s-2); font-size: var(--t-xs); color: var(--tx-mute); }
+
+@media (prefers-reduced-motion: reduce) {
+  .st-call { animation: none; }
+  .st-call__orb { transition: none; transform: none; }
+  .st-ptt--live { transition: none; }
+}

@@ -309,6 +309,18 @@
     "notes": "2026-08-09 asset requests: accepts a filled ```asset-request card and files each slot as the thing it is - a StudioEntity with the uploads as references, the brand kit's logo, or a voice reference on the character it belongs to. Owner-scoped throughout; every url is re-validated with isAllowedReferenceUrl because 'the client sent it back' is not provenance. Spends no credits (no provider is called), but it CREATES rows, so verifyOrigin is wired on POST and the shared '/api/agent' rate-limit key applies. body.sessionId must name an OWNED session or it is a uniform not_found; nothing is written to the session here - the receipt travels back to the client, which sends it as the next chat turn, so exactly one writer persists it."
   },
   {
+    "path": "/api/agent/transcribe",
+    "file": "src/app/api/agent/transcribe/route.js",
+    "methods": [
+      "POST"
+    ],
+    "auth": "user",
+    "originCheck": true,
+    "rateLimit": "/api/agent",
+    "stateChanging": false,
+    "notes": "2026-08-09 push-to-talk and the call: turns a recorded utterance into the words that were said, as one ordinary completion with an input_audio part - the agent's own multimodal model hears it, so there is no separate transcription vendor, key or bill. Writes nothing and spends no credits (charging for a microphone button would make people type instead), but it accepts an upload and calls out to the LLM provider, so verifyOrigin is wired on POST and the shared '/api/agent' rate-limit key applies. Format is checked against an allowlist and the body is capped at 25MB before any provider call."
+  },
+  {
     "path": "/api/agent/chat",
     "file": "src/app/api/agent/chat/route.js",
     "methods": [

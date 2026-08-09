@@ -70,6 +70,7 @@ import { AGENTS, TOOL_AGENT_KEYS, GENERIC_PERSONA_PROMPT } from "./agent-registr
 import { assembleVideos } from "./video-assembly.js";
 import { renderTitleCard, overlayTitles } from "./title-render.js";
 import { titleLines, titleDuration } from "./title-step.mjs";
+import { renderFinalCut } from "./final-cut.js";
 import { chainStepIfNeeded } from "./video-chain.js";
 import { log } from "./log.js";
 import { injectEntities, purposeForStep } from "./entity-inject.js";
@@ -851,6 +852,30 @@ export async function executeInternalJob(payload) {
     if (typeof params?.transition === "string" && params.transition) options.transition = params.transition;
     if (params?.transitionDuration != null) options.transitionDuration = params.transitionDuration;
     outputUrl = await assembleVideos(clips, options);
+
+    /* THE LAST MILE.
+       ────────────────────────────────────────────────────────────────────
+       Joining the clips is not a finished film. A launch film is a fixed
+       length because somebody bought that length; it has one piece of music
+       under it rather than each clip's own room tone; and the music has to
+       end WITH the picture instead of being chopped mid-phrase.
+
+       The score is named explicitly by the plan (params.musicUrl, normally
+       the music step's $STEP_N_OUTPUT) rather than guessed from earlier
+       audio: a voiceover step produces audio too, and guessing would duck
+       the narration against itself and lose the music. With no score and no
+       runtime this is a no-op and the plain assembly stands. */
+    const score = typeof params?.musicUrl === "string" && params.musicUrl ? params.musicUrl : null;
+    const runtime = Number(params?.seconds ?? params?.duration) || null;
+    if (score || runtime) {
+      const finished = await renderFinalCut({
+        videoUrl: outputUrl,
+        musicUrl: score,
+        seconds: runtime,
+        ...(params?.musicGain != null ? { musicGain: Number(params.musicGain) } : {}),
+      });
+      outputUrl = finished.url;
+    }
     output = outputUrl;
   } else if (kind === "title") {
     /* Typography, rendered rather than generated — see title-cards.mjs for

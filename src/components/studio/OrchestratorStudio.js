@@ -15,6 +15,8 @@ import SessionList from "@/components/studio/agent/SessionList";
 import Markdown from "@/components/studio/agent/Markdown";
 import QuestionCard from "@/components/studio/agent/QuestionCard";
 import AssetRequestCard from "@/components/studio/agent/AssetRequestCard";
+import CallScreen from "@/components/studio/agent/CallScreen";
+import { useVoiceInput } from "@/components/studio/agent/useVoice";
 import ThinkingCard from "@/components/studio/agent/ThinkingCard";
 import PlanApproval, { modelsForStep } from "@/components/studio/agent/PlanApproval";
 import StepProgress from "@/components/studio/agent/StepProgress";
@@ -910,7 +912,18 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     try {
       const sid = await ensureSession();
       autoTitle(text);
-      const { res, json } = await openStream("/api/agent/chat", { messages: history, sessionId: sid }, ctrl.signal);
+      const { res, json } = await openStream(
+        "/api/agent/chat",
+        {
+          messages: history,
+          sessionId: sid,
+          // The files travel WITH the turn now. They used to be collected
+          // here and read by nothing on the server, which is why attaching
+          // a photograph had no effect on the reply.
+          ...(attachments.length ? { attachments } : {}),
+        },
+        ctrl.signal,
+      );
 
       let full = "";
       if (json) {
@@ -981,6 +994,73 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
     });
     if (result?.receipt) send(result.receipt, { clearInput: false });
   }, [busy, patch, send]);
+
+  /* ── Voice ─────────────────────────────────────────────────────────────
+     Hold the button, say the thing, let go. The words arrive as an ordinary
+     user message, so everything downstream — the question card, the upload
+     card, the plan — behaves exactly as if they had been typed. */
+  const { recording, transcribing, level: micLevel, error: micError, start: micStart, stop: micStop } =
+    useVoiceInput({ onText: (text) => send(text, { clearInput: false }) });
+
+  const [callOpen, setCallOpen] = useState(false);
+  const [callLog, setCallLog] = useState([]);
+
+  /* A spoken turn.
+     Streams the reply back token by token so the call can start speaking
+     before the sentence is finished, and appends both sides to the ordinary
+     conversation — hanging up must leave a transcript you can act on, not a
+     conversation that happened somewhere else and vanished. */
+  const callTurn = useCallback(async (text, { onToken, onDone, onError } = {}) => {
+    const askId = nextId();
+    const replyId = nextId();
+    setCallLog((prev) => [...prev, { role: "user", text }]);
+    setMessages((prev) => [...prev, { id: askId, role: "user", text }, { id: replyId, role: "agent", text: "" }]);
+
+    const history = [
+      ...messages.filter((m) => m.text).map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.text })),
+      { role: "user", content: text },
+    ];
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    let full = "";
+    try {
+      const sid = await ensureSession();
+      const { res, json } = await openStream(
+        "/api/agent/chat",
+        { messages: history, sessionId: sid, mode: "call", ...(attachments.length ? { attachments } : {}) },
+        ctrl.signal,
+      );
+      if (json) {
+        full = json.content || "";
+        patch(replyId, { text: full });
+        onToken?.(full);
+      } else {
+        await readSSE(res, (event) => {
+          if (event.type === "token" && event.content) {
+            full += event.content;
+            patch(replyId, (m) => ({ ...m, text: m.text + event.content }));
+            onToken?.(event.content);
+          }
+        });
+      }
+      setCallLog((prev) => [...prev, { role: "agent", text: stripPlanReadyBlock(stripAssetRequestBlock(full)) }]);
+
+      /* The same auto-plan signal the typed path honours. Said out loud,
+         "go ahead" has to mean what it means in writing. */
+      const ready = parsePlanReadyBlock(full);
+      if (ready) {
+        onDone?.();
+        await runPlan({ brief: ready.brief || text, history, silent: true });
+        return;
+      }
+      onDone?.();
+    } catch (e) {
+      onError?.(e?.message || "That did not go through.");
+    } finally {
+      abortRef.current = null;
+    }
+  }, [messages, attachments, ensureSession, patch, runPlan]);
 
   /* ── Plan — the manual escape hatch and the revision path ────────────── */
   /* `textOverride` lets a plan-card revision request re-plan without
@@ -1866,6 +1946,34 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
               >
                 <IcUpload className="hs-icon-sm" /> {uploading ? "Uploading…" : "Attach"}
               </button>
+
+              {/* Hold to talk. Pointer events rather than click, so it works
+                  the same under a finger as under a mouse, and `onPointerUp`
+                  is bound on the WINDOW while held — releasing outside the
+                  button must still send, or a slipped thumb loses the turn. */}
+              <button
+                type="button"
+                className={`hs-btn hs-btn--sm ${recording ? "hs-btn--primary st-ptt--live" : "hs-btn--ghost"}`}
+                style={recording ? { "--level": micLevel.toFixed(3) } : undefined}
+                disabled={!!busy || transcribing}
+                onPointerDown={(e) => { e.preventDefault(); micStart(); }}
+                onPointerUp={() => recording && micStop({ send: true })}
+                onPointerLeave={() => recording && micStop({ send: true })}
+                title="Hold to talk"
+                aria-pressed={recording}
+              >
+                {transcribing ? "Hearing…" : recording ? "Listening — let go to send" : "Hold to talk"}
+              </button>
+
+              <button
+                type="button"
+                className="hs-btn hs-btn--ghost hs-btn--sm"
+                onClick={() => setCallOpen(true)}
+                disabled={!!busy}
+                title="Call the studio and talk it through"
+              >
+                Call
+              </button>
             </>
           }
         />
@@ -1908,6 +2016,16 @@ export default function OrchestratorStudio({ templateConfig, onCreditsChanged })
         confirmLabel="Switch"
         danger={false}
       />
+
+      <CallScreen
+        open={callOpen}
+        busy={!!busy}
+        transcript={callLog}
+        onTurn={callTurn}
+        onAttach={(files) => setAttachments((prev) => [...prev, ...files].slice(0, 8))}
+        onClose={() => setCallOpen(false)}
+      />
+
     </div>
   );
 }

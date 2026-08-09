@@ -11,6 +11,7 @@ import { getWallet, debitWallet, refundCredits } from "@/lib/wallet";
 import { assembleVideos } from "@/lib/video-assembly";
 import { renderTitleCard, overlayTitles } from "@/lib/title-render";
 import { titleLines, titleDuration } from "@/lib/title-step.mjs";
+import { renderFinalCut } from "@/lib/final-cut";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind, requiresMediaInput } from "@/lib/model-catalog-core.mjs";
 import {
@@ -22,6 +23,7 @@ import { AGENTS, TOOL_AGENT_KEYS, GENERIC_PERSONA_PROMPT } from "@/lib/agent-reg
 import { isVoiceoverInstruction } from "@/lib/voiceover-guard";
 import { chainStepIfNeeded } from "@/lib/video-chain";
 import { log } from "@/lib/log";
+import { studioCapabilities } from "@/lib/studio-knowledge";
 import prisma from "@/lib/prisma";
 
 // Agent registry lives in src/lib/agent-registry.mjs (shared with the durable
@@ -501,7 +503,7 @@ async function projectHint(context = {}) {
 
 async function requestLlmPlan(userMessage, context = {}) {
   const system = AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context)
-    + (await runnableModelHint(context)) + (await castHint(context))
+    + (await studioCapabilities()) + (await runnableModelHint(context)) + (await castHint(context))
     + (await projectHint(context));
   const user = buildPlanUserContent(userMessage, context);
   try {
@@ -550,7 +552,7 @@ export async function planTaskStream(userMessage, context = {}) {
     // does. It diverged once already, and a plan that knows the cast in one
     // path and not the other is the hardest kind of bug to see.
     { role: "system", content: AGENTS.orchestrator.systemPrompt + sessionDefaultsHint(context)
-        + (await runnableModelHint(context)) + (await castHint(context)) + (await projectHint(context)) },
+        + (await studioCapabilities()) + (await runnableModelHint(context)) + (await castHint(context)) + (await projectHint(context)) },
     { role: "user", content: buildPlanUserContent(userMessage, context) },
   ];
 
@@ -1170,7 +1172,30 @@ async function executeAssemblyStep(params, previousOutputs = []) {
   const options = {};
   if (typeof params?.transition === "string" && params.transition) options.transition = params.transition;
   if (params?.transitionDuration != null) options.transitionDuration = params.transitionDuration;
-  return await assembleVideos(clips, options);
+  const joined = await assembleVideos(clips, options);
+
+  /* The last mile — see agent-runner.js's assembly branch for why joining
+     the clips is not a finished film. Mirrored here so a run on the
+     synchronous path produces the same deliverable as one on the queue. */
+  /* The score is named EXPLICITLY, never guessed.
+     ────────────────────────────────────────────────────────────────────
+     The tempting shortcut is "use whatever audio came earlier". It is
+     wrong: a voiceover step produces audio too, and a plan with both would
+     duck the narration against itself and drop the music entirely. So the
+     plan wires the music step's output in by hand ($STEP_N_OUTPUT), which
+     is a token the runner already resolves, and a plan that does not ask
+     for a score simply does not get one. */
+  const score = typeof params?.musicUrl === "string" && params.musicUrl ? params.musicUrl : null;
+  const runtime = Number(params?.seconds ?? params?.duration) || null;
+  if (!score && !runtime) return joined;
+
+  const finished = await renderFinalCut({
+    videoUrl: joined,
+    musicUrl: score,
+    seconds: runtime,
+    ...(params?.musicGain != null ? { musicGain: Number(params.musicGain) } : {}),
+  });
+  return finished.url;
 }
 
 // Export — the closing step. Costs nothing and generates nothing: it names
