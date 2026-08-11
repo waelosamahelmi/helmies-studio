@@ -325,7 +325,15 @@ export function messageModalities(messages = []) {
   return [...found];
 }
 
-function resolveModelFor(messages, options) {
+/* Exported because llmComplete is NOT the only way a completion leaves this
+   app: src/app/api/agent/chat/route.js streams, so it builds its own fetch
+   against /chat/completions rather than calling llmComplete. That second path
+   used the caller's model verbatim, which meant attaching a photograph to a
+   chat whose model was text-only sent image parts to a model that cannot take
+   them — OpenRouter 404s "No endpoints found that support image input" and the
+   user gets a 500. Any path that sends messages to the LLM resolves the model
+   through here first. */
+export function resolveModelFor(messages, options = {}) {
   const requested = options.model || LLM_PROVIDER.defaultModel;
   const needs = options.needs || messageModalities(messages);
   const { id, substituted, missing } = resolveLlm(requested, { needs, fallback: LLM_PROVIDER.defaultModel });

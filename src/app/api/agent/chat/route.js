@@ -1,6 +1,6 @@
 import { getCurrentUser } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
-import { llmComplete, brandError } from "@/lib/providers";
+import { llmComplete, brandError, resolveModelFor } from "@/lib/providers";
 import { apiError } from "@/lib/api-error";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
@@ -196,7 +196,14 @@ export async function POST(req) {
       await appendMessage(sessionId, { role: "user", kind: "text", content: noted }).catch(() => {});
     }
 
-    const selectedModel = model || process.env.LLM_MODEL || "deepseek/deepseek-v4-flash";
+    /* No hardcoded fallback id here. This line used to end in
+       "deepseek/deepseek-v4-flash" — the studio's PREVIOUS default, which
+       llm-models.mjs records as text-only ("cannot see or hear"). Leaving
+       the model undefined lets resolveModelFor fall through to
+       LLM_PROVIDER.defaultModel, which honours LLM_MODEL only when the
+       registry knows the id and otherwise uses DEFAULT_LLM. An unvalidated
+       env string is a guess about modality, and guessing is the bug. */
+    const selectedModel = model || undefined;
     const key = process.env.OPENROUTER_KEY;
 
     if (!key) {
@@ -225,8 +232,8 @@ export async function POST(req) {
        the client sent the urls, no server code read them, and the model was
        handed a plain string. It then answered about the picture anyway,
        from the filename and the sentence around it, and nothing said it had
-       not looked. Sending them as parts is the whole fix — and providers.js
-       substitutes a model that can actually see when the chosen one cannot,
+       not looked. Sending them as parts is the whole fix — and the model is
+       then resolved against what the parts NEED (see resolveModelFor below),
        because a blind model receiving image parts is the same silence with
        extra steps. */
     const attachments = Array.isArray(body.attachments) ? body.attachments : [];
@@ -244,6 +251,18 @@ export async function POST(req) {
       ...mapped,
     ];
 
+    /* The model has to be able to take what we are about to send it.
+       ────────────────────────────────────────────────────────────────────
+       buildUserParts above may have just turned this turn into image parts.
+       The default chat model is text-only, and OpenRouter answers a text-only
+       model carrying an image with 404 "No endpoints found that support image
+       input" — which arrived here as a 500 and told the user nothing.
+       resolveModelFor reads the modalities actually present in the messages
+       and substitutes the cheapest model that covers them, logging the swap.
+       llmComplete does this internally; this streaming path builds its own
+       request, so it has to ask explicitly. */
+    const streamModel = resolveModelFor(allMessages, { model: selectedModel });
+
     // OpenRouter exposes an OpenAI-compatible /chat/completions endpoint.
     // KIE is async task-only (media generation) and has no chat endpoint.
     const streamRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -255,7 +274,7 @@ export async function POST(req) {
         "X-Title": "Helmies Studio",
       },
       body: JSON.stringify({
-        model: selectedModel,
+        model: streamModel,
         messages: allMessages,
         temperature: 0.7,
         max_tokens: 2000,
