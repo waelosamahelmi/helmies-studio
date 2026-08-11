@@ -1,8 +1,13 @@
-import { llmComplete, resolveProvider } from "@/lib/providers";
-import { estimateCredits } from "@/lib/pricing-engine";
-import prisma from "@/lib/prisma";
-import { newErrorId } from "@/lib/api-error";
-import { SECTION_VISUAL_STRATEGY, PRODUCTION_TYPE_PRESETS } from "@/lib/director-constants";
+// Imports are RELATIVE with explicit extensions, not the "@/..." alias: the
+// worker (scripts/worker.mjs, plain node) reaches this module through
+// screenplay-breakdown.js, and node cannot resolve the bundler's alias.
+import { llmComplete, resolveProvider } from "./providers.js";
+import { estimateCredits } from "./pricing-engine.js";
+import prisma from "./prisma.js";
+// the id only, NOT api-error.js — that module pulls in "next/server", which
+// the plain-node worker cannot resolve and does not need.
+import { newErrorId } from "./error-id-core.mjs";
+import { SECTION_VISUAL_STRATEGY, PRODUCTION_TYPE_PRESETS } from "./director-constants.js";
 
 export { SECTION_VISUAL_STRATEGY, PRODUCTION_TYPE_PRESETS };
 

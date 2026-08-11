@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import { log } from "@/lib/log";
+// newErrorId lives in a framework-free module so callers that need only an
+// error id (director-planner.js, reached by the plain-node worker) are not
+// forced to load "next/server" behind it. Re-exported here so every existing
+// `import { newErrorId } from "@/lib/api-error"` keeps working.
+import { newErrorId } from "./error-id-core.mjs";
+
+export { newErrorId };
 
 // Helmies Studio — uniform API error envelope (EDITSv1 §10, Task E2.1).
 //
@@ -109,12 +115,6 @@ export const ERROR_CODES = {
     retryable: true,
   },
 };
-
-// 8 chars of a UUID — matches the pre-existing DirectorPlanError id shape
-// (src/lib/director-planner.js), which this generalizes.
-export function newErrorId() {
-  return randomUUID().slice(0, 8);
-}
 
 // Replace {token} placeholders from `vars`. If the TABLE default still has
 // unresolved placeholders afterwards (the route didn't pass the numbers),

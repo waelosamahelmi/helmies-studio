@@ -1,5 +1,7 @@
-import prisma from "@/lib/prisma";
-import { calculateProviderQuote, providerCostToCredits, resolveModelPricingRow, isPlaceholderPricing } from "@/lib/model-catalog-core.mjs";
+// Relative + explicit extension: reached by the plain-node worker through
+// director-planner.js, where the "@/..." bundler alias does not resolve.
+import prisma from "./prisma.js";
+import { calculateProviderQuote, providerCostToCredits, resolveModelPricingRow, isPlaceholderPricing } from "./model-catalog-core.mjs";
 
 const DEFAULT_MARKUP = 2.5;
 const CREDIT_TO_EUR = 0.01;

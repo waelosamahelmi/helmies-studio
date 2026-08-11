@@ -7,15 +7,23 @@
 // it. Same code, one caller more.
 //
 // Spends no credits. The shots cost money when they are rendered.
-import prisma from "@/lib/prisma";
-import { llmComplete } from "@/lib/providers";
+//
+// Every local import below is RELATIVE with an explicit extension, not the
+// app's "@/..." alias. The alias is a Next/Vite bundler feature that plain
+// `node` knows nothing about, and this module is no longer route-only: the
+// agent reaches it through production-step.js, which the PM2 "helmies-worker"
+// process (scripts/worker.mjs) loads under plain node. ESM resolves the whole
+// graph before running a line, so one alias here crash-looped the entire
+// worker at startup — see the header of scripts/worker.mjs for the same rule.
+import prisma from "./prisma.js";
+import { llmComplete } from "./providers.js";
 import {
   SCRIPT_BREAKDOWN_SYSTEM_PROMPT,
   SCRIPT_BREAKDOWN_RETRY_HINT,
   parseScriptBreakdown,
   breakdownSummary,
   coverageWarnings,
-} from "@/lib/script-breakdown.mjs";
+} from "./script-breakdown.mjs";
 import {
   STRUCTURE_SYSTEM_PROMPT,
   SCENE_COVERAGE_RETRY_HINT,
@@ -32,19 +40,19 @@ import {
   keepOffscreenOffscreen,
   tightenDurations,
   attributeSpeakers,
-} from "@/lib/script-breakdown-passes.mjs";
-import { shotDurationLimits } from "@/lib/project-models.mjs";
+} from "./script-breakdown-passes.mjs";
+import { shotDurationLimits } from "./project-models.mjs";
 import {
   breakdownToScenes,
   castFromBreakdown,
   matchExistingEntities,
-} from "@/lib/project-breakdown.mjs";
+} from "./project-breakdown.mjs";
 import {
   getOwnedProject, normalizeSettings, listScenes,
   breakdownState, setBreakdownState, orderByScreenplay,
-} from "@/lib/projects";
-import { estimateDirectorCost } from "@/lib/director-planner";
-import { log } from "@/lib/log";
+} from "./projects.js";
+import { estimateDirectorCost } from "./director-planner.js";
+import { log } from "./log.js";
 
 /* P1.5 — cut the scenario into scenes and shots.
    ────────────────────────────────────────────────────────────────────────
