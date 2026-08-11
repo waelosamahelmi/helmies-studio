@@ -15,6 +15,7 @@ import { renderFinalCut } from "@/lib/final-cut";
 import { runProductionStep } from "@/lib/production-step";
 import { resolveRunnableModel, getRunnableModelsForType } from "@/lib/model-catalog";
 import { runnableProviderModelId, audioKind, requiresMediaInput } from "@/lib/model-catalog-core.mjs";
+import { canRenderIdentityAngle } from "@/lib/entity-core.mjs";
 import {
   defaultRunnableModelForKind,
   pickSubstituteModel as pickSharedSubstituteModel,
@@ -66,8 +67,21 @@ export function normalizeAgentKey(agent) {
 // the prompt (above) tells the model to pick ONLY from this list.
 async function runnableModelHint(context) {
   try {
-    const [images, videos, audioRows] = await Promise.all([
+    const [images, i2iRows, videos, audioRows] = await Promise.all([
       getRunnableModelsForType("image", { limit: 6 }),
+      // Image-to-image is a SEPARATE pool, not a slice of "image":
+      // modelTypeForCapability maps "text-to-image" -> "image" but
+      // "image-to-image" -> "i2i". Omitting it here was not a cosmetic gap.
+      // The prompt above tells the planner to pick ONLY from this list, so a
+      // step that needed to be shown a photograph — anything carrying
+      // entityIds, or editing a supplied image — had no legal model to pick
+      // and took a text-to-image row instead. The reference photographs were
+      // then silently dropped (imageReferenceSlot returns null for those
+      // rows) and the render came back as a stranger matching the written
+      // description. A wider slice than the other pools because it is
+      // filtered below: the raw i2i pool also holds upscalers and
+      // background removers, which take an image and cannot render a person.
+      getRunnableModelsForType("i2i", { limit: 40 }),
       getRunnableModelsForType("video", { limit: 6 }),
       // A wide audio slice, split by audioKind below: "music" steps need a
       // genuine composer and "voiceover" steps a genuine TTS reader — the
@@ -86,8 +100,19 @@ async function runnableModelHint(context) {
       const ids = rows.map(runnableProviderModelId).filter(Boolean);
       return ids.length ? `- ${label}: ${ids.join(", ")}` : null;
     };
+    // Only rows that can actually render a person FROM a reference. The raw
+    // i2i pool is ordered cheapest-first and its cheapest members are
+    // recraft/crisp-upscale (1cr), topaz/image-upscale (3cr) and
+    // recraft/remove-background (5cr) — all of which take an image and none
+    // of which can put a face in a new frame. Offering them under
+    // "image-to-image" would hand the planner a control that cannot do the
+    // job, which is the same mistake IDENTITY_CAPABILITIES exists to prevent.
+    const editRows = i2iRows
+      .filter((row) => canRenderIdentityAngle({ capability: row.capability, schema: row.inputSchema }))
+      .slice(0, 6);
     const lines = [
       line("image", images),
+      line("image-to-image (REQUIRED for any step with entityIds, or editing a supplied image)", editRows),
       line("video", videos),
       line("music", musicRows),
       line("voiceover", ttsRows),
@@ -375,6 +400,7 @@ async function castHint(context = {}) {
         lines.join("\n"),
         "",
         "When a step shows one of these, put its id in that step's params.entityIds (an array). Their appearance is then supplied from the real reference photographs — do NOT describe them in the prompt, and never invent a competing description, because a written description that disagrees with the reference is what makes a face drift. A step that shows nobody from this list omits entityIds entirely.",
+        "A step that names entityIds MUST choose a model that accepts image input — an image-to-image or image-edit model. A text-to-image model has nowhere to put a photograph: the reference images are dropped, only the written description survives, and the render comes back as a stranger who happens to match the words. If you are replacing or editing somebody in a supplied picture, that is an image-to-image step no matter how it is phrased. Never pair entityIds with a text-to-image model.",
         "A character marked VOICE ON FILE speaks or sings in their own voice when a step names them in entityIds and the chosen model takes a voice reference — put their id on the music or dialogue step too, not just on the shots they appear in.",
       );
     }

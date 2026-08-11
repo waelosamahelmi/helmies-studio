@@ -75,7 +75,10 @@ import { runProductionStep } from "./production-step.js";
 import { chainStepIfNeeded } from "./video-chain.js";
 import { log } from "./log.js";
 import { injectEntities, purposeForStep } from "./entity-inject.js";
-import { imageReferenceSlot, voiceReferenceSlot } from "./entity-core.mjs";
+import {
+  imageReferenceSlot, voiceReferenceSlot,
+  needsImageReference, acceptsImageReference, pickImageCapableSibling,
+} from "./entity-core.mjs";
 import { applyRequiredDefaults } from "./provider-payload-core.mjs";
 import { normalizeSettings } from "./projects.js";
 
@@ -372,7 +375,60 @@ async function enqueueStep(run, step, prevOutputs) {
     const entityIds = Array.isArray(step.params?.entityIds) ? step.params.entityIds : [];
     if (entityIds.length) {
       try {
-        const plannedRow = await resolveRunnableModel(step.params?.model || step.modelPlanned).catch(() => null);
+        let plannedRow = await resolveRunnableModel(step.params?.model || step.modelPlanned).catch(() => null);
+
+        /* A planned model with no image slot would DROP these references.
+           ────────────────────────────────────────────────────────────────
+           injectEntities writes the descriptor block either way, so the
+           request still looks complete while carrying no photograph — the
+           provider then renders a stranger and the step reports success.
+           Correct the model first, so the injection below resolves against a
+           schema that actually has somewhere to put the pictures. Budget is
+           re-checked exactly as resolveStepModel does: a substitute that
+           quotes above the step's approved ceiling is refused, because
+           overspending silently is a worse failure than rendering without
+           the face. */
+        if (plannedRow && !acceptsImageReference(plannedRow)
+            && needsImageReference({ entityIds, params })) {
+          const plannedId = plannedRow.modelId;
+          // The pool is "i2i", NOT the step's own catalog kind: capability
+          // "image-to-image" maps to modelType "i2i", while "text-to-image"
+          // maps to "image" (modelTypeForCapability, model-catalog-core.mjs).
+          // Searching the "image" pool for an image-capable model therefore
+          // returns nothing that takes an image — the two live in different
+          // buckets by construction.
+          const candidates = await getRunnableModelsForType("i2i", { limit: 100 }).catch(() => []);
+          const sibling = pickImageCapableSibling(plannedId, candidates);
+          if (sibling) {
+            const quote = await quoteCatalogModel(sibling.modelId, params).catch(() => null);
+            const credits = quote?.valid ? quote.credits : null;
+            const ceiling = step.creditsQuoted;
+            if (ceiling != null && credits != null && credits > ceiling) {
+              log.warn("agent_entity_model_substitution_too_expensive", {
+                runId: run.id, stepId: step.stepId,
+                planned: plannedId, candidate: sibling.modelId, credits, ceiling,
+              });
+            } else {
+              plannedRow = sibling;
+              params.model = sibling.modelId;
+              if (params.endpoint) params.endpoint = sibling.endpoint || sibling.modelId;
+              step.modelPlanned = sibling.modelId;
+              log.info("agent_entity_model_substituted", {
+                runId: run.id, stepId: step.stepId,
+                planned: plannedId, used: sibling.modelId,
+                reason: "planned model accepts no image reference", entityIds, credits,
+              });
+            }
+          } else {
+            // Nothing capable exists — say so, rather than letting the shot
+            // go out silently faceless.
+            log.warn("agent_entity_references_dropped", {
+              runId: run.id, stepId: step.stepId, planned: plannedId,
+              reason: "no image-capable model available", entityIds,
+            });
+          }
+        }
+
         const injected = await injectEntities({
           prisma,
           userId: run.userId,

@@ -515,6 +515,9 @@ export function selectEntityReferences(entity, { purpose = "default", max = 4 } 
 // never be fed through a generic image_url slot, because those two mean
 // different things to the provider — one is "this is who the person is",
 // the other is "this is the frame you are animating".
+// Ordered by specificity: pickField returns the FIRST match, so a model that
+// exposes both a dedicated reference slot and a generic image array gets the
+// reference one.
 const IMAGE_REFERENCE_FIELDS = [
   { field: "reference_image_urls", multiple: true, defaultMax: 4 },
   { field: "reference_images", multiple: true, defaultMax: 4 },
@@ -522,6 +525,18 @@ const IMAGE_REFERENCE_FIELDS = [
   { field: "image_input", multiple: true, defaultMax: 4 },
   { field: "images_list", multiple: true, defaultMax: 4 },
   { field: "image_urls", multiple: true, defaultMax: 4 },
+  // `input_urls` is what the gpt-image, flux-2 and wan families call their
+  // image array — nine ACTIVE catalog rows, four of them image-to-image
+  // models (gpt-image/1.5-image-to-image, gpt-image-2-image-to-image,
+  // flux-2/pro-image-to-image, flux-2/flex-image-to-image). It was missing
+  // here, so imageReferenceSlot() reported "no image slot" for every one of
+  // them and injectEntities dropped the reference photographs exactly the way
+  // it did for a text-to-image row: descriptor block written, pictures never
+  // sent, a stranger rendered. requiresMediaInput (model-catalog-core.mjs)
+  // has always counted it as a media upload; this list simply had not caught
+  // up. Verified against the live rows: type "array", required, maxItems
+  // 8-16.
+  { field: "input_urls", multiple: true, defaultMax: 4 },
   { field: "image_url", multiple: false, defaultMax: 1 },
 ];
 
@@ -548,6 +563,90 @@ function pickField(schema, candidates) {
 // inventing a field.
 export function imageReferenceSlot(schema) {
   return pickField(schema, IMAGE_REFERENCE_FIELDS);
+}
+
+/* A model that cannot be shown a face should not be asked to draw one.
+   ────────────────────────────────────────────────────────────────────────
+   imageReferenceSlot() returning null is not a neutral fact — it decides
+   whether the reference photographs travel at all. injectEntities still adds
+   the written descriptor block when the slot is null, so the request goes out
+   looking complete: a paragraph describing the person, and no picture of them.
+   The provider renders a stranger, the step reports "succeeded", and the
+   credits are spent.
+
+   That is exactly what happened on a live run: a step carrying entityIds for a
+   character with six reference photographs was planned onto
+   seedream/5-pro-text-to-image (inputModalities ["text"], image slot null),
+   with a prompt that read "Replace the person in the image ... use the
+   provided reference images". No image was sent, because none could be.
+
+   So the mismatch is named here, in the same module that knows what a
+   reference slot IS, and answered the way the LLM path already answers it
+   (see resolveModelFor in providers.js): resolve the model against what the
+   call NEEDS, not merely what was asked for. */
+
+/** Does this step want to show the model a picture? */
+export function needsImageReference({ entityIds = [], params = {} } = {}) {
+  if (Array.isArray(entityIds) && entityIds.length) return true;
+  // A source image already in params counts too: editing/replacing a photo is
+  // an image-to-image task no matter how the step was labelled.
+  return IMAGE_REFERENCE_FIELDS.some(({ field }) => {
+    const v = params?.[field];
+    return Array.isArray(v) ? v.length > 0 : Boolean(v);
+  });
+}
+
+/** Can this catalog row actually receive one? */
+export function acceptsImageReference(row) {
+  return Boolean(imageReferenceSlot(row?.inputSchema));
+}
+
+/* The image-capable sibling of a text-to-image model.
+
+   Scored, not guessed. Provider families name their variants predictably
+   ("seedream/5-pro-text-to-image" -> "seedream/5-pro-image-to-image"), so the
+   literal swap is tried first and wins outright when the catalog has it: it
+   keeps the user on the model they chose, at the quality tier they chose.
+   Everything else falls back to the cheapest capable row, which is the same
+   rule resolveStepModel already uses for its own substitutions.
+
+   Taking an image is NOT enough to qualify. The runnable "i2i" pool also
+   holds upscalers and background removers (recraft/crisp-upscale,
+   topaz/image-upscale, recraft/remove-background, grok-imagine/upscale) —
+   rows that accept an image and cannot render a person from a reference. They
+   are the CHEAPEST rows in that pool, so a naive cheapest-capable pick lands
+   on a 1-credit upscaler and returns the reference photo essentially
+   unchanged. IDENTITY_CAPABILITIES already draws this line for the identity
+   pack (see its header); the same line is drawn here.
+
+   Pure: candidates are passed in, so the worker can call this with no db. */
+export function pickImageCapableSibling(plannedModelId, candidates = []) {
+  const usable = (candidates || []).filter(
+    (row) => acceptsImageReference(row)
+      && IDENTITY_CAPABILITIES.has(row?.capability)
+      && isStillImageModel(row?.inputSchema),
+  );
+  if (!usable.length) return null;
+
+  const planned = String(plannedModelId || "");
+  // "text-to-image" -> "image-to-image" is the family's own naming, not ours.
+  const twin = planned.replace(/text[-_]to[-_]image/i, "image-to-image");
+  if (twin !== planned) {
+    const exact = usable.find((r) => r.modelId === twin);
+    if (exact) return exact;
+  }
+
+  // Same family (everything before the first "/"), cheapest first — a
+  // seedream step should not silently become a flux step if seedream has any
+  // image-capable row at all.
+  const family = planned.split("/")[0];
+  const byCost = (a, b) => (a.creditsCost ?? Infinity) - (b.creditsCost ?? Infinity);
+  if (family) {
+    const sameFamily = usable.filter((r) => String(r.modelId).split("/")[0] === family).sort(byCost);
+    if (sameFamily.length) return sameFamily[0];
+  }
+
+  return [...usable].sort(byCost)[0] || null;
 }
 
 export function voiceReferenceSlot(schema) {
