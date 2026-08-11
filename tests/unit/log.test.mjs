@@ -276,3 +276,54 @@ describe("redact — nested and non-obvious vectors (code review follow-up)", ()
     expect(out).not.toContain("leaf-secret-value");
   });
 });
+
+/* The key-name exemption: a field called "keys" is a list of labels.
+   ──────────────────────────────────────────────────────────────────────────
+   SENSITIVE_KEY_RE matches the substring "key" anywhere in a field name, which
+   is right for apiKey/api_key/providerKey and wrong for the plural "keys".
+   src/lib/alerts.js logs { count, keys: alerts.map(a => a.key) } on both the
+   configured and unconfigured webhook paths; the count survived and the names
+   were dropped, so 2044 production lines said something was alerting and never
+   which alert it was. These tests pin the exemption tightly enough that it can
+   never grow into a hole. */
+describe("redact — the keys/keywords/keyframes exemption", () => {
+  it("keeps the alert names that motivated the exemption", async () => {
+    const { redact } = await import("@/lib/log");
+    const out = redact({ count: 2, keys: ["low_credits", "job_backlog"] });
+    expect(out.keys).toEqual(["low_credits", "job_backlog"]);
+    expect(out.count).toBe(2);
+  });
+
+  it.each(["keys", "keywords", "keyframes", "KEYS", "Keywords"])(
+    "keeps %s (a label list, not a credential)",
+    async (field) => {
+      const { redact } = await import("@/lib/log");
+      expect(redact({ [field]: ["a", "b"] })[field]).toEqual(["a", "b"]);
+    },
+  );
+
+  it.each([
+    "key", "apiKey", "api_key", "API_KEY", "providerKey", "idempotencyKey",
+    "cacheKey", "x-api-key", "secret", "token", "password", "authorization",
+  ])("still redacts %s", async (field) => {
+    const { redact } = await import("@/lib/log");
+    expect(redact({ [field]: "sk-must-not-appear" })[field]).toBeUndefined();
+  });
+
+  it("does not let the exemption shelter a secret NESTED inside it", async () => {
+    // The exemption is about the field NAME only. Values still walk the
+    // normal redaction path, so a credential one level down is still stripped
+    // while its innocent sibling survives.
+    const { redact } = await import("@/lib/log");
+    const out = redact({ keys: [{ apiKey: "sk-nested-secret", name: "ok" }] });
+    expect(JSON.stringify(out)).not.toContain("sk-nested-secret");
+    expect(out.keys[0].name).toBe("ok");
+    expect(out.keys[0].apiKey).toBeUndefined();
+  });
+
+  it("is exact-match: a name merely CONTAINING 'keys' is still redacted", async () => {
+    const { redact } = await import("@/lib/log");
+    expect(redact({ apiKeys: "sk-plural-but-still-a-credential" }).apiKeys).toBeUndefined();
+    expect(redact({ secretKeys: "sk-also-a-credential" }).secretKeys).toBeUndefined();
+  });
+});

@@ -49,6 +49,23 @@
 // here that could resolve differently between the two loaders.
 
 const SENSITIVE_KEY_RE = /key|secret|token|password|authorization/i;
+// ...except for a few field NAMES that contain "key" while never holding a
+// credential. The substring match above is deliberately broad — it must catch
+// apiKey, api_key, providerKey, x-api-key and anything else a call site
+// invents — but broad matching also silently ate real diagnostics:
+//
+//   log.warn("alerts_webhook_not_configured", { count, keys: [...] })
+//
+// logged the COUNT of firing alerts and dropped WHICH ONES, so 2044 lines of
+// "something is alerting" carried no way to tell what. The names below are
+// plural or compound English words describing labels, not secrets:
+//   keys       — a list of identifiers (alert keys, cache keys, map keys)
+//   keywords   — search/SEO terms
+//   keyframes  — animation timing points
+// A singular "key" is NOT here and stays redacted: that is the name a bare
+// credential actually travels under. Anything ending in -Key (apiKey,
+// providerKey, idempotencyKey) is likewise untouched by this exemption.
+const SENSITIVE_KEY_EXEMPT_RE = /^(keys|keywords|keyframes)$/i;
 // Matches "prompt", "promptText", "negative_prompt", "negativePrompt",
 // "negative-prompt", all case-insensitively — but NOT "promptChars" (the
 // key this function itself produces), since only "text" or nothing may
@@ -125,7 +142,7 @@ function redactValue(value, depth) {
 function redactObject(obj, depth) {
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (SENSITIVE_KEY_RE.test(k)) continue;
+    if (SENSITIVE_KEY_RE.test(k) && !SENSITIVE_KEY_EXEMPT_RE.test(k)) continue;
     if (PROMPT_KEY_RE.test(k)) {
       out[`${k}Chars`] = promptLength(v);
       continue;
