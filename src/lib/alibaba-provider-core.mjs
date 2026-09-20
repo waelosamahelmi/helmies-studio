@@ -86,6 +86,19 @@ export const ASPECT_TO_SIZE = {
 
 const SYNC_PARAMETER_KEYS = new Set(["negative_prompt", "size", "n", "seed", "prompt_extend", "watermark"]);
 
+// Our own bookkeeping, never model input — see the same list and the same
+// reasoning in src/lib/providers.js's KIE formatPayload. `agentRunId`/
+// `stepId` are how the webhook finds the step again; `referenceOnly` is a
+// display flag. The async builder below ends in `else input[key] = value`,
+// so anything unrecognized is forwarded verbatim to DashScope — these have
+// to come out by name before that catch-all sees them.
+const INTERNAL_KEYS = ["agentRunId", "stepId", "referenceOnly"];
+const withoutInternalKeys = (params) => {
+  const rest = { ...params };
+  for (const key of INTERNAL_KEYS) delete rest[key];
+  return rest;
+};
+
 // Synchronous multimodal-generation body:
 //   { model, input: { messages: [{ role, content: [{image}…, {text}] }] }, parameters }
 // Image items come first — the edit models validate "the message must contain
@@ -124,7 +137,7 @@ const ASYNC_PARAMETER_KEYS = new Set(["negative_prompt", "size", "n", "seed", "d
 // Async task body — unchanged from the shape that already works for the wan
 // video family (11/13 models returned a task_id during probing).
 function formatAsyncTaskPayload(model, prompt, params = {}) {
-  const { endpoint: _endpoint, callBackUrl: _callback, webhook_url: _webhook, ...rest } = params;
+  const { endpoint: _endpoint, callBackUrl: _callback, webhook_url: _webhook, ...rest } = withoutInternalKeys(params);
   const input = { prompt };
   const parameters = {};
   for (const [key, value] of Object.entries(rest)) {

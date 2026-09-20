@@ -178,6 +178,21 @@ export const PROVIDERS = {
       || "/api/v1/jobs/createTask",
     formatPayload: (model, prompt, params) => {
       const { endpoint: _ep, ...rest } = params;
+      // Our own bookkeeping is NOT model input. The agent runner puts
+      // `agentRunId`/`stepId` on the job payload so the webhook can find the
+      // step again (agent-runner.js's enqueueJob), and `referenceOnly` is a
+      // display flag meaning "this still is an internal reference, keep it
+      // out of the final results" (agent-runner.js:834). None of the three
+      // is a field any model declares. The dedicated image/audio/video
+      // families below never leaked them because they build their bodies
+      // field-by-field; the generic Market envelope at the bottom of this
+      // function spreads `rest` wholesale into `input`, so it did — and KIE
+      // answers an unknown input key with a bare 500 "Internal Error" and
+      // `creditsConsumed: 0`, which reads like a provider outage rather
+      // than a bad request. Strip them once, here, for every shape.
+      delete rest.agentRunId;
+      delete rest.stepId;
+      delete rest.referenceOnly;
       const callBackUrl = params.callBackUrl || params.webhook_url || `${process.env.NEXTAUTH_URL || "https://studio.helmies.fi"}/api/webhooks/generation-complete`;
       // Audio models take their OWN field names (`text` not `prompt`, `voice`
       // not `voiceId`, a flat camelCase body for music) — see
