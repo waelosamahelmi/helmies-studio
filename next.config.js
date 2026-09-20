@@ -16,6 +16,17 @@ const CSP = [
   "font-src 'self' data:",
   "connect-src 'self' https:",
   "worker-src 'self' blob:",
+  // The landing page embeds a YouTube demo reel (components/landing/
+  // YouTubeEmbed.js). With no frame-src declared the browser fell back to
+  // `default-src 'self'` and blocked it outright — "Framing
+  // 'https://www.youtube.com/' violates ... default-src 'self'". Granted by
+  // exact host rather than a blanket https: so this stays a list of the
+  // frames this app actually loads. youtube-nocookie is included because
+  // that is the privacy-preserving host to switch the embed to; the dev
+  // terminals (DevPanel.js) frame same-origin paths and need no entry.
+  "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com",
+  // The opposite direction from frame-src, and still correct: nobody may
+  // frame US.
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",
