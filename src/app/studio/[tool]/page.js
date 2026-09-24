@@ -49,13 +49,13 @@ const TOOLS = {
   },
   image: {
     title: "AI Image Generator",
-    description: "Generate stunning images with Flux, Midjourney & 20+ AI models. Text-to-image, image-to-image, no content filters.",
-    keywords: ["AI image generator", "Flux AI", "Midjourney", "text to image", "image generation", "AI art"],
+    description: "Generate stunning images with Flux, Seedream, Nano Banana & dozens more AI models. Text-to-image, image-to-image, no content filters.",
+    keywords: ["AI image generator", "Flux AI", "Seedream", "Nano Banana", "text to image", "image generation", "AI art"],
   },
   video: {
     title: "AI Video Generator",
-    description: "Create videos from text or a still, edit and restyle footage, and cut clips — Sora 2, Kling, Veo & other leading AI video models.",
-    keywords: ["AI video generator", "Sora 2", "Kling AI", "Veo 3", "text to video", "image to video", "AI video editor"],
+    description: "Create videos from text or a still, edit and restyle footage, and cut clips — Seedance, Kling, Veo & other leading AI video models.",
+    keywords: ["AI video generator", "Seedance", "Kling AI", "Veo 3", "text to video", "image to video", "AI video editor"],
   },
   audio: {
     title: "AI Audio Generator — Speech, Dialogue & SFX",
@@ -83,7 +83,7 @@ const TOOLS = {
     keywords: ["AI asset library", "AI media management", "AI content library", "asset tracking"],
   },
   music: {
-    title: "AI Music Studio", description: "Compose music, speech, and sound effects with controllable AI audio models.", keywords: ["AI music", "AI speech", "sound effects"],
+    title: "AI Music Studio", description: "Compose a track from a description or a reference, then extend it, add vocals, or split it into stems.", keywords: ["AI music", "AI music generator", "AI song maker"],
   },
   workflows: {
     title: "Creative Workflows", description: "Build and run repeatable multi-step creative generation workflows.", keywords: ["AI workflow", "creative automation", "generation pipeline"],
@@ -95,7 +95,7 @@ const TOOLS = {
     title: "Cast", description: "Define a character once — their face from every angle, their voice, what they wear — and every shot renders the same person.", keywords: ["character consistency", "AI character", "reference images", "identity sheet"],
   },
   memory: {
-    title: "Creative Projects", description: "Organize reusable characters, styles, assets, and project memory.", keywords: ["creative projects", "AI memory", "character consistency"],
+    title: "Creative Memory", description: "Styles and context the models can reuse across productions.", keywords: ["AI memory", "style memory", "creative context"],
   },
 };
 

@@ -64,7 +64,7 @@ const FAQS = [
     category: "Generation",
     question: "What AI models do you use?",
     answer:
-      "Helmies Studio integrates with leading AI providers to offer models including Flux, Midjourney, GPT-4o, Seedream, Sora 2, Kling v3, Veo 3, Runway, Wan 2.6, and many more. Our model catalog is updated regularly as new models become available. Visit the Models page for the full catalog.",
+      "Helmies Studio integrates with leading AI providers to offer models including Flux, Nano Banana, GPT Image, Seedream, Seedance, Kling 3.0, Veo 3, Runway, Wan 2.7, Suno, and many more. Our model catalog is updated regularly as new models become available. Visit the Models page for the full catalog.",
   },
   {
     category: "Generation",
@@ -76,7 +76,7 @@ const FAQS = [
     category: "Generation",
     question: "What resolutions are supported?",
     answer:
-      "Resolution support varies by model. Standard resolution is available on all plans. HD resolution is available on Starter and above. 4K downloads are available on Studio and Pro plans. Some models natively support 1080p, 2K, or 4K output.",
+      "Resolution depends on the model, never on your plan — every plan, including Free, gets the whole catalog at every resolution it offers, and plans differ only in how many credits they include. Many models output 1080p, 2K, or 4K; a higher resolution costs more credits, and the price is shown before you generate.",
   },
   {
     category: "Generation",

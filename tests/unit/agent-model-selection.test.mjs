@@ -251,7 +251,8 @@ describe("defaultRunnableModel — the audio default picks a generator, not a tr
 
   it("degrades to the last-resort fallback id when the catalog lookup itself fails", async () => {
     prisma.modelPricing.findMany.mockRejectedValue(new Error("db unreachable"));
-    expect(await defaultRunnableModel("audio")).toBe("suno-v4.5");
+    // "generate-music" is KIE's Suno composer; the old "suno-v4.5" was never a catalog id.
+    expect(await defaultRunnableModel("audio")).toBe("generate-music");
   });
 });
 

@@ -9,6 +9,7 @@ import { selectEntityReferences, voiceReferences, imageReferenceSlot, isStillIma
 import { applyRequiredDefaults } from "@/lib/provider-payload-core.mjs";
 import { speakingDirection, dialogueSpeakers } from "@/lib/project-breakdown.mjs";
 import { recordGenerationAsset } from "@/lib/assets-core";
+import { defaultRunnableModelForKind } from "@/lib/runnable-models";
 
 /* The fallback when a pipeline names no image model. It was "flux-dev",
    which the provider answers with a 500 — so a shot that reached this
@@ -32,6 +33,14 @@ const STALE_RUN_MS = 20 * 60 * 1000;
    Both of these are real, active rows. */
 const DEFAULT_VIDEO_MODEL = "bytedance/seedance-2";
 const DEFAULT_I2V_MODEL = "wan/2-6-image-to-video";
+
+/* Sound had no default that could run. Both call sites said "suno-v4", which
+   the catalog has never held — and neither passed a `model` to generateAudio
+   at all, so the submit went out with no model in it. A spoken line also does
+   not belong on a music model: the words were handed to a composer as a style
+   prompt. Speech goes to a reader, a score goes to a composer. */
+const DEFAULT_MUSIC_MODEL = "generate-music";
+const DEFAULT_SPEECH_MODEL = "google/gemini-3-1-flash-tts";
 
 /* Which fields a video model uses for the frame it starts from. Named
    differently by every family, and sending the wrong one means the still
@@ -124,9 +133,20 @@ async function resolveVideoModel(wanted, hasStill) {
     return { id, frameField: frameField || null, schema: row.inputSchema };
   };
 
+  /* An id the catalog does not hold is not run "as asked" — the provider
+     refuses it after the credits are held. Old plans still carry "wan-2.6"
+     in every shot, so this is reached by real pipelines, not just by typos:
+     fall to the named default, then to whatever the live catalog can run. */
+  const runnable = async () => {
+    const fallback = await load(DEFAULT_VIDEO_MODEL);
+    if (fallback) return fallback;
+    const live = await defaultRunnableModelForKind("video").catch(() => null);
+    return (await load(live)) || { id: DEFAULT_VIDEO_MODEL, frameField: null, schema: null };
+  };
+
   if (!hasStill) {
-    const first = await load(wanted);
-    return { model: first?.id || wanted || DEFAULT_VIDEO_MODEL, frameField: null, schema: first?.schema || null };
+    const first = (await load(wanted)) || (await runnable());
+    return { model: first.id, frameField: null, schema: first.schema || null };
   }
   const first = await load(wanted);
   if (first?.frameField) return { model: first.id, frameField: first.frameField, schema: first.schema };
@@ -134,7 +154,8 @@ async function resolveVideoModel(wanted, hasStill) {
   if (i2v?.frameField) return { model: i2v.id, frameField: i2v.frameField, schema: i2v.schema };
   // Nothing can be given the frame. Run text-to-video rather than
   // pretending the still was used.
-  return { model: first?.id || wanted || DEFAULT_VIDEO_MODEL, frameField: null, schema: first?.schema || null };
+  const textOnly = first || (await runnable());
+  return { model: textOnly.id, frameField: null, schema: textOnly.schema || null };
 }
 
 /**
@@ -708,7 +729,9 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
     const startFrame = imageUrl || (carried?.asFirstFrame ? carried.url : null);
 
     const { model: modelRoute, frameField, schema: videoSchema } = await resolveVideoModel(
-      shot.videoStrategy?.modelRoute || brief.modelVideo || DEFAULT_VIDEO_MODEL,
+      // The project's own choice first: a plan's modelRoute is the planner's
+      // default, and it used to outrank what the user had actually picked.
+      brief.modelVideo || shot.videoStrategy?.modelRoute || DEFAULT_VIDEO_MODEL,
       Boolean(startFrame),
     );
 
@@ -930,10 +953,13 @@ async function executeShotAudio(shot, pipeline, brief) {
   if (!shot.audio && !shot.dialogue && brief.type !== "music_video") return { success: true, audioUrl: null };
 
   try {
+    const spokenLine = shot.dialogue || shot.audio?.dialogue || null;
+    const audioModel = spokenLine ? DEFAULT_SPEECH_MODEL : (brief.modelAudio || DEFAULT_MUSIC_MODEL);
     const audioParams = {
-      prompt: shot.dialogue || shot.audio?.dialogue || brief.concept || "Background music",
+      model: audioModel,
+      prompt: spokenLine || brief.concept || "Background music",
       duration: shot.durationSec || 5,
-      _provider: await resolveProvider(brief.modelAudio || "suno-v4")
+      _provider: await resolveProvider(audioModel)
     };
 
     const result = await generateAudio(audioParams);
@@ -952,7 +978,7 @@ async function executeShotAudio(shot, pipeline, brief) {
       data: {
         userId: pipeline.userId,
         tool: "audio",
-        model: brief.modelAudio || "suno-v4",
+        model: audioModel,
         prompt: audioParams.prompt,
         params: persistableParams(audioParams),
         outputUrl: storedUrl,
@@ -1007,7 +1033,7 @@ async function executeFullShot(shot, pipeline, brief) {
   /* STRAIGHT TO VIDEO when the model can be shown the cast itself.
      `storyboard` on the project forces the still-first path for anyone who
      wants to approve frames before paying for clips. */
-  const wantVideoModel = shot.videoStrategy?.modelRoute || brief.modelVideo || DEFAULT_VIDEO_MODEL;
+  const wantVideoModel = brief.modelVideo || shot.videoStrategy?.modelRoute || DEFAULT_VIDEO_MODEL;
   const direct = brief.videoMode !== "storyboard" && (await videoTakesReferences(wantVideoModel));
 
   if (direct) {

@@ -41,14 +41,31 @@ export const SECTION_VISUAL_STRATEGY = {
   }
 };
 
+/* The models a production runs on when nobody chose any.
+   ────────────────────────────────────────────────────────────────────────
+   These were "flux-dev", "wan-2.6", "kling-v2.1-i2v", "seedance-2.0" and
+   "suno-v4" — five ids the catalog has never held. They were not harmless
+   placeholders: the planner wrote them into every shot's modelRoute, the
+   executor preferred that over the project's own choice, and the estimate
+   priced them through the flat per-tool fallback (2 / 10 / 5 credits) while
+   the models that actually ran cost ~10 and ~390.
+
+   Each of these is an ACTIVE row in models/dictionary.json, and
+   tests/unit/hardcoded-model-ids.test.mjs fails the moment one is not.
+   seedance-2-5 is the workhorse — 155 successful production runs — and it is
+   shown a still through reference_image_urls rather than a first-frame field. */
+export const DEFAULT_MODEL_IMAGE = "seedream/5-pro-text-to-image";
+export const DEFAULT_MODEL_VIDEO = "bytedance/seedance-2-5";
+export const DEFAULT_MODEL_AUDIO = "generate-music";
+
 export const PRODUCTION_TYPE_PRESETS = {
   music_video: {
     label: "Music Video",
     defaultAspectRatio: "9:16",
     defaultDuration: 180,
-    defaultModelImage: "flux-dev",
-    defaultModelVideo: "wan-2.6",
-    defaultModelAudio: "suno-v4",
+    defaultModelImage: DEFAULT_MODEL_IMAGE,
+    defaultModelVideo: DEFAULT_MODEL_VIDEO,
+    defaultModelAudio: DEFAULT_MODEL_AUDIO,
     sectionStrategy: SECTION_VISUAL_STRATEGY,
     requireAudio: true,
     beatAware: true,
@@ -58,9 +75,9 @@ export const PRODUCTION_TYPE_PRESETS = {
     label: "Short Film",
     defaultAspectRatio: "16:9",
     defaultDuration: 300,
-    defaultModelImage: "flux-dev",
-    defaultModelVideo: "kling-v2.1-i2v",
-    defaultModelAudio: "suno-v4",
+    defaultModelImage: DEFAULT_MODEL_IMAGE,
+    defaultModelVideo: DEFAULT_MODEL_VIDEO,
+    defaultModelAudio: DEFAULT_MODEL_AUDIO,
     sectionStrategy: SECTION_VISUAL_STRATEGY,
     requireAudio: true,
     beatAware: false,
@@ -70,9 +87,9 @@ export const PRODUCTION_TYPE_PRESETS = {
     label: "Ad / Product Video",
     defaultAspectRatio: "1:1",
     defaultDuration: 30,
-    defaultModelImage: "flux-dev",
-    defaultModelVideo: "seedance-2.0",
-    defaultModelAudio: "suno-v4",
+    defaultModelImage: DEFAULT_MODEL_IMAGE,
+    defaultModelVideo: DEFAULT_MODEL_VIDEO,
+    defaultModelAudio: DEFAULT_MODEL_AUDIO,
     sectionStrategy: SECTION_VISUAL_STRATEGY,
     requireAudio: true,
     beatAware: false,
@@ -82,9 +99,9 @@ export const PRODUCTION_TYPE_PRESETS = {
     label: "Social Campaign",
     defaultAspectRatio: "9:16",
     defaultDuration: 60,
-    defaultModelImage: "flux-dev",
-    defaultModelVideo: "wan-2.6",
-    defaultModelAudio: "suno-v4",
+    defaultModelImage: DEFAULT_MODEL_IMAGE,
+    defaultModelVideo: DEFAULT_MODEL_VIDEO,
+    defaultModelAudio: DEFAULT_MODEL_AUDIO,
     sectionStrategy: SECTION_VISUAL_STRATEGY,
     requireAudio: true,
     beatAware: false,
@@ -94,9 +111,9 @@ export const PRODUCTION_TYPE_PRESETS = {
     label: "Viral Video",
     defaultAspectRatio: "9:16",
     defaultDuration: 30,
-    defaultModelImage: "flux-dev",
-    defaultModelVideo: "wan-2.6",
-    defaultModelAudio: "suno-v4",
+    defaultModelImage: DEFAULT_MODEL_IMAGE,
+    defaultModelVideo: DEFAULT_MODEL_VIDEO,
+    defaultModelAudio: DEFAULT_MODEL_AUDIO,
     sectionStrategy: SECTION_VISUAL_STRATEGY,
     requireAudio: true,
     beatAware: false,

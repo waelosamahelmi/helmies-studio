@@ -24,8 +24,8 @@ import {
 } from "@/lib/runnable-models.js";
 
 const IMG_CHEAP = {
-  modelId: "google/nano-banana-2-lite", isActive: true, isDeprecated: false,
-  endpoint: "google/nano-banana-2-lite", providerModelId: "google/nano-banana-2-lite",
+  modelId: "nano-banana-2-lite", isActive: true, isDeprecated: false,
+  endpoint: "nano-banana-2-lite", providerModelId: "nano-banana-2-lite",
   providerName: "KIE", capability: "text-to-image", modelType: "image", creditsCost: 3,
 };
 const IMG_EXPENSIVE = {
@@ -38,8 +38,8 @@ const IMG_DEAD = {
   providerName: "KIE", capability: "text-to-image", modelType: "image", creditsCost: 10,
 };
 const MUSIC_GEN = {
-  modelId: "suno-v4.5", isActive: true, isDeprecated: false,
-  endpoint: "suno/v45", providerModelId: "suno-v4.5",
+  modelId: "generate-music", isActive: true, isDeprecated: false,
+  endpoint: "generate-music", providerModelId: "generate-music",
   providerName: "KIE", capability: "audio", modelType: "audio", creditsCost: 5,
 };
 const AUDIO_ENHANCER = {
@@ -83,12 +83,12 @@ beforeEach(() => vi.clearAllMocks());
 describe("defaultRunnableModelForKind", () => {
   it("returns the cheapest runnable image model, never a deprecated one", async () => {
     seedCatalog([IMG_DEAD, IMG_EXPENSIVE, IMG_CHEAP]);
-    await expect(defaultRunnableModelForKind("image")).resolves.toBe("google/nano-banana-2-lite");
+    await expect(defaultRunnableModelForKind("image")).resolves.toBe("nano-banana-2-lite");
   });
 
   it("audio prefers a genuine generator (music) over a cheaper enhancement utility", async () => {
     seedCatalog([AUDIO_ENHANCER, MUSIC_GEN]);
-    await expect(defaultRunnableModelForKind("audio")).resolves.toBe("suno-v4.5");
+    await expect(defaultRunnableModelForKind("audio")).resolves.toBe("generate-music");
   });
 
   it("audio picks a spoken-voice generator when wantsVoice is set", async () => {
@@ -115,7 +115,7 @@ describe("defaultRunnableModelForKind", () => {
     prisma.modelPricing.findMany.mockRejectedValue(new Error("db down"));
     prisma.modelPricing.findUnique.mockRejectedValue(new Error("db down"));
     prisma.modelPricing.findFirst.mockRejectedValue(new Error("db down"));
-    await expect(defaultRunnableModelForKind("image")).resolves.toBe("google/nano-banana-2-lite");
+    await expect(defaultRunnableModelForKind("image")).resolves.toBe("nano-banana-2-lite");
   });
 });
 
@@ -127,7 +127,7 @@ describe("pickSubstituteModel", () => {
     const sub = await pickSubstituteModel({
       agentKind: "image", excludeModel: "flux-dev", params: {}, ceiling: 5, estimateFn,
     });
-    expect(sub).toEqual({ model: "google/nano-banana-2-lite", credits: 3 });
+    expect(sub).toEqual({ model: "nano-banana-2-lite", credits: 3 });
   });
 
   it("skips candidates whose re-quote exceeds the ceiling", async () => {
@@ -141,7 +141,7 @@ describe("pickSubstituteModel", () => {
   it("never returns the excluded (broken) model even if it is the cheapest", async () => {
     seedCatalog([IMG_CHEAP, IMG_EXPENSIVE]);
     const sub = await pickSubstituteModel({
-      agentKind: "image", excludeModel: "google/nano-banana-2-lite", params: {}, ceiling: 10, estimateFn,
+      agentKind: "image", excludeModel: "nano-banana-2-lite", params: {}, ceiling: 10, estimateFn,
     });
     expect(sub?.model).toBe("seedream/4.5-text-to-image");
   });
@@ -157,7 +157,7 @@ describe("getFallbackCandidates", () => {
   it("returns live catalog ids before any last-resort entry", async () => {
     seedCatalog([IMG_EXPENSIVE, IMG_CHEAP]);
     const ids = await getFallbackCandidates("image", [], 2);
-    expect(ids[0]).toBe("google/nano-banana-2-lite");
+    expect(ids[0]).toBe("nano-banana-2-lite");
     expect(ids).toContain("seedream/4.5-text-to-image");
   });
 });
@@ -173,13 +173,13 @@ describe("LAST_RESORT_FALLBACKS hygiene (G1.4)", () => {
   it("every listed id resolves against a live-shaped catalog", async () => {
     seedCatalog([IMG_CHEAP, IMG_EXPENSIVE, MUSIC_GEN, VIDEO_T2V]);
     const imageVerified = await verifyLastResortIds(LAST_RESORT_FALLBACKS.image);
-    expect(imageVerified).toContain("google/nano-banana-2-lite");
+    expect(imageVerified).toContain("nano-banana-2-lite");
     const audioVerified = await verifyLastResortIds(LAST_RESORT_FALLBACKS.audio);
-    expect(audioVerified).toContain("suno-v4.5");
+    expect(audioVerified).toContain("generate-music");
   });
 
   it("verifyLastResortIds drops ids with no runnable catalog row", async () => {
     seedCatalog([{ ...IMG_CHEAP, isActive: false }]);
-    await expect(verifyLastResortIds(["google/nano-banana-2-lite"])).resolves.toEqual([]);
+    await expect(verifyLastResortIds(["nano-banana-2-lite"])).resolves.toEqual([]);
   });
 });

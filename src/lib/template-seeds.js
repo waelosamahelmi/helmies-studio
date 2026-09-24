@@ -1,21 +1,21 @@
 // Helmies Studio — The Twelve Contract Templates (Phase 6 Task 4)
 //
-// TEMPLATE_SEEDS exports twelve executable, multi-step workflow templates
-// (A–L), each a Template + its first TemplateVersion. Every step's modelId
-// names a REAL model from the live catalog — src/lib/alibaba-catalog.js's
-// ALIBABA_MEDIA_MODELS, synced into ModelPricing by
-// src/lib/model-catalog.js's syncAlibabaModels(). That catalog is
-// image/video only (text-to-image, image-to-image, text-to-video,
-// image-to-video, reference-to-video, video-to-video) — at the time the
-// twelve were written there was no audio/TTS/music-generation model with
-// real, verified pricingRules. (That is no longer true: the KIE sync now
-// maintains verified audio/TTS/lip-sync rows, which the Short Drama Suite
-// templates M–P at the bottom of this file build on.) Two templates that would traditionally
-// involve audio (music-visualizer-pack, podcast-clip-factory) are scoped
-// honestly around that real gap: they generate the VISUAL side only (cover
-// art / an animated background loop) rather than inventing a fake
-// "audio-model" id to satisfy the publish gate — see each entry's own
-// scopeNote below, and the phase report for the full BLOCKED writeup.
+// TEMPLATE_SEEDS exports executable, multi-step workflow templates, each a
+// Template + its first TemplateVersion. Every step's modelId names a REAL,
+// ACTIVE model from the live catalog — models/dictionary.json, which the KIE
+// sync and scripts/dictionary-reconcile.mjs keep ModelPricing in step with.
+// tests/unit/hardcoded-model-ids.test.mjs fails the moment a step names one
+// that is not, because a template pinned to an inactive model cannot even be
+// quoted ("Model is unavailable") — which is how brand-identity-starter,
+// app-launch-pack (z-image) and both Short Drama speech templates
+// (nano-banana-pro, elevenlabs/text-to-dialogue-v3) sat broken.
+//
+// This header used to say the catalog was Alibaba's and image/video only.
+// Neither has been true since the 2026-08-05 Alibaba retirement: every step
+// below runs on KIE, and the catalog carries music (generate-music), speech
+// (google/gemini-3-1-flash-tts), avatars and lip sync. Two of the original
+// twelve (music-visualizer-pack, podcast-clip-factory) were scoped to the
+// VISUAL side only when that gap was real — see each entry's own scopeNote.
 //
 // Every graph is a strict linear chain (each step's `dependsOn` names
 // exactly the step immediately before it) — this is what
@@ -43,7 +43,7 @@
 // `image_url`; wan/2-6* image-to-video takes an `image_urls` ARRAY (max 1)
 // with string-enum durations ("5"/"10"/"15"); wan/2-7-image-to-video takes
 // `first_frame_url` (numeric duration 2–15); wan/2-7-image[-pro] i2i input
-// is `input_urls`; z-image REQUIRES `aspect_ratio`.
+// is `input_urls`; nano-banana-2-lite REQUIRES `aspect_ratio`.
 //
 // toolType "workflows" matches the real "workflows" entry in
 // src/components/studio/kit/tools.js's TOOL_IDS (a multi-step pipeline is
@@ -407,7 +407,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "z-image",
+        modelId: "nano-banana-2-lite",
         dependsOn: linear("step1"),
         inputs: {
           prompt: "A minimalist abstract brand mark concept, clean vector-like geometric shape, single bold accent color, plain background.",
@@ -500,7 +500,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "z-image",
+        modelId: "nano-banana-2-lite",
         dependsOn: linear("step1"),
         inputs: {
           prompt: "A modern, minimalist app icon concept, single bold symbol, vibrant gradient background, rounded-square icon composition.",
@@ -587,8 +587,8 @@ export const TEMPLATE_SEEDS = [
 
   // ── Short Drama Suite (M–P) ────────────────────────────────────────────
   // Added after the KIE catalog sync brought verified audio, TTS, and
-  // lip-sync rows into ModelPricing (elevenlabs/*, generate-music,
-  // volcengine/video-to-video-lip-sync, kling/ai-avatar-*) — the "no audio
+  // lip-sync rows into ModelPricing (google/gemini-3-1-flash-tts,
+  // generate-music, volcengine/video-to-video-lip-sync, kling/ai-avatar-*) — the "no audio
   // models" constraint the original twelve were scoped around no longer
   // holds. Field names below match the live DB inputSchema rows, verified
   // 2026-08-06: kling-2.6 durations are STRING enums ("5"/"10") and take an
@@ -610,7 +610,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "nano-banana-pro",
+        modelId: "nano-banana-2",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -635,11 +635,14 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step3",
         tool: "audio",
-        modelId: "elevenlabs/text-to-dialogue-v3",
+        // Was elevenlabs/text-to-dialogue-v3 — inactive, and 0 for 3 in
+        // production. Gemini TTS is directed in plain language, not [tags].
+        modelId: "google/gemini-3-1-flash-tts",
         dependsOn: linear("step3", "step2"),
         inputs: {
           prompt:
-            "[emotional, voice breaking] You knew. You knew the whole time, and you let me stand there like a fool. [pause] [quietly] I'm done waiting for you to choose me.",
+            "Say this as a young woman holding back tears, voice breaking, then dropping to a quiet, final calm after the pause: You knew. You knew the whole time, and you let me stand there like a fool. ... I'm done waiting for you to choose me.",
+          voice_name: "Kore",
         },
       },
       {
@@ -667,7 +670,7 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step1",
         tool: "image",
-        modelId: "nano-banana-pro",
+        modelId: "nano-banana-2",
         dependsOn: linear("step1"),
         inputs: {
           prompt:
@@ -679,11 +682,12 @@ export const TEMPLATE_SEEDS = [
       {
         id: "step2",
         tool: "audio",
-        modelId: "elevenlabs/text-to-dialogue-v3",
+        modelId: "google/gemini-3-1-flash-tts",
         dependsOn: linear("step2", "step1"),
         inputs: {
           prompt:
-            "[upbeat, conversational] Okay, real talk — nobody tells you this, but the algorithm doesn't reward perfect videos. It rewards videos people finish. [short laugh] Thirty seconds, one idea, say it like you'd say it to a friend. That's the whole secret.",
+            "Say this upbeat and conversational, like a friend letting you in on something, with a short laugh before the last two sentences: Okay, real talk — nobody tells you this, but the algorithm doesn't reward perfect videos. It rewards videos people finish. Thirty seconds, one idea, say it like you'd say it to a friend. That's the whole secret.",
+          voice_name: "Puck",
         },
       },
       {

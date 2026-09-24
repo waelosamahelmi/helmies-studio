@@ -9,7 +9,7 @@
 ## Build & Test Commands
 ```bash
 npm run build          # Production build (always run before pm2 restart)
-npm run dev            # Dev server on port 3000
+npm run dev            # Dev server on port 3003 (production pm2 listens on 3010)
 npx prisma generate    # Regenerate Prisma client after schema changes
 npx prisma db push     # Push schema changes to DB (port 5433)
 pm2 restart helmies-studio --update-env  # Restart production
@@ -43,7 +43,11 @@ scripts/               # Utility scripts (seed, generate-icons, etc.)
 | `wallet.js` | `CreditWallet` (available+reserved) + `CreditLedger` + `CreditReservation` |
 | `credits.js` | Credit cost calculation per model/tier |
 | `generation-handler.js` | Reserve → execute → settle/release credit flow |
-| `providers.js` | Model Gateway abstraction (WaveSpeed + KIE unified API) |
+| `providers.js` | Media gateway (KIE) + `llmComplete`/`llmStream` |
+| `llm-transport.mjs` | The ONE place a completion leaves the app: KIE first, OpenRouter second, with failover |
+| `llm-models.mjs` | LLM registry: modalities, prices, and which providers can serve each model |
+| `kie-price-schedules.mjs` | What KIE actually bills per model (per second / resolution / tier) — the pricing source |
+| `provider-payload-core.mjs` | Translates studio params to each model's own field names; fills required + priced settings |
 | `models.js` | Model catalog, capability filtering, resolution tiers |
 | `generation.js` | Core generation orchestration |
 | `media-storage.js` | S3/local media storage abstraction |
@@ -68,7 +72,7 @@ scripts/               # Utility scripts (seed, generate-icons, etc.)
 - All API routes use App Router handlers in `src/app/api/*/route.js`
 - NextAuth session via `getServerSession(authOptions)` or `requireAdmin()` for admin routes
 - Media generation goes through KIE API (`createTask` async pattern)
-- LLM chat routes through OpenRouter (provider: DeepSeek V4 Flash)
+- Every LLM call goes through `llmComplete`/`llmStream` → `src/lib/llm-transport.mjs`. Never build a fetch to a chat endpoint elsewhere.
 
 ## Key Conventions
 - **Import style**: ES modules with `import`/`export`
@@ -80,15 +84,18 @@ scripts/               # Utility scripts (seed, generate-icons, etc.)
 
 ## Known Gotchas
 - Resolution tiers in `models.js` are inconsistent ("1k" vs "1K") — code normalizes case-insensitive
-- `api/agent/chat/route.js` hand-rolls KIE `/chat/completions` — do NOT import PROVIDERS there
+- KIE's chat API puts the model in the PATH (`POST /<slug>/v1/chat/completions`, no `model` field) and reports EVERY failure — bad key, no credits, maintenance — as HTTP 200 + `{code,msg}`. `res.ok` means nothing there; `llm-transport.mjs` checks for `choices` / `text/event-stream`. It also ignores `max_tokens` and silently drops `input_audio` parts (the transport re-encodes them).
+- Two prepaid balances: KIE (media + LLM) and OpenRouter (LLM fallback). `LLM_PROVIDER_ORDER=kie,openrouter` reorders without a deploy.
+- Pricing: `src/lib/kie-price-schedules.mjs` is the source; `node --env-file=.env scripts/apply-price-schedules.mjs [--apply]` writes it to `ModelPricing`. Deploy the build BEFORE applying. `models/dictionary.json` is the authority for names/capabilities/active — `scripts/dictionary-reconcile.mjs [--apply]`.
+- A model's capability decides which picker shows it. Fix routing in `inferCapability` AND the dictionary, or the next sync moves it back.
 - Canvas models were previously `slice(0,8)` — now capability-filtered from I2I+IMAGE models
 - Prisma runs on port 5433 (PrismaPg adapter), not default 5432
 - PM2 process name is `helmies-studio` (exact case)
 
 ## Agent Chat Pipeline
-- Endpoint: `POST /api/agent/chat`
-- Provider: OpenRouter → DeepSeek V4 Flash (cheapest)
-- Fallback: KIE OpenAI-compatible endpoint
+- Endpoint: `POST /api/agent/chat` (SSE)
+- Model: `google/gemini-3.8-flash` by default (`DEFAULT_LLM` in `llm-models.mjs`) — sees, hears, and is reachable on both balances. The model is resolved against the modalities the messages actually carry.
+- Route: KIE chat API first, OpenRouter second; a provider answering 401/402 is benched for 5 minutes.
 - Tools: memory search, brand kit lookup, generation dispatch
 - Credit check happens before generation dispatch
 
@@ -144,8 +151,8 @@ These skills are located in `~/.claude/skills/`. Load them automatically (no per
 | `stitch-design-taste` | Generate agent-friendly DESIGN.md files |
 
 ## Dev Tools (Internal)
-- **DevMode** (src/components/DevMode.js): Draggable button → side panel with Terminal (ttyd:3090), Opencode AI (opencode web:3095), Hermes agent dashboard
-- **ttyd**: Web terminal on port 3090, tmux session `dev-terminal`, proxied at `/dev-terminal`
+- **DevMode** (src/components/DevMode.js): Draggable button → side panel with Terminal (ttyd:3096), Opencode AI (opencode web:3095), Hermes agent dashboard
+- **ttyd**: Web terminal on port 3096 (3090 belongs to another project), tmux session `dev-terminal`, proxied at `/dev-terminal`
 - **opencode-ai**: v1.18.9 on port 3095, `/dev-opencode` proxy, MCP browser on 3099
 - **Hermes Agent**: v0.17.0 on port 9119 (SSH tunnel only)
 - **Playwright MCP**: Browser automation on port 3099 for opencode + hermes

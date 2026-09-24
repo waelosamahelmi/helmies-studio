@@ -51,10 +51,18 @@ export const CATALOG_MODEL_KINDS = new Set(["image", "video", "audio"]);
 // Verified-at-call-time last resorts. video's old entry ("wan2.6-t2v") was
 // dropped (Phase G1.4): it only ever resolved to a retired Alibaba adapter
 // row — dead weight a verify gate had to keep filtering out.
+//
+// All three of the previous entries were themselves stale: the live row is
+// "nano-banana-2-lite" (no vendor folder), "qwen-image-max" was an Alibaba
+// adapter row retired with that provider, and the catalog has never held a
+// "suno-v4.5" — KIE's Suno composer is "generate-music". Because every id is
+// verified before use, a wrong one does not fail loudly; it just leaves the
+// last resort EMPTY on the one day it is needed.
+// tests/unit/hardcoded-model-ids.test.mjs holds these to the dictionary.
 export const LAST_RESORT_FALLBACKS = {
-  image: ["google/nano-banana-2-lite", "qwen-image-max"],
+  image: ["nano-banana-2-lite", "qwen/text-to-image"],
   video: [],
-  audio: ["suno-v4.5"],
+  audio: ["generate-music"],
 };
 
 // Confirms a LAST_RESORT_FALLBACKS id is STILL actually runnable in this

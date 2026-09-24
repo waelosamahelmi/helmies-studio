@@ -29,10 +29,9 @@ import { pickTextToImageModel } from "@/lib/project-models.mjs";
    reference yet. Ordered by how well they render a described space. */
 const TEXT_TO_IMAGE_PREFERENCE = [
   "seedream/5-pro-text-to-image",
-  "seedream-5-pro-text-to-image",
   "nano-banana-2",
-  "seedream/4-text-to-image",
-  "flux-dev",
+  "seedream/4.5-text-to-image",
+  "flux-2/pro-text-to-image",
 ];
 
 const IDENTITY_MODEL_PREFERENCE = [

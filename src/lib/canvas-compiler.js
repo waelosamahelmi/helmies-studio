@@ -28,8 +28,17 @@ export function compileCanvas(canvasDoc, opts = {}) {
   const { modelId, prompt = "", negativePrompt = "", aspectRatio } = opts;
   const warnings = [];
 
-  const model = ALL_IMAGE_MODELS.find((m) => m.id === modelId);
-  if (!model) warnings.push(`Unknown model "${modelId}". Canvas compilation may be incomplete.`);
+  /* The LIVE catalog is the authority on what a model is, not the static list
+     in models.js — nearly every id there is retired, so looking a real model up
+     in it found nothing: every canvas compiled under an "Unknown model" warning,
+     none of the capability warnings below could fire, and the routing never
+     left "t2i"/"flatten_guide". A caller that has the catalog row passes it as
+     `opts.model` ({ id, name, maxImages, capability } — what useModelCatalog
+     returns); the static list is only a fallback for the ids it still knows. */
+  const model = opts.model || ALL_IMAGE_MODELS.find((m) => m.id === modelId) || null;
+  if (!modelId) warnings.push("No model selected. Canvas compilation may be incomplete.");
+  const label = model?.name || model?.displayName || "This model";
+  const editModel = isEditModel(model, modelId);
 
   const objects = canvasDoc?.objects || [];
   const masks = canvasDoc?.masks || {};
@@ -71,18 +80,17 @@ export function compileCanvas(canvasDoc, opts = {}) {
   const hasMasks = includeMask.length > 0 || excludeMask.length > 0;
 
   // 3. Model capability checks → warnings
-  if (model) {
-    if (hasMasks && (model.maxImages == null || model.id.includes("flux-dev") && !model.id.includes("kontext"))) {
-      // Most T2I models can't accept masks directly; only edit models can
-      if (!I2I_MODELS.find((m) => m.id === modelId)) {
-        warnings.push(`${model.name} may not accept masks directly. Use an edit model (Flux Kontext, Nano Banana Edit) for inpainting.`);
-      }
+  if (modelId) {
+    // Decided from the id, because that is what says whether a mask field
+    // exists: only the inpainting routes declare one (mask_url / maskUrl).
+    if (hasMasks && !acceptsMask(modelId)) {
+      warnings.push(`${label} does not take a mask. Use Ideogram 3.0 Inpaint or GPT-4o Image for inpainting.`);
     }
-    if (references.length > (model.maxImages || 1)) {
-      warnings.push(`${model.name} supports ${model.maxImages || 1} reference(s); canvas has ${references.length}. Composition will be flattened.`);
+    if (model && references.length > (model.maxImages || 1)) {
+      warnings.push(`${label} supports ${model.maxImages || 1} reference(s); canvas has ${references.length}. Composition will be flattened.`);
     }
     if (textRegions.length > 0 && !isTextCapable(modelId)) {
-      warnings.push(`${model.name} may not render exact text reliably. Use GPT Image or Ideogram for text. Text: "${textRegions[0].text}".`);
+      warnings.push(`${label} may not render exact text reliably. Use GPT Image or Ideogram for text. Text: "${textRegions[0].text}".`);
     }
   }
 
@@ -90,9 +98,9 @@ export function compileCanvas(canvasDoc, opts = {}) {
   let strategy = "t2i";
   if (references.length > 0 && model?.maxImages && references.length <= model.maxImages) {
     strategy = "multi_ref";
-  } else if (references.length === 1 && I2I_MODELS.find((m) => m.id === modelId)) {
+  } else if (references.length === 1 && editModel) {
     strategy = "i2i";
-  } else if (hasMasks && I2I_MODELS.find((m) => m.id === modelId)) {
+  } else if (hasMasks && editModel) {
     strategy = "inpaint";
   } else if (references.length > 0) {
     strategy = "flatten_guide";
@@ -168,9 +176,26 @@ function describeBounds(b) {
   return `${size} ${vPos} ${hPos}`;
 }
 
+// Families that set type reliably. The exact ids that stood here
+// ("gpt-image-1.5", "ideogram-v3"…) are not ids the catalog holds — the live
+// ones are gpt-image/1.5-text-to-image, generate-4-o-image, ideogram/v3-… — so
+// only the family test below ever matched. It is now the whole test.
 function isTextCapable(modelId) {
-  return ["gpt-image-1.5", "gpt-image-2", "ideogram-v3", "ideogram-v3-edit", "ideogram-v3-remix"].includes(modelId) ||
-    modelId?.includes("gpt-image") || modelId?.includes("ideogram");
+  return /gpt-image|generate-4-o-image|ideogram/.test(String(modelId || ""));
+}
+
+// The routes whose schema declares a mask field.
+function acceptsMask(modelId) {
+  return /^ideogram\/(v3-edit|character-edit)$|^generate-4-o-image$/.test(String(modelId || ""));
+}
+
+// Takes a picture in and gives a changed picture back. The catalog row says so
+// when the caller passed it; otherwise the id does (same markers as
+// model-catalog-core.mjs's inferCapability).
+function isEditModel(model, modelId) {
+  if (model?.capability) return ["image-to-image", "i2i", "image-edit"].includes(model.capability);
+  if (I2I_MODELS.find((m) => m.id === modelId)) return true;
+  return /image-to-image|image-edit|edit-image|remix|(?<!video)-edit$|^ideogram\/character$/.test(String(modelId || ""));
 }
 
 function buildModelRequest(strategy, modelId, ctx) {

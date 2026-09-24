@@ -221,4 +221,13 @@ describe("shot.dialogue reaches audio generation", () => {
     expect(generateAudio).toHaveBeenCalledTimes(1);
     expect(generateAudio.mock.calls[0][0].prompt).toBe('"We leave at dawn."');
   });
+
+  it("a spoken line goes to a SPEECH model, and the submit names it", async () => {
+    // It used to go out with no `model` at all (generateAudio had nothing to
+    // route on), resolved against "suno-v4" — a composer the catalog never
+    // held — so the line was handed to a music model as a style prompt.
+    await rerunShot("p1", "u1", "s1", "audio");
+    expect(generateAudio.mock.calls[0][0].model).toBe("google/gemini-3-1-flash-tts");
+    expect(resolveProvider).toHaveBeenCalledWith("google/gemini-3-1-flash-tts");
+  });
 });

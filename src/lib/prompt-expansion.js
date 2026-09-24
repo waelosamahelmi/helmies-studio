@@ -36,8 +36,27 @@ Keep the expanded prompt under 150 words. Output ONLY the expanded prompt text, 
   },
 };
 
-const PER_MODEL_TEMPLATES = {
-  "flux-dev": {
+/* Per-FAMILY guidance, matched against the live model id.
+   ────────────────────────────────────────────────────────────────────────
+   This was a table keyed by exact id — "flux-dev", "kling-v3", "veo-3",
+   "wan-2.6", "seedance-2.0" — and not one of those is an id the catalog
+   holds, so the lookup missed every time and every model silently got the
+   generic template. The guidance was never the problem; the keys were.
+
+   A family is matched by pattern because ids are the provider's routes and
+   there are many per family (kling-2.6/text-to-video, kling/v3-turbo-…,
+   kling-3.0/video). `type` keeps a family's VIDEO advice off its image
+   models: wan/2-7-image is a still. The Midjourney and Sora guides are gone —
+   the studio has never offered either, and a guide for a model that cannot
+   be picked is a claim about the catalog that is not true.
+   tests/unit/hardcoded-model-ids.test.mjs checks every family still matches
+   at least one active model. */
+export const FAMILY_TEMPLATES = [
+  {
+    family: "flux",
+    type: "image",
+    // generate-or-edit-image is Flux Kontext's route (image-payload-core.mjs).
+    match: /(^|[^a-z])flux|^generate-or-edit-image$/,
     system: `You are a prompt engineer for Flux image generation. Flux excels at photorealistic and cinematic imagery. Expand the user's prompt with:
 - Precise subject description and positioning
 - Natural lighting conditions (golden hour, overcast, studio)
@@ -46,16 +65,10 @@ const PER_MODEL_TEMPLATES = {
 - Environmental details and atmosphere
 Keep under 250 words. Output ONLY the expanded prompt.`,
   },
-  "midjourney-v7-text-to-image": {
-    system: `You are a prompt engineer for Midjourney. Midjourney responds best to evocative, artistic language. Expand the user's prompt with:
-- Artistic style and movement references
-- Mood and emotional tone
-- Composition and framing
-- Color theory and palette
-- Texture and material qualities
-Use Midjourney-friendly syntax (commas, no periods). Keep under 200 words. Output ONLY the expanded prompt.`,
-  },
-  "kling-v3": {
+  {
+    family: "kling",
+    type: "video",
+    match: /(^|[^a-z])kling/,
     system: `You are a prompt engineer for Kling video generation. Kling excels at cinematic motion. Expand the user's prompt with:
 - Camera movement and speed
 - Subject motion and choreography
@@ -64,16 +77,10 @@ Use Midjourney-friendly syntax (commas, no periods). Keep under 200 words. Outpu
 - Cinematic references
 Keep under 150 words. Output ONLY the expanded prompt.`,
   },
-  "sora-2": {
-    system: `You are a prompt engineer for Sora 2 video generation. Sora excels at complex scenes with multiple subjects. Expand the user's prompt with:
-- Detailed scene description
-- Multiple subject interactions
-- Environmental dynamics (weather, time of day)
-- Camera perspective and movement
-- Narrative arc within the clip
-Keep under 200 words. Output ONLY the expanded prompt.`,
-  },
-  "veo-3": {
+  {
+    family: "veo",
+    type: "video",
+    match: /(^|[^a-z])veo/,
     system: `You are a prompt engineer for Veo 3 video generation. Veo excels at realistic motion and physics. Expand the user's prompt with:
 - Realistic physics and motion
 - Natural lighting progression
@@ -82,7 +89,10 @@ Keep under 200 words. Output ONLY the expanded prompt.`,
 - Temporal progression
 Keep under 150 words. Output ONLY the expanded prompt.`,
   },
-  "wan-2.6": {
+  {
+    family: "wan",
+    type: "video",
+    match: /^wan\//,
     system: `You are a prompt engineer for Wan video generation. Wan excels at dynamic action and visual effects. Expand the user's prompt with:
 - Dynamic motion and action
 - Visual effects and particles
@@ -91,7 +101,11 @@ Keep under 150 words. Output ONLY the expanded prompt.`,
 - Atmospheric elements
 Keep under 150 words. Output ONLY the expanded prompt.`,
   },
-  "seedance-2.0": {
+  {
+    family: "seedance",
+    type: "video",
+    // bytedance/v1-* is Seedance V1: the vendor folder carries no brand.
+    match: /seedance|^bytedance\/v1-/,
     system: `You are a prompt engineer for Seedance video generation. Seedance excels at smooth, fluid motion. Expand the user's prompt with:
 - Fluid, continuous motion
 - Smooth camera movements
@@ -100,7 +114,15 @@ Keep under 150 words. Output ONLY the expanded prompt.`,
 - Rhythmic pacing
 Keep under 150 words. Output ONLY the expanded prompt.`,
   },
-};
+];
+
+/** The family guide for this model, or null. A Wan or Flux id of the OTHER
+    media type gets null and therefore the generic template for its type. */
+export function familyTemplateFor(modelId, type) {
+  const id = String(modelId || "").toLowerCase();
+  if (!id) return null;
+  return FAMILY_TEMPLATES.find((t) => t.type === type && t.match.test(id)) || null;
+}
 
 const NEGATIVE_PROMPTS = {
   image: "low quality, blurry, distorted, deformed, watermark, text overlay, jpeg artifacts, oversaturated, cropped, out of frame",
@@ -114,7 +136,7 @@ export async function expandPrompt(rawPrompt, type = "image", modelId = null) {
   const wordCount = rawPrompt.trim().split(/\s+/).length;
   if (wordCount >= 30) return rawPrompt;
 
-  const template = (modelId && PER_MODEL_TEMPLATES[modelId]) || MODEL_TEMPLATES[type];
+  const template = familyTemplateFor(modelId, type) || MODEL_TEMPLATES[type];
   if (!template) return rawPrompt;
 
   try {

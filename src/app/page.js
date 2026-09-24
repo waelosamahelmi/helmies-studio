@@ -91,8 +91,8 @@ const SECTIONS = [
         <em>One prompt.</em>
       </>
     ),
-    desc: "Flux, Midjourney, GPT-4o, Seedream. From a single line of text, a portrait emerges. Photorealistic, artistic, editorial.",
-    pills: ["Flux", "Midjourney", "GPT-4o", "Seedream", "SDXL"],
+    desc: "Flux, Nano Banana, GPT Image, Seedream. From a single line of text, a portrait emerges. Photorealistic, artistic, editorial.",
+    pills: ["Flux", "Nano Banana", "GPT Image", "Seedream", "Imagen 4"],
     accent: "#FF1B6B",
     bg: "/assets/ai_cinematic_video_generator_hero_image_0f96f59168-41.webp",
     bgClass: "svc-section__bg--flip",
@@ -108,8 +108,8 @@ const SECTIONS = [
         <em>motion.</em>
       </>
     ),
-    desc: "Sora, Kling v3, Veo 3, Seedance, Hailuo. 60+ video models. Text-to-video, image-to-video, video-to-video.",
-    pills: ["Sora 2", "Kling v3", "Veo 3", "Runway", "Wan 2.6"],
+    desc: "Seedance, Kling 3.0, Veo 3, Wan, Hailuo. Text-to-video, image-to-video, video-to-video.",
+    pills: ["Seedance 2.5", "Kling 3.0", "Veo 3", "Runway", "Wan 2.7"],
     accent: "#FF1B6B",
     bg: "/assets/warrior_girl_e29532086b-40.webp",
     bgClass: "svc-section__bg--zoom-left",
@@ -127,7 +127,7 @@ const SECTIONS = [
       </>
     ),
     desc: "Upload a portrait, add a voice track. Talking videos in seconds — or let the studio write and speak the lines for you.",
-    pills: ["Infinite Talk", "Wan 2.2", "LTX 2.3", "LatentSync"],
+    pills: ["InfiniteTalk", "Kling Avatar", "Wan 2.2", "Volcengine"],
     accent: "#FF1B6B",
     bg: "/assets/photo-1620121692029-d088224ddc74-11.webp",
     bgClass: "svc-section__bg--dark",
@@ -200,7 +200,7 @@ function HeroSection() {
         />
 
         <p className="hero__sub">
-          Flux, Veo 3, Kling, Sora, Seedream, ElevenLabs — images, video, music and
+          Flux, Veo 3, Kling, Seedance, Seedream, Suno — images, video, music and
           lip sync from {MODEL_COUNT}+ models on one credit balance. No per-vendor
           subscriptions, no waitlists, no filters.
         </p>
@@ -438,7 +438,7 @@ function AnnouncementBar() {
     <div className="announcement-bar">
       <div className="announcement-bar__inner">
         <span className="announcement-bar__dot" />
-        <span>{MODEL_COUNT}+ models live — Sora, Kling v3, Veo 3</span>
+        <span>{MODEL_COUNT}+ models live — Seedance, Kling 3.0, Veo 3</span>
       </div>
     </div>
   );
