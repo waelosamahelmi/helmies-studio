@@ -26,7 +26,7 @@
 //
 // Worker-safe: relative imports only (see runnable-models.js's header).
 
-import { DEFAULT_LLM, llmModel } from "./llm-models.mjs";
+import { DEFAULT_LLM, LLM_MODELS, llmModel } from "./llm-models.mjs";
 
 export const LLM_PROVIDERS = {
   kie: {
@@ -49,6 +49,7 @@ export const LLM_PROVIDERS = {
 };
 
 const DEFAULT_ORDER = ["kie", "openrouter"];
+const LOW_EFFORT_BELOW = 1500;
 
 /* KIE first: it is the balance that is already watched and topped up, and the
    measured price for the default model is lower there. LLM_PROVIDER_ORDER
@@ -72,8 +73,13 @@ export function hasLlm() {
    empty wallet before reaching the full one. Process-local on purpose: it is
    an optimisation, never the reason a provider is skipped for good. */
 const BENCH_MS = 5 * 60 * 1000;
+// A single ROUTE that answered "internal error" (KIE's gemini-3-8 slug did so
+// on two calls in three on 2026-09-24, each after a 30-second wait) is benched
+// on its own, briefly, so the next call goes straight to a healthy model
+// instead of paying that wait again. The provider's other models stay live.
+const ROUTE_BENCH_MS = 2 * 60 * 1000;
 const benched = new Map();
-const isBenched = (name) => (benched.get(name) || 0) > Date.now();
+const isBenched = (key) => (benched.get(key) || 0) > Date.now();
 export function resetLlmBench() { benched.clear(); }
 
 /**
@@ -90,7 +96,14 @@ export function llmAttempts(modelId, { needs = [] } = {}) {
   const attempts = [];
   const seen = new Set();
   const covers = (row) => needs.every((n) => n === "text" || row.modalities.includes(n));
-  for (const row of [llmModel(modelId), llmModel(DEFAULT_LLM)]) {
+  // After the requested model and the default, every other model that has a
+  // KIE route, cheapest first. Measured 2026-09-24: KIE's gemini-3-8 slug
+  // answered "internal error" on two calls in three (after a 30s wait) while
+  // its 3-6 slug and gpt-5-2 were fine — and OpenRouter was empty, so a
+  // two-route default meant the call simply failed.
+  const others = LLM_MODELS.filter((m) => m.kie && m.id !== modelId && m.id !== DEFAULT_LLM)
+    .sort((a, b) => a.inputPerM - b.inputPerM);
+  for (const row of [llmModel(modelId), llmModel(DEFAULT_LLM), ...others]) {
     if (!row || !covers(row)) continue;
     for (const name of order) {
       // No key is not a failed route, it is not a route: skipping it here keeps
@@ -105,7 +118,8 @@ export function llmAttempts(modelId, { needs = [] } = {}) {
   }
   // Benched providers go last rather than away: if everything else fails they
   // are still worth one try — the bench is a guess about the next few minutes.
-  return [...attempts.filter((a) => !isBenched(a.provider)), ...attempts.filter((a) => isBenched(a.provider))];
+  const sidelined = (a) => isBenched(a.provider) || isBenched(`${a.provider}:${a.wireModel}`);
+  return [...attempts.filter((a) => !sidelined(a)), ...attempts.filter(sidelined)];
 }
 
 /* KIE types every media part as image_url and takes inline bytes as a data:
@@ -143,6 +157,17 @@ function buildBody(provider, wireModel, messages, options, stream) {
   };
   if (provider !== "kie") body.model = wireModel;
   if (options.responseFormat) body.response_format = options.responseFormat;
+  // On OpenRouter a reasoning model spends max_tokens on hidden thinking
+  // FIRST: measured 2026-09-24, gemini-3.8 with max_tokens 200 used 191 on
+  // reasoning and returned "A storyboard is a visual" with finish "length".
+  // Callers with a small budget (prompt normaliser, timeline chat) got empty
+  // or truncated text. Low effort answered whole in half the time; planning
+  // turns with a large budget keep the default effort. Cannot be disabled
+  // outright ("Reasoning is mandatory for this endpoint"). KIE ignores
+  // max_tokens, so it never has this problem.
+  if (provider === "openrouter" && llmModel(options.model)?.reasoning && body.max_tokens < LOW_EFFORT_BELOW) {
+    body.reasoning = { effort: "low" };
+  }
   return body;
 }
 
@@ -214,6 +239,7 @@ export async function llmSend(messages, options = {}) {
     } catch (e) {
       const err = e?.provider ? e : failure(attempt, 0, e?.message || String(e));
       if (err.status === 401 || err.status === 402) benched.set(attempt.provider, Date.now() + BENCH_MS);
+      else if (err.status >= 500 || err.status === 0) benched.set(`${attempt.provider}:${attempt.wireModel}`, Date.now() + ROUTE_BENCH_MS);
       failures.push(err);
       try { options.onFailure?.(err); } catch { /* a logger must never take a completion down */ }
       // The caller hung up; trying the next provider would answer nobody.

@@ -85,7 +85,7 @@ describe("routing", () => {
 
   it("LLM_PROVIDER_ORDER reorders the wallets and ignores names it does not know", () => {
     process.env.LLM_PROVIDER_ORDER = "openrouter, nonsense, kie";
-    expect(llmAttempts(DEFAULT_LLM).map((a) => a.provider)).toEqual(["openrouter", "kie"]);
+    expect(llmAttempts(DEFAULT_LLM).map((a) => a.provider).slice(0, 2)).toEqual(["openrouter", "kie"]);
   });
 
   it("hasLlm is true with EITHER key — the old gate only looked at OpenRouter's", () => {
@@ -125,12 +125,33 @@ describe("failover", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("a route that answered 5xx is benched on its own — the provider's other models stay first in line", async () => {
+    delete process.env.OPENROUTER_KEY;
+    fetch.mockResolvedValueOnce(kieRefusal(500, "internal error")).mockResolvedValue(ok());
+    const first = await llmSend(MSG, { model: DEFAULT_LLM });
+    expect(first.provider).toBe("kie");
+    expect(first.model).not.toBe(DEFAULT_LLM);
+    fetch.mockClear();
+    const next = llmAttempts(DEFAULT_LLM);
+    expect(next[0]).toMatchObject({ provider: "kie" });
+    expect(next[0].model).not.toBe(DEFAULT_LLM);
+    expect(next[next.length - 1].model).toBe(DEFAULT_LLM);
+  });
+
   it("falls back to the default MODEL when the requested one has no living route, and says so", async () => {
     fetch
       .mockResolvedValueOnce({ ok: false, status: 402, text: async () => "no credits" }) // deepseek @ openrouter
       .mockResolvedValueOnce(ok("default answered"));                                       // default @ kie
     const sent = await llmSend(MSG, { model: "deepseek/deepseek-v4-pro" });
     expect(sent).toMatchObject({ provider: "kie", model: DEFAULT_LLM, substituted: "deepseek/deepseek-v4-pro" });
+  });
+
+  it("after the requested and default models, tries every other KIE-reachable model, cheapest first", () => {
+    delete process.env.OPENROUTER_KEY;
+    const attempts = llmAttempts(DEFAULT_LLM).map((a) => a.wireModel);
+    expect(attempts[0]).toBe(llmModel(DEFAULT_LLM).kie);
+    expect(attempts).toEqual(expect.arrayContaining(["gemini-3-6-flash-openai", "gpt-5-2"]));
+    expect(new Set(attempts).size).toBe(attempts.length);
   });
 
   it("never hands audio to a model that cannot hear, even as a last resort", () => {
@@ -172,6 +193,16 @@ describe("what KIE is sent", () => {
     const audio = { type: "input_audio", input_audio: { data: "QUJD", format: "wav" } };
     await llmSend([{ role: "user", content: [audio] }], { model: DEFAULT_LLM });
     expect(JSON.parse(fetch.mock.calls[0][1].body).messages[0].content[0]).toEqual(audio);
+  });
+
+  it("asks OpenRouter for low reasoning effort when the budget is small, so thinking cannot eat the answer", async () => {
+    delete process.env.KIE_KEY;
+    fetch.mockResolvedValue(ok());
+    await llmSend(MSG, { model: DEFAULT_LLM, maxTokens: 500 });
+    expect(JSON.parse(fetch.mock.calls[0][1].body).reasoning).toEqual({ effort: "low" });
+    fetch.mockClear();
+    await llmSend(MSG, { model: DEFAULT_LLM, maxTokens: 4096 });
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).not.toHaveProperty("reasoning");
   });
 
   it("passes response_format through, so JSON mode survives the move", async () => {

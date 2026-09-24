@@ -127,7 +127,11 @@ describe("pollProviderResult — raw poll failures are logged once, the thrown m
   });
 });
 
-describe("llmComplete / llmStream — raw OpenRouter body is logged once, the thrown message stays branded", () => {
+describe("llmComplete / llmStream — raw OpenRouter body is logged once PER ROUTE TRIED, the thrown message stays branded", () => {
+  // With only OPENROUTER_KEY set, the transport tries every OpenRouter-
+  // reachable model in turn (llm-transport.mjs llmAttempts) and logs each
+  // refusal once — so the count is the number of routes, not one. A 401
+  // benches the wallet after the first failure, so that case stays at one.
   it("llmComplete logs the raw body (including a secret-shaped substring) and never leaks it in the thrown message", async () => {
     const rawBody = JSON.stringify({ error: { message: "invalid_api_key: sk-abcdefgh12345678" } });
     global.fetch.mockResolvedValue({ ok: false, status: 401, text: async () => rawBody });
@@ -138,7 +142,8 @@ describe("llmComplete / llmStream — raw OpenRouter body is logged once, the th
     expect(err.message).not.toContain("sk-abcdefgh12345678");
     expect(err.message).not.toContain(rawBody);
 
-    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalled();
+    expect(errorSpy.mock.calls.length).toBe(global.fetch.mock.calls.length);
     const [event, fields] = errorSpy.mock.calls[0];
     expect(event).toBe("llm_complete_http_error");
     expect(fields.provider).toBe("openrouter");
@@ -153,7 +158,7 @@ describe("llmComplete / llmStream — raw OpenRouter body is logged once, the th
     const err = await llmStream([{ role: "user", content: "hi" }]).catch((e) => e);
 
     expect(err.message).not.toContain(rawBody);
-    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy.mock.calls.length).toBe(global.fetch.mock.calls.length);
     const [event, fields] = errorSpy.mock.calls[0];
     expect(event).toBe("llm_stream_http_error");
     expect(fields.body).toContain(rawBody);
