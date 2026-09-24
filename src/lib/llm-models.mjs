@@ -24,25 +24,49 @@
 // billed from these numbers.
 //
 // Sorted so the file itself answers "cheapest" and "best".
+//
+// WHERE A MODEL CAN BE REACHED (measured 2026-09-21)
+// A row's `id` is its OpenRouter id. A row that ALSO carries `kie` can be
+// reached through KIE's chat API under that slug — the same prepaid balance
+// that pays for every image and video. That matters because the two wallets
+// fail independently: OpenRouter ran dry on 2026-09-20 and took the planner,
+// the scenario writer and the script breakdown down with it while KIE held
+// ~9,900 credits. `kie` is only ever a slug that ANSWERED a live call; KIE's
+// docs list many more (gemini-3.1-pro, claude-*, gpt-5-6-*) that were in
+// maintenance or speak a different wire protocol, and a slug that has not
+// answered is a dead id with extra steps. llm-transport.mjs does the routing.
 
 /** @typedef {"text"|"image"|"audio"|"video"|"file"} Modality */
 
 export const LLM_MODELS = [
   /* ── The default ───────────────────────────────────────────────────────
-     Everything the agent needs and almost nothing it does not: it reasons,
-     it sees images, it hears audio, it can read a video, and a megabyte of
-     conversation costs a quarter of a dollar. This is the row that makes
-     "attach a photo" and "hold to talk" work at all. */
+     Everything the agent needs: it reasons, it sees images, it hears audio,
+     it can read a video — and it is reachable through BOTH wallets, so one
+     empty balance does not switch the studio's text half off. Through KIE a
+     measured 16k-in / 650-out planning turn cost 0.89 credits (~$0.0045),
+     about half what the previous default cost for a weaker model. */
   {
-    id: "google/gemini-3.1-flash-lite",
+    id: "google/gemini-3.8-flash",
+    kie: "gemini-3-8-flash-openai",
     label: "Balanced — sees, hears, thinks",
     tier: "balanced",
+    inputPerM: 0.75,
+    outputPerM: 3.75,
+    context: 1048576,
+    modalities: ["text", "image", "audio", "video", "file"],
+    reasoning: true,
+    note: "The default. Full multimodality with reasoning, reachable through either provider balance.",
+  },
+  {
+    id: "google/gemini-3.1-flash-lite",
+    label: "Light — sees, hears, thinks",
+    tier: "light",
     inputPerM: 0.25,
     outputPerM: 1.5,
     context: 1048576,
     modalities: ["text", "image", "audio", "video", "file"],
     reasoning: true,
-    note: "The default. Full multimodality with reasoning at a tenth of flagship price.",
+    note: "The previous default. Full multimodality at a low list price; one provider only.",
   },
 
   /* ── Cheapest that still does everything ─────────────────────────────── */
@@ -85,14 +109,27 @@ export const LLM_MODELS = [
   },
   {
     id: "google/gemini-3.6-flash",
+    kie: "gemini-3-6-flash-openai",
     label: "Fast and strong — sees and hears",
     tier: "strong",
-    inputPerM: 1.5,
-    outputPerM: 7.5,
+    inputPerM: 0.75,
+    outputPerM: 3.75,
     context: 1048576,
     modalities: ["text", "image", "audio", "video", "file"],
     reasoning: true,
-    note: "Most of the pro's judgement at a quarter of the input price.",
+    note: "Most of the pro's judgement at under half its input price.",
+  },
+  {
+    id: "openai/gpt-5.2",
+    kie: "gpt-5-2",
+    label: "GPT-5.2 — reads images, cannot hear",
+    tier: "gpt",
+    inputPerM: 1.75,
+    outputPerM: 14.0,
+    context: 400000,
+    modalities: ["text", "image", "file"],
+    reasoning: true,
+    note: "A second opinion from a different family, reachable through either provider balance. NO audio input.",
   },
   {
     id: "anthropic/claude-opus-5",
@@ -141,7 +178,7 @@ const BY_ID = new Map(LLM_MODELS.map((m) => [m.id, m]));
    without a deploy — but the override is CHECKED: an id that is not in the
    registry, or one that cannot see, would silently break attachments, and
    the whole point of this file is that that failure is never silent again. */
-export const DEFAULT_LLM = "google/gemini-3.1-flash-lite";
+export const DEFAULT_LLM = "google/gemini-3.8-flash";
 
 /** The model that reads audio when somebody talks instead of typing. */
 export const TRANSCRIBE_LLM = "google/gemini-2.5-flash-lite";
@@ -195,6 +232,9 @@ export function llmChoices() {
     modalities: m.modalities,
     reasoning: m.reasoning,
     note: m.note,
+    // Which balances can pay for it. Two means one empty wallet cannot take
+    // this model away mid-production.
+    providers: m.kie ? ["kie", "openrouter"] : ["openrouter"],
     // A rough per-turn figure is far more use than $/M to somebody choosing:
     // ~8k in, ~1k out is a realistic planning turn.
     approxTurnUsd: Number((8 * m.inputPerM / 1000 + 1 * m.outputPerM / 1000).toFixed(4)),

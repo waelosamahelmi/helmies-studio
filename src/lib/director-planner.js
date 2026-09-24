@@ -2,6 +2,7 @@
 // worker (scripts/worker.mjs, plain node) reaches this module through
 // screenplay-breakdown.js, and node cannot resolve the bundler's alias.
 import { llmComplete, resolveProvider } from "./providers.js";
+import { hasLlm } from "./llm-transport.mjs";
 import { estimateCredits } from "./pricing-engine.js";
 import prisma from "./prisma.js";
 // the id only, NOT api-error.js — that module pulls in "next/server", which
@@ -310,7 +311,7 @@ You MUST output a single valid JSON object with this exact structure:
       "videoStrategy": {
         "mode": "t2v",
         "prompt": "15-40 word video description — present tense, explicit camera language, physical emotion only",
-        "modelRoute": "wan-2.6",
+        "modelRoute": null,
         "keyframes": [],
         "windows": []
       },
@@ -481,7 +482,7 @@ function buildHeuristicDirectorPlan(brief) {
         videoStrategy: {
           mode: "t2v",
           prompt: `${strat.camera.framing}, ${strat.camera.movement}, ${strat.camera.angle} with ${strat.camera.lens}. ${strat.energy}. ${strat.notes.toLowerCase()}.`,
-          modelRoute: preset.defaultModelVideo,
+          modelRoute: brief.modelVideo || preset.defaultModelVideo,
           keyframes: [],
           windows: []
         },
@@ -598,7 +599,12 @@ function normalizePlanFromLLM(parsed, preset, brief) {
       videoStrategy: {
         mode: shot.videoStrategy?.mode || "t2v",
         prompt: shot.videoStrategy?.prompt || "",
-        modelRoute: shot.videoStrategy?.modelRoute || preset.defaultModelVideo,
+        /* The planning model is never shown the catalog, so a modelRoute it
+           writes is a guess — for a long time a verbatim copy of the dead
+           "wan-2.6" its own example carried, which the executor then preferred
+           over the model the project had chosen. The route is decided here,
+           from the project first and a LIVE default second. */
+        modelRoute: brief?.modelVideo || preset.defaultModelVideo,
         keyframes: shot.videoStrategy?.keyframes || [],
         windows: shot.videoStrategy?.windows || []
       },
@@ -650,7 +656,6 @@ async function requestLLMPlan(systemPrompt, userPrompt, options = {}) {
   const response = await llmComplete(messages, {
     maxTokens: 4096,
     temperature: options.retryHint ? 0.2 : 0.4,
-    model: "deepseek/deepseek-v4-flash"
   });
 
   const jsonText = extractJsonObject(response);
@@ -665,7 +670,7 @@ export async function createProductionPlan(brief, userId) {
   const preset = PRODUCTION_TYPE_PRESETS[brief.type] || PRODUCTION_TYPE_PRESETS.music_video;
   const sectionStrategy = preset.sectionStrategy;
 
-  const hasLLM = process.env.OPENROUTER_KEY;
+  const hasLLM = hasLlm();
   let plan = null;
   let lastError = null;
 

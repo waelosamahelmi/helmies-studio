@@ -1,6 +1,7 @@
 import { getCurrentUser } from "@/lib/session";
 import { checkRateLimit } from "@/lib/security";
-import { llmComplete, brandError, resolveModelFor } from "@/lib/providers";
+import { llmComplete, llmStream, brandError } from "@/lib/providers";
+import { hasLlm } from "@/lib/llm-transport.mjs";
 import { apiError } from "@/lib/api-error";
 import { authzResponse } from "@/lib/authz";
 import { verifyOrigin } from "@/lib/origin-check";
@@ -204,10 +205,9 @@ export async function POST(req) {
        registry knows the id and otherwise uses DEFAULT_LLM. An unvalidated
        env string is a guess about modality, and guessing is the bug. */
     const selectedModel = model || undefined;
-    const key = process.env.OPENROUTER_KEY;
 
-    if (!key) {
-      const fallbackText = "No LLM configured. Set OPENROUTER_KEY in .env";
+    if (!hasLlm()) {
+      const fallbackText = "No LLM configured. Set KIE_KEY or OPENROUTER_KEY in .env";
       await persistAssistantTurn(sessionId, fallbackText);
       return new Response(sse({ type: "token", content: fallbackText }) + "data: [DONE]\n\n", {
         headers: SSE_HEADERS,
@@ -254,50 +254,28 @@ export async function POST(req) {
     /* The model has to be able to take what we are about to send it.
        ────────────────────────────────────────────────────────────────────
        buildUserParts above may have just turned this turn into image parts.
-       The default chat model is text-only, and OpenRouter answers a text-only
-       model carrying an image with 404 "No endpoints found that support image
-       input" — which arrived here as a 500 and told the user nothing.
-       resolveModelFor reads the modalities actually present in the messages
-       and substitutes the cheapest model that covers them, logging the swap.
-       llmComplete does this internally; this streaming path builds its own
-       request, so it has to ask explicitly. */
-    const streamModel = resolveModelFor(allMessages, { model: selectedModel });
-
-    // OpenRouter exposes an OpenAI-compatible /chat/completions endpoint.
-    // KIE is async task-only (media generation) and has no chat endpoint.
-    const streamRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-        "HTTP-Referer": process.env.NEXTAUTH_URL || "https://studio.helmies.fi",
-        "X-Title": "Helmies Studio",
-      },
-      body: JSON.stringify({
-        model: streamModel,
-        messages: allMessages,
-        temperature: 0.7,
-        max_tokens: 2000,
-        stream: true,
-      }),
-    });
-
-    if (!streamRes.ok) {
-      const txt = await streamRes.text().catch(() => "");
-      // brandError keeps the message provider-name-free; the raw upstream
-      // text goes only to the server-side log.
+       A text-only model carrying an image is answered with a 404 upstream —
+       which arrived here as a 500 and told the user nothing. llmStream
+       resolves the model against the modalities actually present in the
+       messages, picks the provider (llm-transport.mjs: KIE first, OpenRouter
+       second, so one empty balance no longer silences the agent), and throws
+       an already-branded error with the raw upstream text as its cause. */
+    let upstream;
+    try {
+      upstream = await llmStream(allMessages, { model: selectedModel, temperature: 0.7, maxTokens: 2000 });
+    } catch (e) {
       return apiError({
         status: 500,
         code: "internal",
-        message: brandError(txt),
-        cause: new Error(txt || `Upstream LLM responded ${streamRes.status}`),
-        context: { route: "agent/chat", upstreamStatus: streamRes.status },
+        message: brandError(e?.message),
+        cause: e,
+        context: { route: "agent/chat" },
       });
     }
 
     const encoder = new TextEncoder();
 
-    if (typeof ReadableStream === "undefined") {
+    if (typeof upstream?.getReader !== "function") {
       const fullText = await llmComplete(allMessages, { maxTokens: 2000, temperature: 0.7, model: selectedModel });
       await persistAssistantTurn(sessionId, fullText);
       return new Response(sse({ type: "token", content: fullText }) + "data: [DONE]\n\n", {
@@ -305,47 +283,40 @@ export async function POST(req) {
       });
     }
 
-    if (typeof streamRes.body?.getReader !== "function") {
-      const raw = await streamRes.text();
-      let content = "";
-      for (const line of raw.split("\n").filter((l) => l.startsWith("data: "))) {
-        try {
-          const d = JSON.parse(line.slice(6).trim());
-          if (d.choices?.[0]?.delta?.content) content += d.choices[0].delta.content;
-        } catch {}
-      }
-      const text = content || raw;
-      await persistAssistantTurn(sessionId, text);
-      return new Response(sse({ type: "token", content: text }) + "data: [DONE]\n\n", {
-        headers: SSE_HEADERS,
-      });
-    }
-
-    const reader = streamRes.body.getReader();
+    const reader = upstream.getReader();
     const decoder = new TextDecoder();
     let cancelled = false;
 
     const stream = new ReadableStream({
       async start(controller) {
         let full = "";
+        // One SSE line → the token it carries (forwarded to the client) or "".
+        const takeToken = (line) => {
+          const data = line.slice(6).trim();
+          if (data === "[DONE]") return "";
+          try {
+            const content = JSON.parse(data).choices?.[0]?.delta?.content || "";
+            if (content) controller.enqueue(encoder.encode(sse({ type: "token", content })));
+            return content;
+          } catch { return ""; }
+        };
+        // A network read ends wherever the packet did, not where a line did.
+        // Splitting each read on "\n" alone dropped any event that straddled
+        // two reads — a silently missing piece of the reply. The unfinished
+        // tail is carried into the next read instead.
+        let carry = "";
         try {
           while (!cancelled) {
             const { done, value } = await reader.read();
             if (done) break;
-            const chunk = decoder.decode(value, { stream: true });
-            for (const line of chunk.split("\n").filter((l) => l.startsWith("data: "))) {
-              const data = line.slice(6).trim();
-              if (data === "[DONE]") continue;
-              try {
-                const parsed = JSON.parse(data);
-                const content = parsed.choices?.[0]?.delta?.content || "";
-                if (content) {
-                  full += content;
-                  controller.enqueue(encoder.encode(sse({ type: "token", content })));
-                }
-              } catch {}
+            const lines = (carry + decoder.decode(value, { stream: true })).split("\n");
+            carry = lines.pop() ?? "";
+            for (const line of lines.filter((l) => l.startsWith("data: "))) {
+              full += takeToken(line);
             }
           }
+          // A final event with no trailing newline is still an event.
+          if (!cancelled && carry.startsWith("data: ")) full += takeToken(carry);
         } catch {}
         // Persist the complete assistant turn (even a partial one the user
         // cancelled — that's what they saw) before closing the stream.

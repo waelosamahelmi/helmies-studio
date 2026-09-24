@@ -1,4 +1,5 @@
 import { llmComplete, llmStream, resolveProvider, brandForUser } from "@/lib/providers";
+import { hasLlm } from "@/lib/llm-transport.mjs";
 import { estimateCredits, estimateAgentTask } from "@/lib/pricing-engine";
 import { appendMessage } from "@/lib/agent-sessions";
 import {
@@ -568,7 +569,7 @@ async function heuristicFallbackPlan(userMessage, context, { degraded }) {
 
 // ── Plan a task with token-by-token streaming ──
 export async function planTaskStream(userMessage, context = {}) {
-  const hasLLM = process.env.OPENROUTER_KEY;
+  const hasLLM = hasLlm();
 
   if (!hasLLM) {
     return { stream: null, plan: await heuristicFallbackPlan(userMessage, context, { degraded: false }) };
@@ -650,7 +651,7 @@ export async function planTaskStream(userMessage, context = {}) {
 
 // ── Plan a task (orchestrator) ──
 export async function planTask(userMessage, context = {}) {
-  const hasLLM = process.env.OPENROUTER_KEY;
+  const hasLLM = hasLlm();
 
   if (hasLLM) {
     const json = await requestLlmPlan(userMessage, context);

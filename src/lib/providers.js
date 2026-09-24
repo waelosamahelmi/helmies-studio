@@ -14,6 +14,7 @@ import { imageSubmitPath, imagePollPath, formatImageRequest, parseImagePoll } fr
 import { videoSubmitPath, videoPollTarget, formatVideoRequest, parseVideoPoll } from "./video-payload-core.mjs";
 import { log } from "./log.js";
 import { DEFAULT_LLM, llmModel, resolveLlm } from "./llm-models.mjs";
+import { hasLlm, llmSend } from "./llm-transport.mjs";
 
 const BRANDED_ERRORS = {
   rate_limit: "Too many requests. Please wait a moment and try again.",
@@ -313,8 +314,6 @@ export const PROVIDERS = {
    resolveModelFor therefore takes what the CALL needs, not just what the
    caller asked for, and substitutes a model that can actually take it. */
 const LLM_PROVIDER = {
-  baseUrl: "https://openrouter.ai/api/v1",
-  getKey: () => process.env.OPENROUTER_KEY,
   get defaultModel() {
     // An env override is honoured only if the registry knows it; an unknown
     // id would be a guess about modality, and guessing is what this fixes.
@@ -550,7 +549,12 @@ async function fillRequiredParams(modelId, params) {
     return params;
   }
   if (!schema) return params;
-  const { params: next, filled } = applyRequiredDefaults(params, schema, { modelId });
+  const { params: next, filled, adapted } = applyRequiredDefaults(params, schema, { modelId });
+  if (adapted && (Object.keys(adapted.moved).length || adapted.dropped.length)) {
+    try {
+      log.info("provider_inputs_adapted", { model: modelId, moved: adapted.moved, dropped: adapted.dropped });
+    } catch { /* logging must never block a submit */ }
+  }
   if (Object.keys(filled).length) {
     try {
       log.info("provider_required_params_filled", { model: modelId, filled });
@@ -725,37 +729,35 @@ export async function submitAndPoll(providerName, endpoint, payload, maxAttempts
   return pollProviderResult(provider, requestId, maxAttempts, interval, providerModel);
 }
 
-export async function llmComplete(messages, options = {}) {
-  const p = LLM_PROVIDER;
-  const key = p.getKey();
-  if (!key) throw new Error("OPENROUTER_KEY not configured");
+/* Both completion paths go through llm-transport.mjs, which owns the routing
+   (KIE first, OpenRouter second), the per-provider message translation, and
+   the fact that KIE reports every failure as an HTTP 200. What stays here is
+   the studio's contract with its callers: the model is resolved against what
+   the messages CARRY, the raw upstream text is logged once per failed route,
+   and what is thrown is branded. */
+async function sendLlm(messages, options, stream) {
+  if (!hasLlm()) throw new Error("No LLM provider key configured (KIE_KEY or OPENROUTER_KEY)");
   const modelId = resolveModelFor(messages, options);
-
-  const res = await fetch(`${p.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-      "HTTP-Referer": process.env.NEXTAUTH_URL || "https://studio.helmies.fi",
-      "X-Title": "Helmies Studio",
-    },
-    body: JSON.stringify({
+  const event = stream ? "llm_stream_http_error" : "llm_complete_http_error";
+  try {
+    const sent = await llmSend(messages, {
+      ...options,
       model: modelId,
-      messages,
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxTokens ?? 2000,
-      stream: false,
-    }),
-    signal: AbortSignal.timeout(options.timeout || 60000),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    logRawProviderError("llm_complete_http_error", { provider: "openrouter", model: modelId, status: res.status, body: txt });
-    throw brandedError(txt);
+      needs: options.needs || messageModalities(messages),
+      stream,
+      onFailure: (err) => logRawProviderError(event, { provider: err.provider, model: err.model, status: err.status, body: err.raw }),
+    });
+    if (sent.substituted) {
+      try { log.info("llm_model_substituted", { requested: sent.substituted, used: sent.model, provider: sent.provider, reason: "route_failed" }); } catch { /* never fatal */ }
+    }
+    return sent;
+  } catch (e) {
+    throw brandedError(e?.raw || e?.message || e);
   }
+}
 
-  const data = await res.json();
+export async function llmComplete(messages, options = {}) {
+  const { data } = await sendLlm(messages, options, false);
   const choice = data.choices?.[0];
   const content = choice?.message?.content || "";
   // A reply cut off at max_tokens comes back as perfectly ordinary text that
@@ -770,36 +772,8 @@ export async function llmComplete(messages, options = {}) {
 }
 
 export async function llmStream(messages, options = {}) {
-  const p = LLM_PROVIDER;
-  const key = p.getKey();
-  if (!key) throw new Error("OPENROUTER_KEY not configured");
-  const modelId = resolveModelFor(messages, options);
-
-  const res = await fetch(`${p.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-      "HTTP-Referer": process.env.NEXTAUTH_URL || "https://studio.helmies.fi",
-      "X-Title": "Helmies Studio",
-    },
-    body: JSON.stringify({
-      model: modelId,
-      messages,
-      temperature: options.temperature ?? 0.7,
-      max_tokens: options.maxTokens ?? 2000,
-      stream: true,
-    }),
-    signal: AbortSignal.timeout(options.timeout || 60000),
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    logRawProviderError("llm_stream_http_error", { provider: "openrouter", model: modelId, status: res.status, body: txt });
-    throw brandedError(txt);
-  }
-
-  return res.body;
+  const { body } = await sendLlm(messages, options, true);
+  return body;
 }
 
 // Media provider fallback order. Alibaba was removed on retirement (EDITSv1

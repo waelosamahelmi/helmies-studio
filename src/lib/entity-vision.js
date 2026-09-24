@@ -12,15 +12,15 @@
 import { OBSERVABLE_ATTRIBUTES } from "./entity-core.mjs";
 import { publicBaseUrl } from "./provider-payload-core.mjs";
 import { log } from "./log.js";
+import { llmComplete } from "./providers.js";
+import { hasLlm } from "./llm-transport.mjs";
 
-// Verified against this account's OpenRouter key on 2026-08-08: it answers
-// 200 with a usable description in ~3s. The previous default,
-// deepseek/deepseek-v4-flash, is TEXT-ONLY — OpenRouter rejects it with 404
-// "No endpoints found that support image input" — so every image analysis
-// this app attempted had been failing. Do not change this to a model id from
-// memory; list https://openrouter.ai/api/v1/models and check that
-// architecture.input_modalities includes "image".
-const VISION_MODEL = process.env.VISION_MODEL || "qwen/qwen3.7-flash";
+// No model id lives here. An id typed from memory is how every image analysis
+// this app attempted once failed (a text-only model, a 404 nobody surfaced).
+// llmComplete resolves the model against what the messages CARRY, so a call
+// with image parts can only ever reach a model that sees. VISION_MODEL is an
+// escape hatch and is honoured only when llm-models.mjs knows the id.
+const VISION_MODEL = process.env.VISION_MODEL || undefined;
 
 const FIELD_GUIDE = {
   ageAppearance: "how old they read on camera, e.g. 'early thirties'",
@@ -66,24 +66,16 @@ export async function describeCharacterFromPhotos(urls = [], { name = "" } = {})
     throw err;
   }
 
-  const key = process.env.OPENROUTER_KEY;
-  if (!key) {
+  if (!hasLlm()) {
     const err = new Error("Reading a photograph is not available right now.");
     err.code = "unavailable";
     throw err;
   }
 
-  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-      "HTTP-Referer": publicBaseUrl(),
-      "X-Title": "Helmies Studio",
-    },
-    body: JSON.stringify({
-      model: VISION_MODEL,
-      messages: [
+  let content;
+  try {
+    content = await llmComplete(
+      [
         { role: "system", content: SYSTEM_PROMPT },
         {
           role: "user",
@@ -96,23 +88,16 @@ export async function describeCharacterFromPhotos(urls = [], { name = "" } = {})
           ],
         },
       ],
-      max_tokens: 1200,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-    }),
-    signal: AbortSignal.timeout(90000),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    log.error("entity_vision_http_error", { status: res.status, body: body.slice(0, 400) });
+      { model: VISION_MODEL, maxTokens: 1200, temperature: 0.2, responseFormat: { type: "json_object" }, timeout: 90000 },
+    );
+  } catch (e) {
+    // llmComplete has already logged the raw upstream text, once per route.
+    log.error("entity_vision_failed", { message: e?.message });
     const err = new Error("The photograph could not be read. Please try again.");
     err.code = "vision_failed";
     throw err;
   }
 
-  const data = await res.json();
-  const content = data.choices?.[0]?.message?.content;
   let parsed;
   try {
     parsed = JSON.parse(content);
@@ -133,5 +118,5 @@ export async function describeCharacterFromPhotos(urls = [], { name = "" } = {})
     const text = value.trim().slice(0, 400);
     if (text && !/^(unknown|n\/?a|none|not visible)$/i.test(text)) attributes[key] = text;
   }
-  return { attributes, model: VISION_MODEL, readFrom: images.length };
+  return { attributes, readFrom: images.length };
 }

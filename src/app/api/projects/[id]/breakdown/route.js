@@ -6,6 +6,7 @@ import { checkRateLimit } from "@/lib/security";
 import { apiError } from "@/lib/api-error";
 import prisma from "@/lib/prisma";
 import { llmComplete } from "@/lib/providers";
+import { hasLlm } from "@/lib/llm-transport.mjs";
 import {
   SCRIPT_BREAKDOWN_SYSTEM_PROMPT,
   SCRIPT_BREAKDOWN_RETRY_HINT,
@@ -64,7 +65,7 @@ export async function POST(req, { params }) {
         message: "Add the scenario under “Scenario & format” first — there is nothing here to break down.",
       });
     }
-    if (!process.env.OPENROUTER_KEY) {
+    if (!hasLlm()) {
       return apiError({ code: "internal", message: "The script reader is unavailable right now.", retryable: true });
     }
 

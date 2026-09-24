@@ -1,17 +1,15 @@
 import prisma from "@/lib/prisma";
+import { llmComplete } from "@/lib/providers";
+import { hasLlm } from "@/lib/llm-transport.mjs";
 
 // Helmies Vision — Visual Intelligence Service (spec §11)
 // Provider-agnostic image analysis. Uses a multimodal LLM via KIE's
 // OpenAI-compatible chat completions endpoint.
 
-// Verified against this account's OpenRouter key on 2026-08-08: it answers
-// 200 with a usable description in ~3s. The previous default,
-// deepseek/deepseek-v4-flash, is TEXT-ONLY — OpenRouter rejects it with 404
-// "No endpoints found that support image input" — so every image analysis
-// this app attempted had been failing. Do not change this to a model id from
-// memory; list https://openrouter.ai/api/v1/models and check that
-// architecture.input_modalities includes "image".
-const VISION_MODEL = process.env.VISION_MODEL || "qwen/qwen3.7-flash";
+// No model id lives here — see entity-vision.js. llmComplete resolves the model
+// against the image part this call carries; VISION_MODEL is honoured only when
+// llm-models.mjs knows the id.
+const VISION_MODEL = process.env.VISION_MODEL || undefined;
 
 export async function analyzeImage(imageUrl, options = {}) {
   if (!imageUrl) throw new Error("Image URL required");
@@ -26,8 +24,7 @@ export async function analyzeImage(imageUrl, options = {}) {
   });
   if (cached && !options.force) return cached;
 
-  const key = process.env.OPENROUTER_KEY;
-  if (!key) {
+  if (!hasLlm()) {
     return {
       id: null,
       assetUrl: imageUrl,
@@ -44,39 +41,22 @@ export async function analyzeImage(imageUrl, options = {}) {
   }
 
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-        "HTTP-Referer": process.env.NEXTAUTH_URL || "https://studio.helmies.fi",
-        "X-Title": "Helmies Studio",
-      },
-      body: JSON.stringify({
-        model: VISION_MODEL,
-        messages: [
-          {
-            role: "system",
-            content: "You are a visual analysis expert. Analyze the image and return a JSON object with: caption (detailed description), background (description of background/setting), palette (array of 5 dominant hex colors), regions (array of detected objects with {label, bbox: [x,y,w,h]}), textRegions (array of detected text with {text, bbox}), lighting ({direction, quality, contrast, temperature}), style ({contrast, lighting, composition, texture}).",
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Analyze this image in detail. Return only valid JSON." },
-              { type: "image_url", image_url: { url: imageUrl } },
-            ],
-          },
-        ],
-        max_tokens: 2000,
-        temperature: 0.3,
-        response_format: { type: "json_object" },
-      }),
-    });
-
-    if (!response.ok) throw new Error(`Vision API error: ${response.status}`);
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const content = await llmComplete(
+      [
+        {
+          role: "system",
+          content: "You are a visual analysis expert. Analyze the image and return a JSON object with: caption (detailed description), background (description of background/setting), palette (array of 5 dominant hex colors), regions (array of detected objects with {label, bbox: [x,y,w,h]}), textRegions (array of detected text with {text, bbox}), lighting ({direction, quality, contrast, temperature}), style ({contrast, lighting, composition, texture}).",
+        },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Analyze this image in detail. Return only valid JSON." },
+            { type: "image_url", image_url: { url: imageUrl } },
+          ],
+        },
+      ],
+      { model: VISION_MODEL, maxTokens: 2000, temperature: 0.3, responseFormat: { type: "json_object" }, timeout: 90000 },
+    );
     if (!content) throw new Error("No analysis returned");
 
     const analysis = JSON.parse(content);
@@ -92,7 +72,7 @@ export async function analyzeImage(imageUrl, options = {}) {
         textRegions: analysis.textRegions || null,
         lighting: analysis.lighting || null,
         style: analysis.style || null,
-        provider: "kie-vision",
+        provider: "llm-vision",
       },
     });
 

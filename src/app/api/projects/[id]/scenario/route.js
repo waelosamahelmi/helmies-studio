@@ -5,6 +5,7 @@ import { verifyOrigin } from "@/lib/origin-check";
 import { checkRateLimit } from "@/lib/security";
 import { apiError } from "@/lib/api-error";
 import { llmComplete } from "@/lib/providers";
+import { hasLlm } from "@/lib/llm-transport.mjs";
 import { getOwnedProject, normalizeSettings, kindOf, updateProject } from "@/lib/projects";
 import prisma from "@/lib/prisma";
 
@@ -52,7 +53,7 @@ export async function POST(req, { params }) {
     const idea = String(body.idea || "").trim();
     if (!idea) return apiError({ code: "invalid_params", message: "Say what it is about." });
 
-    if (!process.env.OPENROUTER_KEY) {
+    if (!hasLlm()) {
       return apiError({ code: "internal", message: "The writer is unavailable right now.", retryable: true });
     }
 
