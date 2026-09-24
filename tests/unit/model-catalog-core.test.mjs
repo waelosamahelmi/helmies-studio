@@ -102,9 +102,31 @@ test("inferCapability: img2vid also maps to image-to-video", () => {
 });
 
 test("inferCapability: an id with NO direction marker at all still falls through to the coarse 'video' fallback — conservative by design", () => {
-  for (const id of ["kling/pro", "bytedance/seedance-2", "wan-speech-to-video", "pixverse/transition"]) {
+  for (const id of ["kling/pro", "bytedance/seedance-2"]) {
     assert.equal(inferCapability(id), "video", `${id} should stay coarse "video" — no unambiguous marker`);
   }
+});
+
+// These four used to be pinned HERE as coarse "video". That was the bug: coarse
+// video is the text-to-video group, and each of them requires media that picker
+// never collects, so every run was refused after credits were held
+// (production: kling/v2-1-pro 0 of 2). Their schemas are the unambiguous marker.
+test("inferCapability: a video model that REQUIRES media is filed by what it requires", () => {
+  assert.equal(inferCapability("wan/2-2-a14b-speech-to-video-turbo"), "avatar-video"); // image_url + audio_url
+  assert.equal(inferCapability("pixverse-v6/transition"), "image-to-video");            // first + last frame
+  assert.equal(inferCapability("kling/v2-1-pro"), "image-to-video");                    // image_url
+  assert.equal(inferCapability("kling/v2-1-standard"), "image-to-video");
+  assert.equal(inferCapability("generate-aleph-video"), "video-to-video");              // video_url
+  assert.equal(inferCapability("kling/v2-1-master-text-to-video"), "text-to-video");    // the sibling that does not
+});
+
+test("inferCapability: an EDIT model is image-to-image, never the text-to-image group", () => {
+  for (const id of ["google/nano-banana-edit", "seedream/4.5-edit", "ideogram/v3-edit", "ideogram/character"]) {
+    assert.equal(inferCapability(id), "image-to-image", id);
+  }
+  assert.equal(inferCapability("ideogram/character-remix"), "image-to-image");
+  assert.equal(inferCapability("happyhorse/video-edit"), "video-to-video"); // the lookbehind's reason
+  assert.equal(inferCapability("google/nano-banana"), "image");
 });
 
 // The `animate-*` and `motion-control` families DO carry an unambiguous
@@ -140,7 +162,7 @@ test("Group membership: no image-to-video/video-to-video model ends up in the tt
     assert.equal(matchesGroup({ capability }, "v2v"), true, `${id} (${capability}) must be in v2v`);
   }
   // Genuinely t2v/multi ids stay in ttv, whether marker-precise or coarse.
-  for (const id of [...t2vIds, "kling/pro", "bytedance/seedance-2", "wan-speech-to-video"]) {
+  for (const id of [...t2vIds, "kling/pro", "bytedance/seedance-2"]) {
     const capability = inferCapability(id);
     assert.equal(matchesGroup({ capability }, "ttv"), true, `${id} (${capability}) must be in ttv`);
   }

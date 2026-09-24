@@ -43,8 +43,13 @@ describe("slugToTitle", () => {
   // ── Acronym/initialism handling — measured live bug: "Generate Ai Video"
   // (naive per-token titlecasing lowercases everything after the first
   // letter, so "ai" -> "Ai" instead of "AI") ────────────────────────────────
-  it('titlecases the "ai" token as the initialism "AI", not "Ai" ("generate-ai-video" -> "Generate AI Video")', () => {
-    expect(slugToTitle("generate-ai-video")).toBe("Generate AI Video");
+  it('titlecases the "ai" token as the initialism "AI", not "Ai" ("extend-ai-video" -> "Extend AI Video")', () => {
+    expect(slugToTitle("extend-ai-video")).toBe("Extend AI Video");
+  });
+
+  it("names the two routes that waited for an answer rather than a guess", () => {
+    expect(slugToTitle("generate-ai-video")).toBe("Runway");
+    expect(slugToTitle("generate-or-edit-image")).toBe("Flux Kontext");
   });
 
   it("titlecases other known initialisms (4K, HD, 3D, TTS, SFX) correctly", () => {

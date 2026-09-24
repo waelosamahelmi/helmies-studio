@@ -2,6 +2,8 @@
 // director-planner.js, where the "@/..." bundler alias does not resolve.
 import prisma from "./prisma.js";
 import { calculateProviderQuote, providerCostToCredits, resolveModelPricingRow, isPlaceholderPricing } from "./model-catalog-core.mjs";
+import { applyRequiredDefaults } from "./provider-payload-core.mjs";
+import { billsBySecond, billableSeconds } from "./kie-price-schedules.mjs";
 
 const DEFAULT_MARKUP = 2.5;
 const CREDIT_TO_EUR = 0.01;
@@ -63,7 +65,18 @@ export async function estimateCredits(tool, model, params = {}) {
        with providerCost across the whole catalog. */
     if (pricing.pricingRules && !isPlaceholderPricing(pricing.pricingRules, pricing.providerCost)) {
       try {
-        const quote = calculateProviderQuote(pricing.pricingRules, params);
+        // The SAME normalisation the charge applies (quoteCatalogModel): the
+        // studio's words translated to the model's, priced settings filled from
+        // the schema, and a per-second model given its billable length. Quoting
+        // the raw params sent pixverse's `resolution` past a rule that reads
+        // `quality` and landed on the dearest catch-all — a meter several times
+        // the charge, for the very models the schedules were written for.
+        const supplied = params?.duration;
+        let normalized = applyRequiredDefaults(params, pricing.inputSchema, { modelId: pricing.modelId }).params;
+        if (billsBySecond(pricing.pricingRules)) {
+          normalized = { ...normalized, duration: billableSeconds(normalized.duration ?? supplied, pricing.inputSchema) };
+        }
+        const quote = calculateProviderQuote(pricing.pricingRules, normalized);
         const markup = await resolveMarkup(pricing.providerName);
         return providerCostToCredits(quote.providerCost, markup, CREDIT_TO_EUR);
       } catch {

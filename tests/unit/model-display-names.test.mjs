@@ -8,8 +8,13 @@ describe("brands are spelled the way their makers spell them", () => {
     expect(slugToTitle("minimax-h3/text-to-video", { capability: "text-to-video" })).toBe("MiniMax H3");
     expect(slugToTitle("happyhorse/image-to-video", { capability: "image-to-video" })).toBe("HappyHorse");
     expect(slugToTitle("pixverse-v6/text-to-video", { capability: "text-to-video" })).toBe("PixVerse V6");
-    expect(slugToTitle("wan/2-7-r2v", {})).toBe("Wan 2.7 R2V");
-    expect(slugToTitle("wan/2-2-a14b-text-to-video-turbo", {})).toBe("Wan 2.2 A14B Text To Video Turbo");
+    // The casing mechanics, on ids no override touches…
+    expect(slugToTitle("acme/9-1-r2v", {})).toBe("Acme 9.1 R2V");
+    expect(slugToTitle("acme/2-2-a14b-text-to-video-turbo", {})).toBe("Acme 2.2 A14B Text To Video Turbo");
+    // …and the two real ids that used to stand here, which now carry names a
+    // person would say: nobody asks for "R2V" or a parameter count.
+    expect(slugToTitle("wan/2-7-r2v", {})).toBe("Wan 2.7");
+    expect(slugToTitle("wan/2-2-a14b-text-to-video-turbo", {})).toBe("Wan 2.2 Turbo");
   });
 
   it("never shows an internal route name as if it were the model's name", () => {

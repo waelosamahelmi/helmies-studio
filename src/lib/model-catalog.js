@@ -6,6 +6,8 @@
 // quoteCatalogModel from here — and Node's strict ESM resolver has no
 // knowledge of the "@/" alias at all, only Next/Vite's bundler does.
 import prisma from "./prisma.js";
+import { applyRequiredDefaults } from "./provider-payload-core.mjs";
+import { billsBySecond, billableSeconds } from "./kie-price-schedules.mjs";
 import { ALIBABA_MEDIA_MODELS } from "./alibaba-catalog.js";
 import {
   calculateProviderQuote, defaultSchemaForCapability, providerCostToCredits, validateModelInput,
@@ -274,8 +276,27 @@ export async function getCatalogModel(modelId, { includeCosts = false, isAdmin =
 export async function quoteCatalogModel(modelId, params = {}) {
   const row = await resolveModelPricingRow(prisma, modelId);
   if (!row || !row.isActive || row.isDeprecated) throw new Error("Model is unavailable");
+  // Quote what will RUN. The studios send their own words (image_url, a numeric
+  // duration); submit translates them to the model's (provider-payload-core's
+  // adaptInputsToSchema). Validating the untranslated payload refused runs that
+  // would have succeeded — "duration must be a string" on 22 video models.
+  // applyRequiredDefaults adapts, then fills the required settings — including
+  // the ones this model's PRICE reads (kie-price-schedules.mjs), so an absent
+  // resolution is quoted at the value that will be sent, not at a guess.
+  // Read the length BEFORE adapting. A model billed by the length of the clip
+  // or audio you supply (motion control, lip sync, avatars, upscaling) declares
+  // no `duration`, so the adapter rightly drops it from what is SENT — but the
+  // studio measured that clip precisely so this quote could use it.
+  const suppliedSeconds = params.duration;
+  params = applyRequiredDefaults(params, row.inputSchema, { modelId: row.modelId }).params;
   const errors = validateModelInput(row.inputSchema, params);
   if (errors.length) return { valid: false, errors };
+  // The length is normalised for the PRICE only, after validation: kling-3.0/
+  // video declares its duration as a string enum ("3"…"15"), and a numeric
+  // override handed to the validator failed every quote for it.
+  const priced = billsBySecond(row.pricingRules)
+    ? { ...params, duration: billableSeconds(params.duration ?? suppliedSeconds, row.inputSchema) }
+    : params;
   const config = await prisma.providerConfig.findUnique({ where: { name: row.providerName } }).catch(() => null);
   const markup = config?.markup || DEFAULT_MARKUP;
 
@@ -320,7 +341,7 @@ export async function quoteCatalogModel(modelId, params = {}) {
     };
   }
 
-  const quote = calculateProviderQuote(row.pricingRules, params);
+  const quote = calculateProviderQuote(row.pricingRules, priced);
   return { valid: true, modelId, provider: row.providerName, ...quote, pricingSource: "rules", markup, credits: providerCostToCredits(quote.providerCost, markup) };
 }
 

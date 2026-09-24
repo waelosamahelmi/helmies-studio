@@ -31,7 +31,7 @@ describe("planFixes", () => {
 
   it("reports a modelType mismatch that resolves to a real category (reference-to-video stuck under image)", () => {
     const rows = [
-      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2V" },
+      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7" },
     ];
     const { modelTypeFixes, needsAttention } = planFixes(rows);
     // Reference-to-video is an image-INPUT capability (its modelType is i2v,
@@ -202,7 +202,7 @@ describe("planFixes", () => {
   it("is idempotent: re-planning against already-fixed rows reports nothing", () => {
     const fixedRows = [
       { modelId: "seedance-1-5-pro", providerName: "KIE", modelType: "video", capability: "video", displayName: "Seedance 1.5 Pro" },
-      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "i2v", capability: "reference-to-video", displayName: "Wan 2.7 R2V" },
+      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "i2v", capability: "reference-to-video", displayName: "Wan 2.7" },
       { modelId: "mystery-image-1", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Mystery Image 1", inputModalities: ["text"], outputModalities: ["image"] },
       { modelId: "alibaba:qwen3-tts-flash", providerName: "Alibaba", modelType: "audio", capability: "text-to-speech", displayName: "Qwen3 TTS Flash" },
     ];
@@ -221,7 +221,7 @@ describe("run() — dry-run vs apply (mocked DB)", () => {
       // wan/2-7-r2v gained a curated (replace-mode) schema in the M2 pass —
       // the fixture carries the already-correct stored schema so this
       // describe stays about the modelType/capability backfill only.
-      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7 R2V", inputSchema: schemaForModel("wan/2-7-r2v", "reference-to-video") },
+      { modelId: "wan/2-7-r2v", providerName: "KIE", modelType: "image", capability: "reference-to-video", displayName: "Wan 2.7", inputSchema: schemaForModel("wan/2-7-r2v", "reference-to-video") },
       { modelId: "flux-2", providerName: "KIE", modelType: "image", capability: "text-to-image", displayName: "Flux 2" },
       {
         modelId: "mystery-image-1", providerName: "KIE", modelType: "uncategorized", capability: null,
@@ -391,7 +391,7 @@ describe("run() — curated schema backfill (dry-run / apply / idempotent second
 
   const staleMusicRow = {
     modelId: "generate-music", providerName: "KIE", modelType: "audio", capability: "audio",
-    displayName: "Generate Music",
+    displayName: "Suno Music",
     inputSchema: { fields: { prompt: { type: "string", required: true, maxLength: 5000 } } },
   };
   // convert-to-wav needs a prior generation's taskId/audioId (no UI yet) and

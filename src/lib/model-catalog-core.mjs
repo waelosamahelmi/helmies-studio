@@ -1,3 +1,5 @@
+import { applyRequiredDefaults } from "./provider-payload-core.mjs";
+import { billsBySecond, billableSeconds } from "./kie-price-schedules.mjs";
 const LLM_SEGMENTS = new Set(["claude", "codex", "grok", "gemini"]);
 // Market doc paths that CONTAIN an LLM-vendor token ("grok", "gemini") but are
 // real MEDIA generation models, not chat models. Exported because kie-sync.js's
@@ -78,11 +80,17 @@ function normalizeScalar(value) {
   return typeof value === "string" ? value.trim().toLowerCase() : value;
 }
 
+// Compared as text: a schema may declare upscale_factor as 2 or "2" and a
+// duration as 5 or "5", and a price rule has to match the setting either way.
+// An absent setting matches nothing — never the string "undefined".
+const ruleScalar = (value) => (value === undefined || value === null ? null : String(value).trim().toLowerCase());
+
 function ruleMatches(when = {}, params = {}) {
   return Object.entries(when).every(([key, expected]) => {
-    const actual = normalizeScalar(params[key]);
-    if (Array.isArray(expected)) return expected.map(normalizeScalar).includes(actual);
-    return actual === normalizeScalar(expected);
+    const actual = ruleScalar(params[key]);
+    if (actual === null) return false;
+    if (Array.isArray(expected)) return expected.map(ruleScalar).includes(actual);
+    return actual === ruleScalar(expected);
   });
 }
 
@@ -172,6 +180,16 @@ export function calculateProviderQuote(pricing, params = {}) {
     multiplier,
     matchedRule: rule,
   };
+}
+
+/* What a scheduled model costs at the settings it runs with when nobody
+   chooses any — the "from" price stored on the row and shown on a model card.
+   Computed through the same fill → quote path a real run takes, so the card
+   and the meter cannot disagree. */
+export function defaultVariantCost(pricing, schema, modelId) {
+  let params = applyRequiredDefaults({}, schema, { modelId }).params;
+  if (billsBySecond(pricing)) params = { ...params, duration: billableSeconds(params.duration, schema) };
+  return calculateProviderQuote(pricing, params).providerCost;
 }
 
 export function providerCostToCredits(providerCost, markup = 2.5, creditValue = 0.01) {
@@ -296,12 +314,13 @@ export const DISPLAY_NAME_OVERRIDES = {
   // that, and it sorts under G.
   "generate-veo-3-video": "Veo 3",
   "generate-aleph-video": "Runway Aleph",
-  // NOT renamed: "generate-ai-video" and "generate-or-edit-image". Both are
-  // ugly, but I do not know which model is behind either route, and a
-  // confident wrong name is worse than an awkward true one. They are on the
-  // list for the model dictionary, where the answer will be looked up
-  // rather than guessed.
-  "grok-imagine-video-1-5-preview": "Grok Imagine Video 1.5",
+  // These two waited for an answer rather than a guess. The answer is in the
+  // body builders: video-payload-core.mjs posts generate-ai-video to
+  // /api/v1/runway/generate, and image-payload-core.mjs posts
+  // generate-or-edit-image to the Flux Kontext route.
+  "generate-ai-video": "Runway",
+  "generate-or-edit-image": "Flux Kontext",
+  "grok-imagine-video-1-5-preview": "Grok Imagine 1.5",
   "ai-clipping": "AI Clipping",
   // ByteDance's V-series carries no brand of its own once the vendor
   // folder is dropped, so "V1 Pro" reads as nobody's model.
@@ -310,6 +329,72 @@ export const DISPLAY_NAME_OVERRIDES = {
   "bytedance/v1-pro-fast-image-to-video": "Seedance V1 Pro Fast",
   "bytedance/v1-lite-text-to-video": "Seedance V1 Lite",
   "bytedance/v1-lite-image-to-video": "Seedance V1 Lite",
+
+  /* One pattern — Family, Version, Tier — and no capability words, because the
+     picker a name appears in already says what the model does. A slug is the
+     provider's route, not a name: it says "Image To Video Pro" where the tier
+     is "Pro", "V2.5" where the model is "2.5", and "A14B" where nobody needs
+     the parameter count. Keyed by full id so no two rows can share an entry
+     by accident; tests/unit/model-display-names.test.mjs checks that no
+     picker group ends up holding two models with one name. */
+  "hailuo/02-text-to-video-pro": "Hailuo 02 Pro",
+  "hailuo/02-image-to-video-pro": "Hailuo 02 Pro",
+  "hailuo/02-text-to-video-standard": "Hailuo 02 Standard",
+  "hailuo/02-image-to-video-standard": "Hailuo 02 Standard",
+  "hailuo/2-3-image-to-video-pro": "Hailuo 2.3 Pro",
+  "hailuo/2-3-image-to-video-standard": "Hailuo 2.3 Standard",
+  "kling/v2-5-turbo-text-to-video-pro": "Kling 2.5 Turbo Pro",
+  "kling/v2-5-turbo-image-to-video-pro": "Kling 2.5 Turbo Pro",
+  "kling/v2-1-master-text-to-video": "Kling 2.1 Master",
+  "kling/v2-1-master-image-to-video": "Kling 2.1 Master",
+  "kling/v2-1-pro": "Kling 2.1 Pro",
+  "kling/v2-1-standard": "Kling 2.1 Standard",
+  "kling/v3-turbo-text-to-video": "Kling 3.0 Turbo",
+  "kling/v3-turbo-image-to-video": "Kling 3.0 Turbo",
+  "kling-3.0/video": "Kling 3.0",
+  "kling/ai-avatar-pro": "Kling Avatar Pro",
+  "kling/ai-avatar-standard": "Kling Avatar Standard",
+  "wan/2-2-a14b-text-to-video-turbo": "Wan 2.2 Turbo",
+  "wan/2-2-a14b-image-to-video-turbo": "Wan 2.2 Turbo",
+  "wan/2-2-a14b-speech-to-video-turbo": "Wan 2.2 Speech Avatar",
+  "wan/2-7-videoedit": "Wan 2.7 Edit",
+  "wan/2-7-r2v": "Wan 2.7",
+  "google/imagen4": "Imagen 4",
+  "google/imagen4-fast": "Imagen 4 Fast",
+  "google/imagen4-ultra": "Imagen 4 Ultra",
+  "google/nano-banana": "Nano Banana",
+  "google/nano-banana-edit": "Nano Banana Edit",
+  "google/gemini-3-1-flash-tts": "Gemini 3.1 Flash TTS",
+  "bytedance/seedream": "Seedream 3.0",
+  "qwen/text-to-image": "Qwen Image",
+  "qwen/image-to-image": "Qwen Image",
+  "qwen/image-edit": "Qwen Image Edit",
+  "qwen2/text-to-image": "Qwen Image 2",
+  "qwen2/image-edit": "Qwen Image 2 Edit",
+  "qwen3/text-to-image": "Qwen Image 3",
+  "qwen3/image-to-image": "Qwen Image 3",
+  "qwen3/pro-image-to-image": "Qwen Image 3 Pro",
+  // Spelled as their makers spell them: Ideogram and Seedream number releases
+  // "3.0"; PixVerse brands them "V6" — which is why it is NOT renamed here.
+  "ideogram/v3-text-to-image": "Ideogram 3.0",
+  "ideogram/v3-edit": "Ideogram 3.0 Inpaint",
+  "ideogram/v3-remix": "Ideogram 3.0 Remix",
+  "recraft/remove-background": "Recraft Background Remover",
+  "volcengine/video-to-video-lip-sync": "Volcengine Lip Sync",
+  "infinitalk/from-audio": "InfiniteTalk",
+  // Suno's routes are verbs ("Upload And Cover Audio"); these are what they do.
+  "generate-music": "Suno Music",
+  "generate-sounds": "Suno Sound Effects",
+  "generate-lyrics": "Suno Lyrics",
+  "upload-and-cover-audio": "Suno Cover",
+  "upload-and-extend-audio": "Suno Extend",
+  "add-vocals": "Suno Add Vocals",
+  "add-instrumental": "Suno Add Instrumental",
+  "separate-vocals": "Suno Stem Separation",
+  "replace-section": "Suno Replace Section",
+  "boost-music-style": "Suno Style Boost",
+  "suno-voice-generate": "Suno Voice Clone",
+  "gemini-omni-audio": "Gemini Omni Voice",
 };
 
 const CAPABILITY_SUFFIX_WORDS = {
@@ -669,7 +754,10 @@ const AUDIO_KIND_RULES = [
   // + the two callbacks) — the old rule only matched the literal token
   // "voice-generate", scattering 6 of the 8 steps into the generic "utility"
   // bucket and across two studio surfaces (docs/model-audit/audio-music.md).
-  ["voice-clone", /suno-voice-|voice-generate|voice-clone|persona/],
+  // gemini-omni-audio builds a reusable VOICE from a preset `audio_id` and a
+  // `name` — it generates no audio from a brief. As a generic "utility" it sat
+  // in Audio Tools, whose form (a prompt and a track) can supply neither field.
+  ["voice-clone", /suno-voice-|voice-generate|voice-clone|persona|omni-audio/],
   ["sfx", /generate-sounds|sound-effect|sfx/],
   ["enhancement", /audio-isolation|boost-music|separate-vocals|enhance/],
   ["conversion", /convert-to-wav|to-wav|convert|generate-midi/],
@@ -730,7 +818,14 @@ export function inferCapability(path) {
   if (/cover-suno/.test(path)) return "image";
   if (/create-music-video/.test(path)) return "video";
   if (/text-to-image|text2image/.test(path)) return "text-to-image";
-  if (/image-to-image|image-edit|edit-image|remix|character-edit/.test(path)) return "image-to-image";
+  /* An EDIT model needs a picture to edit. Four were filed as coarse "image",
+     which is the text-to-image group: the Create picker offered them, the
+     meter quoted a price, credits were held, and the provider refused a run
+     that had no image in it (schema-required: image_urls on nano-banana-edit
+     and seedream/4.5-edit, image_url + mask_url on ideogram/v3-edit,
+     reference_image_urls on ideogram/character). The lookbehind keeps
+     `happyhorse/video-edit` where it belongs. */
+  if (/image-to-image|image-edit|edit-image|remix|character-edit|(?<!video)-edit$|^ideogram\/character$/.test(path)) return "image-to-image";
   // Lip-sync/avatar markers must win over the generic video-direction
   // markers: `volcengine/video-to-video-lip-sync` contains the literal
   // substring "video-to-video", so with the old ordering it was filed as
@@ -738,11 +833,20 @@ export function inferCapability(path) {
   // (video-market.md root cause #9). "omni-character" covers the root-level
   // gemini-omni-character page (a character/avatar asset constructor —
   // video-market.md, Gemini Omni section).
-  if (/lip-sync|avatar|omnihuman|infinitalk|from-audio|omni-character/.test(path)) return "avatar-video";
+  // speech-to-video requires image_url + audio_url: a portrait made to speak.
+  // As coarse "video" it sat in the text-to-video picker, which has neither.
+  if (/lip-sync|avatar|omnihuman|infinitalk|from-audio|omni-character|speech-to-video/.test(path)) return "avatar-video";
   if (IMAGE_TO_VIDEO_MARKERS.test(path)) return "image-to-video";
   if (TEXT_TO_VIDEO_MARKERS.test(path)) return "text-to-video";
   if (VIDEO_TO_VIDEO_MARKERS.test(path)) return "video-to-video";
   if (/reference-to-video|r2v/.test(path)) return "reference-to-video";
+  /* Three more that the coarse `video` catch-all below would hand to the
+     text-to-video picker, each of which REQUIRES media that picker never
+     collects: Runway Aleph restyles a clip (video_url), a PixVerse transition
+     runs between two stills (first/last frame), and Kling 2.1 Pro/Standard
+     animate a still (image_url) — production history: kling/v2-1-pro 0 of 2. */
+  if (/aleph/.test(path)) return "video-to-video";
+  if (/\/transition$|^kling\/v2-1-(pro|standard)$/.test(path)) return "image-to-video";
   /* Identity transfer — one face/subject placed into an existing clip that
      keeps its own timing and blocking. These carry `image_url` + `video_url`
      (or `input_urls` + `video_urls`) and, on the Kling family, an explicit
@@ -982,6 +1086,44 @@ export const CURATED_SCHEMAS = {
     // Wire field is `audioUrl` (camelCase — the casing WAS the bug).
     audio_url: { type: "string", format: "uri", required: true },
     type: { type: "string", required: false, enum: ["separate_vocal", "split_stem", "split_stem_advanced"], default: "separate_vocal" },
+  } },
+  /* Three more that still carried the fabricated `{ prompt* }` stub — and
+     these are priced rows, so the quote runs validateModelInput and the stub
+     is what it validated against. The voice wizard sends a recording and no
+     prompt, so its FIRST step was refused with "prompt is required" before it
+     ever reached the provider; nobody has been able to clone a voice. Fields
+     are what audio-payload-core's builders read, in the studio's spellings
+     (audio_url → voiceUrl / verifyUrl / uploadUrl, style → tags, snake →
+     camel); required only where the builder's route cannot run without it. */
+  "suno-voice-validate": { replace: true, fields: {
+    // The user's own recording. Wire field is `voiceUrl`.
+    audio_url: { type: "string", format: "uri", required: true },
+    vocal_start_s: { type: "number", required: true, minimum: 0 },
+    vocal_end_s: { type: "number", required: true, minimum: 0 },
+    language: { type: "string", required: false, maxLength: 20 },
+  } },
+  "suno-voice-generate": { replace: true, fields: {
+    // The validate step's provider task id, and the phrase read back
+    // (wire field `verifyUrl`).
+    task_id: { type: "string", required: true },
+    audio_url: { type: "string", format: "uri", required: true },
+    voice_name: { type: "string", required: false, maxLength: 100 },
+    description: { type: "string", required: false, maxLength: 1000 },
+    style: { type: "string", required: false, maxLength: 1000 },
+    singer_skill_level: { type: "string", required: false },
+  } },
+  "replace-section": { replace: true, fields: {
+    // The upload branch: the app holds the track's URL, not the provider's
+    // taskId + audioId. The window is the Music timeline's selection.
+    audio_url: { type: "string", format: "uri", required: true },
+    prompt: { type: "string", required: true, maxLength: 5000 },
+    infill_start_s: { type: "number", required: true, minimum: 0 },
+    infill_end_s: { type: "number", required: true, minimum: 0 },
+    // Wire field is `tags`.
+    style: { type: "string", required: false, maxLength: 1000 },
+    title: { type: "string", required: false, maxLength: 100 },
+    full_lyrics: { type: "string", required: false, maxLength: 5000 },
+    negative_tags: { type: "string", required: false, maxLength: 500 },
   } },
   // ElevenLabs speech.
   "elevenlabs-text-to-speech-turbo-2.5": { fields: ELEVENLABS_TTS_FIELDS },

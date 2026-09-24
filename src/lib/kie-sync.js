@@ -14,7 +14,8 @@
  */
 
 import prisma from "@/lib/prisma";
-import { CURATED_SCHEMAS, inferKieModelFromUrl, MEDIA_EXCEPTIONS, modelTypeForCapability, schemaForModel, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
+import { priceScheduleFor } from "@/lib/kie-price-schedules.mjs";
+import { CURATED_SCHEMAS, defaultVariantCost, inferKieModelFromUrl, MEDIA_EXCEPTIONS, modelTypeForCapability, schemaForModel, slugToTitle, UNCATEGORIZED_MODEL_TYPE } from "@/lib/model-catalog-core.mjs";
 import { readVerification, verificationAllowsActive, withProviderRequired, STATUS_PENDING, VERIFICATION_KEY } from "@/lib/catalog-verification.mjs";
 import { calculateCredits } from "@/lib/pricing-engine";
 import { getPricing, KIE_PRICING_OVERRIDES, DEFAULT_PRICING } from "@/lib/kie-pricing-core.mjs";
@@ -229,9 +230,22 @@ export async function syncKieModels() {
   for (const model of kieModels) {
     seenIds.add(model.modelId);
     const existingRow = existingMap.get(model.modelId);
-    const providerCost = getPricing(model.modelId, model.type);
+    // A model with a written schedule (kie-price-schedules.mjs) keeps it across
+    // syncs: the flat rule this used to write for EVERY row is how a 15s 4K
+    // clip and a 4s 480p one came to cost the same. The stored providerCost /
+    // creditsCost become the "from" price — the model at its default settings.
+    const scheduled = priceScheduleFor(model.modelId);
+    // Priced on the schema the row will actually carry (curated fields plus
+    // the verification sweep's providerRequired), not the raw sitemap guess —
+    // a schema with no fields matches no rule and lands on the dearest catch-all.
+    const scheduleSchema = withProviderRequired(
+      model.inputSchema,
+      Array.isArray(existingRow?.inputSchema?.providerRequired) ? existingRow.inputSchema.providerRequired : [],
+    );
+    const providerCost = scheduled ? defaultVariantCost(scheduled.pricing, scheduleSchema, model.modelId) : getPricing(model.modelId, model.type);
     const creditsCost = calculateCredits(providerCost, MARKUP);
-    const pricingRules = { currency: "USD", unit: model.type === "image" || model.type === "i2i" ? "image" : "fixed", rules: [{ price: providerCost }] };
+    const pricingRules = scheduled?.pricing
+      || { currency: "USD", unit: model.type === "image" || model.type === "i2i" ? "image" : "fixed", rules: [{ price: providerCost }] };
     // modelType is ALWAYS derived from capability (single source of truth —
     // see modelTypeForCapability's header). model.type above is the old
     // path-text guess; it still drives the default pricing unit and modality
