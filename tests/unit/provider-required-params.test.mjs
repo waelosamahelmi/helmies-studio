@@ -49,8 +49,17 @@ describe("applyRequiredDefaults — fills a required field from the schema", () 
   });
 
   it("falls back to a numeric minimum when there is no enum and no default", () => {
-    const schema = { fields: { duration: { type: "number", required: true, minimum: 2, maximum: 30 } } };
-    expect(applyRequiredDefaults({}, schema).params.duration).toBe(2);
+    const schema = { fields: { num_images: { type: "number", required: true, minimum: 2, maximum: 8 } } };
+    expect(applyRequiredDefaults({}, schema).params.num_images).toBe(2);
+  });
+
+  it("a missing clip length is five seconds when the model's range allows it — not its one-second minimum", () => {
+    const pixverse = { fields: { duration: { type: "number", required: true, minimum: 1, maximum: 15 } } };
+    expect(applyRequiredDefaults({}, pixverse).params.duration).toBe(5);
+    const longOnly = { fields: { duration: { type: "number", required: true, minimum: 6, maximum: 30 } } };
+    expect(applyRequiredDefaults({}, longOnly).params.duration).toBe(6);
+    const strings = { fields: { duration: { type: "string", required: true, enum: ["3", "5", "10"] } } };
+    expect(applyRequiredDefaults({}, strings).params.duration).toBe("5");
   });
 });
 
@@ -123,10 +132,15 @@ describe("providerRequiredFields — fields the provider requires but the schema
     expect(filled.aspect_ratio).toBeTruthy();
   });
 
-  it("leaves the sibling flux-2/flex-text-to-image untouched — it does not require one", () => {
+  it("does not give the sibling flux-2/flex-text-to-image an aspect_ratio — it does not require one", () => {
     const schema = defaultSchemaForCapability("text-to-image");
     const { filled } = applyRequiredDefaults({ prompt: "a cat" }, schema, { modelId: "flux-2/flex-text-to-image" });
-    expect(filled).toEqual({});
+    expect(filled).not.toHaveProperty("aspect_ratio");
+    // It IS given a resolution: flex costs 14 KIE credits at 1K and 24 at 2K
+    // (kie-price-schedules.mjs), and a price rule can only match a setting
+    // that is present — so the cheapest offered size is filled and sent.
+    expect(Object.keys(filled)).toEqual(["resolution"]);
+    expect(schema.fields.resolution.enum[0]).toBe(filled.resolution);
   });
 
   it("knows kling-3.0/video requires `sound` (observed nameless 500 'This field is required', probe 2026-08-05)", () => {
