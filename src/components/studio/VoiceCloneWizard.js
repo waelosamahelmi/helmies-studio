@@ -5,6 +5,7 @@ import { Fault, Field, Dropzone, Specs, clock, IcMic, IcCheck, IcBolt, IcRefresh
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
+import { decodeTextOutput } from "@/lib/audio-payload-core.mjs";
 
 /* ══════════════════════════════════════════════════════════════════════════
    S2 — the voice-clone wizard (AudioStudio's Voice-clone mode)
@@ -37,18 +38,6 @@ const STEPS = [
   { n: 3, label: "Build the voice" },
   { n: 4, label: "Done" },
 ];
-
-function decodeTextOutput(url) {
-  if (typeof url !== "string" || !url.startsWith("data:text/plain")) return null;
-  const comma = url.indexOf(",");
-  if (comma < 0) return null;
-  try {
-    const text = decodeURIComponent(url.slice(comma + 1)).trim();
-    return text || null;
-  } catch {
-    return null;
-  }
-}
 
 export default function VoiceCloneWizard({ onCreditsChanged }) {
   const [step, setStep] = useState(1);
@@ -85,10 +74,14 @@ export default function VoiceCloneWizard({ onCreditsChanged }) {
   }, []);
 
   /* ── Step 1: validate the recording ───────────────────────────────────── */
+  /* Field names are the model's schema's (snake_case; audio-payload-core
+     translates to voiceUrl / vocalStartS on the wire). The camelCase these
+     used to go out under was invisible to validateModelInput, so a schema
+     that REQUIRES the window would have read it as missing. */
   const validateParams = useMemo(() => ({
     audio_url: recording?.url || "",
-    vocalStartS: Number(vocalStart) || 0,
-    vocalEndS: Number(vocalEnd) || 0,
+    vocal_start_s: Number(vocalStart) || 0,
+    vocal_end_s: Number(vocalEnd) || 0,
   }), [recording, vocalStart, vocalEnd]);
 
   const validateQuote = useCreditCost(recording?.url ? "audio" : "", VALIDATE_MODEL, validateParams);
@@ -147,9 +140,9 @@ export default function VoiceCloneWizard({ onCreditsChanged }) {
 
   /* ── Step 3: generate the voice ───────────────────────────────────────── */
   const generateParams = useMemo(() => ({
-    taskId: taskId || "",
+    task_id: taskId || "",
     audio_url: reading?.url || "",
-    voiceName: name.trim(),
+    voice_name: name.trim(),
   }), [taskId, reading, name]);
 
   const generateQuote = useCreditCost(reading?.url && taskId ? "audio" : "", GENERATE_MODEL, generateParams);

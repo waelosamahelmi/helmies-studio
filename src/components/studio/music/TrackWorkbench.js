@@ -7,7 +7,7 @@ import { useCreditCost } from "../useCreditCost";
 import { apiFetch } from "@/lib/client-fetch";
 import {
   fullRange, normalizeRange, moveRangeEdge, timeAtRatio, continueAtFor,
-  replaceWindowIssue, isMusicTrackModel, TRACK_OPS, opParams,
+  replaceWindowIssue, isMusicTrackModel, TRACK_OPS, STEM_TYPES, opParams, opIssue, trackTitle,
 } from "@/lib/music-timeline-core.mjs";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -31,13 +31,6 @@ import {
 const KEY_STEP = 0.5;       // seconds per arrow press
 const KEY_STEP_BIG = 5;     // with Shift
 
-function trackTitle(gen) {
-  const t = gen?.params?.title;
-  if (typeof t === "string" && t.trim()) return t.trim();
-  const p = String(gen?.prompt || "").trim();
-  return p.length > 60 ? `${p.slice(0, 60)}…` : p || "Untitled track";
-}
-
 export default function TrackWorkbench({ refreshKey = 0, onCreditsChanged }) {
   const [tracks, setTracks] = useState([]);
   const [loadingTracks, setLoadingTracks] = useState(true);
@@ -48,6 +41,7 @@ export default function TrackWorkbench({ refreshKey = 0, onCreditsChanged }) {
   const [opId, setOpId] = useState(TRACK_OPS[0].id);
   const [opPrompt, setOpPrompt] = useState("");
   const [opStyle, setOpStyle] = useState("");
+  const [stemType, setStemType] = useState(STEM_TYPES[0].value);
   const [bump, setBump] = useState(0);
 
   const audioRef = useRef(null);
@@ -150,9 +144,9 @@ export default function TrackWorkbench({ refreshKey = 0, onCreditsChanged }) {
   const params = useMemo(
     () => opParams(op.id, {
       track, range: r, duration,
-      prompt: opPrompt, style: opStyle.trim() || undefined,
+      prompt: opPrompt, style: opStyle.trim() || undefined, stemType,
     }),
-    [op.id, track, r, duration, opPrompt, opStyle],
+    [op.id, track, r, duration, opPrompt, opStyle, stemType],
   );
 
   const { cost, affordable, balance, shortfall } = useCreditCost(
@@ -160,10 +154,13 @@ export default function TrackWorkbench({ refreshKey = 0, onCreditsChanged }) {
   );
 
   const rangeIssue = op.id === "replace-section" ? replaceWindowIssue(r, duration) : null;
-  const missingPrompt = op.needsPrompt && op.id !== "upload-and-extend-audio" && !opPrompt.trim();
-  const blocked = !track || running || !affordable || !!rangeIssue || missingPrompt;
+  /* opIssue names the first REQUIRED field the op still lacks — the prompt,
+     or the style add-vocals / add-instrumental cannot run without. Those two
+     never sent one and failed every run; now the button says what is missing. */
+  const fieldIssue = track ? opIssue(op.id, params) : null;
+  const blocked = !track || running || !affordable || !!rangeIssue || !!fieldIssue;
   const blockReason = !track ? "Select a track first"
-    : rangeIssue || (missingPrompt ? "Describe what to generate" : !affordable ? "Not enough credits" : null);
+    : rangeIssue || fieldIssue || (!affordable ? "Not enough credits" : null);
 
   const runOp = useCallback(() => {
     if (blocked || !track) return;
@@ -310,14 +307,33 @@ export default function TrackWorkbench({ refreshKey = 0, onCreditsChanged }) {
               aria-label="Operation brief"
             />
           )}
-          {op.needsPrompt && (
+          {(op.needsPrompt || op.needsStyle) && (
             <input
               className="hs-input"
               value={opStyle}
               onChange={(e) => setOpStyle(e.target.value)}
-              placeholder="Optional style tags — lo-fi, cinematic…"
+              placeholder={
+                op.needsStyle
+                  ? (track?.params?.style ? `Style tags — blank keeps “${String(track.params.style).slice(0, 40)}”` : "Style tags — lo-fi, cinematic…")
+                  : "Optional style tags — lo-fi, cinematic…"
+              }
               aria-label="Operation style"
             />
+          )}
+          {op.needsStem && (
+            <div className="hs-chips" role="group" aria-label="How far to split">
+              {STEM_TYPES.map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  className={`hs-chip${t.value === stemType ? " is-on" : ""}`}
+                  aria-pressed={t.value === stemType}
+                  onClick={() => setStemType(t.value)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           )}
 
           {failed && <Fault error={error} onRetry={runOp} />}

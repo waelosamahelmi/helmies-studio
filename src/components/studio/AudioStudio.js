@@ -16,6 +16,7 @@ import AudioToolsStudio from "./AudioToolsStudio";
 import VoiceCloneWizard from "./VoiceCloneWizard";
 import { matchesGroup } from "@/lib/capability-groups";
 import { audioKind } from "@/lib/model-catalog-core.mjs";
+import { voiceFieldFor } from "@/lib/audio-payload-core.mjs";
 import { apiFetch } from "@/lib/client-fetch";
 import { placeholderPeaks, useWaveform, useTransport, Waveform, Transport } from "@/components/studio/kit/Waveform";
 
@@ -56,6 +57,9 @@ function offers(model, ...fields) {
   return fields.some((f) => !!declared[f]);
 }
 
+/* A stock cast for a model that takes a voice but names none of its own
+   (`voice` / `voice_id` with no enum — the ElevenLabs shape). A model that
+   DOES publish its cast is offered that cast instead: see voiceFieldFor. */
 const VOICES = [
   { id: "rachel", label: "Rachel", desc: "Warm, unhurried, mid-range" },
   { id: "domi", label: "Domi", desc: "Steady and even, low affect" },
@@ -209,17 +213,45 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
 
   const copy = MODES[mode];
   const spoken = mode === "speech" || mode === "dialogue";
-  const wantsVoice = spoken && offers(model, "voice", "voice_id");
+  /* The voice control reads the model's own schema: WHICH field carries the
+     voice (voice_name on Gemini, voice / voice_id elsewhere) and WHAT it may
+     hold. This used to gate on voice / voice_id and list eight ElevenLabs
+     names, while the only active speech model declares `voice_name` with a
+     30-name enum — so no picker rendered and every read used one voice. */
+  const voiceField = spoken ? voiceFieldFor(model) : null;
+  const wantsVoice = !!voiceField;
+  const voiceOptions = useMemo(() => {
+    if (!voiceField) return [];
+    if (voiceField.options) return voiceField.options.map((v) => ({ value: v, label: v }));
+    return [
+      ...VOICES.map((v) => ({ value: v.id, label: v.label, title: v.desc })),
+      /* S2 — the user's own cloned voices, by provider voiceId. Only where
+         the model accepts a free voice id; an enum would refuse them. */
+      ...profiles.filter((p) => p.voiceId).map((p) => ({ value: p.voiceId, label: p.name, title: "Your cloned voice" })),
+    ];
+  }, [voiceField, profiles]);
+  const voiceLabel = voiceOptions.find((o) => o.value === voice)?.label || null;
+
+  /* A voice chosen for one model is not a voice the next one has. */
+  useEffect(() => {
+    if (voice && voiceOptions.length && !voiceOptions.some((o) => o.value === voice)) setVoice("");
+  }, [voice, voiceOptions]);
   const wantsTone = mode === "speech" && offers(model, "stability", "similarity_boost", "speed");
   const wantsSource = mode === "voice";
 
   /* Same params, same tool string, as the submit below — a mismatch would
      quote one price and charge another. */
+  const voiceParams = useMemo(
+    () => (voiceField && voice ? { [voiceField.field]: voice } : {}),
+    [voiceField, voice],
+  );
+
   const costParams = useMemo(() => ({
     prompt: text,
+    ...voiceParams,
     ...(duration != null ? { duration } : {}),
     ...(source?.url ? { audio_url: source.url } : {}),
-  }), [text, duration, source]);
+  }), [text, voiceParams, duration, source]);
 
   const { cost, affordable, balance, shortfall } = useCreditCost("audio", model?.id || "", costParams);
 
@@ -235,12 +267,12 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
     submit("audio", model.id, {
       endpoint: model.endpoint || model.id,
       prompt: text.trim(),
-      ...(wantsVoice && voice ? { voice } : {}),
+      ...voiceParams,
       ...(wantsTone ? { stability, similarity_boost: similarity, speed } : {}),
       ...(duration != null ? { duration } : {}),
       ...(source?.url ? { audio_url: source.url } : {}),
     });
-  }, [model, text, submit, wantsVoice, voice, wantsTone, stability, similarity, speed, duration, source]);
+  }, [model, text, submit, voiceParams, wantsTone, stability, similarity, speed, duration, source]);
 
   /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
@@ -255,19 +287,18 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
       />
 
       {wantsVoice && (
-        <Field label="Voice" hint="Pick a timbre. Models that ship their own cast ignore this.">
+        <Field
+          label="Voice"
+          hint={voiceField.options
+            ? `This model's own cast.${voiceField.default ? ` Unset reads as ${voiceField.default}.` : ""}`
+            : "Pick a timbre, or one of your cloned voices."}
+        >
           <Chips
             label="Voice"
             scroll
             value={voice}
             onChange={(v) => setVoice(v === voice ? "" : v)}
-            options={[
-              ...VOICES.map((v) => ({ value: v.id, label: v.label, title: v.desc })),
-              /* S2 — the user's own cloned voices, by provider voiceId. */
-              ...profiles
-                .filter((p) => p.voiceId)
-                .map((p) => ({ value: p.voiceId, label: p.name, title: "Your cloned voice" })),
-            ]}
+            options={voiceOptions}
           />
         </Field>
       )}
@@ -340,7 +371,7 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
           rows={[
             { k: "Job", v: copy.label },
             { k: "Model", v: model?.displayName || model?.name },
-            { k: "Voice", v: wantsVoice ? (VOICES.find((v) => v.id === voice)?.label || "Model default") : null },
+            { k: "Voice", v: wantsVoice ? (voiceLabel || voiceField.default || "Model default") : null },
             { k: "Len", v: duration != null ? `${duration}s` : null },
             { k: "Src", v: source ? "Attached" : null },
           ]}
@@ -352,7 +383,7 @@ function AudioGenBody({ mode, initialModel, templateConfig, onCreditsChanged }) 
   /* ── Body ─────────────────────────────────────────────────────────────── */
   const settings = [
     model?.displayName || model?.name,
-    wantsVoice && voice ? VOICES.find((v) => v.id === voice)?.label : null,
+    wantsVoice ? voiceLabel : null,
     duration != null ? `${duration}s` : null,
   ].filter(Boolean).join(" · ");
 
@@ -504,6 +535,27 @@ const MODE_OPTIONS = [
 export default function AudioStudio(props) {
   const { mode, setMode } = useStudioMode({ modes: MODE_IDS, fallback: "speech" });
 
+  /* A mode with nothing to run it is not offered. Dialogue pools
+     audioKind === "dialogue", and today no active model is one — the tab
+     opened onto an empty picker and a Brief that could never submit. It
+     returns by itself the moment a dialogue model is activated. Decided only
+     once the catalog has LOADED, so a deep link is not bounced while it is
+     still arriving. (The catalog is fetched once per page and shared.) */
+  const { models, loading: loadingModels } = useModelCatalog({});
+  const emptyModes = useMemo(() => {
+    if (loadingModels || !models?.length) return [];
+    return Object.entries(MODES)
+      .filter(([, m]) => !models.some((row) => matchesGroup(row, "audio") && audioKind(row) === m.kind))
+      // Voice cloning is the wizard, driven by fixed model ids, not a pool.
+      .filter(([id]) => id !== "voice")
+      .map(([id]) => id);
+  }, [models, loadingModels]);
+  const modeOptions = useMemo(() => MODE_OPTIONS.filter((o) => !emptyModes.includes(o.value)), [emptyModes]);
+
+  useEffect(() => {
+    if (emptyModes.includes(mode)) setMode(modeOptions[0]?.value || "tools");
+  }, [emptyModes, mode, modeOptions, setMode]);
+
   /* Legacy templates carry a mode ("sound" for what is now sfx) — honor it
      once by moving it into the URL. */
   const appliedTemplateMode = useRef(false);
@@ -517,7 +569,7 @@ export default function AudioStudio(props) {
 
   return (
     <div className="st-moded">
-      <ModeBar label="Audio job" value={mode} onChange={setMode} options={MODE_OPTIONS} />
+      <ModeBar label="Audio job" value={mode} onChange={setMode} options={modeOptions} />
       <div className="st-moded__body" key={mode}>
         {mode === "tools" ? (
           <AudioToolsStudio {...props} />

@@ -14,8 +14,13 @@ import {
   replaceWindowIssue,
   isMusicTrackModel,
   TRACK_OPS,
+  STEM_TYPES,
+  DEFAULT_NEGATIVE_TAGS,
   opParams,
+  opIssue,
+  trackTitle,
 } from "@/lib/music-timeline-core.mjs";
+import { schemaForModel, validateModelInput } from "@/lib/model-catalog-core.mjs";
 
 describe("range math", () => {
   it("clamps times to the track", () => {
@@ -99,21 +104,83 @@ describe("opParams — the same object quotes and submits", () => {
     }
   });
 
-  it("Extend carries continueAt from the selection", () => {
-    expect(opParams("upload-and-extend-audio", { track, range: { start: 45, end: 60 }, duration: 120 }).continueAt).toBe(45);
-    expect(opParams("upload-and-extend-audio", { track, range: fullRange(120), duration: 120 }).continueAt).toBe(120);
+  // Field names are the SCHEMA's. A camelCase spelling sails past
+  // validateModelInput undeclared, so a required infill_start_s read as missing.
+  it("Extend carries continue_at from the selection — and omits it when no length is known", () => {
+    expect(opParams("upload-and-extend-audio", { track, range: { start: 45, end: 60 }, duration: 120 }).continue_at).toBe(45);
+    expect(opParams("upload-and-extend-audio", { track, range: fullRange(120), duration: 120 }).continue_at).toBe(120);
+    // Audio Tools has no timeline: no length, no continue_at, a default extend.
+    expect(opParams("upload-and-extend-audio", { track })).toEqual({ audio_url: track.outputUrl });
   });
 
-  it("Replace section carries the infill window and maps style to tags", () => {
+  it("Replace section carries the infill window, the style, a title and the new words", () => {
     const p = opParams("replace-section", { track, range: { start: 10, end: 30 }, duration: 120, prompt: "quieter", style: "ambient" });
-    expect(p).toMatchObject({ infillStartS: 10, infillEndS: 30, prompt: "quieter", tags: "ambient" });
+    expect(p).toMatchObject({ infill_start_s: 10, infill_end_s: 30, prompt: "quieter", full_lyrics: "quieter", style: "ambient" });
+    expect(p.title).toBeTruthy();
   });
 
   it("whole-track ops send no range fields", () => {
     for (const id of ["upload-and-cover-audio", "add-vocals", "add-instrumental", "separate-vocals"]) {
       const p = opParams(id, { track, range: { start: 10, end: 30 }, duration: 120, prompt: "p" });
-      expect(p.continueAt, id).toBeUndefined();
-      expect(p.infillStartS, id).toBeUndefined();
+      expect(p.continue_at, id).toBeUndefined();
+      expect(p.infill_start_s, id).toBeUndefined();
     }
+  });
+});
+
+/* add-vocals / add-instrumental: 0 of 5 in production. Their schema REQUIRES
+   title, style and negative_tags; neither surface sent all three. */
+describe("opParams — the fields add-vocals and add-instrumental require", () => {
+  const made = { outputUrl: "https://cdn/t.mp3", params: { title: "Helmies Anthem", style: "cinematic electronic" }, prompt: "an anthem" };
+  const attached = { outputUrl: "https://cdn/u.mp3", name: "take 3 (final).mp3" };
+
+  it("defaults the title to the track's own name, and negative_tags to the two things nobody wants", () => {
+    expect(opParams("add-vocals", { track: made, prompt: "sing it" })).toMatchObject({ title: "Helmies Anthem", negative_tags: DEFAULT_NEGATIVE_TAGS });
+    expect(opParams("add-instrumental", { track: attached, prompt: "warm jazz trio" }).title).toBe("take 3 (final)");
+    expect(trackTitle({})).toBe("Untitled track");
+  });
+
+  it("takes the style from the user, else from the track it was made with — never from nowhere", () => {
+    expect(opParams("add-vocals", { track: made, prompt: "sing it", style: "breathy alto" }).style).toBe("breathy alto");
+    expect(opParams("add-vocals", { track: made, prompt: "sing it" }).style).toBe("cinematic electronic");
+    expect(opParams("add-vocals", { track: attached, prompt: "sing it" }).style).toBeUndefined();
+  });
+
+  it("add-instrumental has no lyric brief: what the user typed IS its style", () => {
+    const p = opParams("add-instrumental", { track: attached, prompt: "warm jazz trio" });
+    expect(p).toEqual({ audio_url: attached.outputUrl, style: "warm jazz trio", title: "take 3 (final)", negative_tags: DEFAULT_NEGATIVE_TAGS });
+    expect(p.prompt).toBeUndefined();
+  });
+
+  it("every required field of the real schemas is satisfied by what the two surfaces send", () => {
+    for (const [id, args] of [
+      ["add-vocals", { track: made, prompt: "sing it" }],
+      ["add-instrumental", { track: attached, prompt: "warm jazz trio" }],
+      ["separate-vocals", { track: attached }],
+      ["replace-section", { track: made, range: { start: 10, end: 30 }, duration: 120, prompt: "quieter" }],
+      ["upload-and-extend-audio", { track: made, range: { start: 45, end: 60 }, duration: 120 }],
+    ]) {
+      const params = opParams(id, args);
+      expect(opIssue(id, params), id).toBeNull();
+      expect(validateModelInput(schemaForModel(id, "audio"), params), id).toEqual([]);
+    }
+  });
+
+  it("opIssue names the missing field before a quote is ever taken", () => {
+    expect(opIssue("add-vocals", opParams("add-vocals", { track: attached, prompt: "sing it" }))).toMatch(/style/i);
+    expect(opIssue("add-vocals", opParams("add-vocals", { track: made }))).toMatch(/describe/i);
+    expect(opIssue("add-instrumental", opParams("add-instrumental", { track: attached }))).toMatch(/style/i);
+    expect(opIssue("separate-vocals", opParams("separate-vocals", { track: null }))).toMatch(/track/i);
+  });
+});
+
+describe("separate-vocals — the split is a price, so it is a choice", () => {
+  it("sends the chosen type, the cheapest by default, and never one the model does not have", () => {
+    const track = { outputUrl: "https://cdn/t.mp3" };
+    expect(opParams("separate-vocals", { track }).type).toBe("separate_vocal");
+    expect(opParams("separate-vocals", { track, stemType: "split_stem" }).type).toBe("split_stem");
+    expect(opParams("separate-vocals", { track, stemType: "everything" }).type).toBe("separate_vocal");
+    expect(STEM_TYPES.map((t) => t.value).sort()).toEqual(["separate_vocal", "split_stem", "split_stem_advanced"]);
+    expect(opParams("separate-vocals", { track, prompt: "ignored" }).prompt).toBeUndefined();
   });
 });

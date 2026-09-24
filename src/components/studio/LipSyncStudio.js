@@ -13,6 +13,7 @@ import { useCreditCost } from "./useCreditCost";
 import { matchesGroup } from "@/lib/capability-groups";
 import { useHandoff } from "./useHandoff";
 import { mediaKind } from "@/lib/studio-handoff";
+import { performInput, performancePrompt, billableAudioSeconds } from "@/lib/audio-payload-core.mjs";
 import { placeholderPeaks, useWaveform, useTransport, Waveform, Transport } from "@/components/studio/kit/Waveform";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -101,8 +102,19 @@ export default function LipSyncStudio({ initialModel, templateConfig, onCreditsC
   const { models, loading: loadingModels } = useModelCatalog({});
   const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
+  /* Lip Sync re-times a CLIP to a voice: models whose schema takes video_url
+     + audio_url. This pool and Avatar's used to be the same six rows, so each
+     offered models its own form could not feed — a portrait-only model here,
+     a clip-only model there. Portrait-driven models live in Avatar; a model
+     that takes either appears in both. No schema = unknown, and unknown is
+     not a reason to hide a model (the id heuristic in faceKind still reads it). */
   const available = useMemo(
-    () => (models || []).filter((m) => matchesGroup(m, "lipsync")),
+    () => (models || []).filter((m) => {
+      if (!matchesGroup(m, "lipsync")) return false;
+      if (!m.schema?.fields) return true;
+      const input = performInput(m);
+      return input === "clip" || input === "either";
+    }),
     [models],
   );
 
@@ -142,28 +154,37 @@ export default function LipSyncStudio({ initialModel, templateConfig, onCreditsC
 
   /* Same tool string and same params as submit() below. A mismatch here quotes
      one price and charges another. */
-  const costParams = useMemo(() => ({
-    ...(usesVideo ? { video_url: faceUrl || undefined } : { image_url: faceUrl || undefined }),
-    audio_url: voiceUrl || undefined,
-  }), [usesVideo, faceUrl, voiceUrl]);
-
-  const { cost, affordable, balance, shortfall } = useCreditCost("lipsync", model?.id || "", costParams);
-
-
   const { peaks, real } = useWaveform(voiceUrl);
   const { ref, playing, current, duration, toggle, seek } = useTransport(voiceUrl);
+
+  /* These models are billed per second of the voice track and declare no
+     length of their own — the measured length is what the price is a multiple
+     of. It rides with BOTH the quote and the submit so they cannot disagree;
+     the server drops it before the provider (the model never declared it). */
+  const seconds = billableAudioSeconds(duration);
+  const params = useMemo(() => ({
+    ...(usesVideo ? { video_url: faceUrl || undefined } : { image_url: faceUrl || undefined }),
+    audio_url: voiceUrl || undefined,
+    ...(seconds ? { duration: seconds } : {}),
+  }), [usesVideo, faceUrl, voiceUrl, seconds]);
+
+  const { cost, affordable, balance, shortfall } = useCreditCost("lipsync", model?.id || "", params);
+
   const shownPeaks = peaks || (duration ? placeholderPeaks(duration) : null);
   const progress = duration > 0 ? Math.min(1, current / duration) : 0;
 
   const generate = useCallback(() => {
     if (!model || !ready || !affordable) return;
+    /* Some sync models REQUIRE a prompt and this surface has no brief to
+       write one in: they get the neutral direction, the rest get nothing. */
+    const prompt = performancePrompt(model, "");
     submit("lipsync", model.id, {
       endpoint: model.endpoint || model.id,
-      ...(usesVideo ? { video_url: faceUrl } : { image_url: faceUrl }),
-      audio_url: voiceUrl,
+      ...params,
+      ...(prompt ? { prompt } : {}),
       ...(seed === "" ? {} : { seed: Number(seed) }),
     });
-  }, [model, ready, affordable, submit, usesVideo, faceUrl, voiceUrl, seed]);
+  }, [model, ready, affordable, submit, params, seed]);
 
   const startOver = useCallback(() => {
     reset();
@@ -181,7 +202,7 @@ export default function LipSyncStudio({ initialModel, templateConfig, onCreditsC
         onSelect={setModelId}
         loading={loadingModels}
         label="Sync model"
-        emptyHint="No lip sync models in the catalog yet."
+        emptyHint="No clip-driven sync models in the catalog yet. Portrait-driven models are under Avatar."
       />
 
       {kind === "either" && (

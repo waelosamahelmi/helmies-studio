@@ -856,6 +856,19 @@ function textAsDataUri(text) {
   return `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`;
 }
 
+/** The inverse, for whoever shows a text result (the voice wizard's phrase,
+    Audio Tools' lyrics). Null for anything that is not one of ours. */
+export function decodeTextOutput(url) {
+  if (typeof url !== "string" || !url.startsWith("data:text/plain")) return null;
+  const comma = url.indexOf(",");
+  if (comma < 0) return null;
+  try {
+    return decodeURIComponent(url.slice(comma + 1)).trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 function terminalFailure(data) {
   const raw = String(data?.status || "");
   if (SUNO_TERMINAL_FAILURES.has(raw)) {
@@ -975,4 +988,110 @@ export function parseAudioOpPoll(data, modelId) {
     default:
       return null;
   }
+}
+
+// ── What the studios need to know about a model BEFORE they submit ─────────
+// Pure readers of the catalog row the client already holds (`schema.fields`).
+// They live here because this file is the one that knows what each audio
+// family actually takes, and because they must be testable without a DOM.
+
+/* Which field carries the voice, and what it may hold.
+   ────────────────────────────────────────────────────────────────────────
+   The Speech picker used to gate on `voice` / `voice_id` and offer a fixed
+   ElevenLabs cast. The only active text-to-speech model is Gemini's, which
+   declares `voice_name` with its own 30-name enum — so no picker rendered at
+   all and every read came out in the default voice. The model's schema says
+   both things: the field to send under, and the values it accepts.
+
+   Returns null when the model declares a schema with no voice field (it has
+   no voice to choose). With NO schema the old behaviour stands: `voice`, free
+   choice — unknown is not a reason to hide a control. */
+export const VOICE_FIELD_NAMES = ["voice_name", "voice", "voice_id"];
+
+export function voiceFieldFor(model) {
+  const fields = model?.schema?.fields;
+  if (!fields) return { field: "voice", options: null };
+  const field = VOICE_FIELD_NAMES.find((name) => fields[name]);
+  if (!field) return null;
+  const declared = Array.isArray(fields[field].enum) ? fields[field].enum.filter((v) => typeof v === "string" && v) : [];
+  return {
+    field,
+    // null = the model names no cast of its own; the caller may offer one.
+    options: declared.length ? declared : null,
+    default: typeof fields[field].default === "string" ? fields[field].default : null,
+  };
+}
+
+/* What an Audio Tools utility takes in and gives back.
+   ────────────────────────────────────────────────────────────────────────
+   Every utility used to get the same form — a track, a forced prompt, an
+   audio player for the result — whatever it was. Stem separation takes no
+   prompt at all; lyrics and style-boost return TEXT, which an audio player
+   renders as nothing; replace-section needs a time window only the Music
+   timeline can select. `op` is set when the Music workbench's opParams
+   (music-timeline-core.mjs) already knows how to build this operation, so
+   both surfaces submit one shape instead of two that drift. */
+export function audioToolShape(modelId) {
+  switch (audioProviderFamily(modelId)) {
+    case AUDIO_FAMILY.SUNO_LYRICS:
+    case AUDIO_FAMILY.SUNO_STYLE:
+      return { output: "text", needsTrack: false, prompt: "required", op: false, listed: true };
+    case AUDIO_FAMILY.SUNO_VOCAL_SEPARATION:
+      return { output: "audio", needsTrack: true, prompt: "none", op: true, listed: true };
+    case AUDIO_FAMILY.SUNO_UPLOAD_EXTEND:
+      return { output: "audio", needsTrack: true, prompt: "optional", op: true, listed: true };
+    // add-instrumental has no lyric brief, but its REQUIRED style is text the
+    // user writes — so on a one-field form the brief is that style.
+    case AUDIO_FAMILY.SUNO_ADD_INSTRUMENTAL:
+    case AUDIO_FAMILY.SUNO_ADD_VOCALS:
+    case AUDIO_FAMILY.SUNO_UPLOAD_COVER:
+      return { output: "audio", needsTrack: true, prompt: "required", op: true, listed: true };
+    // A window on a timeline, and a two-step wizard: each has its own surface.
+    case AUDIO_FAMILY.SUNO_REPLACE_SECTION:
+    case AUDIO_FAMILY.SUNO_VOICE_VALIDATE:
+    case AUDIO_FAMILY.SUNO_VOICE_GENERATE:
+      return { output: "audio", needsTrack: true, prompt: "optional", op: false, listed: false };
+    default:
+      return { output: "audio", needsTrack: false, prompt: "required", op: false, listed: true };
+  }
+}
+
+/* Which of a performing model's two faces it takes.
+   ────────────────────────────────────────────────────────────────────────
+   Lip Sync and Avatar both listed all six avatar-video rows and then sent
+   different payloads, so each offered models the other one's form could not
+   feed (volcengine wants a CLIP; Avatar only collects a portrait). The
+   schema separates them: a still made to speak is image + audio, a clip
+   re-synced is video + audio. "either" is a model declaring both. A model
+   with no audio input is not a speaking model at all — null. */
+export function performInput(model) {
+  const fields = model?.schema?.fields;
+  if (!fields) return null;
+  if (!fields.audio_url) return null;
+  const still = Boolean(fields.image_url);
+  const clip = Boolean(fields.video_url);
+  if (still && clip) return "either";
+  if (clip) return "clip";
+  return still ? "still" : null;
+}
+
+/* kling/ai-avatar-* and infinitalk REQUIRE a prompt; both surfaces used to
+   send none (Lip Sync) or an empty string (Avatar). A direction the user did
+   not write is a neutral one, not an invented performance. */
+export const NEUTRAL_PERFORMANCE = "The person speaks naturally to camera.";
+
+export function performancePrompt(model, text) {
+  const written = String(text || "").trim();
+  if (written) return written;
+  return model?.schema?.fields?.prompt ? NEUTRAL_PERFORMANCE : "";
+}
+
+/* These models are billed per second of the AUDIO supplied, and declare no
+   `duration` of their own. The length the browser measured is the only
+   honest quantity to quote on; rounded UP, because a provider bills the
+   started second. Undefined (not 0) when unknown, so the server's own
+   assumption applies instead of a zero-second quote. */
+export function billableAudioSeconds(length) {
+  const n = Number(length);
+  return Number.isFinite(n) && n > 0 ? Math.ceil(n) : undefined;
 }

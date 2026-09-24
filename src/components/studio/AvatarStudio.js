@@ -10,7 +10,7 @@ import {
 import { useModelCatalog } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
-import { matchesGroup } from "@/lib/capability-groups";
+import { performInput, performancePrompt, billableAudioSeconds } from "@/lib/audio-payload-core.mjs";
 import { placeholderPeaks, useWaveform, useTransport, Waveform, Transport } from "@/components/studio/kit/Waveform";
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -34,8 +34,12 @@ import { placeholderPeaks, useWaveform, useTransport, Waveform, Transport } from
      registered tool in the async route's ENDPOINT_MAP and in the pricing
      engine's fallback table, whereas `"avatar"` is in neither and would fall
      through to the generic 2-credit default. Verified, and kept in step.
-   · Duration and aspect ratio were hardcoded lists. They come from the model's
-     own `durations` / `aspectRatios` when the catalog supplies them.
+   · Duration and aspect ratio were hardcoded lists with FALLBACKS, so they
+     rendered for every model — and no avatar model declares either field.
+     The take's length is the voice track's; the frame is the portrait's. The
+     controls now appear only for a model whose schema has the field.
+   · The pool is split from Lip Sync's by what a model TAKES (performInput):
+     a portrait + a voice here, a clip + a voice there.
    ══════════════════════════════════════════════════════════════════════════ */
 
 
@@ -78,8 +82,12 @@ function offers(model, field) {
   return !!declared[field];
 }
 
-const FALLBACK_DURATIONS = [5, 10];
-const FALLBACK_RATIOS = ["16:9", "9:16", "1:1"];
+/* Stricter than `offers`: a control that SENDS a field must not appear on a
+   guess, because an undeclared duration / aspect_ratio is a key the model
+   never asked for. */
+function offersField(model, field) {
+  return !!model?.schema?.fields?.[field];
+}
 
 const EXAMPLES = [
   "Speaks straight to camera, small nods on the stresses, still shoulders",
@@ -100,14 +108,17 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
   const { models, loading: loadingModels } = useModelCatalog({});
   const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
-  /* Avatar models carry the `avatar-video` capability, which lives in the
-     lipsync group; a few video-to-video models are also avatar-capable. Both
-     routes are filtered by the scalar `capability` field the catalog emits,
-     then narrowed by name — never by a `has*` flag, which never arrives. */
+  /* An avatar take is a STILL made to speak: models whose schema takes
+     image_url + audio_url (kling/ai-avatar-*, infinitalk, wan speech avatar).
+     This used to list every avatar-video row — including the clip-driven sync
+     model this form cannot feed (it only collects a portrait) and two
+     detection utilities that return no video. Filtered by what the schema
+     accepts, never by id; a row with no schema is unknown, and kept. */
   const available = useMemo(() => (models || []).filter((m) => {
-    if (m.capability !== "avatar-video" && !matchesGroup(m, "v2v")) return false;
-    const text = `${m.id || ""} ${m.displayName || m.name || ""}`.toLowerCase();
-    return m.capability === "avatar-video" || text.includes("avatar");
+    if (m.capability !== "avatar-video") return false;
+    if (!m.schema?.fields) return true;
+    const input = performInput(m);
+    return input === "still" || input === "either";
   }), [models]);
 
   const model = available.find((m) => m.id === modelId) || available[0] || null;
@@ -126,10 +137,14 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
 
   /* `durations` and `aspectRatios` are always arrays — [] when the model does
      not offer a choice. These are the fields the catalog genuinely emits. */
-  const durations = model?.durations?.length
-    ? model.durations.map(Number).filter(Number.isFinite)
-    : FALLBACK_DURATIONS;
-  const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
+  const durations = useMemo(
+    () => (offersField(model, "duration") && model?.durations?.length ? model.durations.map(Number).filter(Number.isFinite) : []),
+    [model],
+  );
+  const ratios = useMemo(
+    () => (offersField(model, "aspect_ratio") && model?.aspectRatios?.length ? model.aspectRatios : []),
+    [model],
+  );
 
   useEffect(() => {
     if (durations.length && !durations.includes(seconds)) setSeconds(durations[0]);
@@ -145,32 +160,38 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
 
   /* Same tool string and same params as submit() below — verified in step, so
      the quote and the charge cannot diverge. */
-  const costParams = useMemo(() => ({
-    duration: seconds,
-    aspect_ratio: ratio,
-    image_url: portraitUrl || undefined,
-    ...(needsVoice && voiceUrl ? { audio_url: voiceUrl } : {}),
-  }), [seconds, ratio, portraitUrl, needsVoice, voiceUrl]);
-
-  const { cost, affordable, balance, shortfall } = useCreditCost("v2v", model?.id || "", costParams);
-
-
   const { peaks, real } = useWaveform(voiceUrl);
   const { ref, playing, current, duration: voiceLength, toggle, seek } = useTransport(voiceUrl);
+
+  /* Same object quotes and submits. The length billed is the VOICE's: these
+     models charge per second of audio and declare no duration of their own,
+     so the measured length travels as `duration` (the server prices on it
+     and drops it before the provider). A model that does declare one keeps
+     the user's choice instead. */
+  const voiceSeconds = billableAudioSeconds(voiceLength);
+  const params = useMemo(() => ({
+    image_url: portraitUrl || undefined,
+    ...(needsVoice && voiceUrl ? { audio_url: voiceUrl } : {}),
+    ...(durations.length ? { duration: seconds } : voiceSeconds ? { duration: voiceSeconds } : {}),
+    ...(ratios.length ? { aspect_ratio: ratio } : {}),
+  }), [portraitUrl, needsVoice, voiceUrl, durations, seconds, voiceSeconds, ratios, ratio]);
+
+  const { cost, affordable, balance, shortfall } = useCreditCost("v2v", model?.id || "", params);
+
   const shownPeaks = peaks || (voiceLength ? placeholderPeaks(voiceLength) : null);
   const progress = voiceLength > 0 ? Math.min(1, current / voiceLength) : 0;
 
   const generate = useCallback(() => {
     if (!model || !ready) return;
+    /* kling/ai-avatar-* and infinitalk REQUIRE a prompt. A blank direction
+       goes out as the neutral one rather than as an empty string. */
+    const prompt = performancePrompt(model, direction);
     submit("v2v", model.id, {
       endpoint: model.endpoint || model.id,
-      prompt: direction.trim(),
-      image_url: portraitUrl,
-      ...(needsVoice && voiceUrl ? { audio_url: voiceUrl } : {}),
-      duration: seconds,
-      aspect_ratio: ratio,
+      ...(prompt ? { prompt } : {}),
+      ...params,
     });
-  }, [model, ready, submit, direction, portraitUrl, needsVoice, voiceUrl, seconds, ratio]);
+  }, [model, ready, submit, direction, params]);
 
   const startOver = useCallback(() => {
     reset();
@@ -191,18 +212,22 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
         emptyHint="No avatar models in the catalog yet."
       />
 
-      <Field label="Take length" hint={model?.durations?.length ? "Lengths this model offers." : undefined}>
-        <Chips
-          label="Take length"
-          value={seconds}
-          onChange={setSeconds}
-          options={durations.map((d) => ({ value: d, label: `${d}s` }))}
-        />
-      </Field>
+      {durations.length > 0 && (
+        <Field label="Take length" hint="Lengths this model offers.">
+          <Chips
+            label="Take length"
+            value={seconds}
+            onChange={setSeconds}
+            options={durations.map((d) => ({ value: d, label: `${d}s` }))}
+          />
+        </Field>
+      )}
 
-      <Field label="Aspect ratio">
-        <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
-      </Field>
+      {ratios.length > 0 && (
+        <Field label="Aspect ratio">
+          <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
+        </Field>
+      )}
 
       <Group label="This take">
         <Specs
@@ -210,8 +235,8 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
             { k: "Model", v: model?.displayName || model?.name },
             { k: "Face", v: portrait ? "Portrait" : "Missing" },
             { k: "Voice", v: needsVoice ? (voice ? (voiceLength ? clock(voiceLength) : "Loaded") : "Missing") : "Not used" },
-            { k: "Len", v: `${seconds}s` },
-            { k: "Ratio", v: ratio },
+            { k: "Len", v: durations.length ? `${seconds}s` : voiceLength ? `${clock(voiceLength)} (the voice)` : "The voice's" },
+            { k: "Ratio", v: ratios.length ? ratio : "The portrait's" },
           ]}
         />
       </Group>
@@ -322,9 +347,9 @@ export default function AvatarStudio({ initialModel, templateConfig, onCreditsCh
             error={error}
             stage={stage}
             elapsed={elapsed}
-            ratio={ratio}
+            ratio={ratios.length ? ratio : "16:9"}
             model={model?.displayName || model?.name}
-            settings={`${seconds}s · ${ratio}`}
+            settings={[durations.length ? `${seconds}s` : null, ratios.length ? ratio : null].filter(Boolean).join(" · ")}
             onCancel={cancel}
             onRetry={generate}
             onEditSettings={reset}
