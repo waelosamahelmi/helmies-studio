@@ -139,7 +139,13 @@ export async function POST(req) {
     let cost = dbPricing.creditsCost;
     let providerCost = dbPricing.providerCost || 0;
     if (dbPricing.pricingRules) {
-      const quote = await quoteCatalogModel(model, { ...effectiveParams, prompt: prompt || "" });
+      // `duration` is re-attached from what the client SENT: for a model billed by
+      // the length of the uploaded clip or audio (lip sync, avatars, motion
+      // control, upscaling) the adapter above rightly removed it from the
+      // provider payload — no such model declares it — but it is the measured
+      // length the price depends on. Without it the meter (which quotes the raw
+      // params) and this charge would disagree.
+      const quote = await quoteCatalogModel(model, { ...effectiveParams, duration: effectiveParams.duration ?? params.duration, prompt: prompt || "" });
       if (!quote.valid) return apiError({ code: "invalid_params", details: quote.errors });
       cost = quote.credits;
       providerCost = quote.providerCost;
