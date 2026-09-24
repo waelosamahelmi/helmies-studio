@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Workspace, Brief, ModelPicker, Stage, Idle,
-  Field, Group, Segmented, Chips, Dropzone, Specs,
+  Field, Group, Segmented, Chips, Slider, Dropzone, Specs,
   IcMegaphone,
 } from "@/components/studio/kit";
 import { MARKETING_AVATARS } from "@/lib/models";
@@ -16,9 +16,11 @@ import { matchesGroup } from "@/lib/capability-groups";
    MARKETING — one brief, one deliverable, cut for one placement
    ──────────────────────────────────────────────────────────────────────────
    Fixed in this rebuild:
-   · `campaignFormat` was a control in the inspector that changed nothing:
-     it was never put in the submit payload. It is sent now, and it also
-     shapes the brief, so choosing it has a visible effect either way.
+   · `campaignFormat` was a control in the inspector that changed nothing.
+     It shapes the BRIEF now (FORMATS[].prompt), which is the only place it
+     can have an effect: it was also being sent as a `campaign_format` param,
+     a field no model declares — dead weight at best, a rejected run on the
+     provider's generic envelope at worst.
    · `onNew` cleared the stage label but left `result` in place, so "New"
      redisplayed the previous ad. It calls the hook's `reset` now.
    · `error` was computed and never rendered.
@@ -58,15 +60,19 @@ const FORMATS = [
   },
 ];
 
-const FALLBACK_DURATIONS = [15, 30, 60];
-const FALLBACK_RES = ["1080p", "4K"];
+/* No fallback lengths or resolutions. 15/30/60 seconds and "1080p/4K" were
+   offered for every model that published none — and no model in the catalog
+   renders 60 seconds or takes "4K" by that name, so the control promised a
+   deliverable the run could not produce. What is offered comes from the
+   chosen model's schema: its fixed lengths, or its length range. */
+const NONE = [];
 
 export default function MarketingStudio({ initialModel, templateConfig, onCreditsChanged }) {
   const [modelId, setModelId] = useState(initialModel || null);
   const [placement, setPlacement] = useState("instagram");
   const [format, setFormat] = useState("ugc_advert");
-  const [duration, setDuration] = useState(15);
-  const [resolution, setResolution] = useState("1080p");
+  const [duration, setDuration] = useState(0);
+  const [resolution, setResolution] = useState("");
   const [avatar, setAvatar] = useState(null);
   const [products, setProducts] = useState([]);
   const [prompt, setPrompt] = useState("");
@@ -75,9 +81,13 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
   const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
   /* An advert is a video job; reference-capable models are the useful ones,
-     so they sort first rather than being the only ones shown. */
+     so they sort first rather than being the only ones shown.
+
+     Text-to-video only (which includes the coarse "video" rows — the ones
+     that also take references). Image-to-video models were pooled in too, and
+     every one of them REQUIRES a source still this studio never collects. */
   const available = useMemo(() => {
-    const video = (models || []).filter((m) => matchesGroup(m, "ttv") || matchesGroup(m, "i2v"));
+    const video = (models || []).filter((m) => matchesGroup(m, "ttv"));
     return [...video].sort((a, b) => (b.maxImages || 0) - (a.maxImages || 0));
   }, [models]);
 
@@ -103,19 +113,32 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
   const ratio = place.ratio;
   const chosenFormat = FORMATS.find((f) => f.value === format) || FORMATS[0];
 
-  const durations = useMemo(() => {
-    const d = (model?.durations || []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
-    return d.length ? d : FALLBACK_DURATIONS;
-  }, [model]);
-  const resolutions = model?.resolutions?.length ? model.resolutions : FALLBACK_RES;
+  const durations = useMemo(
+    () => (model?.durations || []).map(Number).filter((n) => Number.isFinite(n) && n > 0),
+    [model],
+  );
+  /* Fixed lengths win; a range is only used when the model publishes no enum. */
+  const range = durations.length ? null : model?.durationRange || null;
+  const resolutions = model?.resolutions?.length ? model.resolutions : NONE;
 
   /* Drop settings the chosen model does not offer */
   useEffect(() => {
-    if (durations.length && !durations.includes(Number(duration))) setDuration(durations[0]);
-  }, [durations, duration]);
+    if (durations.length) {
+      // An advert wants room: start from the longest fixed length on offer.
+      if (!durations.includes(Number(duration))) setDuration(Math.max(...durations));
+      return;
+    }
+    if (range) {
+      const n = Number(duration);
+      if (!(n >= range.min && n <= range.max)) setDuration(range.default);
+      return;
+    }
+    if (duration) setDuration(0);
+  }, [durations, range, duration]);
   useEffect(() => {
+    if (!resolutions.length) { if (resolution) setResolution(""); return; }
     const has = resolutions.some((r) => String(r).toLowerCase() === String(resolution).toLowerCase());
-    if (resolutions.length && !has) setResolution(resolutions[0]);
+    if (!has) setResolution(resolutions[0]);
   }, [resolutions, resolution]);
 
   /* Reference slots the chosen model actually has */
@@ -127,26 +150,30 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
   const refsOverflow = maxRefs > 0 && references.length > maxRefs;
   const refsUnsupported = maxRefs === 0 && references.length > 0;
 
-  const { cost, affordable, balance, shortfall } = useCreditCost("marketing", model?.id || "", {
-    duration,
-    resolution,
-    aspect_ratio: ratio,
-    images_list: references,
-  });
+  /* ONE set of settings for the quote and the submit. `images_list` is the
+     studio's word for references — the server moves it into whichever field
+     the model calls them — and it is only sent to a model that has such a
+     field. To one that does not, the references were an unknown key. */
+  const settings = useMemo(() => {
+    const out = { aspect_ratio: ratio };
+    if (duration) out.duration = Number(duration);
+    if (resolution) out.resolution = resolution;
+    if (maxRefs > 0 && references.length) out.images_list = references.slice(0, maxRefs);
+    return out;
+  }, [ratio, duration, resolution, references, maxRefs]);
+
+  const { cost, affordable, balance, shortfall } = useCreditCost("marketing", model?.id || "", settings);
 
 
   const generate = useCallback(() => {
     if (!model) return;
     submit("marketing", model.id, {
       endpoint: model.endpoint || model.id,
+      // The campaign format travels as direction in the brief, not as a param.
       prompt: `${chosenFormat.prompt} ${prompt}`.trim(),
-      campaign_format: format,
-      aspect_ratio: ratio,
-      duration: Number(duration),
-      resolution,
-      images_list: maxRefs > 0 ? references.slice(0, maxRefs) : references,
+      ...settings,
     });
-  }, [model, submit, chosenFormat, prompt, format, ratio, duration, resolution, references, maxRefs]);
+  }, [model, submit, chosenFormat, prompt, settings]);
 
   /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
@@ -155,16 +182,32 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
         <Chips label="Placement" options={PLACEMENTS} value={placement} onChange={setPlacement} scroll />
       </Field>
 
-      <Field label="Length">
-        <Chips
-          label="Length"
-          options={durations.map((d) => ({ value: d, label: `${d}s` }))}
-          value={duration}
-          onChange={(v) => setDuration(Number(v))}
-          compare={(a, b) => Number(a) === Number(b)}
-          scroll
-        />
-      </Field>
+      {durations.length > 1 && (
+        <Field label="Length" hint="This model's fixed lengths. Longer costs more.">
+          <Chips
+            label="Length"
+            options={durations.map((d) => ({ value: d, label: `${d}s` }))}
+            value={duration}
+            onChange={(v) => setDuration(Number(v))}
+            compare={(a, b) => Number(a) === Number(b)}
+            scroll
+          />
+        </Field>
+      )}
+
+      {range && (
+        <Field hint="Longer costs more.">
+          <Slider
+            label="Length"
+            min={range.min}
+            max={range.max}
+            step={1}
+            value={duration || range.default}
+            onChange={setDuration}
+            format={(v) => `${v}s`}
+          />
+        </Field>
+      )}
 
       {resolutions.length > 1 && (
         <Field label="Resolution">
@@ -246,8 +289,8 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
           rows={[
             { k: "Placement", v: place.label },
             { k: "Ratio", v: ratio },
-            { k: "Length", v: `${duration}s` },
-            { k: "Res", v: String(resolution).toUpperCase() },
+            { k: "Length", v: duration ? `${duration}s` : "Model default" },
+            { k: "Res", v: resolution ? String(resolution).toUpperCase() : "Model default" },
             { k: "Refs", v: `${references.length}` },
           ]}
         />
@@ -281,7 +324,7 @@ export default function MarketingStudio({ initialModel, templateConfig, onCredit
           elapsed={elapsed}
           ratio={ratio}
           model={model?.displayName || model?.name}
-          settings={`${chosenFormat.label} · ${ratio} · ${duration}s`}
+          settings={[chosenFormat.label, ratio, duration ? `${duration}s` : null].filter(Boolean).join(" · ")}
           onCancel={cancel}
           onRetry={generate}
           onEditSettings={reset}

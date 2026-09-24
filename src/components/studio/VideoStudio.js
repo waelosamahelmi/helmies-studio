@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Workspace, Brief, ModelPicker, Stage, Idle,
-  Field, Group, Chips, RatioPicker, Dropzone, Specs,
+  Field, Group, Chips, RatioPicker, Slider, Dropzone, Specs,
   IcVideo, IcFilm,
 } from "@/components/studio/kit";
-import { useModelCatalog } from "./useModelCatalog";
+import { useModelCatalog, alsoOfferedInVideoMode, requiresField } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useStudioMode } from "./useStudioMode";
@@ -62,16 +62,24 @@ const MOTION_EXAMPLES = [
   "Paper-cut shapes sliding in from the edges, flat colour, no gradients",
 ];
 
+/* `brief` is what the move becomes in the prompt. It used to be sent as a
+   `camera_motion` param — a field no model in the catalog declares — so the
+   control changed nothing, and on the generic provider envelope an unknown
+   key is a rejected run. A camera move is direction, and direction is prose. */
 const MOVES = [
-  { value: "static", label: "Static" },
-  { value: "pan", label: "Pan" },
-  { value: "zoom", label: "Push in" },
-  { value: "tracking", label: "Tracking" },
+  { value: "static", label: "Static", brief: "" },
+  { value: "pan", label: "Pan", brief: "Camera: a slow, steady pan across the scene." },
+  { value: "zoom", label: "Push in", brief: "Camera: a slow push in toward the subject." },
+  { value: "tracking", label: "Tracking", brief: "Camera: a tracking shot that follows the subject." },
 ];
 
-const FALLBACK_RATIOS = ["16:9", "9:16", "1:1"];
+export function withCameraMove(prompt, move) {
+  const brief = MOVES.find((m) => m.value === move)?.brief || "";
+  return [String(prompt || "").trim(), brief].filter(Boolean).join(" ");
+}
+
 /* Stable identity so the "settings follow the model" effects below do not
-   re-fire on every render when a model publishes no resolutions. */
+   re-fire on every render when a model publishes no ratios or resolutions. */
 const NONE = [];
 
 const MODE_COPY = {
@@ -108,7 +116,6 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
 
   const [sourceImage, setSourceImage] = useState(null);
   const [refs, setRefs] = useState([]);
-  const [startFrame, setStartFrame] = useState(null);
   const [endFrame, setEndFrame] = useState(null);
 
   const { models, loading: loadingModels } = useModelCatalog({});
@@ -122,7 +129,9 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
      MotionStudio's ordering, without its silent fallback. */
   const casting = mode === "cast";
   const available = useMemo(() => {
-    const pool = (models || []).filter((m) => matchesGroup(m, casting ? "r2v" : mode));
+    const pool = (models || []).filter(
+      (m) => matchesGroup(m, casting ? "r2v" : mode) || alsoOfferedInVideoMode(m, mode),
+    );
     if (!motion) return pool;
     const named = pool.filter((m) => /motion|graphic|animate|loop/i.test(`${m.displayName || ""} ${m.id || ""}`));
     return named.length ? [...named, ...pool.filter((m) => !named.includes(m))] : pool;
@@ -158,17 +167,30 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     if (handoff.prompt) setPrompt(handoff.prompt);
   }, [handoff, casting]);
 
-  const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
+  /* No fallback ratios. A model with no aspect field (hailuo, wan 2.6 t2v)
+     used to be shown 16:9 / 9:16 / 1:1 anyway: a choice it ignored, and a
+     frame the user did not get. No field, no control, nothing sent. */
+  const ratios = model?.aspectRatios?.length ? model.aspectRatios : NONE;
   const resolutions = model?.resolutions?.length ? model.resolutions : NONE;
   const durations = useMemo(
     () => (model?.durations || []).map(Number).filter((n) => Number.isFinite(n) && n > 0),
     [model],
   );
+  /* Fixed lengths win; a range is only used when the model publishes no enum. */
+  const range = durations.length ? null : model?.durationRange || null;
+  const canPinLastFrame = mode === "i2v" && !!model?.lastFrameField;
+  /* A transition model runs BETWEEN two stills: its last frame is required,
+     not an optional anchor, and without it the provider refuses the run. */
+  const needsLastFrame = canPinLastFrame && requiresField(model, model.lastFrameField);
 
   /* Drop settings the chosen model does not offer */
   useEffect(() => {
     if (ratios.length && !ratios.includes(ratio)) setRatio(preferredRatio(ratios) || ratios[0]);
   }, [ratios, ratio]);
+
+  useEffect(() => {
+    if (!canPinLastFrame && endFrame) setEndFrame(null);
+  }, [canPinLastFrame, endFrame]);
 
   useEffect(() => {
     if (!resolutions.length) { if (resolution) setResolution(""); return; }
@@ -177,50 +199,63 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
   }, [resolutions, resolution]);
 
   useEffect(() => {
-    if (!durations.length) { if (duration) setDuration(0); return; }
-    if (!durations.includes(Number(duration))) setDuration(durations[0]);
-  }, [durations, duration]);
+    if (durations.length) {
+      if (!durations.includes(Number(duration))) setDuration(durations[0]);
+      return;
+    }
+    if (range) {
+      const n = Number(duration);
+      if (!(n >= range.min && n <= range.max)) setDuration(range.default);
+      return;
+    }
+    if (duration) setDuration(0);
+  }, [durations, range, duration]);
 
   const { cost, affordable, balance, shortfall } = useCreditCost("video", model?.id || "", {
     duration: duration || undefined,
     resolution: resolution || undefined,
-    aspect_ratio: ratio,
+    aspect_ratio: ratios.length ? ratio : undefined,
     image_url: sourceImage?.url,
   });
 
 
   const needsImage = mode === "i2v";
   const refUrls = useMemo(() => refs.map((r) => r?.url).filter(Boolean), [refs]);
-  const missingSource = (needsImage && !sourceImage?.url) || (casting && refUrls.length === 0);
+  const missingSource = (needsImage && !sourceImage?.url) || (casting && refUrls.length === 0)
+    || (needsLastFrame && !endFrame?.url);
 
   const generate = useCallback(() => {
     if (!model || missingSource) return;
     const params = {
       endpoint: model.endpoint || model.id,
-      prompt,
-      aspect_ratio: ratio,
+      prompt: withCameraMove(prompt, move),
     };
+    if (ratios.length) params.aspect_ratio = ratio;
     if (resolution) params.resolution = resolution;
     if (duration) params.duration = Number(duration);
-    if (move !== "static") params.camera_motion = move;
+    /* `image_url` is the studio's word for the still; the server moves it to
+       whichever field this model calls it (image_urls, input_urls,
+       first_frame_url …) — provider-payload-core.mjs adaptInputsToSchema. */
     if (needsImage && sourceImage?.url) params.image_url = sourceImage.url;
     /* Cast: the reference-to-video families name this field three different
        ways, and sending the wrong one is a provider rejection after the
-       credits are held. pixverse takes `image_references`, minimax takes
-       `reference_image_urls`, wan takes a singular `reference_image`. */
+       credits are held. Read from the model's own schema rather than guessed
+       from its id: minimax and the seedance-2 family declare
+       `reference_image_urls`, wan a singular `reference_image`, pixverse
+       `image_references`. */
     if (casting && refUrls.length) {
-      const id = model.id || "";
-      if (/pixverse/.test(id)) params.image_references = refUrls;
-      else if (/minimax/.test(id)) params.reference_image_urls = refUrls;
-      else if (/wan/.test(id)) params.reference_image = refUrls[0];
+      const declares = (name) => (model.fieldNames || []).includes(name);
+      if (declares("reference_image_urls")) params.reference_image_urls = refUrls;
+      else if (declares("reference_image")) params.reference_image = refUrls[0];
       else params.image_references = refUrls;
     }
-    if (startFrame?.url) params.first_frame_url = startFrame.url;
-    if (endFrame?.url) params.last_frame_url = endFrame.url;
+    /* Always `last_frame_url`: the server maps it to end_image_url /
+       tail_image_url / last_frame_image_url for the families that use those. */
+    if (canPinLastFrame && endFrame?.url) params.last_frame_url = endFrame.url;
     submit("video", model.id, params);
   }, [
-    model, missingSource, submit, prompt, ratio, resolution, duration, move,
-    needsImage, sourceImage, startFrame, endFrame, casting, refUrls,
+    model, missingSource, submit, prompt, ratio, ratios, resolution, duration, move,
+    needsImage, sourceImage, endFrame, canPinLastFrame, casting, refUrls,
   ]);
 
   const copy = MODE_COPY[mode];
@@ -276,35 +311,34 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
         </Field>
       )}
 
-      {needsImage && (
-        <Group label="Frame anchors">
-          <p className="hs-hint" style={{ margin: 0 }}>
-            Optional. Pin the first or last frame to control where the shot starts and lands.
-          </p>
-          <Field label="First frame">
-            <Dropzone
-              value={startFrame}
-              onChange={setStartFrame}
-              accept="image/*"
-              label="Pin a first frame"
-              hint="Optional"
-            />
-          </Field>
-          <Field label="Last frame">
-            <Dropzone
-              value={endFrame}
-              onChange={setEndFrame}
-              accept="image/*"
-              label="Pin a last frame"
-              hint="Optional"
-            />
-          </Field>
-        </Group>
+      {/* Only for a model that can take one. This used to show for every
+          image-to-video model, with a second "First frame" box beside it —
+          the source image above already IS the first frame, and 13 of the 21
+          models have no last-frame field, so the anchor was dropped before
+          the request left. */}
+      {canPinLastFrame && (
+        <Field
+          label="Last frame"
+          hint={needsLastFrame
+            ? "This model moves from the source image to this one — it needs both."
+            : "Optional. Pin where the shot lands; the source image is where it starts."}
+          error={needsLastFrame && sourceImage?.url && !endFrame?.url && prompt.trim() ? "Add the last frame before generating." : undefined}
+        >
+          <Dropzone
+            value={endFrame}
+            onChange={setEndFrame}
+            accept="image/*"
+            label="Pin a last frame"
+            hint={needsLastFrame ? "Required" : "Optional"}
+          />
+        </Field>
       )}
 
-      <Field label="Aspect ratio">
-        <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
-      </Field>
+      {ratios.length > 0 && (
+        <Field label="Aspect ratio">
+          <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
+        </Field>
+      )}
 
       {durations.length > 1 && (
         <Field label="Duration" hint="Longer takes cost more. This model's fixed lengths.">
@@ -315,6 +349,23 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
             onChange={(v) => setDuration(Number(v))}
             compare={(a, b) => Number(a) === Number(b)}
             scroll
+          />
+        </Field>
+      )}
+
+      {/* Fifteen models publish a length RANGE instead of fixed lengths. They
+          used to get no control at all and ran at the provider's choice —
+          one second, on pixverse. */}
+      {range && (
+        <Field hint="Longer takes cost more.">
+          <Slider
+            label="Duration"
+            min={range.min}
+            max={range.max}
+            step={1}
+            value={duration || range.default}
+            onChange={setDuration}
+            format={(v) => `${v}s`}
           />
         </Field>
       )}
@@ -352,11 +403,11 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
         <Specs
           rows={[
             { k: "Preset", v: motion ? "Motion" : null },
-            { k: "Ratio", v: ratio },
+            { k: "Ratio", v: ratios.length ? ratio : "Model default" },
             { k: "Length", v: duration ? `${duration}s` : "Model default" },
             { k: "Res", v: resolution ? String(resolution).toUpperCase() : "Model default" },
             { k: "Move", v: MOVES.find((m) => m.value === move)?.label },
-            { k: "Anchors", v: `${startFrame ? 1 : 0}${endFrame ? " + 1" : ""}` },
+            { k: "Last frame", v: canPinLastFrame ? (endFrame ? "Pinned" : "Free") : null },
           ]}
         />
       </Group>
@@ -375,7 +426,7 @@ function VideoGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
   );
 
   const settings = [
-    ratio,
+    ratios.length ? ratio : null,
     duration ? `${duration}s` : null,
     resolution ? String(resolution).toUpperCase() : null,
   ].filter(Boolean).join(" · ");

@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Workspace, Brief, Commit, ModelPicker, Stage, Idle,
-  Field, Group, Segmented, Chips, RatioPicker, Dropzone, Specs,
+  Field, Group, Segmented, Chips, RatioPicker, Slider, Dropzone, Specs,
   IcScissors, IcSwap,
 } from "@/components/studio/kit";
-import { useModelCatalog } from "./useModelCatalog";
+import { useModelCatalog, videoEditPool } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { matchesGroup } from "@/lib/capability-groups";
@@ -14,9 +14,16 @@ import { matchesGroup } from "@/lib/capability-groups";
 /* ══════════════════════════════════════════════════════════════════════════
    VIDEO EDIT — work on footage you already have
    ──────────────────────────────────────────────────────────────────────────
-   Three jobs, one source clip: carry the shot further, change its pace, or
-   change its look. The job you pick decides which controls are live and how
-   the brief is written — it is never sent as an invented API field.
+   Four jobs, one source clip: change its look, carry the shot further,
+   sharpen it, or put a different face in it. The job you pick decides which
+   MODELS are offered and which controls are live — it is never sent as an
+   invented API field.
+
+   There is no Retime job any more. It had a speed picker, and all the picker
+   did was append "slow motion, half speed" to a Restyle prompt: no model in
+   the catalog retimes footage, so it re-rendered the clip in a new style and
+   charged for a restyle. Changing a clip's speed is a cut, not a generation —
+   it belongs with Clips when it is built, not here pretending.
 
    Fixed in this rebuild:
    · `error` was computed and never rendered, so a rejected clip looked
@@ -51,16 +58,14 @@ const JOBS = {
       "The light drops another stop and the practicals take over",
     ],
   },
-  retime: {
-    label: "Retime",
-    title: "Change the pace",
-    idle: "Load a clip and choose a speed. The speed is written into the brief for you — describe what the retimed clip should feel like.",
-    placeholder: "Describe the retimed clip: what slows down, what stays sharp.",
-    examples: [
-      "Keep the motion blur natural, no strobing on the fast pans",
-      "Hold the audio-driven cuts on the beat",
-      "Ease into the slow section rather than cutting to it",
-    ],
+  /* The upscaler takes a clip and a factor and nothing else. Under Restyle it
+     sat behind a brief that demanded a prompt it then ignored. */
+  upscale: {
+    label: "Upscale",
+    title: "Sharpen what you have",
+    idle: "Load a clip and choose how far to enlarge it. Nothing is re-imagined — the same frames come back at a higher resolution.",
+    placeholder: "",
+    examples: [],
   },
   /* S1: the retired RecastStudio folded in as a fourth job — one identity
      photo placed into one scene clip. The clip keeps its timing, blocking
@@ -83,15 +88,9 @@ const ORIENTATIONS = [
   { value: "video", label: "Follow the clip" },
 ];
 
-const SPEEDS = [
-  { value: "0.25", label: "0.25×", prompt: "extreme slow motion, quarter speed, smooth interpolation" },
-  { value: "0.5", label: "0.5×", prompt: "slow motion, half speed, smooth interpolation" },
-  { value: "1", label: "1×", prompt: "" },
-  { value: "2", label: "2×", prompt: "double speed, brisk pacing" },
-  { value: "4", label: "4×", prompt: "time-lapse, quadruple speed" },
-];
-
-const FALLBACK_RATIOS = ["16:9", "9:16", "1:1"];
+/* Stable identity so the "settings follow the model" effects below do not
+   re-fire on every render when a model publishes no ratios. */
+const NONE = [];
 
 export default function VideoEditStudio({ initialModel, templateConfig, onCreditsChanged, initialJob }) {
   const [job, setJob] = useState(initialJob && JOBS[initialJob] ? initialJob : "restyle");
@@ -100,7 +99,8 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
   const [source, setSource] = useState(null);
   const [ratio, setRatio] = useState("16:9");
   const [duration, setDuration] = useState(0);
-  const [speed, setSpeed] = useState("0.5");
+  const [resolution, setResolution] = useState("");
+  const [factor, setFactor] = useState("");
   const [identity, setIdentity] = useState(null);
   const [orientation, setOrientation] = useState("");
 
@@ -116,13 +116,12 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
      v2v covers video-to-video and video-upscale; some rows carry an explicit
      "video-edit" capability that is not in any group yet. */
   const recasting = job === "recast";
+  const upscaling = job === "upscale";
   const available = useMemo(
-    () => (models || []).filter((m) => (
-      recasting
-        ? matchesGroup(m, "recast")
-        : matchesGroup(m, "v2v") || m.capability === "video-edit"
-    )),
-    [models, recasting],
+    () => (recasting
+      ? (models || []).filter((m) => matchesGroup(m, "recast"))
+      : videoEditPool(models, job)),
+    [models, recasting, job],
   );
 
   const model = available.find((m) => m.id === modelId) || available[0] || null;
@@ -139,13 +138,24 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
     if (templateConfig.aspect_ratio) setRatio(templateConfig.aspect_ratio);
     if (templateConfig.duration) setDuration(Number(templateConfig.duration));
     if (templateConfig.model) setModelId(templateConfig.model);
-    if (templateConfig.mode) setJob(templateConfig.mode);
+    // A saved template may still name the retired "retime" job.
+    if (templateConfig.mode && JOBS[templateConfig.mode]) setJob(templateConfig.mode);
   }, [templateConfig]);
 
-  const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
+  /* No fallback ratios: a model with no aspect field ignored the choice. */
+  const ratios = model?.aspectRatios?.length ? model.aspectRatios : NONE;
+  const resolutions = model?.resolutions?.length ? model.resolutions : NONE;
   const durations = useMemo(
     () => (model?.durations || []).map(Number).filter((n) => Number.isFinite(n) && n > 0),
     [model],
+  );
+  /* A length RANGE is only a control when EXTENDING. On a restyle model the
+     range's zero means "keep the source length" (wan 2.7 edit), which is what
+     a restyle should do — so nothing is sent and the clip keeps its length. */
+  const range = job === "extend" && !durations.length ? model?.durationRange || null : null;
+  const factors = useMemo(
+    () => (upscaling ? model?.schema?.fields?.upscale_factor?.enum || NONE : NONE),
+    [upscaling, model],
   );
 
   /* Drop settings the chosen model does not offer */
@@ -153,19 +163,69 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
     if (ratios.length && !ratios.includes(ratio)) setRatio(ratios[0]);
   }, [ratios, ratio]);
   useEffect(() => {
-    if (!durations.length) { if (duration) setDuration(0); return; }
-    if (!durations.includes(Number(duration))) setDuration(durations[0]);
-  }, [durations, duration]);
+    if (durations.length) {
+      if (!durations.includes(Number(duration))) setDuration(durations[0]);
+      return;
+    }
+    if (range) {
+      const n = Number(duration);
+      if (!(n >= range.min && n <= range.max)) setDuration(range.default);
+      return;
+    }
+    if (duration) setDuration(0);
+  }, [durations, range, duration]);
+  useEffect(() => {
+    if (!resolutions.length) { if (resolution) setResolution(""); return; }
+    const has = resolutions.some((r) => String(r).toLowerCase() === String(resolution).toLowerCase());
+    if (!has) setResolution(resolutions[0]);
+  }, [resolutions, resolution]);
+  useEffect(() => {
+    if (!factors.length) { if (factor !== "") setFactor(""); return; }
+    if (!factors.some((f) => String(f) === String(factor))) {
+      const declared = model?.schema?.fields?.upscale_factor?.default;
+      setFactor(factors.some((f) => String(f) === String(declared)) ? declared : factors[0]);
+    }
+  }, [factors, factor, model]);
 
-  /* Same tool string in the quote and the submission — a mismatch would
-     quote one price and charge another. Recast prices as its own tool, the
-     way the standalone RecastStudio always did. */
+  /* ONE payload for the quote and the submit. The recast quote used to send
+     image_url/video_url while the Kling submit sent input_urls/video_urls —
+     two descriptions of one run, and the meter priced the wrong one.
+
+     The two live recast families disagree on field shape, and sending the
+     wrong one is a provider rejection after the credits are held: Kling's
+     motion-control takes ARRAYS (`input_urls`/`video_urls`) and an enum
+     `character_orientation` of "image"|"video"; Wan's animate pair takes
+     singular `image_url`/`video_url` and no orientation. */
+  const recastParams = useMemo(() => {
+    if (!recasting || !model || !identity?.url || !source?.url) return null;
+    return /motion-control/.test(model.id)
+      ? {
+        input_urls: [identity.url],
+        video_urls: [source.url],
+        ...(orientation ? { character_orientation: orientation } : {}),
+      }
+      : { image_url: identity.url, video_url: source.url };
+  }, [recasting, model, identity, source, orientation]);
+
+  const editParams = useMemo(() => {
+    const params = { video_url: source?.url };
+    if (upscaling) {
+      if (factor !== "") params.upscale_factor = factor;
+      return params;
+    }
+    if (ratios.length) params.aspect_ratio = ratio;
+    if (duration) params.duration = Number(duration);
+    if (resolution) params.resolution = resolution;
+    return params;
+  }, [source, upscaling, factor, ratios, ratio, duration, resolution]);
+
+  /* Same tool string AND the same params in the quote and the submission —
+     a mismatch would quote one price and charge another. Recast prices as its
+     own tool, the way the standalone RecastStudio always did. */
   const { cost, affordable, balance, shortfall } = useCreditCost(
     recasting ? "recast" : "v2v",
     model?.id || "",
-    recasting
-      ? { image_url: identity?.url, video_url: source?.url, aspect_ratio: ratio }
-      : { duration: duration || undefined, aspect_ratio: ratio, video_url: source?.url },
+    recasting ? recastParams || {} : editParams,
   );
 
 
@@ -173,43 +233,22 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
   const missingSource = !source?.url;
   const paired = !!identity?.url && !!source?.url;
   const recastReady = paired && !!model && affordable && !generating;
-  const speedNote = job === "retime" ? SPEEDS.find((s) => s.value === speed)?.prompt : "";
-
-  const brief = useMemo(
-    () => [speedNote, prompt.trim()].filter(Boolean).join(". "),
-    [speedNote, prompt],
-  );
+  const upscaleReady = !missingSource && !!model && affordable && !generating;
 
   const generate = useCallback(() => {
     if (recasting) {
-      if (!model || !paired) return;
-      /* The two live recast families disagree on field shape, and sending
-         the wrong one is a provider rejection after the credits are held:
-         Kling's motion-control takes ARRAYS (`input_urls`/`video_urls`) and
-         an enum `character_orientation` of "image"|"video"; Wan's animate
-         pair takes singular `image_url`/`video_url` and no orientation. */
-      const kling = /motion-control/.test(model.id);
-      const params = kling
-        ? {
-          input_urls: [identity.url],
-          video_urls: [source.url],
-          ...(orientation ? { character_orientation: orientation } : {}),
-        }
-        : { image_url: identity.url, video_url: source.url };
+      if (!recastParams) return;
+      const params = { ...recastParams };
       if (prompt.trim()) params.prompt = prompt.trim();
       submit("recast", model.id, params);
       return;
     }
     if (!model || missingSource) return;
-    const params = {
-      endpoint: model.endpoint || model.id,
-      prompt: brief,
-      video_url: source.url,
-      aspect_ratio: ratio,
-    };
-    if (duration) params.duration = Number(duration);
+    const params = { endpoint: model.endpoint || model.id, ...editParams };
+    // The upscaler has no prompt field; everything else is briefed.
+    if (!upscaling) params.prompt = prompt.trim();
     submit("v2v", model.id, params);
-  }, [recasting, model, paired, identity, orientation, prompt, missingSource, submit, brief, source, ratio, duration]);
+  }, [recasting, recastParams, model, prompt, missingSource, submit, editParams, upscaling]);
 
   /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
@@ -270,12 +309,6 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
         </Field>
       )}
 
-      {job === "retime" && (
-        <Field label="Speed" hint="Written into the brief so the model retimes rather than resamples.">
-          <Chips label="Speed" options={SPEEDS} value={speed} onChange={setSpeed} scroll />
-        </Field>
-      )}
-
       {!recasting && durations.length > 1 && (
         <Field
           label={job === "extend" ? "Added length" : "Output length"}
@@ -292,9 +325,49 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
         </Field>
       )}
 
-      <Field label="Aspect ratio">
-        <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
-      </Field>
+      {range && (
+        <Field hint="How much further the shot runs. Longer costs more.">
+          <Slider
+            label="Added length"
+            min={range.min}
+            max={range.max}
+            step={1}
+            value={duration || range.default}
+            onChange={setDuration}
+            format={(v) => `${v}s`}
+          />
+        </Field>
+      )}
+
+      {!recasting && !upscaling && resolutions.length > 1 && (
+        <Field label="Resolution" hint="Higher resolutions cost more.">
+          <Chips
+            label="Resolution"
+            options={resolutions.map((r) => ({ value: r, label: String(r).toUpperCase() }))}
+            value={resolution}
+            onChange={setResolution}
+            compare={(a, b) => String(a).toLowerCase() === String(b).toLowerCase()}
+          />
+        </Field>
+      )}
+
+      {upscaling && factors.length > 1 && (
+        <Field label="Enlarge by" hint="Priced per second of the clip; a larger factor costs more.">
+          <Chips
+            label="Upscale factor"
+            options={factors.map((f) => ({ value: f, label: `${f}×` }))}
+            value={factor}
+            onChange={setFactor}
+            compare={(a, b) => String(a) === String(b)}
+          />
+        </Field>
+      )}
+
+      {!recasting && !upscaling && ratios.length > 0 && (
+        <Field label="Aspect ratio">
+          <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
+        </Field>
+      )}
     </div>
   );
 
@@ -316,9 +389,10 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
             { k: "Identity", v: recasting ? (identity ? "Loaded" : "Missing") : null },
             { k: "Clip", v: source ? "Loaded" : recasting ? "Missing" : "None" },
             { k: "Head", v: recasting ? ORIENTATIONS.find((o) => o.value === orientation)?.label : null },
-            { k: "Ratio", v: ratio },
-            { k: "Length", v: recasting ? null : duration ? `${duration}s` : "Model default" },
-            { k: "Speed", v: job === "retime" ? `${speed}×` : null },
+            { k: "Ratio", v: recasting || upscaling ? null : ratios.length ? ratio : "From the clip" },
+            { k: "Length", v: recasting || upscaling ? null : duration ? `${duration}s` : "From the clip" },
+            { k: "Res", v: !recasting && !upscaling && resolution ? String(resolution).toUpperCase() : null },
+            { k: "Enlarge", v: upscaling && factor !== "" ? `${factor}×` : null },
           ]}
         />
       </Group>
@@ -374,6 +448,25 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
     </Commit>
   );
 
+  /* ── Upscale dock ─────────────────────────────────────────────────────
+     No brief at all: the upscaler has no prompt field, so asking for one was
+     asking for words that were thrown away. */
+  const upscaleDock = (
+    <Commit
+      cost={cost || 0}
+      balance={balance}
+      affordable={affordable}
+      shortfall={shortfall}
+      generating={generating}
+      stage={stage}
+      onSubmit={generate}
+      onCancel={cancel}
+      submitLabel="Upscale"
+      disabled={!upscaleReady}
+      blocked={!model ? "No upscaling model available" : !source ? "Load a clip first" : ""}
+    />
+  );
+
   return (
     <Workspace controls={controls} inspector={inspector} inspectorLabel="Model">
       <div className="st-work__stage">
@@ -386,7 +479,12 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
           elapsed={elapsed}
           ratio={ratio}
           model={model?.displayName || model?.name}
-          settings={[copy.label, ratio, duration ? `${duration}s` : null].filter(Boolean).join(" · ")}
+          settings={[
+            copy.label,
+            !recasting && !upscaling && ratios.length ? ratio : null,
+            duration ? `${duration}s` : null,
+            upscaling && factor !== "" ? `${factor}×` : null,
+          ].filter(Boolean).join(" · ")}
           onCancel={cancel}
           onRetry={generate}
           onEditSettings={reset}
@@ -396,7 +494,7 @@ export default function VideoEditStudio({ initialModel, templateConfig, onCredit
         />
       </div>
 
-      {recasting ? recastDock : (
+      {recasting ? recastDock : upscaling ? upscaleDock : (
         <Brief
           tool="video"
           value={prompt}

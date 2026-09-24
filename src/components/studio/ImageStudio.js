@@ -7,7 +7,7 @@ import {
   IcImage, IcCamera, IcPersona,
 } from "@/components/studio/kit";
 import { CINEMA_CAMERAS, CINEMA_LENS, CINEMA_FOCAL, CINEMA_APERTURE, INFLUENCER_TABS } from "@/lib/models";
-import { useModelCatalog } from "./useModelCatalog";
+import { useModelCatalog, runsFromOneImage } from "./useModelCatalog";
 import { useAsyncGeneration } from "./useAsyncGeneration";
 import { useCreditCost } from "./useCreditCost";
 import { useStudioMode } from "./useStudioMode";
@@ -40,7 +40,9 @@ const MODES = ["create", "edit", "upscale", "canvas"];
 const MODE_OPTIONS = [
   { value: "create", label: "Create" },
   { value: "edit", label: "Edit" },
-  { value: "upscale", label: "Upscale" },
+  // The id stays "upscale" so ?mode=upscale bookmarks keep working; the label
+  // widened when the background remover moved here (it takes no brief either).
+  { value: "upscale", label: "Enhance" },
   { value: "canvas", label: "Canvas" },
 ];
 const PRESETS = ["cinematic", "influencer"];
@@ -90,8 +92,13 @@ const LIGHT = [
   { id: "low-key", name: "Low key", prompt: "low-key lighting, deep blacks" },
 ];
 
-const FALLBACK_RATIOS = ["1:1", "4:5", "3:2", "16:9", "9:16"];
-const FALLBACK_RES = ["1K", "2K", "4K"];
+/* No fallback ratios or resolutions. There used to be a list of each, shown
+   whenever the model's schema offered none — which meant a model with NO
+   aspect field displayed five ratios it then ignored, and one that spells it
+   `image_size` (Ideogram, Seedream 3.0, Qwen Image) displayed 4:5, which it
+   does not have. useModelCatalog now reads every spelling; a model that
+   declares none gets no control, and nothing is sent. */
+const NONE = [];
 
 const byId = (list, id) => list.find((x) => x.id === id);
 
@@ -132,7 +139,10 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
   const available = useMemo(
     () => (models || []).filter((m) =>
       editing
-        ? matchesGroup(m, "iti") && m.capability !== "image-upscale"
+        // One image and a brief is all this mode collects. Upscalers and the
+        // background remover take no brief (they live in Enhance); a model that
+        // also REQUIRES a mask or a second image field cannot run from here.
+        ? matchesGroup(m, "iti") && m.capability !== "image-upscale" && m.capability !== "background-removal" && runsFromOneImage(m)
         : matchesGroup(m, "tti"),
     ),
     [models, editing],
@@ -172,8 +182,9 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
     if (handoff.prompt) setPrompt(handoff.prompt);
   }, [handoff]);
 
-  const ratios = model?.aspectRatios?.length ? model.aspectRatios : FALLBACK_RATIOS;
-  const resolutions = model?.resolutions?.length ? model.resolutions : FALLBACK_RES;
+  const ratios = model?.aspectRatios?.length ? model.aspectRatios : NONE;
+  const resolutions = model?.resolutions?.length ? model.resolutions : NONE;
+  const declares = (name) => (model?.fieldNames || NONE).includes(name);
 
   /* Drop settings the chosen model does not offer. When the current ratio
      has to go, fall back to the user's saved default before the model's
@@ -246,12 +257,12 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
       endpoint: model.endpoint || model.id,
       prompt: compiled,
       negative_prompt: negative || undefined,
-      aspect_ratio: ratio,
-      resolution,
+      aspect_ratio: ratios.length ? ratio : undefined,
+      resolution: resolutions.length ? resolution : undefined,
       image_url: reference?.url || undefined,
       seed: seed === "" ? undefined : Number(seed),
     });
-  }, [model, blocked, compiled, submit, negative, ratio, resolution, reference, seed]);
+  }, [model, blocked, compiled, submit, negative, ratio, ratios, resolution, resolutions, reference, seed]);
 
   /* ── Controls ─────────────────────────────────────────────────────────── */
   const controls = (
@@ -340,9 +351,11 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
         </>
       )}
 
-      <Field label="Aspect ratio">
-        <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
-      </Field>
+      {ratios.length > 0 && (
+        <Field label="Aspect ratio">
+          <RatioPicker options={ratios} value={ratio} onChange={setRatio} />
+        </Field>
+      )}
 
       {!model?.hasDimensions && resolutions.length > 1 && (
         <Field label="Resolution">
@@ -356,6 +369,7 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
         </Field>
       )}
 
+      {declares("negative_prompt") && (
       <Field label="Avoid" hint="Elements the render should exclude.">
         {(id) => (
           <textarea
@@ -368,7 +382,9 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
           />
         )}
       </Field>
+      )}
 
+      {declares("seed") && (
       <Field label="Seed" hint="Reuse a seed to repeat a composition.">
         {(id) => (
           <input
@@ -382,6 +398,7 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
           />
         )}
       </Field>
+      )}
     </div>
   );
 
@@ -506,7 +523,7 @@ function ImageGenMode({ mode, preset, onPreset, initialModel, templateConfig, on
   );
 }
 
-/* ── Upscale — one image in, a larger one out; no brief required ────────── */
+/* ── Enhance — one image in, no brief: a larger one out, or its background gone ── */
 function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
   const [modelId, setModelId] = useState(initialModel || null);
   const [source, setSource] = useState(null);
@@ -514,8 +531,12 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
   const { models, loading: loadingModels } = useModelCatalog({});
   const { loading: generating, result, error, elapsed, stage, retryInfo, submit, cancel, reset } = useAsyncGeneration();
 
+  /* grok-imagine/upscale is filed here but REQUIRES the task id of an earlier
+     Grok run — an uploaded file can never satisfy it — so runsFromOneImage
+     keeps it out rather than offering a run the provider must refuse. */
   const available = useMemo(
-    () => (models || []).filter((m) => m.capability === "image-upscale"),
+    () => (models || []).filter((m) =>
+      (m.capability === "image-upscale" || m.capability === "background-removal") && runsFromOneImage(m)),
     [models],
   );
 
@@ -532,24 +553,29 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
     setModelId(templateConfig.model);
   }, [templateConfig]);
 
-  const { cost, affordable, balance, shortfall } = useCreditCost("image", model?.id || "", {
-    image_url: source?.url,
-  });
+  /* Topaz prices by how far it enlarges (2x and 4x are different money), and
+     with no control here it ran at whatever the provider defaulted to. */
+  const factors = model?.schema?.fields?.upscale_factor?.enum || NONE;
+  const [factor, setFactor] = useState(null);
+  const chosenFactor = factors.some((f) => String(f) === String(factor)) ? factor : (model?.schema?.fields?.upscale_factor?.default ?? factors[0]);
+  const settings = useMemo(
+    () => ({ image_url: source?.url, upscale_factor: factors.length ? chosenFactor : undefined }),
+    [source, factors, chosenFactor],
+  );
+
+  const { cost, affordable, balance, shortfall } = useCreditCost("image", model?.id || "", settings);
 
 
   const ready = !!source?.url && !!model && affordable && !generating;
 
   const generate = useCallback(() => {
     if (!model || !source?.url) return;
-    submit("image", model.id, {
-      endpoint: model.endpoint || model.id,
-      image_url: source.url,
-    });
-  }, [model, source, submit]);
+    submit("image", model.id, { endpoint: model.endpoint || model.id, ...settings });
+  }, [model, source, submit, settings]);
 
   const controls = (
     <div className="hs-stack" style={{ gap: "var(--s-5)" }}>
-      <Field label="Source image" hint="The image to enlarge. Detail is added, not invented wholesale.">
+      <Field label="Source image" hint="The image to work on. Detail is added, not invented wholesale.">
         <Dropzone
           value={source}
           onChange={setSource}
@@ -558,6 +584,18 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
           hint="JPG, PNG or WebP"
         />
       </Field>
+
+      {factors.length > 1 && (
+        <Field label="Enlarge by" hint="A bigger factor costs more and takes longer.">
+          <Chips
+            label="Enlarge by"
+            options={factors.map((f) => ({ value: f, label: `${f}×` }))}
+            value={chosenFactor}
+            onChange={setFactor}
+            compare={(a, b) => String(a) === String(b)}
+          />
+        </Field>
+      )}
 
       <Group label="This pass">
         <Specs
@@ -577,8 +615,8 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
         value={model?.id}
         onSelect={setModelId}
         loading={loadingModels}
-        label="Upscaler"
-        emptyHint="No upscaling models in the catalog yet."
+        label="Tool"
+        emptyHint="No upscaling or cutout models in the catalog yet."
       />
     </div>
   );
@@ -586,8 +624,8 @@ function ImageUpscaleMode({ initialModel, templateConfig, onCreditsChanged }) {
   const idle = (
     <Idle
       icon={<IcImage />}
-      title="Enlarge an image"
-      description="Load the image to upscale, pick an upscaler on the right, and run. No brief needed."
+      title="Enhance an image"
+      description="Load an image, pick a tool on the right — enlarge it or remove its background — and run. No brief needed."
     />
   );
 
