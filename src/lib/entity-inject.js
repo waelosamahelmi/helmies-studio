@@ -52,7 +52,7 @@ export async function injectEntities({ prisma, userId, entityIds = [], params = 
   const digests = {};
 
   for (const entity of entities) {
-    blocks.push(entityPromptBlock(entity));
+    blocks.push(purpose === "identity" ? identityFidelityBlock(entity) : entityPromptBlock(entity));
     // Snapshot the identity AT RENDER TIME so a later edit never rewrites the
     // history of a shot that already rendered from the old version.
     digests[entity.id] = computeAttributeDigest(entity);
@@ -70,6 +70,22 @@ export async function injectEntities({ prisma, userId, entityIds = [], params = 
   if (voiceSlot && voiceUrls.length) next = applyEntityReferences(next, schema, voiceUrls, { slot: voiceSlot });
 
   return { params: next, promptPrefix: blocks.filter(Boolean).join("\n"), digests, entities };
+}
+
+/* Building the identity pack: the photograph is the authority, the words are
+   not. entityPromptBlock puts the WRITTEN description and every attribute in
+   front of the angle prompt — and where those disagree with the photograph
+   (a description written before the photo, a guessed hair colour, a wardrobe
+   note) the model is told two different people and the generated angles
+   drift from the real one. Uploading a photo and pressing "generate the
+   angles" then changed what the character looked like. For this purpose the
+   prompt names them and says what it must not change; everything else is
+   the picture's to decide. */
+export function identityFidelityBlock(entity) {
+  if (!entity) return "";
+  const name = String(entity.name || "").trim();
+  const subject = entity.kind === "character" ? "person" : entity.kind === "product" ? "object" : "place";
+  return `${name ? `${name}. ` : ""}This is the exact ${subject} in the reference photograph. Reproduce it faithfully: the same ${entity.kind === "character" ? "face, skin, hair, eyes, build, age and clothing" : "shape, materials, colours and details"} as the photograph, changed in nothing. Only the camera angle and framing below are different.`;
 }
 
 // Which reference angle a step should reach for, derived from what the step
