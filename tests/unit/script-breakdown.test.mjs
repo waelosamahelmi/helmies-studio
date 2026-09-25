@@ -311,3 +311,20 @@ A clock ticks.
     expect(coverageWarnings(parseScriptBreakdown(wrap(RAW)), "")).toEqual([]);
   });
 });
+
+describe("coverageWarnings — a version is only missing where a version exists (2026-09-25)", () => {
+  const shot = (id, characters) => ({ id, description: "x", type: "wide", durationSec: 5, characters, offscreenVoices: [], props: [], dialogue: [], sfx: [] });
+  const scenes = [{ id: 1, heading: "INT. ROOM — NIGHT", environmentKey: "room", shots: [shot("s1_1", ["wael"]), shot("s1_2", ["wael", "mina"])] }];
+  const script = "INT. ROOM — NIGHT\n\nA scene.";
+
+  it("says nothing when no character declares variants — there is no version to name", () => {
+    const breakdown = { characters: [{ key: "wael", name: "Wael", variants: [] }, { key: "mina", name: "Mina", variants: [] }], scenes };
+    expect(coverageWarnings(breakdown, script).filter((w) => /version/.test(w))).toEqual([]);
+  });
+
+  it("counts only the shots showing a character WITH variants and no named version", () => {
+    const breakdown = { characters: [{ key: "wael", name: "Wael", variants: [{ name: "double", differences: "grey coat" }] }, { key: "mina", name: "Mina", variants: [] }], scenes };
+    const [w] = coverageWarnings(breakdown, script).filter((x) => /version/.test(x));
+    expect(w).toMatch(/^2 shots show a character who has more than one look/);
+  });
+});

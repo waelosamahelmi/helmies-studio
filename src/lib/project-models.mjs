@@ -96,13 +96,21 @@ export function textToImageModelsFor(models = [], { aspectRatio = null } = {}) {
     // spend somebody's money on the wrong thing.
     if (saysItIsNotAStill(m)) return false;
     const fields = schema?.fields || {};
-    // Nothing that DEMANDS an image we do not have.
-    if (Object.entries(fields).some(([name, f]) => f?.required && /image|reference/i.test(name))) return false;
+    // Nothing that DEMANDS a picture we do not have. The old test matched
+    // /image|reference/ — and the flux-2 and gpt-image EDIT models call
+    // theirs `input_urls`, so they passed as text-to-image, were picked
+    // (the picker takes the median price, which moved when the catalog was
+    // re-priced), and the quote refused them: "input_urls is required".
+    if (Object.entries(fields).some(([name, f]) => f?.required && REQUIRES_A_PICTURE.test(name))) return false;
+    // And nothing filed as an edit model at all — its capability is the
+    // positive statement that it starts from an image.
+    if (/image-to-image|edit|upscale|background/i.test(String(m?.capability || ""))) return false;
     return supportsAspect(m, aspectRatio);
   });
 }
 
 const NOT_A_STILL = /(video|speech|music|audio|voice|lipsync|lip-sync|tts|upscale|animate)/i;
+const REQUIRES_A_PICTURE = /image|reference|input_urls|mask|task_id|video|audio/i;
 const STILL_TYPES = new Set(["image", "i2i"]);
 
 /** Does anything about this model say it does not make a still frame? */

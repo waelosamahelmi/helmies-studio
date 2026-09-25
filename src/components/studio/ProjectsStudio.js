@@ -1177,9 +1177,12 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
        PROVES it makes a still. An earlier version treated an absent schema
        as safe and then ranked by price descending — which is how a
        text-to-video model was picked to draw a bedroom. */
+    // Screened on the ratio this request SENDS, not the project's: a wide
+    // room from gpt-image/1.5, which offers no 16:9, was refused at the quote.
+    const wanted = entity.kind === "environment" ? "16:9" : "1:1";
     const scratchModel = pickTextToImageModel(models, {
       preferred: coverage?.settings?.imageModel,
-      aspectRatio: coverage?.settings?.aspectRatio,
+      aspectRatio: wanted,
     });
     if (!scratchModel) { setError?.("No model here can draw a view from a description."); return; }
 
@@ -1195,7 +1198,7 @@ function MembersTab({ contents, projectId, onChanged, setNotice, setError }) {
           model: scratchModel.id,
           prompt: [entity.description, anchor.prompt].filter(Boolean).join(". "),
           expand: false,
-          aspect_ratio: entity.kind === "environment" ? "16:9" : "1:1",
+          aspect_ratio: wanted,
           // The server attaches it when the render settles. Nothing here
           // has to stay open — walking away used to mean the view
           // completed, was paid for, and went nowhere.

@@ -354,10 +354,20 @@ export function coverageWarnings(breakdown, scriptText) {
     );
   }
 
-  const shots = allShots(breakdown);
-  const unnamed = shots.filter((s) => s.characters.length && !s.characterVariant);
-  if (unnamed.length) {
-    warnings.push(`${unnamed.length} shots show a character without saying which version of them it is.`);
+  // A shot only needs to name a version where a version EXISTS. The prompt
+  // tells the model to leave `variants` empty unless the script changes
+  // someone's look mid-story, so most productions declare none — and this
+  // used to flag every shot with a face in it ("252 shots show a character
+  // without saying which version"), a warning with nothing to act on.
+  const hasVariants = new Set(
+    asArray(breakdown?.characters).filter((c) => asArray(c?.variants).length).map((c) => c.key),
+  );
+  if (hasVariants.size) {
+    const shots = allShots(breakdown);
+    const unnamed = shots.filter((s) => s.characters.some((k) => hasVariants.has(k)) && !s.characterVariant);
+    if (unnamed.length) {
+      warnings.push(`${unnamed.length} shots show a character who has more than one look without saying which version it is.`);
+    }
   }
 
   return warnings;

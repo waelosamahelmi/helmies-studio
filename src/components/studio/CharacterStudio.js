@@ -840,8 +840,10 @@ function IdentitySheet({ entity, locked, onAddReference, onDropReference, onErro
        model makes a still — an absent schema is excluded, not waved
        through, which is what let a text-to-video model be picked. */
     const preferred = TEXT_TO_IMAGE_PREFERENCE.find((id) => (models || []).some((m) => m.id === id));
-    return pickTextToImageModel(models, { preferred });
-  }, [models, entity.kind]);
+    // The anchor view's own ratio, so a model that cannot draw that shape
+    // is never the one picked and refused at the quote.
+    return pickTextToImageModel(models, { preferred, aspectRatio: anchorKind ? angleAspect(entity.kind, anchorKind) : null });
+  }, [models, entity.kind, anchorKind]);
 
   const canStartFromScratch = !hasSource && !!fromScratchModel && Boolean((entity.description || "").trim());
 

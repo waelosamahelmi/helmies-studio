@@ -233,3 +233,34 @@ describe("a model that declares no minimum does not get an invented one", () => 
     expect(shotDurationLimits(strict)).toEqual({ min: 5, max: 10 });
   });
 });
+
+describe("textToImageModelsFor — a room's first view can be drawn only by a model that needs no picture (2026-09-25)", () => {
+  // Rows shaped like the live catalog. The Projects panel picked the MEDIAN-
+  // priced usable model; re-pricing moved the median onto an edit model, and
+  // the quote refused it: "input_urls is required". The old filter matched
+  // /image|reference/ — flux-2 and gpt-image call their input `input_urls`.
+  const still = (id, capability, fields) => ({ id, modelId: id, capability, modelType: capability === "image-to-image" ? "i2i" : "image", credits: 8, schema: { fields: { prompt: { type: "string", required: true }, ...fields } } });
+  const aspect = (values) => ({ aspect_ratio: { type: "string", required: true, enum: values } });
+  const rows = [
+    still("flux-2/pro-image-to-image", "image-to-image", { input_urls: { type: "array", required: true }, ...aspect(["1:1", "16:9"]) }),
+    still("gpt-image/1.5-image-to-image", "image-to-image", { input_urls: { type: "array", required: true }, quality: { type: "string", enum: ["medium", "high"] } }),
+    still("gpt-image/1.5-text-to-image", "text-to-image", { ...aspect(["1:1", "3:2", "2:3"]) }),
+    still("seedream/5-lite-text-to-image", "text-to-image", { quality: { type: "string", required: true, enum: ["basic", "high"] }, ...aspect(["1:1", "16:9"]) }),
+    still("nano-banana-2", "image", { image_input: { type: "array", required: false }, ...aspect(["1:1", "16:9"]) }),
+  ];
+
+  it("never offers a model whose schema requires input_urls, and never an image-to-image row at all", () => {
+    const ids = textToImageModelsFor(rows).map((m) => m.id);
+    expect(ids).not.toContain("flux-2/pro-image-to-image");
+    expect(ids).not.toContain("gpt-image/1.5-image-to-image");
+    expect(ids).toContain("seedream/5-lite-text-to-image");
+    expect(ids).toContain("nano-banana-2"); // an OPTIONAL reference slot is fine
+  });
+
+  it("a wide room excludes a model whose ratios have no 16:9", () => {
+    const ids = textToImageModelsFor(rows, { aspectRatio: "16:9" }).map((m) => m.id);
+    expect(ids).not.toContain("gpt-image/1.5-text-to-image");
+    expect(ids).toEqual(expect.arrayContaining(["seedream/5-lite-text-to-image", "nano-banana-2"]));
+    expect(pickTextToImageModel(rows, { aspectRatio: "16:9" })?.id).not.toBe("gpt-image/1.5-text-to-image");
+  });
+});
