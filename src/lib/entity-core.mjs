@@ -478,12 +478,20 @@ export function selectEntityReferences(entity, { purpose = "default", max = 4 } 
   if (!refs.length || max <= 0) return [];
 
   const priority = PURPOSE_PRIORITY[entity.kind]?.[purpose] || PURPOSE_PRIORITY[entity.kind]?.default || [];
+  // Building the identity pack: every angle is derived from what the USER
+  // gave us, never from an angle we generated. With the generated ones in
+  // the remaining reference slots, one that had drifted pulled every later
+  // angle after it — the face changed a little more with each render. When
+  // nothing user-provided exists (a place drawn from its description) the
+  // generated anchor is all there is, and it is used.
+  const own = refs.filter((r) => r.source !== "generated" && r.kind !== VOICE_REFERENCE_KIND);
+  const pool = purpose === "identity" && own.length ? own : refs;
   const rank = (ref) => {
     const i = priority.indexOf(ref.kind);
     return i === -1 ? priority.length : i;
   };
 
-  const sorted = [...refs].sort((a, b) => {
+  const sorted = [...pool].sort((a, b) => {
     if (a.locked !== b.locked) return a.locked ? -1 : 1;
     const ra = rank(a);
     const rb = rank(b);

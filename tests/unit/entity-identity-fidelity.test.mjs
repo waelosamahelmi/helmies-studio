@@ -34,3 +34,20 @@ describe("identity renders", () => {
     expect(identityFidelityBlock({ kind: "product", name: "Bottle" })).toMatch(/exact object/);
   });
 });
+
+describe("identity references", () => {
+  it("come only from what the user uploaded — a generated angle never feeds the next one", async () => {
+    const { selectEntityReferences } = await import("../../src/lib/entity-core.mjs");
+    const withGenerated = { ...entity, references: [
+      { id: "g1", kind: "face_front", source: "generated", url: "https://cdn/gen-front.jpg", createdAt: "2026-09-24" },
+      { id: "g2", kind: "face_34", source: "generated", url: "https://cdn/gen-34.jpg", createdAt: "2026-09-24" },
+      ...entity.references,
+    ] };
+    expect(selectEntityReferences(withGenerated, { purpose: "identity", max: 4 }).map((r) => r.url)).toEqual(["https://cdn/mina.jpg"]);
+    // Every other purpose still uses the full pack.
+    expect(selectEntityReferences(withGenerated, { purpose: "closeup", max: 4 }).length).toBe(3);
+    // A place with only a generated anchor still derives its other views from it.
+    const place = { kind: "environment", references: [{ id: "a", kind: "master", source: "generated", url: "https://cdn/room.jpg", createdAt: "2026-09-24" }] };
+    expect(selectEntityReferences(place, { purpose: "identity", max: 4 }).map((r) => r.url)).toEqual(["https://cdn/room.jpg"]);
+  });
+});
