@@ -390,3 +390,22 @@ describe("which mouth moves", () => {
     expect(out).not.toMatch(/NOT in this shot/);
   });
 });
+
+describe("matchExistingEntities — a one-letter spelling still finds the Cast member with photographs (2026-09-26)", () => {
+  const want = (name, kind = "character") => ({ key: name.toLowerCase(), name, kind });
+  it("MARCUS in the script is Markus with twelve pictures on file", () => {
+    const existing = [{ id: "m1", kind: "character", name: "Markus", referenceCount: 12 }];
+    const { matched, missing } = matchExistingEntities([want("MARCUS")], existing);
+    expect(matched.get("marcus")).toBe("m1");
+    expect(missing).toEqual([]);
+  });
+  it("is never taken for a candidate with nothing on file, or when two candidates are equally close", () => {
+    expect(matchExistingEntities([want("MARCUS")], [{ id: "m1", kind: "character", name: "Markus", referenceCount: 0 }]).missing.length).toBe(1);
+    const two = [{ id: "a", kind: "character", name: "Marcos", referenceCount: 3 }, { id: "b", kind: "character", name: "Markus", referenceCount: 3 }];
+    expect(matchExistingEntities([want("MARCUS")], two).missing.length).toBe(1);
+  });
+  it("short names and different kinds are different things", () => {
+    expect(matchExistingEntities([want("Emily")], [{ id: "e", kind: "character", name: "Emile", referenceCount: 5 }]).missing.length).toBe(1);
+    expect(matchExistingEntities([want("Markus", "product")], [{ id: "m1", kind: "character", name: "Markus", referenceCount: 12 }]).missing.length).toBe(1);
+  });
+});

@@ -781,11 +781,23 @@ export async function updateProductionPlan(pipelineId, userId, updates) {
     throw new Error("Cannot edit plan in current state: " + pipeline.status);
   }
 
+  // The scene's own brief (its title and summary) is editable alongside the
+  // shots. Only those two words-fields: the models and the cast on the brief
+  // are the project's, set under Scenario & format.
+  const { brief: briefUpdates, ...planUpdates } = updates;
+  const nextBrief = briefUpdates && typeof briefUpdates === "object"
+    ? {
+      ...(pipeline.brief || {}),
+      ...(typeof briefUpdates.title === "string" ? { title: briefUpdates.title.slice(0, 200) } : {}),
+      ...(typeof briefUpdates.concept === "string" ? { concept: briefUpdates.concept.slice(0, 4000) } : {}),
+    }
+    : pipeline.brief;
+
   const currentPlan = pipeline.plan || {};
   const newPlan = {
     ...currentPlan,
-    ...updates,
-    shots: updates.shots || currentPlan.shots
+    ...planUpdates,
+    shots: planUpdates.shots || currentPlan.shots
   };
 
   if (!isValidPlanShape(newPlan)) {
@@ -796,7 +808,7 @@ export async function updateProductionPlan(pipelineId, userId, updates) {
   // the executor and cost estimator both key shotCosts by shot.index.
   newPlan.shots = newPlan.shots.map((shot, i) => ({ ...shot, index: i }));
 
-  const costEstimate = await estimateDirectorCost(newPlan, pipeline.brief || {});
+  const costEstimate = await estimateDirectorCost(newPlan, nextBrief || {});
 
   // E4.1: re-run the shot validators on every edit — edited prompts get the
   // same 11-policy validation a fresh plan gets, and the stored
@@ -810,6 +822,7 @@ export async function updateProductionPlan(pipelineId, userId, updates) {
     where: { id: pipelineId },
     data: {
       plan: newPlan,
+      ...(nextBrief !== pipeline.brief ? { brief: nextBrief, title: nextBrief?.title || pipeline.title } : {}),
       costEstimate,
       validationResults
     }

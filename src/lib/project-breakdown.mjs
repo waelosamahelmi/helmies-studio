@@ -305,6 +305,20 @@ const CANONICAL = (name) => String(name || "")
   .replace(/\s+/g, " ")
   .trim();
 
+/* One edit apart: "Marcus" and "Markus", "Theron" and "Theeron". Only
+   letters are compared, and only names long enough that one letter is a
+   spelling rather than a different word ("Emily"/"Emile" are two people). */
+function oneEditApart(a, b) {
+  if (Math.abs(a.length - b.length) > 1 || Math.min(a.length, b.length) < 6) return false;
+  let i = 0; let j = 0; let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
 export function matchExistingEntities(wanted, existing) {
   const byName = new Map();
   for (const e of existing || []) {
@@ -323,6 +337,19 @@ export function matchExistingEntities(wanted, existing) {
     const hit = byName.get(key);
     if (hit) {
       matched.set(want.key, hit.id);
+      continue;
+    }
+    /* The script spells a name one letter differently from the Cast —
+       "MARCUS" in the screenplay, "Markus" with twelve photographs on file.
+       An exact miss created an empty MARCUS and every shot of his rendered
+       a stranger. A near-match is taken only when it cannot be wrong: one
+       edit apart, the same kind, exactly ONE such candidate, and that
+       candidate has pictures — a match that would gain nothing is not
+       worth the risk of merging two people. */
+    const near = (existing || []).filter((e) =>
+      e.kind === want.kind && oneEditApart(CANONICAL(e.name), CANONICAL(want.name)) && (e.referenceCount ?? 0) > 0);
+    if (near.length === 1) {
+      matched.set(want.key, near[0].id);
       continue;
     }
     /* Two keys in the SAME breakdown that canonicalise to one thing — the

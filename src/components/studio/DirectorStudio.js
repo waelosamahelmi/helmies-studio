@@ -573,7 +573,12 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged, initi
         title: shot.title || `Shot ${i + 1}`,
         section: shot.section || "shot",
         durationSec: shot.durationSec ?? null,
+        // What the STILL is rendered from — the prompt worth reading before
+        // pressing generate. The motion prompt used to stand here alone,
+        // and the still's was visible nowhere.
+        still: shot.imageStrategy?.prompt || "",
         line: shot.videoStrategy?.prompt || shot.sceneGoal || shot.narrativeRole || shot.environment || "",
+        cast: [...(Array.isArray(shot.subjects) ? shot.subjects : []), ...(shot.environment ? [shot.environment] : [])],
         camera: [shot.camera?.framing, shot.camera?.lens, shot.camera?.movement].filter(Boolean).join(" · "),
         continuity: (shot.continuity || []).join(", ") || shot.continuityTracker?.previousEndingFrame || "",
         status: run?.status || (pipelineStatus === "planning" || !pipelineStatus ? "draft" : "queued"),
@@ -622,6 +627,22 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged, initi
   /* Planned shots are editable until the pipeline runs or completes —
      the PATCH route enforces the same rule server-side (409). */
   const canEdit = !!plan && !!pipelineId && !running && !finished;
+
+  /* The scene's title and summary go through the same PATCH as the shots. */
+  const saveBrief = useCallback(async (brief) => {
+    if (!pipelineId || !canEdit) return;
+    try {
+      await apiFetch(`/api/director/plan/${encodeURIComponent(pipelineId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: { brief } }),
+        retries: 0,
+      });
+    } catch (e) {
+      setError(e?.message || "The scene could not be saved.");
+    }
+  }, [pipelineId, canEdit]);
+
 
   const phase = !plan ? "brief" : finished ? "done" : running ? "running" : "plan";
 
@@ -763,9 +784,28 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged, initi
               )}
             </div>
 
-            <div className="st-shot__body">
+            <div
+              className="st-shot__body"
+              // The whole body opens the editor while the plan can still change:
+              // the brush in the hover toolbar was the only way in, and it was
+              // easy never to find. Each prompt is what the model receives.
+              role={canEdit && card.id ? "button" : undefined}
+              tabIndex={canEdit && card.id ? 0 : undefined}
+              title={canEdit && card.id ? "Edit this shot's prompts" : undefined}
+              style={canEdit && card.id ? { cursor: "pointer" } : undefined}
+              onClick={canEdit && card.id ? () => setEditingKey(card.id) : undefined}
+              onKeyDown={canEdit && card.id ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditingKey(card.id); } } : undefined}
+            >
               <strong style={{ fontSize: "var(--t-sm)", fontWeight: 600 }}>{card.title}</strong>
-              {card.line && <p className="st-shot__line">{card.line}</p>}
+              {card.cast.length > 0 && (
+                <span className="hs-hint" style={{ display: "block" }}>In frame: {card.cast.join(", ")}</span>
+              )}
+              {card.still && card.still !== card.title && (
+                <p className="st-shot__line" style={{ whiteSpace: "pre-wrap" }}><span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>STILL </span>{card.still}</p>
+              )}
+              {card.line && card.line !== card.still && (
+                <p className="st-shot__line"><span className="hs-mono" style={{ fontSize: 10, color: "var(--tx-mute)" }}>MOTION </span>{card.line}</p>
+              )}
               {card.camera && <span className="hs-hint">{card.camera}</span>}
               {card.continuity && <span className="hs-hint">Continuity: {card.continuity}</span>}
               {card.error && <span className="hs-error">{card.error}</span>}
@@ -1013,10 +1053,32 @@ export default function DirectorStudio({ templateConfig, onCreditsChanged, initi
                 className="hs-input"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
+                onBlur={() => saveBrief({ title })}
                 placeholder="Midnight drive"
               />
             )}
           </Field>
+
+          {pipelineId && (
+            /* The scene's own summary, editable while the plan can still
+               change. It is what the music cue is written from; the
+               shots' prompts, edited on the board, are what the pictures
+               are rendered from. */
+            <Field label="Scene" hint="What happens in this scene. Each shot's own prompt is edited on the board.">
+              {(id) => (
+                <textarea
+                  id={id}
+                  className="hs-input hs-textarea"
+                  style={{ minHeight: 88 }}
+                  value={concept}
+                  disabled={!canEdit}
+                  maxLength={4000}
+                  onChange={(e) => setConcept(e.target.value)}
+                  onBlur={() => saveBrief({ concept })}
+                />
+              )}
+            </Field>
+          )}
 
           <Field label="Type" hint="Sets the shot structure and the default models.">
             <Chips options={TYPES} value={type} onChange={setType} scroll />

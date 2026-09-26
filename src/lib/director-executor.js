@@ -5,7 +5,7 @@ import { estimateCredits } from "@/lib/pricing-engine";
 import { ingestFromUrl } from "@/lib/storage/ingest";
 import { assembleVideos } from "@/lib/video-assembly";
 import { validatePrompt, estimateDirectorCost } from "@/lib/director-planner";
-import { selectEntityReferences, voiceReferences, imageReferenceSlot, isStillImageModel } from "@/lib/entity-core.mjs";
+import { selectEntityReferences, voiceReferences, imageReferenceSlot, isStillImageModel, castReferencesForShot, VOICE_REFERENCE_KIND } from "@/lib/entity-core.mjs";
 import { applyRequiredDefaults } from "@/lib/provider-payload-core.mjs";
 import { speakingDirection, dialogueSpeakers } from "@/lib/project-breakdown.mjs";
 import { recordGenerationAsset } from "@/lib/assets-core";
@@ -463,58 +463,25 @@ async function executeShotImage(shot, pipeline, brief) {
     /* THE CAST OF THIS SHOT.
        Every shot the screenplay breakdown produces carries `entityIds` —
        the real characters and places, with reference photographs on file.
-       Nothing here read them, so a scene planned around Wael rendered a
-       stranger: the director only understood $CHARACTER_ tokens, which
-       the breakdown does not emit. Their references are pulled in here and
-       joined with whatever the plan already listed. */
+       castReferencesForShot decides which pictures go and names each one
+       in the order it is sent; the legend travels with the prompt. The
+       model is resolved first so the cap is ITS reference slot, not a
+       guess — the old hard cut at three dropped the third person in every
+       wide of three. */
+    let castLegend = "";
+    let castUnreferenced = [];
+    let castEntities = [];
     if (Array.isArray(shot.entityIds) && shot.entityIds.length) {
       try {
-        const entities = await prisma.studioEntity.findMany({
+        castEntities = await prisma.studioEntity.findMany({
           where: { id: { in: shot.entityIds.slice(0, 6) }, userId: pipeline.userId },
         });
-
-        /* WHICH references, and HOW MANY of each.
-
-           Every shot was asking for "default" and taking two per entity,
-           so a wide establishing shot of a bedroom got two photographs of
-           a face and one of the room — and the room came back different
-           every time. What a shot needs depends on what the shot IS.
-
-           The framing decides the purpose (the same vocabulary
-           selectEntityReferences already ranks by), and the budget follows
-           it: in a wide, the PLACE leads; in a close-up, the face does.
-           The place always gets at least one slot regardless — a room with
-           no reference in the frame is a room the model re-invents, which
-           is exactly what "it didn't keep the room" looks like. */
-        const framing = `${shot.camera?.framing || ""} ${shot.title || ""} ${imagePrompt}`.toLowerCase();
-        const isClose = /close-?up|face|portrait|eyes|insert|detail/.test(framing);
-        const isWide = /wide|establishing|master|full body|room|landscape/.test(framing);
-
-        const places = entities.filter((e) => e.kind === "environment");
-        const people = entities.filter((e) => e.kind !== "environment");
-
-        const placePurpose = isClose ? "detail" : "wide";
-        const personPurpose = isClose ? "closeup" : isWide ? "wide" : "default";
-        // Three slots is what the models here accept. A wide spends two on
-        // the room; a close-up spends two on the person; either way the
-        // other side keeps one, because losing it entirely is how
-        // continuity breaks.
-        const placeBudget = places.length ? (isClose ? 1 : 2) : 0;
-        const personBudget = people.length ? (isClose ? 2 : 1) : 0;
-
-        const fromPlaces = places.flatMap((e) =>
-          selectEntityReferences(e, { purpose: placePurpose, max: placeBudget }).map((r) => r.url));
-        const fromPeople = people.flatMap((e) =>
-          selectEntityReferences(e, { purpose: personPurpose, max: personBudget }).map((r) => r.url));
-
-        // Order matters: the first reference is what several families treat
-        // as the primary. A wide leads with the room.
-        const ordered = isClose ? [...fromPeople, ...fromPlaces] : [...fromPlaces, ...fromPeople];
-        refs = [...new Set([...refs.filter(Boolean), ...ordered])];
       } catch (err) {
         console.error("[Director] entity references failed:", err?.message);
       }
     }
+    const framing = `${shot.camera?.framing || ""} ${shot.title || ""} ${imagePrompt}`;
+    const anyCastRefs = castEntities.some((e) => (e.references || []).some((r) => r.kind !== VOICE_REFERENCE_KIND));
 
     /* THE MODEL THE PROJECT CHOSE.
        This was `brief.modelImage || "flux-dev"` — and nothing ever set
@@ -524,12 +491,25 @@ async function executeShotImage(shot, pipeline, brief) {
        all four shots of scene 1 failed. */
     const { model: wantModel, useRefs, schema: modelSchema } = await resolveImageModel(
       brief.modelImage || DEFAULT_IMAGE_MODEL,
-      refs.length > 0 && Boolean(refs[0]),
+      (refs.length > 0 && Boolean(refs[0])) || anyCastRefs,
     );
+    if (castEntities.length) {
+      const slotMax = imageReferenceSlot(modelSchema)?.max || 3;
+      const cast = castReferencesForShot(castEntities, { framing, max: slotMax });
+      castLegend = cast.legend;
+      castUnreferenced = cast.unreferenced;
+      refs = [...new Set([...cast.urls, ...refs.filter(Boolean)])].slice(0, slotMax);
+      if (cast.unreferenced.length) {
+        console.warn(`[Director] shot ${shot.id}: no reference on file for ${cast.unreferenced.join(", ")} — rendered from the description`);
+      }
+    }
 
     // Build generation params
     const params = {
-      prompt: imagePrompt,
+      // The legend goes with the prompt, never instead of it: the blocking in
+      // the description only means something once each name is tied to an
+      // image number.
+      prompt: castLegend && useRefs ? `${castLegend}\n\n${imagePrompt}` : imagePrompt,
       aspect_ratio: brief.aspectRatio || "9:16",
       model: wantModel,
       // The model's own schema travels with the request so the payload
@@ -553,9 +533,11 @@ async function executeShotImage(shot, pipeline, brief) {
     // not by whether references happen to exist.
     let result;
     if (useRefs) {
-      params.images_list = refs.slice(0, 3);
+      // Already cut to the model's own slot above; the adapter moves these
+      // into whichever field the model declares.
+      params.images_list = refs;
       params.image_url = refs[0];
-      params.image_urls = refs.slice(0, 3);
+      params.image_urls = refs;
       params.strength = 0.6;
       result = await generateI2I(params);
     } else {
@@ -599,7 +581,13 @@ async function executeShotImage(shot, pipeline, brief) {
 
     // E4.3: this completed image becomes the rolling reference for any
     // character in the shot that had none yet — later shots anchor to it.
-    if (pendingCharacters.length) {
+    /* A frame becomes somebody's stand-in reference only when it shows them
+       ALONE. Seeding Lily's reference from a frame of Lily, Tomas and Emily
+       gave every later Lily shot a picture of three people — which is the
+       "wrong reference" a director sees when the wrong face turns up. */
+    const peopleInShot = castEntities.filter((e) => e.kind !== "environment").length;
+    const soloFrame = peopleInShot <= 1 && castUnreferenced.length <= 1;
+    if (pendingCharacters.length && soloFrame) {
       try {
         await seedRollingCharacterRefs(pipeline.id, pendingCharacters, storedUrl);
       } catch (seedErr) {
@@ -677,46 +665,9 @@ async function executeShotVideo(shot, pipeline, brief, imageUrl, opts = {}) {
         const entities = await prisma.studioEntity.findMany({
           where: { id: { in: shot.entityIds.slice(0, 6) }, userId: pipeline.userId },
         });
-        const framing = `${shot.camera?.framing || ""} ${videoPrompt}`.toLowerCase();
-        const isClose = /close-?up|face|portrait|eyes|insert|detail/.test(framing);
-        const places = entities.filter((e) => e.kind === "environment");
-        const people = entities.filter((e) => e.kind !== "environment");
-        /* One picture per person when more than one person is in the shot.
-           Two of Wael and one of Will is not a cast list, it is a vote, and
-           the face with more pictures wins both chairs. */
-        const perPerson = people.length > 1 ? 1 : (isClose ? 2 : 1);
-        const ordered = isClose ? [...people, ...places] : [...places, ...people];
-
-        const seen = new Set();
-        const urls = [];
-        const groups = [];
-        for (const e of ordered) {
-          const isPlace = e.kind === "environment";
-          const picks = selectEntityReferences(e, {
-            purpose: isPlace ? (isClose ? "detail" : "wide") : (isClose ? "closeup" : "wide"),
-            max: isPlace ? (isClose ? 1 : 2) : perPerson,
-          }).map((r) => r.url);
-          const positions = [];
-          for (const url of picks) {
-            if (seen.has(url)) continue;
-            seen.add(url);
-            urls.push(url);
-            positions.push(urls.length); // 1-based, matches what is sent
-          }
-          if (positions.length) groups.push({ name: e.name, isPlace, positions });
-        }
-        directRefs = urls.slice(0, 4);
-
-        const named = groups
-          .map((g) => {
-            const kept = g.positions.filter((n) => n <= directRefs.length);
-            if (!kept.length) return null;
-            return `${kept.map((n) => `image ${n}`).join(" and ")} is ${g.isPlace ? "the location" : ""} ${g.name}`.replace(/\s+/g, " ");
-          })
-          .filter(Boolean);
-        if (named.length) {
-          refLegend = `Reference images, in order: ${named.join("; ")}. Each reference shows only that person or place — do not mix their faces, and do not add anyone who is not named in this shot.`;
-        }
+        const cast = castReferencesForShot(entities, { framing: `${shot.camera?.framing || ""} ${videoPrompt}`, max: 4 });
+        directRefs = cast.urls;
+        refLegend = cast.legend;
       } catch (err) {
         console.error("[Director] video references failed:", err?.message);
       }

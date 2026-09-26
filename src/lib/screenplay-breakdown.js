@@ -344,9 +344,15 @@ export async function runBreakdown({ projectId, userId, script, settings, replac
       // the same clock and the same chairs, each tracked separately, which
       // is the exact drift props exist to prevent.
       where: { userId, kind: { in: ["character", "environment", "product"] } },
-      select: { id: true, kind: true, name: true, projectId: true },
+      select: { id: true, kind: true, name: true, projectId: true, references: true },
       take: 200,
     });
+    // How many PICTURES each has: a near-name match is only worth taking
+    // for an entity with something on file (see matchExistingEntities).
+    for (const e of existing) {
+      e.referenceCount = (Array.isArray(e.references) ? e.references : []).filter((r) => r?.kind !== "voice").length;
+      delete e.references;
+    }
     const { matched, missing, claimed } = matchExistingEntities(wanted, existing);
 
     const created = [];

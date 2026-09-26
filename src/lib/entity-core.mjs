@@ -744,3 +744,76 @@ export function computeAttributeDigest(entity) {
   for (let i = 0; i < source.length; i++) h = ((h << 5) + h + source.charCodeAt(i)) | 0;
   return `e${(h >>> 0).toString(36)}`;
 }
+
+/* ── The cast of one shot, as pictures the model can be shown ─────────────
+   Two director steps built this list separately and only one of them did
+   it right. The still — which every clip is then derived from — took a
+   flat budget (two of the room, one per person), cut the list at three, and
+   sent the pictures with no names: in a wide of three people the third was
+   dropped, and the model connected "Lily" to whichever face it liked.
+
+   One rule for both, from what the shot IS:
+     · every person in the shot gets ONE picture before anything gets two;
+       more than one person means exactly one each — two of Wael and one of
+       Will is a vote, and the face with more pictures wins both chairs
+     · the place gets one, and a second only in a wide with a slot to spare
+     · `max` is the model's own reference slot, not a guess
+     · the legend names each image in the order it is sent, because the
+       blocking in the prompt means nothing until "Lily" is tied to image 1
+   People with nothing on file are reported, never invented from. */
+export function castReferencesForShot(entities = [], { framing = "", max = 3 } = {}) {
+  const text = String(framing).toLowerCase();
+  const isClose = /close-?up|face|portrait|eyes|insert|detail/.test(text);
+  const isWide = /wide|establishing|master|full body|room|landscape/.test(text);
+  const places = entities.filter((e) => e?.kind === "environment");
+  const people = entities.filter((e) => e && e.kind !== "environment");
+  const ordered = isClose ? [...people, ...places] : [...places, ...people];
+
+  const seen = new Set();
+  const urls = [];
+  const groups = [];
+  const unreferenced = [];
+  const take = (entity, purpose, count) => {
+    const positions = [];
+    for (const ref of selectEntityReferences(entity, { purpose, max: count })) {
+      if (urls.length >= max || seen.has(ref.url)) continue;
+      seen.add(ref.url);
+      urls.push(ref.url);
+      positions.push(urls.length);
+    }
+    return positions;
+  };
+
+  // Round one: one picture each, in shot order.
+  const byId = new Map();
+  for (const e of ordered) {
+    const isPlace = e.kind === "environment";
+    const purpose = isPlace ? (isClose ? "detail" : "wide") : (isClose ? "closeup" : isWide ? "wide" : "default");
+    const positions = take(e, purpose, 1);
+    if (!positions.length && !isPlace) unreferenced.push(e.name);
+    byId.set(e.id, { name: e.name, isPlace, purpose, positions });
+  }
+  // Round two: a second picture only where it cannot crowd anyone out.
+  if (urls.length < max) {
+    for (const e of ordered) {
+      const g = byId.get(e.id);
+      const wantsTwo = g.isPlace ? isWide : (people.length === 1 && isClose);
+      if (!wantsTwo || !g.positions.length) continue;
+      const more = selectEntityReferences(e, { purpose: g.purpose, max: 2 }).filter((r) => !seen.has(r.url));
+      for (const ref of more.slice(0, 1)) {
+        if (urls.length >= max) break;
+        seen.add(ref.url);
+        urls.push(ref.url);
+        g.positions.push(urls.length);
+      }
+    }
+  }
+  for (const e of ordered) { const g = byId.get(e.id); if (g.positions.length) groups.push(g); }
+
+  const named = groups.map((g) =>
+    `${g.positions.map((n) => `image ${n}`).join(" and ")} is ${g.isPlace ? "the location " : ""}${g.name}`);
+  const legend = named.length
+    ? `Reference images, in order: ${named.join("; ")}. Each reference shows only that person or place — keep every face, hairstyle and outfit exactly as its reference, do not mix them, and do not add anyone who is not named in this shot.`
+    : "";
+  return { urls, legend, groups, unreferenced, isClose, isWide };
+}

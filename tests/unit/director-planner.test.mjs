@@ -332,6 +332,16 @@ describe("updateProductionPlan — server-side recompute on every edit", () => {
     brief: { type: "music_video" },
   };
 
+  it("saves the scene's own title and summary, and nothing else on the brief (2026-09-26)", async () => {
+    prisma.directorPipeline.findFirst.mockResolvedValue({ ...storedPipeline, brief: { type: "music_video", concept: "old", modelImage: "keep-me" } });
+    prisma.directorPipeline.update.mockResolvedValue({});
+    await updateProductionPlan("p1", "u1", { brief: { concept: "A train at night.", title: "Scene 1", modelImage: "hijack" } });
+    const { data } = prisma.directorPipeline.update.mock.calls.at(-1)[0];
+    expect(data.brief).toEqual({ type: "music_video", concept: "A train at night.", title: "Scene 1", modelImage: "keep-me" });
+    expect(data.title).toBe("Scene 1");
+    expect(data.plan).not.toHaveProperty("brief"); // never written into the plan itself
+  });
+
   it("recomputes the cost estimate from the edited shots and returns validation results", async () => {
     prisma.directorPipeline.findFirst.mockResolvedValue({ ...storedPipeline });
     prisma.directorPipeline.update.mockResolvedValue({});
