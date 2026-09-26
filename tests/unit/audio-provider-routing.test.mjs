@@ -186,3 +186,23 @@ describe("pollProviderResult — music results", () => {
     expect(out.outputs).toEqual(["https://cdn.example/1.png"]);
   });
 });
+
+describe("Gemini TTS — a voice is described in its own field, and only speakable text is spoken (2026-09-26)", async () => {
+  const { buildGeminiTtsInput, speakableText } = await import("../../src/lib/audio-payload-core.mjs");
+
+  it("strips markdown fences and backticks — the provider answered them with a bare 500", () => {
+    expect(speakableText("``` Low, dry, unhurried, faintly amused ```")).toBe("Low, dry, unhurried, faintly amused");
+    expect(speakableText("**Not** tonight. [whispering] Not ever.")).toBe("Not tonight. [whispering] Not ever.");
+    const input = buildGeminiTtsInput("```\nYou're late.\n```", { voice_name: "Charon" });
+    expect(input.dialogue_turns).toEqual([{ speaker_id: "Speaker 1", text: "You're late." }]);
+  });
+
+  it("carries the character's speaking style as the speaker's audio_profile, and closed-list traits only when listed", () => {
+    const input = buildGeminiTtsInput("You're late.", { voice_name: "Charon", audio_profile: "Low, dry, unhurried", accent: "british (rp)", style: "sarcastic", pace: "Natural" });
+    expect(input.speakers[0]).toEqual({ speaker_id: "Speaker 1", voice_name: "Charon", audio_profile: "Low, dry, unhurried", accent: "British (RP)", pace: "Natural" });
+  });
+
+  it("sends no dialogue_turns when nothing speakable is left", () => {
+    expect(buildGeminiTtsInput("```", { voice_name: "Charon" })).not.toHaveProperty("dialogue_turns");
+  });
+});

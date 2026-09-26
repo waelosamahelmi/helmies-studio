@@ -401,6 +401,29 @@ export function buildElevenLabsDialogueInput(prompt, params = {}) {
  */
 export const GEMINI_SPEAKER_ID = "Speaker 1";
 
+/* What the speaker may be told about HOW to sound, beside which voice.
+   From docs.kie.ai/market/google/gemini-3-1-flash-tts: `audio_profile` is
+   free text ("A stern and weary gatekeeper"); the other three are closed
+   lists and are sent only when the value is one of them — an unlisted
+   accent is a 500, not a shrug. */
+export const GEMINI_TTS_ACCENTS = ["Neutral", "American (Gen)", "American (Valley)", "American (South)", "British (RP)", "British (Brixton)", "Transatlantic", "Australian"];
+export const GEMINI_TTS_STYLES = ["Vocal Smile", "Newscaster", "Whisper", "Empathetic", "Promo/Hype", "Deadpan"];
+export const GEMINI_TTS_PACES = ["Natural", "Rapid Fire", "The Drift", "Staccato"];
+
+const listed = (value, list) => list.find((v) => v.toLowerCase() === String(value || "").trim().toLowerCase());
+
+/* Text the voice can actually say. A line pasted with markdown around it —
+   "``` Low, dry, unhurried ```" was a real one — is refused by the provider
+   with a bare 500 and creditsConsumed 0. Fences, backticks and emphasis
+   marks go; [tone tags] like "[whispering]" stay, the model reads them. */
+export function speakableText(text) {
+  return String(text ?? "")
+    .replace(/```[a-z]*\n?/gi, " ")
+    .replace(/[`*_~#>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function buildGeminiTtsInput(prompt, params = {}) {
   const input = {};
   if (Array.isArray(params.speakers) && params.speakers.length) {
@@ -408,11 +431,21 @@ export function buildGeminiTtsInput(prompt, params = {}) {
     if (Array.isArray(params.dialogue_turns)) input.dialogue_turns = params.dialogue_turns;
     return input;
   }
-  input.speakers = [{ speaker_id: GEMINI_SPEAKER_ID, voice_name: resolveGeminiVoice(params) }];
-  const text = textOf(prompt, params);
+  const speaker = { speaker_id: GEMINI_SPEAKER_ID, voice_name: resolveGeminiVoice(params) };
+  const profile = speakableText(params.audio_profile ?? params.voice_profile ?? params.speakingStyle);
+  if (profile) speaker.audio_profile = profile.slice(0, 400);
+  const accent = listed(params.accent, GEMINI_TTS_ACCENTS);
+  const style = listed(params.style, GEMINI_TTS_STYLES);
+  const pace = listed(params.pace, GEMINI_TTS_PACES);
+  if (accent) speaker.accent = accent;
+  if (style) speaker.style = style;
+  if (pace) speaker.pace = pace;
+  input.speakers = [speaker];
+  const raw = textOf(prompt, params);
+  const text = raw === null ? null : speakableText(raw);
   // Rule 1 again — an absent script stays absent ("The dialogue_turns
   // parameter cannot be empty" is the honest answer).
-  if (text !== null) input.dialogue_turns = [{ speaker_id: GEMINI_SPEAKER_ID, text }];
+  if (text) input.dialogue_turns = [{ speaker_id: GEMINI_SPEAKER_ID, text }];
   return input;
 }
 

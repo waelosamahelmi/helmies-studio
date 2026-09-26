@@ -1164,6 +1164,12 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
   const [line, setLine] = useState("");
   const [voiceName, setVoiceName] = useState("Charon");
   const [busy, setBusy] = useState(false);
+  /* HOW they sound is a character attribute (speakingStyle) and goes to the
+     model as its audio_profile — a real field for "low, dry, unhurried,
+     faintly amused". That description used to get pasted into the line box,
+     in markdown fences, and the provider refused the backticks with a 500. */
+  const [howTheySound, setHowTheySound] = useState(entity.attributes?.speakingStyle || "");
+  useEffect(() => { setHowTheySound(entity.attributes?.speakingStyle || ""); }, [entity.id]); // re-seed per record only, like the details form
 
   const refs = voiceReferences(entity);
 
@@ -1185,7 +1191,7 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
       const res = await apiFetch("/api/generate/async", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tool: "audio", model: speechModel.id, prompt: line.trim(), voice_name: voiceName, expand: false }),
+        body: JSON.stringify({ tool: "audio", model: speechModel.id, prompt: line.trim(), voice_name: voiceName, audio_profile: howTheySound.trim() || undefined, expand: false }),
       });
       const submitted = await res.json();
       const started = Date.now();
@@ -1210,7 +1216,7 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
     } finally {
       setBusy(false);
     }
-  }, [speechModel, line, voiceName, entity.id, onAddReference, onError, onNotice]);
+  }, [speechModel, line, voiceName, howTheySound, entity.id, onAddReference, onError, onNotice]);
 
   return (
     <Fieldset
@@ -1268,6 +1274,23 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
                   </select>
                 )}
               </Field>
+              <Field label="How they sound" hint="A description, not a line — it shapes every take. Saved with the character.">
+                {(id) => (
+                  <input
+                    id={id}
+                    className="hs-input"
+                    value={howTheySound}
+                    maxLength={400}
+                    disabled={locked}
+                    placeholder="Low, dry, unhurried, faintly amused"
+                    onChange={(e) => setHowTheySound(e.target.value)}
+                    onBlur={() => {
+                      if ((entity.attributes?.speakingStyle || "") === howTheySound) return;
+                      onPatch(entity.id, { attributes: { ...(entity.attributes || {}), speakingStyle: howTheySound } });
+                    }}
+                  />
+                )}
+              </Field>
               <Field
                 label="The line they say"
                 hint={`Made with ${speechModel.displayName || speechModel.id}${speechModel.credits != null ? ` · ${speechModel.credits} credits a take` : ""}. Every take you keep is listed above and playable.`}
@@ -1278,7 +1301,7 @@ function VoiceSection({ entity, locked, voices, onPatch, onAddReference, onDropR
                     style={{ flex: 1, minWidth: 220 }}
                     value={line}
                     maxLength={300}
-                    placeholder="You're late."
+                    placeholder="You're late. — the words only; tone tags like [whispering] are read, not spoken"
                     onChange={(e) => setLine(e.target.value)}
                   />
                   <button type="button" className="hs-btn hs-btn--sm" onClick={generateSample} disabled={busy || !line.trim()}>
