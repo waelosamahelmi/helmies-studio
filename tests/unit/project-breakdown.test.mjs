@@ -399,6 +399,14 @@ describe("matchExistingEntities — a one-letter spelling still finds the Cast m
     expect(matched.get("marcus")).toBe("m1");
     expect(missing).toEqual([]);
   });
+  it("an empty exact duplicate from an earlier read does not shadow the Cast member with photographs", () => {
+    const existing = [{ id: "dup", kind: "character", name: "MARCUS", referenceCount: 0 }, { id: "m1", kind: "character", name: "Markus", referenceCount: 12 }];
+    expect(matchExistingEntities([want("MARCUS")], existing).matched.get("marcus")).toBe("m1");
+    // …but an exact hit WITH pictures is always itself.
+    const both = [{ id: "real", kind: "character", name: "Marcus", referenceCount: 2 }, { id: "m1", kind: "character", name: "Markus", referenceCount: 12 }];
+    expect(matchExistingEntities([want("MARCUS")], both).matched.get("marcus")).toBe("real");
+  });
+
   it("is never taken for a candidate with nothing on file, or when two candidates are equally close", () => {
     expect(matchExistingEntities([want("MARCUS")], [{ id: "m1", kind: "character", name: "Markus", referenceCount: 0 }]).missing.length).toBe(1);
     const two = [{ id: "a", kind: "character", name: "Marcos", referenceCount: 3 }, { id: "b", kind: "character", name: "Markus", referenceCount: 3 }];

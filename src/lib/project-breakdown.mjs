@@ -352,7 +352,13 @@ export function matchExistingEntities(wanted, existing) {
   for (const want of wanted) {
     const key = `${want.kind}:${CANONICAL(want.name)}`;
     const hit = byName.get(key);
-    if (hit) {
+    /* An exact hit with no pictures is usually an empty duplicate an earlier
+       read created (MARCUS, beside Markus with twelve photographs). It must
+       not shadow the near-match that has them: the shots point at whichever
+       id is chosen, and an empty one renders a stranger. */
+    const spelled = (existing || []).filter((e) =>
+      e.kind === want.kind && oneEditApart(CANONICAL(e.name), CANONICAL(want.name)) && (e.referenceCount ?? 0) > 0);
+    if (hit && ((hit.referenceCount ?? 0) > 0 || spelled.length !== 1)) {
       matched.set(want.key, hit.id);
       continue;
     }
@@ -363,10 +369,8 @@ export function matchExistingEntities(wanted, existing) {
        edit apart, the same kind, exactly ONE such candidate, and that
        candidate has pictures — a match that would gain nothing is not
        worth the risk of merging two people. */
-    const near = (existing || []).filter((e) =>
-      e.kind === want.kind && oneEditApart(CANONICAL(e.name), CANONICAL(want.name)) && (e.referenceCount ?? 0) > 0);
-    if (near.length === 1) {
-      matched.set(want.key, near[0].id);
+    if (spelled.length === 1) {
+      matched.set(want.key, spelled[0].id);
       continue;
     }
     /* Two keys in the SAME breakdown that canonicalise to one thing — the
