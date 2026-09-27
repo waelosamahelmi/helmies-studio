@@ -32,6 +32,7 @@ import {
   sceneIsWithinBudget,
   sceneShotsPrompt,
   splitScenes,
+  matchSceneTexts,
   parseStructureReply,
   parseSceneShotsReply,
   variantProblems,
@@ -130,6 +131,10 @@ export async function readScreenplay(script, onProgress, { limits = null, keepIn
 
   // ── Pass 2: each scene's shots, on its own ────────────────────────────
   const sceneTexts = splitScenes(script);
+  // Scene → its own block of the script, by heading (see matchSceneTexts).
+  const sceneBlocks = matchSceneTexts(structure.scenes, sceneTexts);
+  const unmatched = structure.scenes.map((sc, i) => (sceneBlocks[i] ? null : sc.heading)).filter(Boolean);
+  if (unmatched.length) log.info("project_breakdown_scene_text_unmatched", { headings: unmatched });
   const context = JSON.stringify({
     characters: structure.characters,
     environments: structure.environments,
@@ -166,9 +171,9 @@ export async function readScreenplay(script, onProgress, { limits = null, keepIn
       onProgress?.(++finished, structure.scenes.length);
       return;
     }
-    // Match by position first — the structure pass is asked for scenes in
-    // order — and fall back to the whole script if the split disagrees.
-    const text = sceneTexts[i]?.text || script;
+    // Its own block when one was found by heading; the whole script when
+    // not, so a scene the split could not see is still read from the page.
+    const text = sceneBlocks[i]?.text || script;
 
     /* What this scene should cost in cuts. A ceiling the model can be
        measured against beats an adjective it can interpret away — the same

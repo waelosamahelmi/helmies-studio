@@ -74,9 +74,20 @@ export function shotPrompt(shot, { environment = null, toneReferences = "", char
      the frame. */
   if (shot.performance) parts.push(shot.performance);
   if (variants) parts.push(variants);
-  if (environment?.description) parts.push(environment.description);
-  if (environment?.lighting) parts.push(environment.lighting);
-  if (toneReferences) parts.push(toneReferences);
+  /* The room and the look are LABELLED and kept short. Unlabelled, a
+     150-character room paragraph and a 140-character grade note welded
+     onto every shot read as more scene — the model drew the valley's fog
+     inside the carriage. A label tells it what the sentence is for, and a
+     cap keeps the shot's own description the longest thing in the prompt. */
+  const clip = (text, max) => {
+    const t = String(text || "").trim();
+    if (t.length <= max) return t;
+    const cut = t.slice(0, max);
+    return `${cut.slice(0, Math.max(cut.lastIndexOf(". "), cut.lastIndexOf(", "), max - 40))}`.replace(/[,.]\s*$/, "");
+  };
+  const setting = [clip(environment?.description, 220), clip(environment?.lighting, 120)].filter(Boolean).join(". ");
+  if (setting) parts.push(`Setting: ${setting}`);
+  if (toneReferences) parts.push(`Look: ${clip(toneReferences, 160)}`);
   return parts.filter(Boolean).join(". ").replace(/\.\.+/g, ".");
 }
 
@@ -326,6 +337,12 @@ export function matchExistingEntities(wanted, existing) {
     // shadowed by a later near-duplicate of its name.
     const key = `${e.kind}:${CANONICAL(e.name)}`;
     if (!byName.has(key)) byName.set(key, e);
+    // "Laila_Clean" and "Wael (double)" are Laila and Wael with a qualifier
+    // the script will never write. The bare name answers for them too,
+    // unless a Cast member already owns it outright.
+    const bare = CANONICAL(String(e.name || "").replace(/[_(].*$/, ""));
+    const bareKey = `${e.kind}:${bare}`;
+    if (bare && bareKey !== key && !byName.has(bareKey)) byName.set(bareKey, e);
   }
 
   const matched = new Map();

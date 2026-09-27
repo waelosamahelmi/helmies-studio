@@ -404,8 +404,70 @@ describe("matchExistingEntities — a one-letter spelling still finds the Cast m
     const two = [{ id: "a", kind: "character", name: "Marcos", referenceCount: 3 }, { id: "b", kind: "character", name: "Markus", referenceCount: 3 }];
     expect(matchExistingEntities([want("MARCUS")], two).missing.length).toBe(1);
   });
+  it("LAILA in the script is Laila_Clean in the Cast — a qualifier after _ or ( is not part of the name", () => {
+    const existing = [{ id: "l1", kind: "character", name: "Laila_Clean", referenceCount: 1 }, { id: "w2", kind: "character", name: "Wael (double)", referenceCount: 4 }];
+    const { matched } = matchExistingEntities([want("LAILA"), want("Wael")], existing);
+    expect(matched.get("laila")).toBe("l1");
+    expect(matched.get("wael")).toBe("w2");
+    // …but a Cast member who owns the bare name outright still wins it.
+    const both = [{ id: "w1", kind: "character", name: "Wael", referenceCount: 6 }, ...existing];
+    expect(matchExistingEntities([want("Wael")], both).matched.get("wael")).toBe("w1");
+  });
+
   it("short names and different kinds are different things", () => {
     expect(matchExistingEntities([want("Emily")], [{ id: "e", kind: "character", name: "Emile", referenceCount: 5 }]).missing.length).toBe(1);
     expect(matchExistingEntities([want("Markus", "product")], [{ id: "m1", kind: "character", name: "Markus", referenceCount: 12 }]).missing.length).toBe(1);
+  });
+});
+
+describe("matchSceneTexts — a scene reads its OWN page (2026-09-27)", async () => {
+  const { splitScenes, matchSceneTexts } = await import("../../src/lib/script-breakdown-passes.mjs");
+  const script = `OPENING — THE CRASH
+
+EXT./INT. PASSENGER TRAIN — 8:04 PM
+
+
+INT. TRAIN CARRIAGE — NIGHT
+
+An ordinary carriage at night. TOMAS sits between his daughters.
+
+EXT. THE VALLEY — CONTINUOUS
+
+The train runs through a shallow valley toward a tunnel. Then the brakes.
+
+INT. THE WRECK — CONTINUOUS
+
+The carriage is on its side. LAILA pushes herself up.`;
+
+  it("an umbrella heading with nothing under it never claims a scene, so nothing shifts by one", () => {
+    const scenes = [{ id: 1, heading: "INT. TRAIN CARRIAGE - NIGHT" }, { id: 2, heading: "EXT. THE VALLEY - CONTINUOUS" }, { id: 3, heading: "INT. THE WRECK - CONTINUOUS" }];
+    const m = matchSceneTexts(scenes, splitScenes(script));
+    expect(m.map((b) => b.heading)).toEqual(["INT. TRAIN CARRIAGE — NIGHT", "EXT. THE VALLEY — CONTINUOUS", "INT. THE WRECK — CONTINUOUS"]);
+    expect(m[2].text).toContain("LAILA pushes herself up");
+  });
+
+  it("matches by heading words even when the model reorders or renames slightly", () => {
+    const scenes = [{ id: 1, heading: "INT. WRECK — NIGHT" }, { id: 2, heading: "INT. CARRIAGE — NIGHT" }];
+    const m = matchSceneTexts(scenes, splitScenes(script));
+    expect(m[0].heading).toBe("INT. THE WRECK — CONTINUOUS");
+    expect(m[1].heading).toBe("INT. TRAIN CARRIAGE — NIGHT");
+  });
+
+  it("a scene no heading matches falls back to an unclaimed block, never a claimed one", () => {
+    const scenes = [{ id: 1, heading: "INT. TRAIN CARRIAGE - NIGHT" }, { id: 2, heading: "EXT. SOMEWHERE ELSE" }];
+    const m = matchSceneTexts(scenes, splitScenes(script));
+    expect(m[0].heading).toBe("INT. TRAIN CARRIAGE — NIGHT");
+    expect(m[1].heading).toBe("EXT. THE VALLEY — CONTINUOUS");
+  });
+});
+
+describe("shotPrompt — the room and the look are labelled and short", () => {
+  it("keeps the shot's own description first and labels the rest", () => {
+    const p = shotPrompt({ description: "Medium shot of Tomas on the rear bench.", performance: "Calm." }, {
+      environment: { description: "An ordinary passenger carriage with a long rear bench and small black windows.", lighting: "Dim yellow ceiling lights that flicker." },
+      toneReferences: "Dark, atmospheric suspense; reminiscent of Unbreakable and Dark.",
+    });
+    expect(p.startsWith("Medium shot of Tomas on the rear bench. Calm. Setting: An ordinary passenger carriage")).toBe(true);
+    expect(p).toMatch(/Look: Dark, atmospheric suspense/);
   });
 });

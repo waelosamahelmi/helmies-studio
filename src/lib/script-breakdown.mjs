@@ -334,9 +334,19 @@ export function coverageWarnings(breakdown, scriptText) {
   // the slug line under it ("### INT. THE ROOM"), so counting each pattern
   // separately would double every scene. Prefer the slug lines, which is what
   // a scene actually is, and fall back to the numbered headers.
-  const slugs = scriptText.match(/^\s*(?:#+\s*)?(?:INT\.|EXT\.)/gim) || [];
-  const numbered = scriptText.match(/^\s*(?:#+\s*)?SCENE\s+\d+/gim) || [];
-  const headings = slugs.length ? slugs : numbered;
+  // A heading with nothing under it ("EXT./INT. PASSENGER TRAIN — 8:04 PM"
+  // as an umbrella over three real scenes) is not a scene the breakdown
+  // could have dropped. Counting it said "4 scenes but the breakdown has 3"
+  // about a read that had them all.
+  const scriptLines = scriptText.split(/\r?\n/);
+  const isHeading = (l) => /^\s*(?:#+\s*)?(?:INT\.|EXT\.|INT\/EXT|SCENE\s+\d+)/i.test(l);
+  const headings = [];
+  for (let i = 0; i < scriptLines.length; i++) {
+    if (!isHeading(scriptLines[i])) continue;
+    let j = i + 1;
+    while (j < scriptLines.length && !isHeading(scriptLines[j]) && !scriptLines[j].trim()) j++;
+    if (j < scriptLines.length && !isHeading(scriptLines[j])) headings.push(scriptLines[i]);
+  }
   const sceneCount = asArray(breakdown?.scenes).length;
   if (headings.length && sceneCount < headings.length) {
     warnings.push(

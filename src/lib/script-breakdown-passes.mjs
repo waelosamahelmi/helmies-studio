@@ -106,6 +106,57 @@ export function splitScenes(script) {
   }));
 }
 
+/* Which block of the script is this scene?
+   ────────────────────────────────────────────────────────────────────────
+   The structure pass returns the scenes IT sees; splitScenes cuts the text
+   at every heading it finds. The two disagree whenever a script has an
+   umbrella heading with nothing under it ("EXT./INT. PASSENGER TRAIN —
+   8:04 PM" above three real scenes), a heading the model folded into its
+   neighbour, or a "CARD:" the model counted as a scene. Matching by
+   position then hands every scene its predecessor's text: the carriage
+   scene got an empty block, the valley got the carriage, the wreck got the
+   derailment, and the wreck itself — the best page in the script — was
+   never read at all.
+
+   So: by heading. Words in common between the model's heading and the
+   block's, prefixes (INT/EXT), times and "CONTINUOUS" stripped. Empty
+   blocks are never candidates. Only when no block shares a word does
+   position decide, and then among the blocks still unclaimed. */
+const HEADING_NOISE = /\b(INT|EXT|INT\/EXT|I\/E|CONTINUOUS|CONT'?D|LATER|MOMENTS|DAY|NIGHT|MORNING|EVENING|DUSK|DAWN|SAME|TIME|SCENE|PM|AM)\b|\d+(:\d+)?|[^A-Z ]/g;
+const headingTokens = (heading) =>
+  new Set(String(heading || "").toUpperCase().replace(HEADING_NOISE, " ").split(/\s+/).filter((t) => t.length > 1));
+
+export function matchSceneTexts(structureScenes = [], blocks = []) {
+  const usable = blocks.filter((b) => b && String(b.text || "").split("\n").slice(1).join("").trim());
+  const claimed = new Set();
+  const matched = new Array(structureScenes.length).fill(null);
+
+  // Best first, so a strong match is never stolen by an earlier weak one.
+  const candidates = [];
+  structureScenes.forEach((scene, i) => {
+    const want = headingTokens(scene?.heading);
+    for (const block of usable) {
+      const have = headingTokens(block.heading);
+      let score = 0;
+      for (const t of want) if (have.has(t)) score++;
+      if (score) candidates.push({ i, block, score, distance: Math.abs(block.index - i) });
+    }
+  });
+  candidates.sort((a, b) => b.score - a.score || a.distance - b.distance);
+  for (const c of candidates) {
+    if (matched[c.i] || claimed.has(c.block.index)) continue;
+    matched[c.i] = c.block;
+    claimed.add(c.block.index);
+  }
+  // Whatever is left pairs up in order.
+  const rest = usable.filter((b) => !claimed.has(b.index));
+  for (let i = 0; i < matched.length; i++) {
+    if (matched[i] || !rest.length) continue;
+    matched[i] = rest.shift();
+  }
+  return matched;
+}
+
 const parseJson = (text) => {
   const json = typeof text === "string" ? extractJsonObject(text) : null;
   if (!json) return null;
